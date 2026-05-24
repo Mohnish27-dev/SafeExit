@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Shield, Menu, X, ArrowRight, Sun, Moon } from "lucide-react";
+import Link from "next/link";
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -91,13 +92,13 @@ export default function Navbar() {
             >
               {theme === "dark" ? <Sun className="h-4.5 w-4.5" /> : <Moon className="h-4.5 w-4.5" />}
             </button>
-            <a
-              href="#simulator"
+            <Link
+              href="/login"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-600/20 active:scale-95 transition-all duration-200"
             >
               Launch Portal
               <ArrowRight className="h-4 w-4" />
-            </a>
+            </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -143,14 +144,14 @@ export default function Navbar() {
             </button>
           </div>
           <div className="pt-2 px-4">
-            <a
-              href="#simulator"
+            <Link
+              href="/login"
               onClick={() => setIsOpen(false)}
               className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-base font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20"
             >
               Launch Portal
               <ArrowRight className="h-4 w-4" />
-            </a>
+            </Link>
           </div>
         </div>
       </div>
