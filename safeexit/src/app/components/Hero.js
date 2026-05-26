@@ -4,64 +4,67 @@ import { Shield, ArrowRight, EyeOff, CheckCircle2, FileText, Bell } from "lucide
 
 export default function Hero() {
   return (
-    <section className="relative pt-32 pb-20 md:pt-40 md:pb-28 overflow-hidden bg-radial-gradient bg-dot-pattern transition-colors duration-300">
+    <section className="relative pt-32 pb-20 md:pt-40 md:pb-28 overflow-hidden bg-gradient-to-b from-[#eef2ff] via-[#f3f6ff] to-[#e8f1ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 bg-dot-pattern transition-colors duration-300">
+      <div className="aurora-layer -z-10" />
       {/* Background Decorative Gradients */}
-      <div className="absolute top-0 right-0 -z-10 w-[500px] h-[500px] rounded-full bg-indigo-200/40 dark:bg-indigo-900/10 blur-3xl opacity-60"></div>
-      <div className="absolute bottom-0 left-0 -z-10 w-[600px] h-[600px] rounded-full bg-violet-200/30 dark:bg-violet-900/10 blur-3xl opacity-50"></div>
+      <div className="absolute top-0 right-0 -z-10 w-[520px] h-[520px] rounded-full bg-cyan-200/35 dark:bg-cyan-900/10 blur-3xl opacity-60"></div>
+      <div className="absolute bottom-0 left-0 -z-10 w-[620px] h-[620px] rounded-full bg-indigo-200/30 dark:bg-indigo-900/10 blur-3xl opacity-50"></div>
+      <div className="absolute -top-20 left-1/3 -z-10 h-56 w-56 rounded-full bg-sky-200/30 dark:bg-sky-900/10 blur-3xl"></div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
           {/* Text Content Column */}
           <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-left space-y-6 animate-fade-in-up">
             {/* Pill Tag */}
-            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-indigo-50 border border-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:border-indigo-900/60 dark:text-indigo-400 shadow-sm uppercase tracking-wider">
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-slate-900/90 border border-slate-800 text-cyan-200 dark:bg-slate-950/70 dark:border-slate-800 shadow-sm uppercase tracking-wider">
               <Shield className="h-3.5 w-3.5" />
-              Privacy-First Hostel Access System
+              Student Safety & Privacy Portal
             </div>
 
             {/* Title */}
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 dark:text-white tracking-tight leading-tight max-w-2xl transition-colors">
-              Smart Access. <br />
-              <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-                Safer Tomorrow.
+            <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 dark:text-white dark:drop-shadow-[0_2px_18px_rgba(56,189,248,0.22)] tracking-tight leading-tight max-w-2xl transition-colors">
+              Protect Students.
+              <br />
+              <span className="bg-gradient-to-r from-cyan-500 to-indigo-600 bg-clip-text text-transparent">
+                Verify Every Exit.
               </span>
             </h1>
 
             {/* Description */}
             <p className="text-lg text-slate-600 dark:text-slate-300 max-w-xl font-medium leading-relaxed transition-colors">
-              SafeExit replaces unsafe physical registers with a secure digital system. Protect students' contact details from guard exploitation, streamline travel approval timelines, and establish a clear audit log of who accesses data.
+              SafeExit replaces unsafe paper registers with a secure, student-first system. Contact details stay masked, exit passes are verified in seconds, and every access is logged for accountability.
             </p>
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
               <a
-                href="#simulator"
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl text-base font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/30 active:scale-98 transition-all duration-200"
+                href="/login"
+                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl text-base font-bold bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow-xl shadow-indigo-600/40 ring-1 ring-indigo-400/30 hover:brightness-110 hover:shadow-indigo-500/60 hover:scale-[1.02] active:scale-98 transition-all duration-200"
               >
-                Try System Demo
+                Login to Portal
                 <ArrowRight className="h-5 w-5" />
               </a>
               <a
-                href="#features"
-                className="inline-flex items-center justify-center px-8 py-4 rounded-xl text-base font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-750 dark:hover:bg-slate-750 shadow-sm active:scale-98 transition-all duration-200"
+                href="#how-it-works"
+                className="inline-flex items-center justify-center px-8 py-4 rounded-xl text-base font-bold bg-white/90 text-slate-800 border border-slate-300/70 hover:bg-white dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-750 shadow-sm active:scale-98 transition-all duration-200"
               >
-                Explore Features
+                See Safety Flow
               </a>
             </div>
 
             {/* Core Badges Row */}
             <div className="grid grid-cols-3 gap-6 pt-6 border-t border-slate-100 dark:border-slate-800 w-full max-w-md text-left transition-colors">
               <div>
-                <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">100%</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Data Encrypted</p>
+                <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">Masked</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Contact Details</p>
               </div>
               <div>
-                <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">Zero</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Exposed Numbers</p>
+                <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">Instant</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Guard Validation</p>
               </div>
               <div>
-                <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">Real-Time</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Audit Tracking</p>
+                <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">24/7</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Safety Alerts</p>
               </div>
             </div>
           </div>
@@ -69,7 +72,7 @@ export default function Hero() {
           {/* Graphics Mockup Column */}
           <div className="lg:col-span-5 flex justify-center relative mt-6 lg:mt-0 animate-fade-in-up animation-delay-200">
             {/* Main Mockup Box */}
-            <div className="relative w-full max-w-[480px] aspect-[4/3] rounded-3xl overflow-hidden bg-gradient-to-tr from-indigo-50 to-indigo-100/40 dark:from-indigo-950/20 dark:to-indigo-900/10 p-6 border border-indigo-150/40 dark:border-indigo-900/40 shadow-xl flex items-center justify-center transition-colors">
+            <div className="relative w-full max-w-[480px] aspect-[4/3] rounded-3xl overflow-hidden bg-gradient-to-tr from-slate-50 to-cyan-100/40 dark:from-slate-950/20 dark:to-indigo-900/10 p-6 border border-indigo-150/40 dark:border-indigo-900/40 shadow-xl flex items-center justify-center transition-colors">
               {/* Grid backdrop */}
               <div className="absolute inset-0 bg-grid-pattern opacity-30"></div>
               
@@ -88,8 +91,8 @@ export default function Hero() {
                     <div>
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">Ananya Verma</h4>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">B.Tech - CS | Room 304</p>
-                      <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40 inline-block px-1.5 py-0.5 rounded mt-0.5 border border-emerald-100 dark:border-emerald-900/40 transition-colors">
-                        Outing Approved
+                      <p className="text-[10px] font-bold text-cyan-600 bg-cyan-50 dark:text-cyan-400 dark:bg-cyan-950/40 inline-block px-1.5 py-0.5 rounded mt-0.5 border border-cyan-100 dark:border-cyan-900/40 transition-colors">
+                        Safe Exit Approved
                       </p>
                     </div>
                   </div>
@@ -144,8 +147,8 @@ export default function Hero() {
                       <Bell className="h-4 w-4" />
                     </div>
                     <div>
-                      <h5 className="text-[10px] font-bold text-slate-950 dark:text-white">Instant Report</h5>
-                      <p className="text-[8px] text-slate-400 dark:text-slate-500 font-medium">Warden Alerts</p>
+                      <h5 className="text-[10px] font-bold text-slate-950 dark:text-white">SOS Ready</h5>
+                      <p className="text-[8px] text-slate-400 dark:text-slate-500 font-medium">Safety Escalation</p>
                     </div>
                   </div>
                 </div>

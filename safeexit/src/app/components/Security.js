@@ -5,7 +5,7 @@ import { ShieldCheck, EyeOff, Radio, Lock } from "lucide-react";
 export default function Security() {
   const securityPillars = [
     {
-      title: "AES-256 Contact Encrypting",
+      title: "AES-256 Contact Encryption",
       desc: "All phone numbers and room details are encrypted at rest. Guards see only a hashed validation token, preventing direct access and misuse.",
       icon: <Lock className="h-5 w-5 text-indigo-600" />
     },
@@ -15,7 +15,7 @@ export default function Security() {
       icon: <EyeOff className="h-5 w-5 text-violet-600" />
     },
     {
-      title: "AI Access Abuse Alerting",
+      title: "AI Misuse Alerts",
       desc: "The system logs every lookup. An AI monitor alerts administrators if security staff lookup a student's profile repeatedly or off-duty.",
       icon: <Radio className="h-5 w-5 text-rose-600" />
     },
@@ -31,29 +31,30 @@ export default function Security() {
       {/* Background circles */}
       <div className="absolute top-0 right-0 -z-10 w-96 h-96 rounded-full bg-indigo-500/10 blur-3xl"></div>
       <div className="absolute bottom-0 left-0 -z-10 w-96 h-96 rounded-full bg-violet-500/10 blur-3xl"></div>
+      <div className="absolute inset-0 -z-10 bg-grid-pattern opacity-10"></div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
           
           {/* Text Info */}
           <div className="lg:col-span-6 space-y-6">
-            <span className="text-xs font-extrabold text-indigo-400 uppercase tracking-widest bg-indigo-950/80 px-3 py-1.5 rounded-full border border-indigo-900/50">
-              Military-Grade Auditing
+            <span className="text-xs font-extrabold text-cyan-200 uppercase tracking-widest bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-800">
+              Safety-Grade Privacy
             </span>
-            <h3 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Safety Built on Strict Privacy Principles
+            <h3 className="font-display text-3xl sm:text-4xl font-extrabold tracking-tight">
+              Safety That Never Trades Away Privacy
             </h3>
             <p className="text-slate-400 text-base leading-relaxed font-medium">
-              We believe a student's safety shouldn't compromise their privacy. SafeExit enforces cryptographically secure logs and anonymous access filters to ensure that campus authorities maintain supervision without creating room for personal boundaries to be violated.
+              We believe student safety cannot come at the cost of privacy. SafeExit enforces encrypted logs and anonymous access filters so campus authorities can protect students without exposing personal data.
             </p>
 
             {/* Core Shield badge */}
             <div className="flex items-center gap-4 p-4 bg-slate-800/50 border border-slate-700/60 rounded-2xl max-w-md">
-              <div className="h-12 w-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0">
+              <div className="h-12 w-12 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-300 shrink-0">
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div>
-                <h5 className="font-extrabold text-sm text-slate-100">Zero-Trust Architecture</h5>
+                <h5 className="font-extrabold text-sm text-slate-100">Zero-Trust Safety Layer</h5>
                 <p className="text-xs text-slate-400 font-medium mt-0.5">
                   Even during network offline periods, local QR validations remain tamper-proof and encrypted.
                 </p>

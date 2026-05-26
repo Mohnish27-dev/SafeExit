@@ -7,54 +7,60 @@ export default function Features() {
     {
       icon: <EyeOff className="h-6 w-6 text-indigo-600" />,
       title: "Contact & Room Masking",
-      description: "Guards never see personal numbers or room details. Calls are routed via anonymous numbers, and profiles show only necessary validation credentials.",
+      description: "Guards never see personal numbers or room details. Calls are routed via masked numbers, and profiles show only validation credentials.",
       color: "bg-indigo-50 border-indigo-100",
     },
     {
       icon: <QrCode className="h-6 w-6 text-violet-600" />,
-      title: "Secure QR Code Access",
-      description: "Replaces physical logbooks with instant digital checks. Outings are scanned and verified, leaving no handwritten records exposed on tables.",
+      title: "Secure QR Exit Pass",
+      description: "Replaces paper logbooks with instant digital checks. Each exit is scanned and verified with no handwritten records exposed.",
       color: "bg-violet-50 border-violet-100",
     },
     {
       icon: <FileCheck className="h-6 w-6 text-emerald-600" />,
       title: "Smart Outing Approvals",
-      description: "Eliminates the rigid 5:30 PM restriction. Students submit travel proof (tickets) directly in-app, triggering automatic or quick warden approvals for flights/trains.",
+      description: "Students submit travel proof in-app, triggering automatic or quick warden approvals for late arrivals and emergencies.",
       color: "bg-emerald-50 border-emerald-100",
     },
     {
       icon: <ShieldAlert className="h-6 w-6 text-rose-600" />,
-      title: "Direct Misconduct Reporting",
-      description: "One-tap anonymous report channel for security personnel misconduct. Submissions bypass hostel gatekeeper hierarchy and route straight to the ICC board.",
+      title: "Anonymous Misconduct Reports",
+      description: "One-tap reporting routes issues directly to ICC leadership, protecting students who raise concerns.",
       color: "bg-rose-50 border-rose-100",
     },
     {
       icon: <ClipboardList className="h-6 w-6 text-cyan-600" />,
-      title: "Immutable Access Audit logs",
-      description: "Tracks all guard lookups, QR scans, and data access. Admin and Wardens see who checked what record, leaving a clean accountability log.",
+      title: "Immutable Access Audit Logs",
+      description: "Tracks guard lookups, QR scans, and data access so wardens can see exactly who checked what.",
       color: "bg-cyan-50 border-cyan-100",
     },
     {
       icon: <Flame className="h-6 w-6 text-amber-600" />,
       title: "Live SOS Safety Shield",
-      description: "Enable active journey tracking when outside campus. Shares real-time locations with campus safety coordinators and trusted contacts if checked out after hours.",
+      description: "Enable active journey tracking outside campus and alert safety coordinators if a student is late or in distress.",
       color: "bg-amber-50 border-amber-100",
     },
   ];
 
   return (
-    <section id="features" className="py-20 bg-slate-50 dark:bg-slate-900 relative">
+    <section
+      id="features"
+      className="py-20 bg-gradient-to-b from-[#f1f4ff] via-[#eef3ff] to-[#e8f0ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 relative overflow-hidden"
+    >
+      <div className="absolute -top-24 right-10 h-64 w-64 rounded-full bg-cyan-200/30 blur-3xl -z-10"></div>
+      <div className="absolute bottom-0 left-0 h-72 w-72 rounded-full bg-indigo-200/25 blur-3xl -z-10"></div>
+      <div className="absolute inset-0 bg-dot-pattern opacity-40 -z-10"></div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-          <h2 className="text-xs font-bold text-indigo-600 uppercase tracking-widest">
-            Privacy First, Safety Always
+          <h2 className="text-xs font-bold text-cyan-600 uppercase tracking-widest">
+            Safety That Students Can Trust
           </h2>
-          <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Designed to Solve Actual Hostel Vulnerabilities
+          <h3 className="font-display text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white dark:drop-shadow-[0_2px_16px_rgba(56,189,248,0.2)] tracking-tight">
+            Built Around Student Safety, Not Just Access
           </h3>
           <p className="text-lg text-slate-600 dark:text-slate-400 font-medium">
-            SafeExit addresses the systemic design failures of physical campus logging systems, replacing them with modern, role-restricted, and accountable workflows.
+            SafeExit replaces exposed registers with a privacy-first system that verifies exits, alerts wardens, and protects student data at every step.
           </p>
         </div>
 
@@ -63,7 +69,7 @@ export default function Features() {
           {features.map((feature, idx) => (
             <div
               key={idx}
-              className={`p-8 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:border-indigo-200 dark:hover:border-indigo-800 group`}
+              className={`p-8 card-elevated rounded-2xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:border-cyan-200 dark:hover:border-cyan-800 group`}
             >
               <div className={`h-12 w-12 rounded-xl flex items-center justify-center mb-6 border ${feature.color} group-hover:scale-110 transition-transform duration-300`}>
                 {feature.icon}

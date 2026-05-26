@@ -35,23 +35,29 @@ export default function Stats() {
   ];
 
   return (
-    <section id="metrics" className="py-20 bg-white dark:bg-slate-900 border-t border-slate-200/55 dark:border-slate-800/55">
+    <section
+      id="metrics"
+      className="py-20 bg-gradient-to-b from-[#f4f7ff] via-white to-[#edf4ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 border-t border-slate-200/55 dark:border-slate-800/55 relative overflow-hidden"
+    >
+      <div className="absolute -top-24 right-8 h-64 w-64 rounded-full bg-cyan-200/20 blur-3xl -z-10"></div>
+      <div className="absolute bottom-0 left-0 h-72 w-72 rounded-full bg-indigo-200/20 blur-3xl -z-10"></div>
+      <div className="absolute inset-0 bg-dot-pattern opacity-20 -z-10"></div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Title */}
         <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-          <h2 className="text-xs font-bold text-indigo-600 uppercase tracking-widest">
-            Measurable Campus Safety
+          <h2 className="text-xs font-bold text-cyan-600 uppercase tracking-widest">
+            Safety You Can Measure
           </h2>
-          <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Our Growing Safety Network
+          <h3 className="font-display text-3xl font-extrabold text-slate-900 dark:text-white dark:drop-shadow-[0_2px_16px_rgba(56,189,248,0.2)] tracking-tight">
+            Student Safety, Verified Daily
           </h3>
         </div>
 
         {/* Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {statsList.map((stat, idx) => (
-            <div key={idx} className="p-6 rounded-2xl border border-slate-200/70 dark:border-slate-800/70 hover:shadow-md transition-shadow space-y-4">
+            <div key={idx} className="p-6 rounded-2xl card-elevated hover:shadow-lg transition-shadow space-y-4">
               <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${stat.bg}`}>
                 {stat.icon}
               </div>

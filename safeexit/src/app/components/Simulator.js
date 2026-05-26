@@ -218,19 +218,22 @@ export default function Simulator() {
   };
 
   return (
-    <section id="simulator" className="py-20 bg-slate-50 dark:bg-slate-900 border-t border-slate-200/60 dark:border-slate-800/60 transition-colors duration-300">
+    <section
+      id="simulator"
+      className="py-20 bg-gradient-to-b from-[#eef3ff] via-[#f6f9ff] to-[#e9f1ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 border-t border-slate-200/60 dark:border-slate-800/60 transition-colors duration-300"
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-          <span className="text-xs font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-3 py-1.5 rounded-full border border-indigo-150/40 dark:border-indigo-900/40">
-            Live Sandbox
+          <span className="text-xs font-extrabold text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 px-3 py-1.5 rounded-full border border-cyan-150/40 dark:border-cyan-900/40">
+            Safety Sandbox
           </span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Interactive System Simulator
+          <h2 className="font-display text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            See the Safety Flow in Action
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-400 font-medium">
-            Test the platform from different roles to see how SafeExit protects privacy and manages approvals in real-time.
+            Switch roles to see how SafeExit protects privacy, verifies exits, and logs every access in real time.
           </p>
         </div>
 
