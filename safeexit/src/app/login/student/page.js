@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Shield,
+  User,
   Mail,
   Lock,
   Eye,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { setStoredUser } from "@/app/lib/userProfile";
 
 export default function StudentLoginPage() {
   const router = useRouter();
@@ -24,6 +26,9 @@ export default function StudentLoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [countryCode, setCountryCode] = useState("+91");
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [yearLevel, setYearLevel] = useState("");
+  const [program, setProgram] = useState("");
   const [emailOrId, setEmailOrId] = useState("");
   const [password, setPassword] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
@@ -43,6 +48,23 @@ export default function StudentLoginPage() {
     setFormError("");
     setFormSuccess(false);
 
+    const normalizedName = fullName.trim();
+    if (!normalizedName) {
+      setFormError("Please enter your full name.");
+      return;
+    }
+
+    if (!yearLevel) {
+      setFormError("Please select your year of study.");
+      return;
+    }
+
+    const normalizedProgram = program.trim();
+    if (!normalizedProgram) {
+      setFormError("Please enter your program.");
+      return;
+    }
+
     if (activeTab === "email") {
       if (!emailOrId.trim() || !password.trim()) {
         setFormError("Please enter your email/enrollment ID and password.");
@@ -56,9 +78,22 @@ export default function StudentLoginPage() {
       }
     }
 
+    const identifier = activeTab === "email"
+      ? emailOrId.trim()
+      : mobileNumber.replace(/\D/g, "");
+
+    setStoredUser({
+      name: normalizedName,
+      role: "student",
+      roleLabel: "Student",
+      subtitle: `${yearLevel} Year, ${normalizedProgram}`,
+      id: identifier || "STU2024CSE102",
+      hostel: "Hostel Block A, Room 201",
+    });
+
     setFormSuccess(true);
     setTimeout(() => {
-      router.push("/");
+      router.push("/dashboard/student");
     }, 700);
   };
 
@@ -179,6 +214,73 @@ export default function StudentLoginPage() {
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                Full Name
+              </label>
+              <div className="relative">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <User className="h-[18px] w-[18px]" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50/60 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-[3px] focus:ring-indigo-500/15 focus:bg-white transition-all duration-200"
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5 ml-1">
+                This name will appear on your dashboard.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                Year of Study
+              </label>
+              <div className="relative">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <ChevronDown className="h-[18px] w-[18px]" />
+                </div>
+                <select
+                  value={yearLevel}
+                  onChange={(event) => setYearLevel(event.target.value)}
+                  className="w-full appearance-none pl-11 pr-10 py-3 rounded-xl border border-slate-200 bg-slate-50/60 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-[3px] focus:ring-indigo-500/15 focus:bg-white transition-all duration-200"
+                >
+                  <option value="">Select your year</option>
+                  <option value="1st">1st</option>
+                  <option value="2nd">2nd</option>
+                  <option value="3rd">3rd</option>
+                  <option value="4th">4th</option>
+                  <option value="PG">PG</option>
+                </select>
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5 ml-1">
+                Used to personalize your dashboard.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                Program
+              </label>
+              <div className="relative">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <ShieldCheck className="h-[18px] w-[18px]" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Ex: CSE, IT, ECE"
+                  value={program}
+                  onChange={(event) => setProgram(event.target.value)}
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50/60 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-[3px] focus:ring-indigo-500/15 focus:bg-white transition-all duration-200"
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5 ml-1">
+                Example: CSE, IT, ECE, ME.
+              </p>
+            </div>
             {/* Email / Enrollment Tab */}
             {activeTab === "email" && (
               <div className="space-y-5 animate-fade-in-up" style={{ animationDuration: "0.35s" }}>

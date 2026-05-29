@@ -1,14 +1,16 @@
-import { Space_Grotesk, Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
+import { Outfit, Manrope, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const displayFont = Space_Grotesk({
+const displayFont = Outfit({
   variable: "--font-space-grotesk",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
-const bodyFont = Plus_Jakarta_Sans({
+const bodyFont = Manrope({
   variable: "--font-plus-jakarta",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 const geistMono = Geist_Mono({

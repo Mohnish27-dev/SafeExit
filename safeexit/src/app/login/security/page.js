@@ -15,11 +15,13 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { setStoredUser } from "@/app/lib/userProfile";
 
 export default function SecurityLoginPage() {
   const router = useRouter();
   const [showPin, setShowPin] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [fullName, setFullName] = useState("");
   const [guardId, setGuardId] = useState("");
   const [pin, setPin] = useState("");
   const [formError, setFormError] = useState("");
@@ -29,6 +31,12 @@ export default function SecurityLoginPage() {
     event.preventDefault();
     setFormError("");
     setFormSuccess(false);
+
+    const normalizedName = fullName.trim();
+    if (!normalizedName) {
+      setFormError("Please enter your full name.");
+      return;
+    }
 
     if (!guardId.trim()) {
       setFormError("Please enter your Guard ID.");
@@ -40,9 +48,16 @@ export default function SecurityLoginPage() {
       return;
     }
 
+    setStoredUser({
+      name: normalizedName,
+      role: "security",
+      roleLabel: "Security Guard",
+      id: guardId.trim(),
+    });
+
     setFormSuccess(true);
     setTimeout(() => {
-      router.push("/");
+      router.push("/dashboard/security");
     }, 700);
   };
 
@@ -138,6 +153,26 @@ export default function SecurityLoginPage() {
 
           {/* Form */}
           <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                Full Name
+              </label>
+              <div className="relative">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <User className="h-[18px] w-[18px]" />
+                </div>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Enter your full name"
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50/60 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 focus:border-indigo-500 focus:ring-[3px] focus:ring-indigo-500/15 focus:bg-white hover:border-slate-300"
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5 pl-0.5">
+                This name will appear on your dashboard.
+              </p>
+            </div>
             {/* Field 1 – Guard ID */}
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1.5">
