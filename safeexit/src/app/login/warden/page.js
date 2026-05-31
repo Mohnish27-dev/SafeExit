@@ -57,7 +57,7 @@ export default function WardenLoginPage() {
 
     setFormSuccess(true);
     setTimeout(() => {
-      router.push("/warden/dashboard");
+      router.push("/dashboard/warden");
     }, 700);
   };
 
