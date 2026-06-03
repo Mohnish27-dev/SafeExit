@@ -82,13 +82,25 @@ export default function StudentLoginPage() {
       ? emailOrId.trim()
       : mobileNumber.replace(/\D/g, "");
 
+    const mobileDigits = mobileNumber.replace(/\D/g, "");
+    const isEmailId = identifier && identifier.includes("@");
+    const rollNoVal = isEmailId ? "STU2024CSE102" : identifier || "STU2024CSE102";
+    const emailVal = isEmailId ? identifier : `${normalizedName.toLowerCase().replace(/\s+/g, ".")}@college.edu`;
+
     setStoredUser({
       name: normalizedName,
       role: "student",
       roleLabel: "Student",
       subtitle: `${yearLevel} Year, ${normalizedProgram}`,
       id: identifier || "STU2024CSE102",
+      rollNo: rollNoVal,
+      email: emailVal,
       hostel: "Hostel Block A, Room 201",
+      room: "201",
+      mobile:
+        activeTab === "mobile" && mobileDigits.length >= 8
+          ? mobileDigits.slice(-10)
+          : (mobileNumber ? mobileNumber.replace(/\D/g, "").slice(-10) : "9876543210"),
     });
 
     setFormSuccess(true);

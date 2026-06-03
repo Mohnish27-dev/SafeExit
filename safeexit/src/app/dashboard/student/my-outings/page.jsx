@@ -1,0 +1,310 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ClipboardList,
+  MapPin,
+  Clock,
+  Calendar,
+  Search,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  RotateCcw,
+  Eye,
+  AlertCircle,
+  Ticket,
+} from "lucide-react";
+import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
+import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
+import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
+import { useStudentProfile } from "@/app/hooks/useStudentProfile";
+import { getFirstName } from "@/app/lib/userProfile";
+
+const outings = [
+  {
+    id: "SE-A4F8C2",
+    destination: "City Library",
+    purpose: "Study & Research",
+    dateOut: "Jun 01, 2026",
+    timeOut: "5:30 PM",
+    dateReturn: "Jun 01, 2026",
+    timeReturn: "9:45 PM",
+    status: "approved",
+    transport: "Cab / Bus",
+  },
+  {
+    id: "SE-B7D3E1",
+    destination: "Home Town",
+    purpose: "Weekend Visit",
+    dateOut: "Jun 03, 2026",
+    timeOut: "4:00 PM",
+    dateReturn: "Jun 07, 2026",
+    timeReturn: "8:00 AM",
+    status: "pending",
+    transport: "Train",
+  },
+  {
+    id: "SE-C2A9F5",
+    destination: "Apollo Hospital",
+    purpose: "Medical Appointment",
+    dateOut: "May 29, 2026",
+    timeOut: "2:00 PM",
+    dateReturn: "May 29, 2026",
+    timeReturn: "6:30 PM",
+    status: "returned",
+    transport: "Cab / Bus",
+  },
+  {
+    id: "SE-D5E1B3",
+    destination: "Shopping Mall",
+    purpose: "Personal Work",
+    dateOut: "May 21, 2026",
+    timeOut: "3:00 PM",
+    dateReturn: "May 21, 2026",
+    timeReturn: "8:00 PM",
+    status: "returned",
+    transport: "Cab / Bus",
+  },
+  {
+    id: "SE-E8F2C7",
+    destination: "Home Town",
+    purpose: "Festival Holiday",
+    dateOut: "May 10, 2026",
+    timeOut: "2:00 PM",
+    dateReturn: "May 15, 2026",
+    timeReturn: "10:00 AM",
+    status: "returned",
+    transport: "Flight",
+  },
+  {
+    id: "SE-F1D4A9",
+    destination: "Bank / ATM",
+    purpose: "Banking Work",
+    dateOut: "May 08, 2026",
+    timeOut: "4:00 PM",
+    dateReturn: "May 08, 2026",
+    timeReturn: "6:00 PM",
+    status: "rejected",
+    transport: "Cab / Bus",
+  },
+];
+
+const statusConfig = {
+  approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
+  pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
+  returned: { label: "Returned", color: "text-slate-600", bg: "bg-slate-100", icon: RotateCcw },
+  rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
+};
+
+const filters = [
+  { key: "all", label: "All" },
+  { key: "approved", label: "Approved" },
+  { key: "pending", label: "Pending" },
+  { key: "returned", label: "Returned" },
+  { key: "rejected", label: "Rejected" },
+];
+
+const statAccents = {
+  Total: "linear-gradient(90deg, #0f172a, #4338ca)",
+  Approved: "linear-gradient(90deg, #059669, #34d399)",
+  Pending: "linear-gradient(90deg, #d97706, #fbbf24)",
+  Returned: "linear-gradient(90deg, #475569, #94a3b8)",
+};
+
+export default function MyOutings() {
+  const router = useRouter();
+  const { display, hydrated } = useStudentProfile();
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(null);
+
+  const filtered = outings.filter((outing) => {
+    const matchFilter = filter === "all" || outing.status === filter;
+    const matchSearch =
+      outing.destination.toLowerCase().includes(search.toLowerCase()) ||
+      outing.purpose.toLowerCase().includes(search.toLowerCase()) ||
+      outing.id.toLowerCase().includes(search.toLowerCase());
+    return matchFilter && matchSearch;
+  });
+
+  const stats = {
+    total: outings.length,
+    approved: outings.filter((outing) => outing.status === "approved").length,
+    pending: outings.filter((outing) => outing.status === "pending").length,
+    returned: outings.filter((outing) => outing.status === "returned").length,
+  };
+
+  return (
+    <StudentFeatureShell
+      eyebrow="Passport History"
+      title={hydrated ? `${getFirstName(display.name)}'s Outings` : "My Outings"}
+      icon={ClipboardList}
+      iconTone="outings"
+      onBack={() => router.push("/dashboard/student")}
+      contentClassName="space-y-5"
+    >
+      <FeatureHeroStrip
+        variant="outings"
+        icon={ClipboardList}
+        title={hydrated ? `${getFirstName(display.name)}'s outing history` : "Your outing history"}
+        description="Track approvals, returns, and ticket status in one place."
+      />
+
+      {hydrated && <StudentProfileBanner display={display} />}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sf-rise sf-stagger-1">
+        {[
+          { label: "Total", value: stats.total, color: "text-slate-800" },
+          { label: "Approved", value: stats.approved, color: "text-emerald-600" },
+          { label: "Pending", value: stats.pending, color: "text-amber-600" },
+          { label: "Returned", value: stats.returned, color: "text-slate-600" },
+        ].map(({ label, value, color }) => (
+          <div
+            key={label}
+            className="sf-stat-card"
+            style={{ "--sf-stat-accent": statAccents[label] }}
+          >
+            <p className={`sf-stat-value ${color}`}>{value}</p>
+            <p className="text-xs font-semibold text-slate-500 mt-0.5">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <StudentFeaturePanel className="px-4 py-2.5 flex items-center gap-3" delay={80}>
+        <Search size={15} className="text-slate-400 shrink-0" />
+        <input
+          type="text"
+          placeholder="Search destination, purpose, or ticket ID..."
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="flex-1 bg-transparent text-base text-slate-700 placeholder-slate-400 outline-none"
+        />
+        {search && (
+          <button type="button" onClick={() => setSearch("")} className="text-slate-400 hover:text-slate-600">
+            <XCircle size={14} />
+          </button>
+        )}
+      </StudentFeaturePanel>
+
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide sf-rise sf-stagger-2">
+        {filters.map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setFilter(key)}
+            className={`sf-filter-pill ${filter === key ? "sf-filter-pill--active" : "sf-filter-pill--idle"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <StudentFeaturePanel className="p-10 text-center" delay={120}>
+          <div className="w-14 h-14 rounded-2xl bg-linear-to-br from-slate-100 to-slate-200 flex items-center justify-center mx-auto mb-3">
+            <ClipboardList size={24} className="text-slate-400" />
+          </div>
+          <p className="font-sora font-semibold text-slate-700">No outings found</p>
+          <p className="text-sm text-slate-500 mt-1">Try adjusting your search or filter.</p>
+        </StudentFeaturePanel>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((outing, index) => {
+            const sc = statusConfig[outing.status];
+            const StatusIcon = sc.icon;
+            const isExpanded = expanded === outing.id;
+
+            return (
+              <div
+                key={outing.id}
+                className={`sf-outing-card sf-outing-card--${outing.status} sf-rise sf-panel-lift`}
+                style={{ animationDelay: `${140 + index * 50}ms` }}
+              >
+                <button
+                  type="button"
+                  className="w-full text-left p-5 sm:p-6"
+                  onClick={() => setExpanded(isExpanded ? null : outing.id)}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-sky-100 to-indigo-100 flex items-center justify-center shrink-0 shadow-xs">
+                        <MapPin size={20} className="text-sky-600" />
+                      </div>
+                      <div>
+                        <p className="font-sora font-extrabold text-slate-800 text-lg sm:text-xl leading-snug">{outing.destination}</p>
+                        <p className="text-sm sm:text-base text-slate-500 mt-1 font-medium">{outing.purpose}</p>
+                        <p className="text-xs text-indigo-500 mt-2 font-mono tracking-wider bg-indigo-50/50 w-fit px-2 py-0.5 rounded border border-indigo-100/50 font-semibold">{outing.id}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-3 shrink-0">
+                      <span className={`flex items-center gap-1.5 text-xs font-bold rounded-full px-3 py-1.5 shadow-xs border ${sc.bg.replace("bg-", "border-").replace("100", "200")} ${sc.bg} ${sc.color}`}>
+                        <StatusIcon size={12} className={outing.status === "pending" ? "animate-spin" : ""} />
+                        {sc.label}
+                      </span>
+                      <Eye
+                        size={16}
+                        className={`transition-all duration-300 ${isExpanded ? "text-sky-600 scale-110" : "text-slate-350"}`}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-5 mt-4.5 pt-4 border-t border-slate-100/90">
+                    <div className="flex items-center gap-2">
+                      <Calendar size={13} className="text-slate-400" />
+                      <span className="text-xs font-semibold text-slate-650">{outing.dateOut}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock size={13} className="text-slate-400" />
+                      <span className="text-xs font-semibold text-slate-650">
+                        {outing.timeOut} → {outing.timeReturn}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-0 animate-fade-in">
+                    <div className="rounded-2xl p-5 space-y-3.5 bg-linear-to-br from-slate-50 to-sky-50/40 border border-slate-100/80 shadow-inner">
+                      {[
+                        { label: "Departure Date & Time", value: `${outing.dateOut} at ${outing.timeOut}` },
+                        { label: "Expected Return Date & Time", value: `${outing.dateReturn} at ${outing.timeReturn}` },
+                        { label: "Mode of Transport", value: outing.transport },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex justify-between items-center py-0.5">
+                          <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">{label}</span>
+                          <span className="text-sm font-bold text-slate-700">{value}</span>
+                        </div>
+                      ))}
+                      {outing.status === "rejected" && (
+                        <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
+                          <AlertCircle size={15} className="text-rose-500 shrink-0 mt-0.5" />
+                          <p className="text-xs font-semibold text-rose-600">Request was rejected. Contact your warden for details.</p>
+                        </div>
+                      )}
+                      {outing.status === "pending" && (
+                        <div className="mt-3 pt-3 border-t border-amber-100 flex items-start gap-2.5">
+                          <Loader2 size={15} className="text-amber-500 shrink-0 mt-0.5 animate-spin" />
+                          <p className="text-xs font-semibold text-amber-705">Awaiting warden approval. You will be notified.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="sf-notice sf-rise sf-stagger-4">
+        <Ticket size={14} className="text-sky-600 shrink-0 mt-0.5" />
+        <p className="text-xs text-slate-600 leading-relaxed">
+          Digital outing tickets replace manual register entries. Your data is protected and only visible to authorized college staff.
+        </p>
+      </div>
+
+      <div className="h-4" />
+    </StudentFeatureShell>
+  );
+}
