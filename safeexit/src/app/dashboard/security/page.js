@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Scanner } from '@yudiel/react-qr-scanner';
 import {
   Bell,
   CalendarDays,
@@ -16,6 +17,7 @@ import {
   UserCheck,
   UserRound,
   UsersRound,
+  X,
 } from "lucide-react";
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 
@@ -55,9 +57,42 @@ const defaultProfile = {
   roleLabel: "Security Guard",
 };
 
+const checkIsOverdue = (returnTimeStr) => {
+  if (!returnTimeStr) return false;
+  try {
+    const [time, period] = returnTimeStr.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    
+    const nowTime = new Date();
+    const returnDate = new Date();
+    returnDate.setHours(hours, minutes, 0, 0);
+    
+    return nowTime > returnDate;
+  } catch(e) {
+    return false;
+  }
+};
+
 export default function SecurityDashboardPage() {
   const [profile, setProfile] = useState(defaultProfile);
   const [now, setNow] = useState(() => new Date());
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
+  const [scanMode, setScanMode] = useState(null);
+
+  const handleScan = (result) => {
+    if (result && result[0]) {
+      try {
+        const parsed = JSON.parse(result[0].rawValue);
+        setScanResult(parsed);
+        setIsScanning(false);
+      } catch (err) {
+        console.error("Invalid QR code:", err);
+      }
+    }
+  };
 
   useEffect(() => {
     const storedProfile = getStoredUser();
@@ -163,20 +198,6 @@ export default function SecurityDashboardPage() {
               </div>
               <div className="mt-6 grid gap-6 md:grid-cols-2">
                 <div className="dash-card-strong dash-animate-shimmer rounded-[2.25rem] p-6 text-center">
-                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                    <LogIn className="h-12 w-12" />
-                  </div>
-                  <h3 className="mt-5 text-2xl font-bold text-emerald-700">Scan Entry</h3>
-                  <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
-                    Validate every student check-in with a single QR scan.
-                  </p>
-                  <button className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5">
-                    <ScanLine className="h-6 w-6" />
-                    Start Entry
-                  </button>
-                </div>
-
-                <div className="dash-card-strong dash-animate-shimmer rounded-[2.25rem] p-6 text-center">
                   <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-sky-100 text-sky-700">
                     <LogOut className="h-12 w-12" />
                   </div>
@@ -184,9 +205,29 @@ export default function SecurityDashboardPage() {
                   <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
                     Approve exits instantly and sync safe return windows.
                   </p>
-                  <button className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5">
+                  <button 
+                    onClick={() => { setScanMode('exit'); setIsScanning(true); }}
+                    className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5 cursor-pointer"
+                  >
                     <ScanLine className="h-6 w-6" />
-                    Start Exit
+                    Scan Exit
+                  </button>
+                </div>
+
+                <div className="dash-card-strong dash-animate-shimmer rounded-[2.25rem] p-6 text-center">
+                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                    <LogIn className="h-12 w-12" />
+                  </div>
+                  <h3 className="mt-5 text-2xl font-bold text-emerald-700">Scan Entry</h3>
+                  <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
+                    Validate every student check-in with a single QR scan.
+                  </p>
+                  <button 
+                    onClick={() => { setScanMode('entry'); setIsScanning(true); }}
+                    className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5 cursor-pointer"
+                  >
+                    <ScanLine className="h-6 w-6" />
+                    Scan Entry
                   </button>
                 </div>
               </div>
@@ -308,6 +349,122 @@ export default function SecurityDashboardPage() {
           </nav>
         </div>
       </div>
+
+      {isScanning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+          <div className="relative w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <h3 className="font-display text-lg font-bold">Scan Student QR</h3>
+              <button onClick={() => setIsScanning(false)} className="p-2 rounded-full hover:bg-slate-100 transition cursor-pointer">
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="bg-black/5 relative w-full aspect-square">
+              <Scanner 
+                onScan={handleScan}
+                onError={(error) => console.error(error)}
+                components={{ audio: false, finder: true }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {scanResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in">
+          <div className="relative w-full max-w-sm bg-white rounded-[2rem] p-6 text-center shadow-2xl animate-scale-in">
+            <button 
+              onClick={() => setScanResult(null)} 
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 transition cursor-pointer text-slate-400"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            
+            <div className="mt-4 flex flex-col items-center">
+              <div className="relative h-24 w-24 rounded-full border-4 border-white shadow-xl overflow-hidden mb-4 bg-slate-100 flex items-center justify-center">
+                {scanResult.photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={scanResult.photo} alt={scanResult.name} className="h-full w-full object-cover" />
+                ) : (
+                  <UserRound className="h-12 w-12 text-slate-400" />
+                )}
+              </div>
+              
+              <h2 className="font-display text-2xl font-bold text-slate-900">{scanResult.name || "Unknown Student"}</h2>
+              <p className="text-sm font-semibold text-slate-500 uppercase tracking-widest mt-1 mb-6">
+                {scanResult.id}
+              </p>
+
+              <div className="w-full bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Status</span>
+                  {scanMode === 'exit' ? (
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      scanResult.recentTicket?.status === "Approved" 
+                        ? "bg-emerald-100 text-emerald-700" 
+                        : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {scanResult.recentTicket?.status || "N/A"}
+                    </span>
+                  ) : (
+                    (() => {
+                      const validWindow = scanResult.recentTicket?.validWindow || "";
+                      const returnTimeStr = validWindow.split(" to ")[1];
+                      const isOverdue = checkIsOverdue(returnTimeStr);
+                      return (
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          isOverdue ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
+                        }`}>
+                          {isOverdue ? "Overdue" : "On-Time IN"}
+                        </span>
+                      );
+                    })()
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    {scanMode === 'exit' ? "Valid Window" : "Logged Time"}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800">
+                    {scanMode === 'exit' 
+                      ? (scanResult.recentTicket?.validWindow || "N/A")
+                      : formattedTime
+                    }
+                  </span>
+                </div>
+                {scanMode === 'entry' && scanResult.recentTicket?.validWindow && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Allowed Return</span>
+                    <span className="text-sm font-semibold text-slate-800">
+                      {scanResult.recentTicket.validWindow.split(" to ")[1] || "N/A"}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 w-full">
+                <button 
+                  onClick={() => setScanResult(null)}
+                  className="flex-1 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => setScanResult(null)}
+                  className={`flex-1 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer ${
+                    scanMode === 'exit'
+                      ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"
+                      : "bg-emerald-500 shadow-emerald-500/30 hover:bg-emerald-600"
+                  }`}
+                >
+                  {scanMode === 'exit' ? "Log Exit" : "Log Entry"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
