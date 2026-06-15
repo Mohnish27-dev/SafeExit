@@ -105,9 +105,18 @@ export default function StudentDashboardPage() {
   const timeGreeting = useMemo(() => getTimeGreeting(now), [now]);
 
   const qrValue = useMemo(() => {
-    const slug = buildSlug(profile.name);
-    return `SAFEEXIT:${profile.id}:${slug}`;
-  }, [profile.id, profile.name]);
+    const latestOuting = outings[0];
+    const data = {
+      id: profile.rollNo || profile.id,
+      name: profile.name,
+      photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=random&size=200`,
+      recentTicket: {
+        status: latestOuting?.status || "None",
+        validWindow: latestOuting ? `${latestOuting.time} to 08:00 PM` : "N/A",
+      }
+    };
+    return JSON.stringify(data);
+  }, [profile]);
 
   const formattedDate = useMemo(
     () => now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),
