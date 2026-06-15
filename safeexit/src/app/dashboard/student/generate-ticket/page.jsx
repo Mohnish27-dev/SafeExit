@@ -30,25 +30,21 @@ import StudentFeatureShell, {
   StudentFeatureCentered,
 } from "@/app/components/student/StudentFeatureShell";
 
-const destinations = [
-  "City Library",
-  "Apollo Hospital",
-  "Railway Station",
-  "Bus Stand",
-  "Shopping Mall",
-  "Home Town",
-  "Bank / ATM",
-  "Medical Shop",
-  "Other",
-];
-
-const transportModes = [
-  { icon: Train, label: "Train", value: "train" },
-  { icon: Plane, label: "Flight", value: "flight" },
-  { icon: Car, label: "Cab / Bus", value: "cab" },
-];
-
 const STEPS = ["form", "review", "success"];
+
+const departureTimeOptions = [
+  "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
+  "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
+  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM", "04:00 PM", "04:30 PM",
+  "05:00 PM", "05:30 PM", "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM"
+];
+
+const returnTimeOptions = [
+  "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
+  "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
+  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM", "04:00 PM", "04:30 PM",
+  "05:00 PM", "05:30 PM", "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM", "08:00 PM"
+];
 
 function StepBar({ current }) {
   const idx = STEPS.indexOf(current);
@@ -73,13 +69,10 @@ export default function GenerateTicket() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     destination: "",
-    customDest: "",
-    purpose: "",
     dateOut: "",
     timeOut: "",
     dateReturn: "",
     timeReturn: "",
-    transport: "",
     contact: "",
     parentContact: "",
     note: "",
@@ -89,23 +82,58 @@ export default function GenerateTicket() {
   useEffect(() => {
     if (!hydrated) return;
     const digits = String(display.mobile || "").replace(/\D/g, "");
-    if (digits.length >= 10) {
-      setForm((prev) => ({ ...prev, contact: digits.slice(-10) }));
-    }
+    
+    const today = new Date();
+    const formattedDate = today.toLocaleDateString("en-US", {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+
+    setForm((prev) => ({ 
+      ...prev, 
+      contact: digits.length >= 10 ? digits.slice(-10) : prev.contact,
+      dateOut: prev.dateOut || formattedDate,
+      dateReturn: prev.dateReturn || formattedDate
+    }));
   }, [hydrated, display.mobile]);
 
   const set = (key) => (event) =>
     setForm((value) => ({ ...value, [key]: event.target.value }));
 
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const [time, period] = timeStr.split(" ");
+    let [hours, minutes] = time.split(":").map(Number);
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  };
+
   const validate = () => {
     const nextErrors = {};
-    if (!form.destination) nextErrors.destination = "Destination is required";
-    if (form.destination === "Other" && !form.customDest) nextErrors.customDest = "Please specify destination";
-    if (!form.purpose.trim()) nextErrors.purpose = "Purpose is required";
-    if (!form.dateOut) nextErrors.dateOut = "Departure date is required";
+    if (!form.destination.trim()) nextErrors.destination = "Destination is required";
     if (!form.timeOut) nextErrors.timeOut = "Departure time is required";
-    if (!form.dateReturn) nextErrors.dateReturn = "Return date is required";
     if (!form.timeReturn) nextErrors.timeReturn = "Return time is required";
+    
+    if (form.timeOut) {
+      const outMins = parseTimeToMinutes(form.timeOut);
+      const now = new Date();
+      const currentMins = now.getHours() * 60 + now.getMinutes();
+      
+      if (outMins < currentMins) {
+        nextErrors.timeOut = "Departure time cannot be in the past";
+      }
+      
+      if (form.timeReturn) {
+        const returnMins = parseTimeToMinutes(form.timeReturn);
+        if (outMins >= returnMins) {
+          nextErrors.timeReturn = "Return time must be after departure time";
+        }
+      }
+    }
+
     if (!form.contact || form.contact.length < 10) nextErrors.contact = "Valid contact number required";
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -122,7 +150,7 @@ export default function GenerateTicket() {
     setStep("success");
   };
 
-  const destLabel = form.destination === "Other" ? form.customDest : form.destination;
+  const destLabel = form.destination;
   const ticketId = "SE-" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
   const studentFields = [
@@ -165,6 +193,8 @@ export default function GenerateTicket() {
   ];
 
   if (step === "success") {
+    const isAutoApproved = parseTimeToMinutes(form.timeReturn) <= parseTimeToMinutes("05:30 PM");
+
     return (
       <StudentFeatureCentered>
         <StudentFeaturePanel className="sf-success-ticket p-8 text-center animate-scale-in">
@@ -179,7 +209,7 @@ export default function GenerateTicket() {
           <p className="sf-eyebrow mb-1">Pass Issued</p>
           <h2 className="font-sora text-2xl font-bold sf-gradient-text mb-1">Ticket Generated</h2>
           <p className="text-slate-500 text-sm mb-6">
-            {display.name}&rsquo;s outing request has been submitted for approval.
+            {display.name}&rsquo;s outing request has been submitted{isAutoApproved ? " and auto-approved" : " for approval"}.
           </p>
 
           <div className="rounded-2xl p-6 mb-6 text-left space-y-4 bg-linear-to-br from-slate-50 to-sky-50/60 border border-slate-100 shadow-sm">
@@ -196,15 +226,30 @@ export default function GenerateTicket() {
             ))}
             <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
-              <span className="text-xs font-bold text-amber-800 bg-linear-to-r from-amber-100 to-amber-50 rounded-full px-3.5 py-1.5 border border-amber-200 shadow-xs">
-                Pending Approval
-              </span>
+              {isAutoApproved ? (
+                <span className="text-xs font-bold text-emerald-800 bg-linear-to-r from-emerald-100 to-emerald-50 rounded-full px-3.5 py-1.5 border border-emerald-200 shadow-xs">
+                  Approved
+                </span>
+              ) : (
+                <span className="text-xs font-bold text-amber-800 bg-linear-to-r from-amber-100 to-amber-50 rounded-full px-3.5 py-1.5 border border-amber-200 shadow-xs">
+                  Pending Approval
+                </span>
+              )}
             </div>
           </div>
 
           <div className="sf-notice mb-6 text-left">
-            <AlertCircle size={14} className="text-sky-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-slate-600">Warden will review your ticket. You will be notified once approved.</p>
+            {isAutoApproved ? (
+              <>
+                <CheckCircle2 size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-600">Your ticket has been auto-approved as your return time is on or before 5:30 PM.</p>
+              </>
+            ) : (
+              <>
+                <AlertCircle size={14} className="text-sky-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-600">Warden will review your ticket. You will be notified once approved.</p>
+              </>
+            )}
           </div>
 
           <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full">
@@ -269,10 +314,8 @@ export default function GenerateTicket() {
                   { label: "Student Name", value: display.name },
                   { label: "Room / Hostel", value: `${display.room} · ${display.hostel}` },
                   { label: "Destination", value: destLabel, highlight: true },
-                  { label: "Purpose", value: form.purpose },
                   { label: "Departure Time", value: `${form.dateOut} at ${form.timeOut}` },
                   { label: "Return Time", value: `${form.dateReturn} at ${form.timeReturn}` },
-                  { label: "Transport Mode", value: form.transport || "Not specified" },
                   { label: "Primary Contact", value: form.contact },
                   { label: "Parent's Contact", value: form.parentContact || "Not provided" },
                 ].map(({ label, value, highlight }) => (
@@ -321,6 +364,36 @@ export default function GenerateTicket() {
             )}
           </button>
         </div>
+      </StudentFeatureShell>
+    );
+  }
+
+  const now = new Date();
+  const isPastCutoff = now.getHours() > 19 || (now.getHours() === 19 && now.getMinutes() > 30);
+
+  if (isPastCutoff && step === "form") {
+    return (
+      <StudentFeatureShell
+        eyebrow="New Request"
+        title="Generate Outing Ticket"
+        icon={Ticket}
+        iconTone="ticket"
+        onBack={() => router.push("/dashboard/student")}
+        contentClassName="space-y-5"
+      >
+        <StudentFeaturePanel className="p-8 text-center animate-scale-in">
+          <div className="w-20 h-20 mx-auto bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-6 shadow-lg">
+            <AlertCircle size={40} />
+          </div>
+          <h2 className="font-sora text-2xl font-bold text-slate-800 mb-2">Outing Generation Closed</h2>
+          <p className="text-slate-600 text-sm mb-8 leading-relaxed max-w-sm mx-auto">
+            Outing requests for today can only be generated before 7:30 PM. 
+            Please try again tomorrow.
+          </p>
+          <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full max-w-sm mx-auto">
+            Back to Dashboard
+          </button>
+        </StudentFeaturePanel>
       </StudentFeatureShell>
     );
   }
@@ -379,91 +452,60 @@ export default function GenerateTicket() {
             <MapPin size={11} className="inline mr-1 text-sky-500" />
             Destination *
           </label>
-          <select
+          <input
+            type="text"
+            placeholder="Enter destination name"
             value={form.destination}
             onChange={set("destination")}
             className={`sf-input ${errors.destination ? "sf-input--error" : ""}`}
-          >
-            <option value="">Select destination</option>
-            {destinations.map((d) => (
-              <option key={d}>{d}</option>
-            ))}
-          </select>
+          />
           {errors.destination && <p className="text-xs text-rose-500 mt-1">{errors.destination}</p>}
         </div>
 
-        {form.destination === "Other" && (
-          <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1.5">Specify Destination *</label>
-            <input
-              type="text"
-              placeholder="Enter destination name"
-              value={form.customDest}
-              onChange={set("customDest")}
-              className={`sf-input ${errors.customDest ? "sf-input--error" : ""}`}
-            />
-            {errors.customDest && <p className="text-xs text-rose-500 mt-1">{errors.customDest}</p>}
-          </div>
-        )}
-
-        <div>
-          <label className="text-xs font-semibold text-slate-600 block mb-1.5">
-            <FileText size={11} className="inline mr-1 text-sky-500" />
-            Purpose of Outing *
-          </label>
-          <input
-            type="text"
-            placeholder="e.g. Medical appointment, Travel home..."
-            value={form.purpose}
-            onChange={set("purpose")}
-            className={`sf-input ${errors.purpose ? "sf-input--error" : ""}`}
-          />
-          {errors.purpose && <p className="text-xs text-rose-500 mt-1">{errors.purpose}</p>}
-        </div>
       </StudentFeaturePanel>
 
       <StudentFeaturePanel className="p-5 space-y-4" delay={120}>
         <p className="sf-section-label">Schedule</p>
         <div className="grid grid-cols-2 gap-3">
-          {[
-            { key: "dateOut", label: "Departure Date", icon: Calendar, type: "date", err: errors.dateOut },
-            { key: "timeOut", label: "Departure Time", icon: Clock, type: "time", err: errors.timeOut },
-            { key: "dateReturn", label: "Return Date", icon: Calendar, type: "date", err: errors.dateReturn },
-            { key: "timeReturn", label: "Return Time", icon: Clock, type: "time", err: errors.timeReturn },
-          ].map(({ key, label, icon: Icon, type, err }) => (
-            <div key={key}>
-              <label className="text-xs font-semibold text-slate-600 block mb-1.5">
-                <Icon size={11} className="inline mr-1 text-sky-500" />
-                {label} *
-              </label>
-              <input
-                type={type}
-                value={form[key]}
-                onChange={set(key)}
-                className={`sf-input ${err ? "sf-input--error" : ""}`}
-              />
-              {err && <p className="text-xs text-rose-500 mt-1">{err}</p>}
-            </div>
-          ))}
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+              <Clock size={11} className="inline mr-1 text-sky-500" />
+              Departure Time *
+            </label>
+            <select
+              value={form.timeOut}
+              onChange={set("timeOut")}
+              className={`sf-input ${errors.timeOut ? "sf-input--error" : ""}`}
+            >
+              <option value="">Select time</option>
+              {departureTimeOptions.map((time) => (
+                <option key={time} value={time}>{time}</option>
+              ))}
+            </select>
+            {errors.timeOut && <p className="text-xs text-rose-500 mt-1">{errors.timeOut}</p>}
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+              <Clock size={11} className="inline mr-1 text-sky-500" />
+              Return Time *
+            </label>
+            <select
+              value={form.timeReturn}
+              onChange={set("timeReturn")}
+              className={`sf-input ${errors.timeReturn ? "sf-input--error" : ""}`}
+            >
+              <option value="">Select time</option>
+              {returnTimeOptions.map((time) => (
+                <option key={time} value={time}>{time}</option>
+              ))}
+            </select>
+            {errors.timeReturn && <p className="text-xs text-rose-500 mt-1">{errors.timeReturn}</p>}
+          </div>
         </div>
       </StudentFeaturePanel>
 
-      <StudentFeaturePanel className="p-5 space-y-3" delay={160}>
-        <p className="sf-section-label">Mode of Transport</p>
-        <div className="grid grid-cols-3 gap-2">
-          {transportModes.map(({ icon: Icon, label, value }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setForm((v) => ({ ...v, transport: value }))}
-              className={`sf-transport-btn ${form.transport === value ? "sf-transport-btn--selected" : ""}`}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
-      </StudentFeaturePanel>
+
 
       <StudentFeaturePanel className="p-5 space-y-4" delay={200}>
         <p className="sf-section-label">Contact Information</p>
