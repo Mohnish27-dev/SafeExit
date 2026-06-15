@@ -37,10 +37,10 @@ export default function WardenDashboardPage() {
     : "09:41:23 AM";
 
   const pendingRequests = [
-    { id: 1, name: "Ananya Verma", branch: "2nd Year, CSE", roll: "STU2024CSE102", out: "06:15 PM", return: "08:30 PM", purpose: "Birthday Party", initials: "AV" },
-    { id: 2, name: "Riya Patel", branch: "3rd Year, ECE", roll: "STU2023ECE089", out: "06:45 PM", return: "09:00 PM", purpose: "Family Function", initials: "RP" },
-    { id: 3, name: "Neha Joshi", branch: "2nd Year, IT", roll: "STU2024IT045", out: "07:00 PM", return: "09:30 PM", purpose: "Medical", initials: "NJ" },
-    { id: 4, name: "Kunal Verma", branch: "2nd Year, ME", roll: "STU2024ME011", out: "07:20 PM", return: "10:00 PM", purpose: "Seminar", initials: "KV" }
+    { id: 1, name: "Ananya Verma", branch: "2nd Year, CSE", roll: "STU2024CSE102", out: "06:15 PM", return: "08:30 PM", initials: "AV" },
+    { id: 2, name: "Riya Patel", branch: "3rd Year, ECE", roll: "STU2023ECE089", out: "06:45 PM", return: "09:00 PM", initials: "RP" },
+    { id: 3, name: "Neha Joshi", branch: "2nd Year, IT", roll: "STU2024IT045", out: "07:00 PM", return: "09:30 PM", initials: "NJ" },
+    { id: 4, name: "Kunal Verma", branch: "2nd Year, ME", roll: "STU2024ME011", out: "07:20 PM", return: "10:00 PM", initials: "KV" }
   ];
 
   const autoApproved = [
@@ -186,10 +186,7 @@ export default function WardenDashboardPage() {
                     <span className="text-slate-500">Return Time:</span>
                     <span className="font-semibold text-slate-800">{req.return}</span>
                   </div>
-                  <div className="flex items-center justify-between sm:justify-start sm:gap-2">
-                    <span className="text-slate-500">Purpose:</span>
-                    <span className="font-medium text-slate-700">{req.purpose}</span>
-                  </div>
+
                 </div>
 
                 <div className="flex sm:flex-col gap-2 w-full sm:w-auto shrink-0">

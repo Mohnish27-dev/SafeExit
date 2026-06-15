@@ -26,68 +26,56 @@ const outings = [
   {
     id: "SE-A4F8C2",
     destination: "City Library",
-    purpose: "Study & Research",
     dateOut: "Jun 01, 2026",
     timeOut: "5:30 PM",
     dateReturn: "Jun 01, 2026",
     timeReturn: "9:45 PM",
     status: "approved",
-    transport: "Cab / Bus",
   },
   {
     id: "SE-B7D3E1",
     destination: "Home Town",
-    purpose: "Weekend Visit",
     dateOut: "Jun 03, 2026",
     timeOut: "4:00 PM",
     dateReturn: "Jun 07, 2026",
     timeReturn: "8:00 AM",
     status: "pending",
-    transport: "Train",
   },
   {
     id: "SE-C2A9F5",
     destination: "Apollo Hospital",
-    purpose: "Medical Appointment",
     dateOut: "May 29, 2026",
     timeOut: "2:00 PM",
     dateReturn: "May 29, 2026",
     timeReturn: "6:30 PM",
     status: "returned",
-    transport: "Cab / Bus",
   },
   {
     id: "SE-D5E1B3",
     destination: "Shopping Mall",
-    purpose: "Personal Work",
     dateOut: "May 21, 2026",
     timeOut: "3:00 PM",
     dateReturn: "May 21, 2026",
     timeReturn: "8:00 PM",
     status: "returned",
-    transport: "Cab / Bus",
   },
   {
     id: "SE-E8F2C7",
     destination: "Home Town",
-    purpose: "Festival Holiday",
     dateOut: "May 10, 2026",
     timeOut: "2:00 PM",
     dateReturn: "May 15, 2026",
     timeReturn: "10:00 AM",
     status: "returned",
-    transport: "Flight",
   },
   {
     id: "SE-F1D4A9",
     destination: "Bank / ATM",
-    purpose: "Banking Work",
     dateOut: "May 08, 2026",
     timeOut: "4:00 PM",
     dateReturn: "May 08, 2026",
     timeReturn: "6:00 PM",
     status: "rejected",
-    transport: "Cab / Bus",
   },
 ];
 
@@ -124,7 +112,6 @@ export default function MyOutings() {
     const matchFilter = filter === "all" || outing.status === filter;
     const matchSearch =
       outing.destination.toLowerCase().includes(search.toLowerCase()) ||
-      outing.purpose.toLowerCase().includes(search.toLowerCase()) ||
       outing.id.toLowerCase().includes(search.toLowerCase());
     return matchFilter && matchSearch;
   });
@@ -176,7 +163,7 @@ export default function MyOutings() {
         <Search size={15} className="text-slate-400 shrink-0" />
         <input
           type="text"
-          placeholder="Search destination, purpose, or ticket ID..."
+          placeholder="Search destination or ticket ID..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className="flex-1 bg-transparent text-base text-slate-700 placeholder-slate-400 outline-none"
@@ -234,7 +221,6 @@ export default function MyOutings() {
                       </div>
                       <div>
                         <p className="font-sora font-extrabold text-slate-800 text-lg sm:text-xl leading-snug">{outing.destination}</p>
-                        <p className="text-sm sm:text-base text-slate-500 mt-1 font-medium">{outing.purpose}</p>
                         <p className="text-xs text-indigo-500 mt-2 font-mono tracking-wider bg-indigo-50/50 w-fit px-2 py-0.5 rounded border border-indigo-100/50 font-semibold">{outing.id}</p>
                       </div>
                     </div>
@@ -269,7 +255,6 @@ export default function MyOutings() {
                       {[
                         { label: "Departure Date & Time", value: `${outing.dateOut} at ${outing.timeOut}` },
                         { label: "Expected Return Date & Time", value: `${outing.dateReturn} at ${outing.timeReturn}` },
-                        { label: "Mode of Transport", value: outing.transport },
                       ].map(({ label, value }) => (
                         <div key={label} className="flex justify-between items-center py-0.5">
                           <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">{label}</span>
