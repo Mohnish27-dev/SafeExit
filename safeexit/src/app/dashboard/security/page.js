@@ -329,7 +329,7 @@ export default function SecurityDashboardPage() {
             </button>
           </section>
 
-          <nav className="dash-card mt-6 grid grid-cols-4 rounded-[2rem] p-3 shadow-xl backdrop-blur">
+          <nav className="dash-card mt-6 hidden md:grid grid-cols-4 rounded-[2rem] p-3 shadow-xl backdrop-blur">
             {[
               { label: "Home", icon: Home, active: true },
               { label: "Students", icon: UsersRound },

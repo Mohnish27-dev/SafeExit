@@ -141,7 +141,7 @@ export default function StudentDashboardPage() {
   ];
 
   return (
-    <main className="min-h-screen student-dashboard-luxe text-slate-900">
+    <main className="min-h-screen student-dashboard-luxe text-slate-900 pb-28">
       <div className="relative overflow-hidden">
         <div className="sd-luxe-orb sd-luxe-orb-one" />
         <div className="sd-luxe-orb sd-luxe-orb-two" />
@@ -196,11 +196,11 @@ export default function StudentDashboardPage() {
                 </div>
               </div>
               <div className="grid gap-3 text-sm font-semibold text-slate-600 sm:grid-cols-2 lg:grid-cols-1">
-                <span className="sd-luxe-pill inline-flex items-center gap-3 rounded-full px-4 py-2.5">
+                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-3 rounded-full px-4 py-2.5">
                   <CalendarDays className="h-5 w-5 text-indigo-500" />
                   {mounted ? formattedDate : "Loading..."}
                 </span>
-                <span className="sd-luxe-pill sd-live-pulse inline-flex items-center gap-3 rounded-full px-4 py-2.5">
+                <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex items-center gap-3 rounded-full px-4 py-2.5">
                   <Clock3 className="h-5 w-5 text-sky-500" />
                   {mounted ? formattedTime : "Loading..."}
                   <span className="sd-luxe-chip ml-auto rounded-full px-3 py-1 text-xs font-bold">Live</span>
@@ -377,7 +377,7 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 grid grid-cols-4 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
             {navItems.map((item) => (
               <Link
                 key={item.label}
