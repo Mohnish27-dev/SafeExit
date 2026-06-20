@@ -371,32 +371,32 @@ export default function GenerateTicket() {
   const now = new Date();
   const isPastCutoff = now.getHours() > 19 || (now.getHours() === 19 && now.getMinutes() > 30);
 
-  // if (isPastCutoff && step === "form") {
-  //   return (
-  //     <StudentFeatureShell
-  //       eyebrow="New Request"
-  //       title="Generate Outing Ticket"
-  //       icon={Ticket}
-  //       iconTone="ticket"
-  //       onBack={() => router.push("/dashboard/student")}
-  //       contentClassName="space-y-5"
-  //     >
-  //       <StudentFeaturePanel className="p-8 text-center animate-scale-in">
-  //         <div className="w-20 h-20 mx-auto bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-6 shadow-lg">
-  //           <AlertCircle size={40} />
-  //         </div>
-  //         <h2 className="font-sora text-2xl font-bold text-slate-800 mb-2">Outing Generation Closed</h2>
-  //         <p className="text-slate-600 text-sm mb-8 leading-relaxed max-w-sm mx-auto">
-  //           Outing requests for today can only be generated before 7:30 PM. 
-  //           Please try again tomorrow.
-  //         </p>
-  //         <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full max-w-sm mx-auto">
-  //           Back to Dashboard
-  //         </button>
-  //       </StudentFeaturePanel>
-  //     </StudentFeatureShell>
-  //   );
-  // }
+  if (isPastCutoff && step === "form") {
+    return (
+      <StudentFeatureShell
+        eyebrow="New Request"
+        title="Generate Outing Ticket"
+        icon={Ticket}
+        iconTone="ticket"
+        onBack={() => router.push("/dashboard/student")}
+        contentClassName="space-y-5"
+      >
+        <StudentFeaturePanel className="p-8 text-center animate-scale-in">
+          <div className="w-20 h-20 mx-auto bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-6 shadow-lg">
+            <AlertCircle size={40} />
+          </div>
+          <h2 className="font-sora text-2xl font-bold text-slate-800 mb-2">Outing Generation Closed</h2>
+          <p className="text-slate-600 text-sm mb-8 leading-relaxed max-w-sm mx-auto">
+            Outing requests for today can only be generated before 7:30 PM. 
+            Please try again tomorrow.
+          </p>
+          <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full max-w-sm mx-auto">
+            Back to Dashboard
+          </button>
+        </StudentFeaturePanel>
+      </StudentFeatureShell>
+    );
+  }
 
   return (
     <StudentFeatureShell

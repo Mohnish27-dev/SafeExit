@@ -125,14 +125,15 @@ export default function StudentLoginPage() {
               challenge: new Uint8Array(32),
               rp: { name: "SafeExit Demo", id: window.location.hostname },
               user: {
-                id: new Uint8Array(16),
+                id: crypto.getRandomValues(new Uint8Array(16)),
                 name: formData.rollNumber,
                 displayName: formData.fullName
               },
               pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
               authenticatorSelection: {
                 authenticatorAttachment: "platform",
-                userVerification: "required"
+                userVerification: "required",
+                residentKey: "required"
               },
               timeout: 60000
             }
@@ -145,18 +146,46 @@ export default function StudentLoginPage() {
       // Artificial delay after the native prompt for realism
       await new Promise(resolve => setTimeout(resolve, 800));
 
+      const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
+      
+      // Real Backend API Call - Register User
+      const registerRes = await fetch('/api/backend/auth/register', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: profile.fullName,
+          email: `${profile.rollNumber.toLowerCase()}@college.edu`,
+          password: profile.rollNumber, // Default password for simplicity
+          role: 'Student',
+          studentId: profile.rollNumber,
+          department: profile.branch,
+          year: profile.yearLevel,
+          roomNumber: profile.roomNumber,
+          hostelName: profile.hostelBlock,
+          phoneNumber: profile.phoneNumber
+        })
+      });
+
+      if (!registerRes.ok) {
+         throw new Error("Registration failed");
+      }
+      
+      const registerData = await registerRes.json();
+      const token = registerData.token;
+      localStorage.setItem('safeexit_token', token);
+
+      // Real Backend API Call - Register WebAuthn
+      await fetch('/api/backend/auth/webauthn/register', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
       // Mark as registered
       localStorage.setItem("safeexit_webauthn_registered", "true");
-      
-      // Save to mock API for cross-device demo
-      const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
-      try {
-        await fetch('/api/profile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rollNo: profile.rollNumber, photo: profile.photo })
-        });
-      } catch(e) {}
 
       // Update our global state
       setStoredUser({
@@ -201,6 +230,19 @@ export default function StudentLoginPage() {
       
       // Simulate small delay after prompt
       await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Real Backend API Call - Verify WebAuthn Login
+      const verifyRes = await fetch('/api/backend/auth/webauthn/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: `${storedProfile.rollNumber.toLowerCase()}@college.edu` })
+      });
+
+      if (!verifyRes.ok) {
+        throw new Error("Biometric login failed on server.");
+      }
+      const data = await verifyRes.json();
+      localStorage.setItem('safeexit_token', data.token);
 
       // Login success
       setStoredUser({
@@ -508,30 +550,49 @@ export default function StudentLoginPage() {
                    </button>
                    
                    <button 
-                     onClick={() => {
+                     onClick={async () => {
                        // Skip webauthn, just save and go
                        const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
-                       setStoredUser({
-                         name: profile.fullName,
-                         role: "student",
-                         roleLabel: "Student",
-                         subtitle: `${profile.yearLevel} Year, ${profile.branch}`,
-                         id: profile.rollNumber,
-                         rollNo: profile.rollNumber,
-                         email: `${profile.rollNumber.toLowerCase()}@college.edu`,
-                         hostel: `Block ${profile.hostelBlock}, Room ${profile.roomNumber}`,
-                         room: profile.roomNumber,
-                         mobile: profile.phoneNumber,
-                         photo: profile.photo
-                       });
-                       // Save to mock API
-                       fetch('/api/profile', {
-                         method: 'POST',
-                         headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({ rollNo: profile.rollNumber, photo: profile.photo })
-                       }).catch(() => {});
-
-                       router.push("/dashboard/student");
+                       
+                       try {
+                         // Real Backend API Call - Register User without WebAuthn
+                         const registerRes = await fetch('/api/backend/auth/register', {
+                           method: 'POST',
+                           headers: { 'Content-Type': 'application/json' },
+                           body: JSON.stringify({
+                             name: profile.fullName,
+                             email: `${profile.rollNumber.toLowerCase()}@college.edu`,
+                             password: profile.rollNumber, // Default password
+                             role: 'Student',
+                             studentId: profile.rollNumber,
+                             department: profile.branch,
+                             year: profile.yearLevel,
+                             roomNumber: profile.roomNumber,
+                             hostelName: profile.hostelBlock,
+                             phoneNumber: profile.phoneNumber
+                           })
+                         });
+                         if (registerRes.ok) {
+                           const registerData = await registerRes.json();
+                           localStorage.setItem('safeexit_token', registerData.token);
+                           setStoredUser({
+                             name: profile.fullName,
+                             role: "student",
+                             roleLabel: "Student",
+                             subtitle: `${profile.yearLevel} Year, ${profile.branch}`,
+                             id: profile.rollNumber,
+                             rollNo: profile.rollNumber,
+                             email: `${profile.rollNumber.toLowerCase()}@college.edu`,
+                             hostel: `Block ${profile.hostelBlock}, Room ${profile.roomNumber}`,
+                             room: profile.roomNumber,
+                             mobile: profile.phoneNumber,
+                             photo: profile.photo
+                           });
+                           router.push("/dashboard/student");
+                         }
+                       } catch (e) {
+                         console.error(e);
+                       }
                      }} 
                      className="text-sm font-semibold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                    >
