@@ -109,7 +109,6 @@ export default function StudentDashboardPage() {
     const data = {
       id: profile.rollNo || profile.id,
       name: profile.name,
-      photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=random&size=200`,
       recentTicket: {
         status: latestOuting?.status || "None",
         validWindow: latestOuting ? `${latestOuting.time} to 08:00 PM` : "N/A",

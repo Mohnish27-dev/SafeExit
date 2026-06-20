@@ -82,10 +82,24 @@ export default function SecurityDashboardPage() {
   const [scanResult, setScanResult] = useState(null);
   const [scanMode, setScanMode] = useState(null);
 
-  const handleScan = (result) => {
+  const handleScan = async (result) => {
     if (result && result[0]) {
       try {
         const parsed = JSON.parse(result[0].rawValue);
+        
+        // Fetch full profile from API if available
+        try {
+          const res = await fetch(`/api/profile?rollNo=${parsed.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.profile && data.profile.photo) {
+              parsed.photo = data.profile.photo;
+            }
+          }
+        } catch(e) {
+          console.error("Failed to fetch photo from API");
+        }
+
         setScanResult(parsed);
         setIsScanning(false);
       } catch (err) {
