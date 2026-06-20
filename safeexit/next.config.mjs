@@ -10,6 +10,14 @@ const nextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/api/backend/:path*',
+        destination: 'http://127.0.0.1:5000/api/:path*', // Use 127.0.0.1 instead of localhost for better Node.js compatibility
+      },
+    ];
+  },
 };
 
 export default nextConfig;
