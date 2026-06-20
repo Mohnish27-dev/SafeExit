@@ -82,10 +82,24 @@ export default function SecurityDashboardPage() {
   const [scanResult, setScanResult] = useState(null);
   const [scanMode, setScanMode] = useState(null);
 
-  const handleScan = (result) => {
+  const handleScan = async (result) => {
     if (result && result[0]) {
       try {
         const parsed = JSON.parse(result[0].rawValue);
+        
+        // Fetch full profile from API if available
+        try {
+          const res = await fetch(`/api/profile?rollNo=${parsed.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.profile && data.profile.photo) {
+              parsed.photo = data.profile.photo;
+            }
+          }
+        } catch(e) {
+          console.error("Failed to fetch photo from API");
+        }
+
         setScanResult(parsed);
         setIsScanning(false);
       } catch (err) {
@@ -329,7 +343,7 @@ export default function SecurityDashboardPage() {
             </button>
           </section>
 
-          <nav className="dash-card mt-6 grid grid-cols-4 rounded-[2rem] p-3 shadow-xl backdrop-blur">
+          <nav className="dash-card mt-6 hidden md:grid grid-cols-4 rounded-[2rem] p-3 shadow-xl backdrop-blur">
             {[
               { label: "Home", icon: Home, active: true },
               { label: "Students", icon: UsersRound },

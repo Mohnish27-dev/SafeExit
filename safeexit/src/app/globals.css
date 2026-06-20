@@ -1957,3 +1957,34 @@ body {
     transform: none;
   }
 }
+
+/* Additional micro-animations for warden dashboard */
+@keyframes sd-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sd-pop {
+  0% { transform: scale(.98); opacity: 0.0; }
+  60% { transform: scale(1.02); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+.sd-animate-fade-up { animation: sd-fade-up .6s cubic-bezier(.16,1,.3,1) both; }
+.sd-animate-pop { animation: sd-pop .5s cubic-bezier(.2,.8,.2,1) both; }
+
+.sd-card-hover { transition: transform .22s ease, box-shadow .22s ease; }
+.sd-card-hover:hover { transform: translateY(-6px) scale(1.01); box-shadow: 0 30px 60px -30px rgba(15,23,42,0.45); }
+
+.sd-stagger > * { opacity: 0; animation: sd-fade-up .6s cubic-bezier(.16,1,.3,1) both; }
+.sd-stagger > *:nth-child(1) { animation-delay: .04s; }
+.sd-stagger > *:nth-child(2) { animation-delay: .10s; }
+.sd-stagger > *:nth-child(3) { animation-delay: .16s; }
+.sd-stagger > *:nth-child(4) { animation-delay: .22s; }
+.sd-stagger > *:nth-child(5) { animation-delay: .28s; }
+.sd-stagger > *:nth-child(6) { animation-delay: .34s; }
+.sd-stagger > *:nth-child(7) { animation-delay: .40s; }
+.sd-stagger > *:nth-child(8) { animation-delay: .46s; }
+
+.sd-action-card.sd-card-hover { transform-origin: center; }
+
