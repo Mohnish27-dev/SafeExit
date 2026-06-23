@@ -78,6 +78,7 @@ export default function GenerateTicket() {
     note: "",
   });
   const [errors, setErrors] = useState({});
+  const [createdOuting, setCreatedOuting] = useState(null);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -145,13 +146,39 @@ export default function GenerateTicket() {
 
   const handleSubmit = async () => {
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 2000));
-    setLoading(false);
-    setStep("success");
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:${window.location.port === "3000" ? "5000" : window.location.port}/api` : "http://localhost:5000/api");
+      const body = {
+        destination: form.destination,
+        purpose: form.note || "Outing",
+        outTime: new Date(`${form.dateOut} ${form.timeOut}`).toISOString(),
+        inTime: new Date(`${form.dateReturn} ${form.timeReturn}`).toISOString(),
+      };
+
+      const res = await fetch(`${apiBase}/outing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to create outing");
+      }
+
+      const data = await res.json();
+      setCreatedOuting(data);
+      setLoading(false);
+      setStep("success");
+    } catch (error) {
+      setLoading(false);
+      setErrors((prev) => ({ ...prev, submit: error.message }));
+    }
   };
 
   const destLabel = form.destination;
-  const ticketId = "SE-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+  const ticketId = createdOuting ? `SE-${String(createdOuting._id).slice(-6).toUpperCase()}` : "SE-" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
   const studentFields = [
     {
@@ -227,9 +254,16 @@ export default function GenerateTicket() {
             <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
               {isAutoApproved ? (
-                <span className="text-xs font-bold text-emerald-800 bg-linear-to-r from-emerald-100 to-emerald-50 rounded-full px-3.5 py-1.5 border border-emerald-200 shadow-xs">
-                  Approved
-                </span>
+                <>
+                  <span className="text-xs font-bold text-emerald-800 bg-linear-to-r from-emerald-100 to-emerald-50 rounded-full px-3.5 py-1.5 border border-emerald-200 shadow-xs">
+                    Approved
+                  </span>
+                  {errors.submit && <p className="text-xs text-rose-500 mt-2">{errors.submit}</p>}
+                  <div className="h-2" />
+                  <button type="button" onClick={() => router.push("/dashboard/student/my-outings")} className="sf-btn-secondary w-full">
+                    View My Outings
+                  </button>
+                </>
               ) : (
                 <span className="text-xs font-bold text-amber-800 bg-linear-to-r from-amber-100 to-amber-50 rounded-full px-3.5 py-1.5 border border-amber-200 shadow-xs">
                   Pending Approval
