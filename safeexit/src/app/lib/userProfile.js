@@ -7,7 +7,7 @@ export const defaultStudentProfile = {
   subtitle: "Year, Program",
   id: "—",
   rollNo: "—",
-  email: "student@college.edu",
+  email: "student@nitp.ac.in",
   hostel: "—",
   room: "",
   mobile: "",
@@ -83,7 +83,7 @@ export const normalizeStudentProfile = (stored) => {
 
   const isEmailId = stored.id && String(stored.id).includes("@");
   const rollNo = stored.rollNo || (isEmailId ? "STU2024CSE102" : stored.id || "STU2024CSE102");
-  const email = stored.email || (isEmailId ? stored.id : `${stored.name.toLowerCase().replace(/\s+/g, ".")}@college.edu`);
+  const email = stored.email || (isEmailId ? stored.id : `${stored.name.toLowerCase().replace(/\s+/g, ".")}@nitp.ac.in`);
 
   return {
     ...defaultStudentProfile,

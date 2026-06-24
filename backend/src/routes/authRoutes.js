@@ -5,8 +5,10 @@ const {
   authUser,
   getUserProfile,
   logoutUser,
-  registerWebAuthn,
-  verifyWebAuthnLogin
+  getRegistrationOptions,
+  verifyRegistration,
+  getAuthenticationOptions,
+  verifyAuthentication
 } = require('../controllers/authController');
 const { protect } = require('../middlewares/authMiddleware');
 
@@ -15,8 +17,12 @@ router.post('/login', authUser);
 router.post('/logout', logoutUser);
 router.get('/profile', protect, getUserProfile);
 
-// WebAuthn routes
-router.post('/webauthn/register', protect, registerWebAuthn);
-router.post('/webauthn/verify', verifyWebAuthnLogin);
+// WebAuthn registration (requires an authenticated session to bind the passkey to)
+router.post('/webauthn/register/options', protect, getRegistrationOptions);
+router.post('/webauthn/register/verify', protect, verifyRegistration);
+
+// WebAuthn login (public — security comes from the signed challenge, not the session)
+router.post('/webauthn/login/options', getAuthenticationOptions);
+router.post('/webauthn/login/verify', verifyAuthentication);
 
 module.exports = router;
