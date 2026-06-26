@@ -89,7 +89,7 @@ export default function SecurityDashboardPage() {
         
         // Fetch full profile from API if available
         try {
-          const res = await fetch(`/api/profile?rollNo=${parsed.id}`);
+          const res = await fetch(`/api/profile?rollNo=${encodeURIComponent(parsed.id)}`);
           if (res.ok) {
             const data = await res.json();
             if (data.profile && data.profile.photo) {
