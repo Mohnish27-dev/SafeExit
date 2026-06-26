@@ -130,6 +130,7 @@ export default function StudentLoginPage() {
 
   const skipOrSubmitPhoto = () => {
     // Save profile to localStorage temporarily
+<<<<<<< Updated upstream
     (async () => {
       const profileToSave = { ...formData };
       try {
@@ -172,6 +173,31 @@ export default function StudentLoginPage() {
         setOnboardingStep(3);
       }
     })();
+=======
+    const profileToSave = {
+      ...formData,
+      photo: photoPreview
+    };
+    localStorage.setItem("safeexit_user_profile", JSON.stringify(profileToSave));
+
+    // Publish the photo (keyed by roll number) so a guard scanning this
+    // student's QR can pull it back and verify their face at the gate.
+    // The QR itself only carries id/name — a base64 photo is far too large
+    // to embed — so the guard's scanner looks the photo up via /api/profile.
+    if (photoPreview) {
+      fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rollNo: formData.rollNumber,
+          name: formData.fullName,
+          photo: photoPreview,
+        }),
+      }).catch((err) => console.error("Failed to publish profile photo", err));
+    }
+
+    setOnboardingStep(3);
+>>>>>>> Stashed changes
   };
 
   const setupWebAuthn = async () => {
@@ -305,6 +331,20 @@ export default function StudentLoginPage() {
       }
       const data = await verifyRes.json();
       localStorage.setItem('safeexit_token', data.token);
+
+      // Re-publish the photo so the guard's scanner can find it even after the
+      // in-memory profile store was cleared (e.g. a server restart since signup).
+      if (storedProfile.photo) {
+        fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rollNo: storedProfile.rollNumber,
+            name: storedProfile.fullName,
+            photo: storedProfile.photo,
+          }),
+        }).catch((err) => console.error("Failed to publish profile photo", err));
+      }
 
       // Login success
       setStoredUser({
