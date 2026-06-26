@@ -16,9 +16,11 @@ const userSchema = new mongoose.Schema({
   // WebAuthn specific fields (simple approach to just store whether biometrics are registered, 
   // or you could store an array of full credentials if using @simplewebauthn)
   webAuthnRegistered: { type: Boolean, default: false },
+  // Transient challenge issued during a WebAuthn ceremony; verified on the next request.
+  currentChallenge: { type: String },
   webAuthnCredentials: [{
-    credentialID: String,
-    credentialPublicKey: Buffer,
+    credentialID: String,        // base64url credential id
+    credentialPublicKey: Buffer, // COSE public key bytes
     counter: Number,
     transports: [String]
   }]

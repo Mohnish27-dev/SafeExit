@@ -103,15 +103,19 @@ const logoutUser = (req, res) => {
 // This aligns with your frontend passkey flow to simulate successful WebAuthn backend
 const registerWebAuthn = async (req, res) => {
   try {
+    console.log('WebAuthn register called, user ID:', req.user?._id);
     const user = await User.findById(req.user._id);
     if (user) {
       user.webAuthnRegistered = true;
       await user.save();
+      console.log('WebAuthn registered successfully for user:', user._id);
       res.json({ message: 'WebAuthn registered successfully', webAuthnRegistered: true });
     } else {
+      console.error('User not found during WebAuthn registration');
       res.status(404).json({ message: 'User not found' });
     }
   } catch (error) {
+    console.error('WebAuthn registration error:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -123,6 +127,8 @@ const verifyWebAuthnLogin = async (req, res) => {
   const { email } = req.body;
   try {
     const user = await User.findOne({ email });
+    console.log(`WebAuthn login attempt for ${email}:`, user ? `Found user, webAuthnRegistered=${user.webAuthnRegistered}` : 'User not found');
+    
     if (user && user.webAuthnRegistered) {
       const token = generateToken(res, user._id);
       res.json({
@@ -134,10 +140,14 @@ const verifyWebAuthnLogin = async (req, res) => {
         webAuthnRegistered: user.webAuthnRegistered,
         token
       });
+    } else if (user && !user.webAuthnRegistered) {
+      // User exists but hasn't registered WebAuthn yet
+      res.status(401).json({ message: 'WebAuthn not registered for this account. Please complete passkey setup first.' });
     } else {
-      res.status(401).json({ message: 'Biometric verification failed or not registered' });
+      res.status(401).json({ message: 'User not found' });
     }
   } catch (error) {
+    console.error('WebAuthn login error:', error);
     res.status(500).json({ message: error.message });
   }
 };

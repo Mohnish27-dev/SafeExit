@@ -273,6 +273,7 @@ export default function SecurityLoginPage() {
           src="/images/login/hostel-bg.png"
           alt=""
           fill
+          sizes="100vw"
           className="object-cover opacity-[0.18] pointer-events-none select-none"
           priority
         />
@@ -313,6 +314,7 @@ export default function SecurityLoginPage() {
             src="/images/login/security-guard.png"
             alt="Security Guard"
             fill
+            sizes="(min-width: 640px) 220px, 200px"
             className="object-contain drop-shadow-lg"
             priority
           />
