@@ -82,6 +82,32 @@ export default function StudentLoginPage() {
     }
   };
 
+  // Compress a dataURL image to reduce size before storing in localStorage
+  const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) => {
+    return new Promise((resolve) => {
+      if (!dataUrl) return resolve(null);
+      // Use the global browser Image constructor explicitly to avoid
+      // colliding with the imported Next.js Image component.
+      const ImgConstructor = (typeof window !== 'undefined' && window.Image) ? window.Image : null;
+      const img = ImgConstructor ? new ImgConstructor() : document.createElement('img');
+      img.onload = () => {
+        const ratio = img.width / img.height;
+        const width = Math.min(img.width, maxWidth);
+        const height = Math.round(width / ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        // Export as JPEG to reduce size (works well for photos)
+        const compressed = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressed);
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  };
+
   const validateStep1 = () => {
     const requiredFields = ['fullName', 'email', 'rollNumber', 'branch', 'yearLevel', 'hostelBlock', 'roomNumber', 'phoneNumber', 'emergencyContact'];
     for (let field of requiredFields) {
@@ -112,12 +138,48 @@ export default function StudentLoginPage() {
 
   const skipOrSubmitPhoto = () => {
     // Save profile to localStorage temporarily
-    const profileToSave = {
-      ...formData,
-      photo: photoPreview
-    };
-    localStorage.setItem("safeexit_user_profile", JSON.stringify(profileToSave));
-    setOnboardingStep(3);
+    (async () => {
+      const profileToSave = { ...formData };
+      try {
+        if (photoPreview && typeof photoPreview === 'string' && photoPreview.startsWith('data:')) {
+          // Try to compress large images before saving
+          const compressed = await compressImage(photoPreview, 800, 0.7);
+          profileToSave.photo = compressed || null;
+        } else {
+          profileToSave.photo = null;
+        }
+
+        try {
+          localStorage.setItem("safeexit_user_profile", JSON.stringify(profileToSave));
+        } catch (e) {
+          // If quota exceeded, fall back to saving without the photo
+          console.warn('localStorage quota exceeded, saving profile without photo', e);
+          const fallback = { ...profileToSave, photo: null };
+          try {
+            localStorage.setItem("safeexit_user_profile", JSON.stringify(fallback));
+          } catch (e2) {
+            // If still failing, remove any stale large keys and try once more
+            console.warn('second localStorage attempt failed, clearing old profile key and retrying', e2);
+            try {
+              localStorage.removeItem('safeexit_user_profile');
+              localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...formData, photo: null }));
+            } catch (finalErr) {
+              console.error('Unable to persist profile to localStorage', finalErr);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error while processing photo for storage', err);
+        // As a last resort, store only text data
+        try {
+          localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...formData, photo: null }));
+        } catch (e) {
+          console.error('Unable to persist profile to localStorage after error', e);
+        }
+      } finally {
+        setOnboardingStep(3);
+      }
+    })();
   };
 
   const setupWebAuthn = async () => {
@@ -254,6 +316,20 @@ export default function StudentLoginPage() {
         throw new Error(data.message || "Biometric login failed on server.");
       }
       localStorage.setItem('safeexit_token', data.token);
+
+      // Re-publish the photo so the guard's scanner can find it even after the
+      // in-memory profile store was cleared (e.g. a server restart since signup).
+      if (storedProfile.photo) {
+        fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rollNo: storedProfile.rollNumber,
+            name: storedProfile.fullName,
+            photo: storedProfile.photo,
+          }),
+        }).catch((err) => console.error("Failed to publish profile photo", err));
+      }
 
       // Login success
       setStoredUser({

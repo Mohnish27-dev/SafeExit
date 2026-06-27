@@ -16,6 +16,8 @@ const userSchema = new mongoose.Schema({
   // WebAuthn / FIDO2 fields. webAuthnRegistered is a convenience flag; the real source of truth
   // is webAuthnCredentials, which holds the actual public keys verified via @simplewebauthn/server.
   webAuthnRegistered: { type: Boolean, default: false },
+  // Transient challenge issued during a WebAuthn ceremony; verified on the next request.
+  currentChallenge: { type: String },
   webAuthnCredentials: [{
     credentialID: { type: String },          // base64url-encoded credential id (WebAuthnCredential.id)
     publicKey: { type: Buffer },             // COSE public key bytes (WebAuthnCredential.publicKey)

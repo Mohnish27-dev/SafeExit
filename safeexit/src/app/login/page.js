@@ -115,6 +115,7 @@ export default function LoginRoleSelect() {
                   src={role.image}
                   alt={role.title}
                   fill
+                  sizes="192px"
                   className="object-contain relative z-10 group-hover:scale-105 transition-transform duration-500"
                 />
               </div>

@@ -125,6 +125,7 @@ const logoutUser = (req, res) => {
 // @access  Private (must be logged in via password/JWT first)
 const getRegistrationOptions = async (req, res) => {
   try {
+    console.log('WebAuthn register called, user ID:', req.user?._id);
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -201,6 +202,7 @@ const verifyRegistration = async (req, res) => {
 
     res.json({ verified: true, webAuthnRegistered: true });
   } catch (error) {
+    console.error('WebAuthn registration error:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -290,6 +292,7 @@ const verifyAuthentication = async (req, res) => {
       token,
     });
   } catch (error) {
+    console.error('WebAuthn login error:', error);
     res.status(500).json({ message: error.message });
   }
 };

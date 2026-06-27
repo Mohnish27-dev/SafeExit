@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ClipboardList,
@@ -21,63 +21,6 @@ import StudentProfileBanner from "@/app/components/student/StudentProfileBanner"
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { getFirstName } from "@/app/lib/userProfile";
-
-const outings = [
-  {
-    id: "SE-A4F8C2",
-    destination: "City Library",
-    dateOut: "Jun 01, 2026",
-    timeOut: "5:30 PM",
-    dateReturn: "Jun 01, 2026",
-    timeReturn: "9:45 PM",
-    status: "approved",
-  },
-  {
-    id: "SE-B7D3E1",
-    destination: "Home Town",
-    dateOut: "Jun 03, 2026",
-    timeOut: "4:00 PM",
-    dateReturn: "Jun 07, 2026",
-    timeReturn: "8:00 AM",
-    status: "pending",
-  },
-  {
-    id: "SE-C2A9F5",
-    destination: "Apollo Hospital",
-    dateOut: "May 29, 2026",
-    timeOut: "2:00 PM",
-    dateReturn: "May 29, 2026",
-    timeReturn: "6:30 PM",
-    status: "returned",
-  },
-  {
-    id: "SE-D5E1B3",
-    destination: "Shopping Mall",
-    dateOut: "May 21, 2026",
-    timeOut: "3:00 PM",
-    dateReturn: "May 21, 2026",
-    timeReturn: "8:00 PM",
-    status: "returned",
-  },
-  {
-    id: "SE-E8F2C7",
-    destination: "Home Town",
-    dateOut: "May 10, 2026",
-    timeOut: "2:00 PM",
-    dateReturn: "May 15, 2026",
-    timeReturn: "10:00 AM",
-    status: "returned",
-  },
-  {
-    id: "SE-F1D4A9",
-    destination: "Bank / ATM",
-    dateOut: "May 08, 2026",
-    timeOut: "4:00 PM",
-    dateReturn: "May 08, 2026",
-    timeReturn: "6:00 PM",
-    status: "rejected",
-  },
-];
 
 const statusConfig = {
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
@@ -104,9 +47,41 @@ const statAccents = {
 export default function MyOutings() {
   const router = useRouter();
   const { display, hydrated } = useStudentProfile();
+  const [outings, setOutings] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(null);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const fetchOutings = async () => {
+      setLoading(true);
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:${window.location.port === "3000" ? "5000" : window.location.port}/api` : "http://localhost:5000/api");
+        const res = await fetch(`${apiBase}/outing/myrequests`, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch outings");
+        const data = await res.json();
+        const mapped = data.map((o) => ({
+          id: `SE-${String(o._id).slice(-6).toUpperCase()}`,
+          destination: o.destination,
+          dateOut: new Date(o.outTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+          timeOut: new Date(o.outTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+          dateReturn: new Date(o.inTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+          timeReturn: new Date(o.inTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+          status: (o.status || "Pending").toLowerCase(),
+        }));
+        setOutings(mapped);
+      } catch (err) {
+        setOutings([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOutings();
+  }, [hydrated]);
 
   const filtered = outings.filter((outing) => {
     const matchFilter = filter === "all" || outing.status === filter;
@@ -188,7 +163,14 @@ export default function MyOutings() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <StudentFeaturePanel className="p-10 text-center" delay={120}>
+          <div className="w-14 h-14 rounded-2xl bg-linear-to-br from-slate-100 to-slate-200 flex items-center justify-center mx-auto mb-3">
+            <Loader2 size={24} className="text-slate-400 animate-spin" />
+          </div>
+          <p className="font-sora font-semibold text-slate-700">Loading outings…</p>
+        </StudentFeaturePanel>
+      ) : filtered.length === 0 ? (
         <StudentFeaturePanel className="p-10 text-center" delay={120}>
           <div className="w-14 h-14 rounded-2xl bg-linear-to-br from-slate-100 to-slate-200 flex items-center justify-center mx-auto mb-3">
             <ClipboardList size={24} className="text-slate-400" />

@@ -88,6 +88,22 @@ export default function StudentDashboardPage() {
         setStoredUser(normalized);
       }
       setProfile(normalized);
+
+      // Publish this student's photo (keyed by roll number) so the guard's QR
+      // scanner can show it. Done on every dashboard visit so it stays available
+      // even after the server-side store is reset. The QR encodes the same
+      // roll number as `id`, which is what the scanner looks up.
+      if (normalized.photo && normalized.rollNo) {
+        fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rollNo: normalized.rollNo,
+            name: normalized.name,
+            photo: normalized.photo,
+          }),
+        }).catch((err) => console.error("Failed to publish profile photo", err));
+      }
     }
     setMounted(true);
   }, []);
