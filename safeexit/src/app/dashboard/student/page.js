@@ -284,7 +284,7 @@ export default function StudentDashboardPage() {
                     </p>
                     <p className="flex items-center gap-3 font-semibold text-slate-700">
                       <Mail className="h-5 w-5 text-sky-500 shrink-0" /> 
-                      <span>Email: <strong className="text-slate-900">{profile.email || (profile.id && profile.id.includes("@") ? profile.id : "student@college.edu")}</strong></span>
+                      <span>Email: <strong className="text-slate-900">{profile.email || (profile.id && profile.id.includes("@") ? profile.id : "student@nitp.ac.in")}</strong></span>
                     </p>
                     <p className="flex items-center gap-3 font-semibold text-slate-700">
                       <Phone className="h-5 w-5 text-emerald-500 shrink-0" /> 

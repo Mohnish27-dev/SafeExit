@@ -13,17 +13,20 @@ const userSchema = new mongoose.Schema({
   hostelName: { type: String },
   phoneNumber: { type: String },
   
-  // WebAuthn specific fields (simple approach to just store whether biometrics are registered, 
-  // or you could store an array of full credentials if using @simplewebauthn)
+  // WebAuthn / FIDO2 fields. webAuthnRegistered is a convenience flag; the real source of truth
+  // is webAuthnCredentials, which holds the actual public keys verified via @simplewebauthn/server.
   webAuthnRegistered: { type: Boolean, default: false },
   // Transient challenge issued during a WebAuthn ceremony; verified on the next request.
   currentChallenge: { type: String },
   webAuthnCredentials: [{
-    credentialID: String,        // base64url credential id
-    credentialPublicKey: Buffer, // COSE public key bytes
-    counter: Number,
-    transports: [String]
-  }]
+    credentialID: { type: String },          // base64url-encoded credential id (WebAuthnCredential.id)
+    publicKey: { type: Buffer },             // COSE public key bytes (WebAuthnCredential.publicKey)
+    counter: { type: Number, default: 0 },   // signature counter, bumped on each auth to block replay
+    transports: { type: [String], default: [] }
+  }],
+  // Short-lived challenge for the in-flight registration/authentication ceremony.
+  // Cleared as soon as the ceremony is verified.
+  currentChallenge: { type: String }
 }, {
   timestamps: true
 });

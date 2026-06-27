@@ -16,10 +16,12 @@ import {
   MapPin,
   AlertCircle,
   BookOpen,
+  Mail,
   Image as ImageIcon
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 
 export default function StudentLoginPage() {
@@ -33,6 +35,7 @@ export default function StudentLoginPage() {
   // Form States
   const [formData, setFormData] = useState({
     fullName: "",
+    email: "",
     rollNumber: "",
     branch: "",
     yearLevel: "",
@@ -106,12 +109,17 @@ export default function StudentLoginPage() {
   };
 
   const validateStep1 = () => {
-    const requiredFields = ['fullName', 'rollNumber', 'branch', 'yearLevel', 'hostelBlock', 'roomNumber', 'phoneNumber', 'emergencyContact'];
+    const requiredFields = ['fullName', 'email', 'rollNumber', 'branch', 'yearLevel', 'hostelBlock', 'roomNumber', 'phoneNumber', 'emergencyContact'];
     for (let field of requiredFields) {
       if (!formData[field] || formData[field].trim() === "") {
         setErrorMsg("Please fill in all fields.");
         return false;
       }
+    }
+    // College email must be a valid NIT Patna address (e.g. shubhamk.ug24.cs@nitp.ac.in)
+    if (!/^[^\s@]+@nitp\.ac\.in$/i.test(formData.email.trim())) {
+      setErrorMsg("Please enter a valid NIT Patna email ending in @nitp.ac.in.");
+      return false;
     }
     if (formData.phoneNumber.length < 10) {
       setErrorMsg("Please enter a valid phone number.");
@@ -178,46 +186,17 @@ export default function StudentLoginPage() {
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      // Check if WebAuthn is supported
-      if (window.PublicKeyCredential) {
-        // Create a dummy credential just to trigger the browser UI 
-        try {
-           await navigator.credentials.create({
-            publicKey: {
-              challenge: new Uint8Array(32),
-              rp: { name: "SafeExit Demo", id: window.location.hostname },
-              user: {
-                id: crypto.getRandomValues(new Uint8Array(16)),
-                name: formData.rollNumber,
-                displayName: formData.fullName
-              },
-              pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-              authenticatorSelection: {
-                authenticatorAttachment: "platform",
-                userVerification: "required",
-                residentKey: "required"
-              },
-              timeout: 60000
-            }
-          });
-        } catch(e) {
-          console.log("Mock WebAuthn create prompt dismissed or failed, continuing demo anyway", e);
-        }
-      }
-      
-      // Artificial delay after the native prompt for realism
-      await new Promise(resolve => setTimeout(resolve, 800));
-
       const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
-      
-      // Real Backend API Call - Register User
+      const email = profile.email;
+
+      // 1. Create the account. The returned JWT authorizes the passkey registration below.
       const registerRes = await fetch('/api/backend/auth/register', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: profile.fullName,
-          email: `${profile.rollNumber.toLowerCase()}@college.edu`,
+          email,
           password: profile.rollNumber, // Default password for simplicity
           role: 'Student',
           studentId: profile.rollNumber,
@@ -232,19 +211,43 @@ export default function StudentLoginPage() {
       if (!registerRes.ok) {
          throw new Error("Registration failed");
       }
-      
+
       const registerData = await registerRes.json();
       const token = registerData.token;
       localStorage.setItem('safeexit_token', token);
 
-      // Real Backend API Call - Register WebAuthn
-      await fetch('/api/backend/auth/webauthn/register', {
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
+
+      // 2. Ask the server for a registration challenge (PublicKeyCredentialCreationOptions).
+      const optionsRes = await fetch('/api/backend/auth/webauthn/register/options', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
+        credentials: 'include',
+        headers: authHeaders,
       });
+      if (!optionsRes.ok) {
+        throw new Error("Could not start passkey setup");
+      }
+      const optionsJSON = await optionsRes.json();
+
+      // 3. Prompt the platform authenticator (fingerprint / FaceID) to create and
+      //    sign the credential. This is the real WebAuthn ceremony, not a mock.
+      const attResp = await startRegistration({ optionsJSON });
+
+      // 4. Send the signed attestation back; the server verifies it cryptographically
+      //    and stores the public key. Only a verified response counts as registered.
+      const verifyRes = await fetch('/api/backend/auth/webauthn/register/verify', {
+        method: 'POST',
+        credentials: 'include',
+        headers: authHeaders,
+        body: JSON.stringify(attResp),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.verified) {
+        throw new Error(verifyData.message || "Passkey verification failed");
+      }
 
       // Mark as registered
       localStorage.setItem("safeexit_webauthn_registered", "true");
@@ -257,7 +260,7 @@ export default function StudentLoginPage() {
         subtitle: `${profile.yearLevel} Year, ${profile.branch}`,
         id: profile.rollNumber,
         rollNo: profile.rollNumber,
-        email: `${profile.rollNumber.toLowerCase()}@college.edu`,
+        email,
         hostel: `Block ${profile.hostelBlock}, Room ${profile.roomNumber}`,
         room: profile.roomNumber,
         mobile: profile.phoneNumber,
@@ -266,7 +269,13 @@ export default function StudentLoginPage() {
 
       router.push("/dashboard/student");
     } catch (err) {
-      setErrorMsg("Failed to setup Quick Login. Please try again.");
+      if (err?.name === 'NotAllowedError') {
+        setErrorMsg("Passkey setup was cancelled or timed out. Please try again.");
+      } else if (err?.name === 'InvalidStateError') {
+        setErrorMsg("A passkey is already registered on this device for this account.");
+      } else {
+        setErrorMsg(err?.message || "Failed to setup Quick Login. Please try again.");
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -276,34 +285,36 @@ export default function StudentLoginPage() {
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      if (window.PublicKeyCredential) {
-         try {
-           await navigator.credentials.get({
-             publicKey: {
-               challenge: new Uint8Array(32),
-               rpId: window.location.hostname,
-               userVerification: "required"
-             }
-           });
-         } catch(e) {
-            console.log("Mock WebAuthn get prompt dismissed or failed, continuing demo anyway", e);
-         }
-      }
-      
-      // Simulate small delay after prompt
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const email = storedProfile.email;
 
-      // Real Backend API Call - Verify WebAuthn Login
-      const verifyRes = await fetch('/api/backend/auth/webauthn/verify', {
+      // 1. Get an authentication challenge scoped to this account's registered passkeys.
+      const optionsRes = await fetch('/api/backend/auth/webauthn/login/options', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: `${storedProfile.rollNumber.toLowerCase()}@college.edu` })
+        body: JSON.stringify({ email })
+      });
+      if (!optionsRes.ok) {
+        throw new Error("No passkey found for this account on the server.");
+      }
+      const optionsJSON = await optionsRes.json();
+
+      // 2. Prompt the authenticator to sign the challenge with the stored private key.
+      const asseResp = await startAuthentication({ optionsJSON });
+
+      // 3. The server verifies the signature against the stored public key. Only a
+      //    cryptographically valid assertion yields a session token.
+      const verifyRes = await fetch('/api/backend/auth/webauthn/login/verify', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, response: asseResp })
       });
 
-      if (!verifyRes.ok) {
-        throw new Error("Biometric login failed on server.");
-      }
       const data = await verifyRes.json();
+      if (!verifyRes.ok) {
+        throw new Error(data.message || "Biometric login failed on server.");
+      }
       localStorage.setItem('safeexit_token', data.token);
 
       // Re-publish the photo so the guard's scanner can find it even after the
@@ -328,7 +339,7 @@ export default function StudentLoginPage() {
         subtitle: `${storedProfile.yearLevel} Year, ${storedProfile.branch}`,
         id: storedProfile.rollNumber,
         rollNo: storedProfile.rollNumber,
-        email: `${storedProfile.rollNumber.toLowerCase()}@college.edu`,
+        email: storedProfile.email,
         hostel: `Block ${storedProfile.hostelBlock}, Room ${storedProfile.roomNumber}`,
         room: storedProfile.roomNumber,
         mobile: storedProfile.phoneNumber,
@@ -337,7 +348,11 @@ export default function StudentLoginPage() {
 
       router.push("/dashboard/student");
     } catch (err) {
-      setErrorMsg("Biometric login failed.");
+      if (err?.name === 'NotAllowedError') {
+        setErrorMsg("Login was cancelled or timed out. Please try again.");
+      } else {
+        setErrorMsg(err?.message || "Biometric login failed.");
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -349,7 +364,7 @@ export default function StudentLoginPage() {
     setAppState("ONBOARDING");
     setOnboardingStep(1);
     setFormData({
-      fullName: "", rollNumber: "", branch: "", yearLevel: "",
+      fullName: "", email: "", rollNumber: "", branch: "", yearLevel: "",
       hostelBlock: "", roomNumber: "", phoneNumber: "", emergencyContact: ""
     });
     setPhotoPreview(null);
@@ -465,6 +480,15 @@ export default function StudentLoginPage() {
                       <div className="relative">
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><User className="w-4 h-4" /></div>
                         <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} placeholder="E.g. Ananya Sharma" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
+                      </div>
+                    </div>
+
+                    {/* College Email */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">College Email</label>
+                      <div className="relative">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Mail className="w-4 h-4" /></div>
+                        <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="E.g. shubhamk.ug24.cs@nitp.ac.in" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
                       </div>
                     </div>
 
@@ -637,7 +661,7 @@ export default function StudentLoginPage() {
                            headers: { 'Content-Type': 'application/json' },
                            body: JSON.stringify({
                              name: profile.fullName,
-                             email: `${profile.rollNumber.toLowerCase()}@college.edu`,
+                             email: profile.email,
                              password: profile.rollNumber, // Default password
                              role: 'Student',
                              studentId: profile.rollNumber,
@@ -658,7 +682,7 @@ export default function StudentLoginPage() {
                              subtitle: `${profile.yearLevel} Year, ${profile.branch}`,
                              id: profile.rollNumber,
                              rollNo: profile.rollNumber,
-                             email: `${profile.rollNumber.toLowerCase()}@college.edu`,
+                             email: profile.email,
                              hostel: `Block ${profile.hostelBlock}, Room ${profile.roomNumber}`,
                              room: profile.roomNumber,
                              mobile: profile.phoneNumber,
