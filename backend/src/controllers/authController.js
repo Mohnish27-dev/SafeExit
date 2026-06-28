@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
+const { findAllowedAdmin, isAllowedAdminEmail } = require('../config/adminAllowlist');
 const {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -21,6 +22,19 @@ const registerUser = async (req, res) => {
   const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber } = req.body;
 
   try {
+    // Admin access is restricted to a fixed allowlist (see config/adminAllowlist.js).
+    // The admin login page sends the Admin ID in `studentId`. The name + ID must
+    // match an authorized admin, and the PIN (sent as `password`) must be correct.
+    if (role === 'Admin') {
+      const allowed = findAllowedAdmin({ name, adminId: studentId, email });
+      if (!allowed) {
+        return res.status(403).json({ message: 'This name / Admin ID is not authorized for admin access.' });
+      }
+      if (allowed.pin !== String(password)) {
+        return res.status(401).json({ message: 'Incorrect admin PIN.' });
+      }
+    }
+
     const userExists = await User.findOne({ email });
 
     if (userExists) {
@@ -59,6 +73,11 @@ const authUser = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (user && (await user.matchPassword(password))) {
+      // Even with valid credentials, only allowlisted admins may use an Admin account.
+      if (user.role === 'Admin' && !isAllowedAdminEmail(user.email)) {
+        return res.status(403).json({ message: 'This account is not authorized for admin access.' });
+      }
+
       const token = generateToken(res, user._id);
 
       // Mark guards as on duty the moment they sign in, and stamp activity for
@@ -226,6 +245,10 @@ const getAuthenticationOptions = async (req, res) => {
     if (!user || !user.webAuthnRegistered || user.webAuthnCredentials.length === 0) {
       return res.status(404).json({ message: 'No passkey registered for this account' });
     }
+    // Block passkey login for any Admin account outside the allowlist.
+    if (user.role === 'Admin' && !isAllowedAdminEmail(user.email)) {
+      return res.status(403).json({ message: 'This account is not authorized for admin access.' });
+    }
 
     const options = await generateAuthenticationOptions({
       rpID,
@@ -253,6 +276,10 @@ const verifyAuthentication = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user || !user.currentChallenge) {
       return res.status(400).json({ message: 'No login in progress for this account' });
+    }
+    // Block passkey login for any Admin account outside the allowlist.
+    if (user.role === 'Admin' && !isAllowedAdminEmail(user.email)) {
+      return res.status(403).json({ message: 'This account is not authorized for admin access.' });
     }
 
     // The assertion names which stored credential signed it.

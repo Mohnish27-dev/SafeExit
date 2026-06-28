@@ -22,6 +22,23 @@ import { setStoredUser } from "@/app/lib/userProfile";
 const buildAdminEmail = (adminId) =>
   `${adminId.trim().toLowerCase().replace(/\s+/g, "")}@admin.safeexit.local`;
 
+// Admin access is restricted to these two people. This mirrors the backend
+// allowlist (backend/src/config/adminAllowlist.js) purely for a friendly early
+// error — the PIN is intentionally NOT included here so it stays out of the
+// browser bundle. The backend is the real gate and enforces the PIN.
+const AUTHORIZED_ADMINS = [
+  { name: "Gungun Wadhwani", adminId: "ADM-GUNGUN" },
+  { name: "Mohnish Pamnani", adminId: "ADM-MOHNISH" },
+];
+const normalizeName = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const normalizeId = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, "");
+const isAuthorizedAdmin = (name, adminId) =>
+  AUTHORIZED_ADMINS.some(
+    (a) =>
+      normalizeName(a.name) === normalizeName(name) &&
+      normalizeId(a.adminId) === normalizeId(adminId)
+  );
+
 export default function AdminLoginPage() {
   const router = useRouter();
 
@@ -54,6 +71,10 @@ export default function AdminLoginPage() {
   const validateStep1 = () => {
     if (!formData.fullName.trim() || !formData.adminId.trim() || formData.pin.trim().length !== 4) {
       setErrorMsg("Please fill name, Admin ID and 4-digit PIN.");
+      return false;
+    }
+    if (!isAuthorizedAdmin(formData.fullName, formData.adminId)) {
+      setErrorMsg("Access denied. The admin console is restricted to authorized administrators only. Check your full name and Admin ID.");
       return false;
     }
     setErrorMsg("");
