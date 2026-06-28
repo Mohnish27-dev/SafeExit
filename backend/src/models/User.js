@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema({
   year: { type: String },
   roomNumber: { type: String },
   hostelName: { type: String },
-  phoneNumber: { type: String },
+ 
 
   // --- Live status (maintained by gate scans / duty toggles) ---
   // Where a student currently is, derived from their most recent ScanLog.
