@@ -1956,6 +1956,15 @@ body {
   .sf-panel-lift:hover {
     transform: none;
   }
+
+  /* Elements that start at opacity:0 and rely on an entrance animation must
+     stay visible when motion (and thus the animation) is disabled. */
+  .sd-stagger > *,
+  .sd-animate-pop,
+  .sd-animate-fade-up {
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 /* Additional micro-animations for warden dashboard */
