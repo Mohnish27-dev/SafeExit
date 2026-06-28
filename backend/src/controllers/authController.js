@@ -60,6 +60,15 @@ const authUser = async (req, res) => {
 
     if (user && (await user.matchPassword(password))) {
       const token = generateToken(res, user._id);
+
+      // Mark guards as on duty the moment they sign in, and stamp activity for
+      // staff so the admin overview reflects who is currently active.
+      if (['Guard', 'Warden', 'Admin'].includes(user.role)) {
+        user.lastActiveAt = new Date();
+        if (user.role === 'Guard') user.onDuty = true;
+        await user.save();
+      }
+
       res.json({
         _id: user._id,
         name: user.name,
@@ -279,6 +288,11 @@ const verifyAuthentication = async (req, res) => {
     // Replay protection: persist the authenticator's monotonically increasing counter.
     cred.counter = authenticationInfo.newCounter;
     user.currentChallenge = undefined;
+    // Reflect live duty/activity for staff signing in via passkey.
+    if (['Guard', 'Warden', 'Admin'].includes(user.role)) {
+      user.lastActiveAt = new Date();
+      if (user.role === 'Guard') user.onDuty = true;
+    }
     await user.save();
 
     const token = generateToken(res, user._id);

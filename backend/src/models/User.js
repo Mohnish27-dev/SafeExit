@@ -12,7 +12,17 @@ const userSchema = new mongoose.Schema({
   roomNumber: { type: String },
   hostelName: { type: String },
   phoneNumber: { type: String },
-  
+
+  // --- Live status (maintained by gate scans / duty toggles) ---
+  // Where a student currently is, derived from their most recent ScanLog.
+  campusStatus: { type: String, enum: ['Inside', 'Outside', 'Overdue'], default: 'Inside' },
+  // Timestamp of the last gate scan involving this student.
+  lastSeenAt: { type: Date },
+  // For Guards: whether they are currently on duty. Flipped on login / scan activity.
+  onDuty: { type: Boolean, default: false },
+  // Last time this user (guard/warden) was active in the system.
+  lastActiveAt: { type: Date },
+
   // WebAuthn / FIDO2 fields. webAuthnRegistered is a convenience flag; the real source of truth
   // is webAuthnCredentials, which holds the actual public keys verified via @simplewebauthn/server.
   webAuthnRegistered: { type: Boolean, default: false },

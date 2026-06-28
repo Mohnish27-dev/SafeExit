@@ -29,11 +29,11 @@ const roles = [
   },
   {
     id: "warden",
-    title: "Warden / Admin",
+    title: "Warden",
     icon: UserCog,
     image: "/images/login/warden.png",
     description: "Login to approve requests, manage complaints and monitor",
-    buttonText: "Login as Warden / Admin",
+    buttonText: "Login as Warden",
     href: "/login/warden",
     color: "from-purple-500 to-purple-700",
     iconBg: "bg-purple-100 text-purple-600",
@@ -147,8 +147,20 @@ export default function LoginRoleSelect() {
           ))}
         </div>
 
+        {/* Admin Console access */}
+        <div className="mt-8">
+          <Link
+            href="/login/admin"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/70 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-md transition-all"
+          >
+            <ShieldCheck className="h-4 w-4 text-indigo-500" />
+            Admin Console
+            <span className="text-slate-400">→</span>
+          </Link>
+        </div>
+
         {/* Privacy Notice */}
-        <div className="mt-10 max-w-2xl w-full">
+        <div className="mt-8 max-w-2xl w-full">
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/60 shadow-sm px-6 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 flex-shrink-0">

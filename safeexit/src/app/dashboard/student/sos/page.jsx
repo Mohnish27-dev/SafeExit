@@ -23,6 +23,7 @@ import StudentFeatureShell, {
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
+import { apiFetch } from "@/app/lib/api";
 
 const alertTypes = [
   {
@@ -81,11 +82,26 @@ export default function SOSAlert() {
   const [stage, setStage] = useState("idle");
   const [alertId, setAlertId] = useState("");
 
+  const [sendError, setSendError] = useState("");
+
   const handleSend = async () => {
     setStage("sending");
-    await new Promise((r) => setTimeout(r, 2500));
-    setAlertId("SOS-" + Math.random().toString(36).substring(2, 8).toUpperCase());
-    setStage("sent");
+    setSendError("");
+    try {
+      // Persist the alert so wardens / admins see it live in their console.
+      const alert = await apiFetch("/sos", {
+        method: "POST",
+        body: JSON.stringify({ type: selected, note }),
+      });
+      setAlertId("SOS-" + String(alert._id).slice(-6).toUpperCase());
+      setStage("sent");
+    } catch (err) {
+      // Don't trap the student on the spinner if the network blips — still confirm
+      // locally, but record that the dispatch could not be saved.
+      setSendError(err.message || "Could not reach the server");
+      setAlertId("SOS-" + Math.random().toString(36).substring(2, 8).toUpperCase());
+      setStage("sent");
+    }
   };
 
   if (stage === "sent") {
@@ -126,6 +142,15 @@ export default function SOSAlert() {
             <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-800">Stay in a safe location. Warden and security will reach you shortly.</p>
           </div>
+
+          {sendError && (
+            <div className="sf-notice sf-notice--warn mb-6 text-left border-rose-200 bg-rose-50">
+              <AlertTriangle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-rose-700">
+                Alert shown locally, but could not be saved to the server ({sendError}). Please call your contacts directly.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2 mb-6">
             {contacts

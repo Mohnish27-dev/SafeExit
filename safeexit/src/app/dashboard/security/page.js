@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Scanner } from '@yudiel/react-qr-scanner';
 import {
   Bell,
@@ -20,36 +20,30 @@ import {
   X,
 } from "lucide-react";
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
+import { apiFetch } from "@/app/lib/api";
 
 const statusCards = [
   {
+    key: "inside",
     label: "Inside Campus",
-    value: "142",
-    note: "Students currently in",
+    note: "Latest gate scan was an entry",
     tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
     icon: UserCheck,
   },
   {
+    key: "outside",
     label: "Outside Campus",
-    value: "68",
-    note: "Students out on outing",
+    note: "Latest gate scan was an exit",
     tone: "border-amber-200 bg-amber-50 text-amber-700",
     icon: UserRound,
   },
   {
+    key: "overdue",
     label: "Overdue",
-    value: "12",
-    note: "Not yet returned",
+    note: "Returned late / not yet back",
     tone: "border-rose-200 bg-rose-50 text-rose-700",
     icon: Clock3,
   },
-];
-
-const recentScans = [
-  { name: "Ananya Verma", meta: "2nd Year, CSE - STU2024CSE102", tag: "Entry (IN)", time: "09:15 AM", type: "in" },
-  { name: "Rohan Singh", meta: "3rd Year, ECE - STU2023ECE089", tag: "Exit (OUT)", time: "08:45 AM", type: "out" },
-  { name: "Priya Sharma", meta: "2nd Year, IT - STU2024IT045", tag: "Entry (IN)", time: "08:20 AM", type: "in" },
-  { name: "Kunal Mehta", meta: "4th Year, ME - STU2022ME011", tag: "Exit (OUT)", time: "08:05 AM", type: "out" },
 ];
 
 const defaultProfile = {
@@ -81,6 +75,88 @@ export default function SecurityDashboardPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [scanMode, setScanMode] = useState(null);
+  const [scans, setScans] = useState([]);
+  const [counts, setCounts] = useState({ inside: 0, outside: 0, overdue: 0 });
+  const [logging, setLogging] = useState(false);
+  const [logError, setLogError] = useState("");
+
+  // Pull the latest gate movements and derive each student's current status from
+  // their most recent scan (logs are returned newest-first by the backend).
+  const loadScans = useCallback(async () => {
+    try {
+      const logs = await apiFetch("/scan?limit=100");
+      setScans(logs);
+
+      const seen = new Set();
+      const tally = { inside: 0, outside: 0, overdue: 0 };
+      for (const log of logs) {
+        const sid = log.student?._id || log.student?.studentId;
+        if (!sid || seen.has(sid)) continue; // only the most recent scan per student
+        seen.add(sid);
+        if (log.direction === "IN") tally.inside += 1;
+        else if (log.punctuality === "Overdue") tally.overdue += 1;
+        else tally.outside += 1;
+      }
+      setCounts(tally);
+    } catch {
+      /* guard may briefly be unauthenticated; ignore and retry on next tick */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadScans();
+    const t = setInterval(loadScans, 15000);
+    return () => clearInterval(t);
+  }, [loadScans]);
+
+  // Persist the in-progress scan as a real gate movement, then refresh the feed.
+  const confirmScan = async () => {
+    if (!scanResult?.id) {
+      setScanResult(null);
+      return;
+    }
+    setLogging(true);
+    setLogError("");
+    const direction = scanMode === "exit" ? "OUT" : "IN";
+    let punctuality = "N/A";
+    if (direction === "IN") {
+      const returnTimeStr = (scanResult.recentTicket?.validWindow || "").split(" to ")[1];
+      punctuality = checkIsOverdue(returnTimeStr) ? "Overdue" : "On-Time";
+    }
+    try {
+      await apiFetch("/scan", {
+        method: "POST",
+        body: JSON.stringify({
+          studentId: scanResult.id,
+          direction,
+          punctuality,
+        }),
+      });
+      setScanResult(null);
+      await loadScans();
+    } catch (err) {
+      setLogError(err.message || "Could not log this scan");
+    } finally {
+      setLogging(false);
+    }
+  };
+
+  const recentScans = useMemo(
+    () =>
+      scans.slice(0, 8).map((log) => {
+        const st = log.student || {};
+        const meta = [st.year, st.department].filter(Boolean).join(", ");
+        return {
+          id: log._id,
+          name: st.name || "Unknown Student",
+          meta: [meta, st.studentId].filter(Boolean).join(" - ") || "—",
+          tag: log.direction === "IN" ? "Entry (IN)" : "Exit (OUT)",
+          time: new Date(log.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+          type: log.direction === "IN" ? "in" : "out",
+        };
+      }),
+    [scans]
+  );
 
   const handleScan = async (result) => {
     if (result && result[0]) {
@@ -287,7 +363,7 @@ export default function SecurityDashboardPage() {
                         <card.icon className="h-6 w-6" />
                       </span>
                       <div>
-                        <p className="text-3xl font-bold leading-none text-slate-900">{card.value}</p>
+                        <p className="text-3xl font-bold leading-none text-slate-900">{counts[card.key]}</p>
                         <p className="mt-1 text-sm font-semibold text-slate-800">{card.label}</p>
                       </div>
                     </div>
@@ -303,8 +379,13 @@ export default function SecurityDashboardPage() {
                 <button className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">View All</button>
               </div>
               <div className="mt-4 space-y-3">
+                {recentScans.length === 0 && (
+                  <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400">
+                    No scans yet. Logged entries and exits will appear here.
+                  </p>
+                )}
                 {recentScans.map((scan) => (
-                  <div key={`${scan.name}-${scan.time}`} className="dash-outline flex flex-wrap items-center justify-between gap-4 rounded-2xl px-4 py-3">
+                  <div key={scan.id} className="dash-outline flex flex-wrap items-center justify-between gap-4 rounded-2xl px-4 py-3">
                     <div className="flex items-center gap-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 font-semibold text-slate-600">
                         {scan.name.split(" ").map((part) => part[0]).join("")}
@@ -456,22 +537,28 @@ export default function SecurityDashboardPage() {
                 )}
               </div>
 
+              {logError && (
+                <p className="mb-3 w-full rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">{logError}</p>
+              )}
+
               <div className="flex gap-3 w-full">
-                <button 
-                  onClick={() => setScanResult(null)}
-                  className="flex-1 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                <button
+                  onClick={() => { setLogError(""); setScanResult(null); }}
+                  disabled={logging}
+                  className="flex-1 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
-                <button 
-                  onClick={() => setScanResult(null)}
-                  className={`flex-1 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer ${
+                <button
+                  onClick={confirmScan}
+                  disabled={logging}
+                  className={`flex-1 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 ${
                     scanMode === 'exit'
                       ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"
                       : "bg-emerald-500 shadow-emerald-500/30 hover:bg-emerald-600"
                   }`}
                 >
-                  {scanMode === 'exit' ? "Log Exit" : "Log Entry"}
+                  {logging ? "Logging…" : scanMode === 'exit' ? "Log Exit" : "Log Entry"}
                 </button>
               </div>
             </div>
