@@ -220,7 +220,10 @@ export default function GenerateTicket() {
   ];
 
   if (step === "success") {
-    const isAutoApproved = parseTimeToMinutes(form.timeReturn) <= parseTimeToMinutes("05:30 PM");
+    // Trust the server's persisted status rather than recomputing the auto-approval
+    // rule on the client — the backend is the source of truth the gate scanner
+    // actually checks, so the success screen must reflect the same value.
+    const isAutoApproved = createdOuting?.status === "Approved";
 
     return (
       <StudentFeatureCentered>

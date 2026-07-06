@@ -1,4 +1,5 @@
 const OutingRequest = require('../models/OutingRequest');
+const { qualifiesForAutoApproval } = require('../utils/outingRules');
 
 // @desc    Create new outing request
 // @route   POST /api/outing
@@ -7,12 +8,20 @@ const createOutingRequest = async (req, res) => {
   const { destination, purpose, outTime, inTime } = req.body;
 
   try {
+    // Low-risk passes (return on or before 5:30 PM) are approved automatically
+    // so the student's DB status actually matches what the success screen
+    // tells them — otherwise a "scannable at the gate" ticket would still be
+    // Pending and get turned away by the exit scan.
+    const autoApproved = qualifiesForAutoApproval(inTime);
+
     const outingRequest = await OutingRequest.create({
       student: req.user._id,
       destination,
       purpose,
       outTime,
-      inTime
+      inTime,
+      status: autoApproved ? 'Approved' : 'Pending',
+      autoApproved
     });
 
     res.status(201).json(outingRequest);

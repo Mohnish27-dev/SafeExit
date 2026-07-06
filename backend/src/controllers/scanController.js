@@ -1,11 +1,19 @@
+const mongoose = require('mongoose');
 const ScanLog = require('../models/ScanLog');
 const User = require('../models/User');
+const OutingRequest = require('../models/OutingRequest');
 
 // @desc    Record a gate scan (entry/exit) for a student
 // @route   POST /api/scan
 // @access  Private (Guard / Admin)
 // Body: { studentId (roll number) OR student (_id), direction: 'IN'|'OUT',
 //         outing?, punctuality?, gate? }
+//
+// Gate enforcement: an OUT (exit) scan is only allowed against an outing pass
+// whose `status` is actually 'Approved' in the DB — whether that approval came
+// from a warden or from the auto-approval rule at creation time (see
+// outingController.createOutingRequest). We never trust a client-supplied
+// status for this; it's always re-checked here against the database.
 const createScanLog = async (req, res) => {
   const { studentId, student, direction, outing, punctuality, gate } = req.body;
 
@@ -26,11 +34,59 @@ const createScanLog = async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
+    // The outing pass this movement belongs to. If the caller passed one
+    // explicitly, use it; otherwise resolve the relevant pass ourselves —
+    // this is also where the gate approval check for exits happens.
+    let outingDoc = (outing && mongoose.isValidObjectId(outing))
+      ? await OutingRequest.findById(outing)
+      : null;
+
+    if (direction === 'OUT') {
+      if (!outingDoc) {
+        outingDoc = await OutingRequest.findOne({
+          student: studentDoc._id,
+          status: 'Approved'
+        }).sort({ createdAt: -1 });
+      }
+
+      if (!outingDoc) {
+        return res.status(403).json({
+          message: 'No approved outing pass found for this student. Exit denied.'
+        });
+      }
+
+      if (outingDoc.status !== 'Approved') {
+        return res.status(403).json({
+          message: `Outing pass is ${outingDoc.status.toLowerCase()}, not approved. Exit denied.`
+        });
+      }
+
+      // Consume the pass so it can't be used for a second exit and so the
+      // matching return scan below can find it.
+      outingDoc.status = 'Out';
+      await outingDoc.save();
+    } else {
+      // IN (return): close out whichever pass this student is currently out
+      // on, if any. Not finding one just means an untracked re-entry (no
+      // outing was ever raised) — that's fine, entries aren't gated.
+      if (!outingDoc) {
+        outingDoc = await OutingRequest.findOne({
+          student: studentDoc._id,
+          status: 'Out'
+        }).sort({ createdAt: -1 });
+      }
+
+      if (outingDoc && outingDoc.status === 'Out') {
+        outingDoc.status = 'Returned';
+        await outingDoc.save();
+      }
+    }
+
     const log = await ScanLog.create({
       student: studentDoc._id,
       guard: req.user._id,
       direction,
-      outing: outing || undefined,
+      outing: outingDoc ? outingDoc._id : undefined,
       punctuality: punctuality || 'N/A',
       gate: gate || 'Main Gate'
     });
