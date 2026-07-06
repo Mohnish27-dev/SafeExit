@@ -33,6 +33,26 @@ import {
   setStoredUser,
 } from "@/app/lib/userProfile";
 import { getTimeGreeting } from "@/app/lib/greeting";
+import { apiFetch } from "@/app/lib/api";
+
+// Format a stored Date/ISO string as e.g. "05:30 PM". This exact shape is what the
+// gate scanner parses out of the QR's validWindow (it splits on " to " then on " ").
+const formatClock = (value) =>
+  new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+
+const outingStatusStyle = (status) => {
+  switch (String(status || "").toLowerCase()) {
+    case "approved":
+    case "out":
+      return "bg-emerald-100 text-emerald-700";
+    case "returned":
+      return "bg-slate-100 text-slate-600";
+    case "rejected":
+      return "bg-rose-100 text-rose-700";
+    default:
+      return "bg-amber-100 text-amber-700"; // Pending
+  }
+};
 
 const actions = [
   {
@@ -61,12 +81,6 @@ const actions = [
   },
 ];
 
-const outings = [
-  { place: "City Library", date: "Today", status: "Approved", time: "05:30 PM" },
-  { place: "Medical Store", date: "22 May", status: "Completed", time: "07:10 PM" },
-  { place: "Stationery Market", date: "18 May", status: "Completed", time: "06:00 PM" },
-];
-
 const navItems = [
   { label: "Home", icon: Home, href: "/dashboard/student", active: true },
   { label: "Outings", icon: ClipboardList, href: "/dashboard/student/my-outings" },
@@ -79,6 +93,8 @@ export default function StudentDashboardPage() {
   const [now, setNow] = useState(() => new Date());
   const [mounted, setMounted] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [outings, setOutings] = useState([]);
+  const [outingsLoading, setOutingsLoading] = useState(true);
 
   useEffect(() => {
     const storedProfile = getStoredUser();
@@ -113,6 +129,55 @@ export default function StudentDashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // Pull the real registered studentId from the backend so the QR always carries
+  // the exact roll number the gate scanner looks up (localStorage can be stale).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await apiFetch("/auth/profile");
+        if (cancelled || !me?.studentId) return;
+        setProfile((prev) => ({ ...prev, rollNo: me.studentId }));
+      } catch {
+        /* Not authenticated on the server yet — keep the locally stored profile. */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load this student's real outing requests. The latest approved one drives the
+  // QR pass; the full list drives the Recent Outings, stats and timeline cards.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setOutingsLoading(true);
+      try {
+        const data = await apiFetch("/outing/myrequests");
+        if (cancelled) return;
+        const mapped = (data || []).map((o) => ({
+          id: o._id,
+          place: o.destination,
+          purpose: o.purpose,
+          status: o.status || "Pending",
+          outTime: o.outTime,
+          inTime: o.inTime,
+          date: new Date(o.outTime).toLocaleDateString("en-US", { day: "2-digit", month: "short" }),
+          time: formatClock(o.outTime),
+        }));
+        setOutings(mapped);
+      } catch {
+        if (!cancelled) setOutings([]);
+      } finally {
+        if (!cancelled) setOutingsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const greetingName = useMemo(() => {
     const firstName = getFirstName(profile.name);
     return firstName || profile.name;
@@ -120,18 +185,33 @@ export default function StudentDashboardPage() {
 
   const timeGreeting = useMemo(() => getTimeGreeting(now), [now]);
 
+  // The pass represents the student's currently active, warden-approved outing.
+  // `myrequests` is returned newest-first, so the first Approved/Out request wins.
+  const latestApproved = useMemo(
+    () => outings.find((o) => ["Approved", "Out"].includes(o.status)) || null,
+    [outings]
+  );
+
+  const qrRollNo = useMemo(() => {
+    const roll = profile.rollNo && profile.rollNo !== defaultStudentProfile.rollNo ? profile.rollNo : "";
+    if (roll) return roll;
+    // Last resort: a non-email id is the roll number too; never a fabricated value.
+    return profile.id && !String(profile.id).includes("@") ? profile.id : "";
+  }, [profile]);
+
   const qrValue = useMemo(() => {
-    const latestOuting = outings[0];
     const data = {
-      id: profile.rollNo || profile.id,
+      id: qrRollNo,
       name: profile.name,
-      recentTicket: {
-        status: latestOuting?.status || "None",
-        validWindow: latestOuting ? `${latestOuting.time} to 08:00 PM` : "N/A",
-      }
+      recentTicket: latestApproved
+        ? {
+            status: latestApproved.status,
+            validWindow: `${formatClock(latestApproved.outTime)} to ${formatClock(latestApproved.inTime)}`,
+          }
+        : { status: "None", validWindow: "N/A" },
     };
     return JSON.stringify(data);
-  }, [profile]);
+  }, [qrRollNo, profile.name, latestApproved]);
 
   const formattedDate = useMemo(
     () => now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),
@@ -143,17 +223,48 @@ export default function StudentDashboardPage() {
     [now]
   );
 
-  const stats = [
-    { label: "Week outings", value: "4", width: "72%", tone: "from-cyan-500 via-sky-400/30 to-transparent" },
-    { label: "On-time returns", value: "98%", width: "98%", tone: "from-emerald-500 via-emerald-400/30 to-transparent" },
-    { label: "Next check-in", value: "7:30 PM", width: "55%", tone: "from-indigo-500 via-violet-400/30 to-transparent" },
-  ];
+  const stats = useMemo(() => {
+    const approvedCount = outings.filter((o) =>
+      ["Approved", "Out", "Returned"].includes(o.status)
+    ).length;
+    const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : "0%");
+    return [
+      {
+        label: "Total outings",
+        value: String(outings.length),
+        width: outings.length ? "100%" : "6%",
+        tone: "from-cyan-500 via-sky-400/30 to-transparent",
+      },
+      {
+        label: "Approved",
+        value: String(approvedCount),
+        width: pct(approvedCount, outings.length || 1),
+        tone: "from-emerald-500 via-emerald-400/30 to-transparent",
+      },
+      {
+        label: "Next return by",
+        value: latestApproved ? formatClock(latestApproved.inTime) : "—",
+        width: latestApproved ? "80%" : "6%",
+        tone: "from-indigo-500 via-violet-400/30 to-transparent",
+      },
+    ];
+  }, [outings, latestApproved]);
 
-  const timeline = [
-    { title: "Outing approved", meta: "City Library · 05:30 PM", tone: "bg-emerald-100 text-emerald-700" },
-    { title: "Gate scan recorded", meta: "North Gate · 05:40 PM", tone: "bg-sky-100 text-sky-700" },
-    { title: "Return reminder", meta: "Due by 07:30 PM", tone: "bg-amber-100 text-amber-700" },
-  ];
+  const timeline = useMemo(() => {
+    if (!latestApproved) return [];
+    return [
+      {
+        title: "Outing approved",
+        meta: `${latestApproved.place} · ${formatClock(latestApproved.outTime)}`,
+        tone: "bg-emerald-100 text-emerald-700",
+      },
+      {
+        title: "Return due",
+        meta: `By ${formatClock(latestApproved.inTime)}`,
+        tone: "bg-amber-100 text-amber-700",
+      },
+    ];
+  }, [latestApproved]);
 
   return (
     <main className="min-h-screen student-dashboard-luxe text-slate-900 pb-28">
@@ -280,7 +391,7 @@ export default function StudentDashboardPage() {
                   <div className="sd-body mt-4 space-y-3 text-[0.95rem]">
                     <p className="flex items-center gap-3 font-semibold text-slate-700">
                       <IdCard className="h-5 w-5 text-indigo-500 shrink-0" /> 
-                      <span>Roll No: <strong className="text-slate-900">{profile.rollNo || (profile.id && !profile.id.includes("@") ? profile.id : "STU2024CSE102")}</strong></span>
+                      <span>Roll No: <strong className="text-slate-900">{profile.rollNo}</strong></span>
                     </p>
                     <p className="flex items-center gap-3 font-semibold text-slate-700">
                       <Mail className="h-5 w-5 text-sky-500 shrink-0" /> 
@@ -318,23 +429,33 @@ export default function StudentDashboardPage() {
                 </Link>
               </div>
               <div className="mt-5 space-y-3">
-                {outings.map((outing, i) => (
-                  <div
-                    key={`${outing.place}-${outing.date}`}
-                    className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5"
-                    style={{ animationDelay: `${0.15 + i * 0.06}s` }}
-                  >
-                    <div>
-                      <p className="sd-card-title text-slate-900 text-base">{outing.place}</p>
-                      <p className="sd-micro mt-0.5">
-                        {outing.date} at {outing.time}
-                      </p>
+                {outingsLoading ? (
+                  <p className="sd-micro rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center">
+                    Loading your outings…
+                  </p>
+                ) : outings.length === 0 ? (
+                  <p className="sd-micro rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center">
+                    No outings yet. Generate an outing ticket to get started.
+                  </p>
+                ) : (
+                  outings.slice(0, 3).map((outing, i) => (
+                    <div
+                      key={outing.id}
+                      className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5"
+                      style={{ animationDelay: `${0.15 + i * 0.06}s` }}
+                    >
+                      <div>
+                        <p className="sd-card-title text-slate-900 text-base">{outing.place}</p>
+                        <p className="sd-micro mt-0.5">
+                          {outing.date} at {outing.time}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${outingStatusStyle(outing.status)}`}>
+                        {outing.status}
+                      </span>
                     </div>
-                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
-                      {outing.status}
-                    </span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </section>
@@ -375,19 +496,25 @@ export default function StudentDashboardPage() {
                 <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-semibold">Auto sync</span>
               </div>
               <div className="mt-5 space-y-4">
-                {timeline.map((event, i) => (
-                  <div
-                    key={event.title}
-                    className="sd-luxe-card sd-timeline-item sd-luxe-rise sd-luxe-tilt flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3.5"
-                    style={{ animationDelay: `${0.1 + i * 0.07}s` }}
-                  >
-                    <div>
-                      <p className="sd-card-title text-slate-900">{event.title}</p>
-                      <p className="sd-micro">{event.meta}</p>
+                {timeline.length === 0 ? (
+                  <p className="sd-micro rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center">
+                    No active outing. Your movement updates appear here once a pass is approved.
+                  </p>
+                ) : (
+                  timeline.map((event, i) => (
+                    <div
+                      key={event.title}
+                      className="sd-luxe-card sd-timeline-item sd-luxe-rise sd-luxe-tilt flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3.5"
+                      style={{ animationDelay: `${0.1 + i * 0.07}s` }}
+                    >
+                      <div>
+                        <p className="sd-card-title text-slate-900">{event.title}</p>
+                        <p className="sd-micro">{event.meta}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${event.tone}`}>Active</span>
                     </div>
-                    <span className={`rounded-full px-3 py-1 text-xs font-bold ${event.tone}`}>Active</span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </section>
@@ -443,7 +570,7 @@ export default function StudentDashboardPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Roll No</span>
-                  <span className="text-sm font-bold text-indigo-600 font-mono">{profile.rollNo || (profile.id && !profile.id.includes("@") ? profile.id : "STU2024CSE102")}</span>
+                  <span className="text-sm font-bold text-indigo-600 font-mono">{profile.rollNo}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Hostel</span>
