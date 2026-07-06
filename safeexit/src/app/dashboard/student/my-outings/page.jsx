@@ -21,6 +21,7 @@ import StudentProfileBanner from "@/app/components/student/StudentProfileBanner"
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { getFirstName } from "@/app/lib/userProfile";
+import { apiFetch } from "@/app/lib/api";
 
 const statusConfig = {
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
@@ -59,10 +60,7 @@ export default function MyOutings() {
     const fetchOutings = async () => {
       setLoading(true);
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:${window.location.port === "3000" ? "5000" : window.location.port}/api` : "http://localhost:5000/api");
-        const res = await fetch(`${apiBase}/outing/myrequests`, { credentials: "include" });
-        if (!res.ok) throw new Error("Failed to fetch outings");
-        const data = await res.json();
+        const data = await apiFetch("/outing/myrequests");
         const mapped = data.map((o) => ({
           id: `SE-${String(o._id).slice(-6).toUpperCase()}`,
           destination: o.destination,

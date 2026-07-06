@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -22,6 +22,72 @@ import {
 import ProfileView from "./components/ProfileView";
 import ComplaintsView from "./components/ComplaintsView";
 import AutoApprovedView from "./components/AutoApprovedView";
+import RequestsView from "./components/RequestsView";
+import { apiFetch } from "@/app/lib/api";
+
+const initials = (name = "") =>
+  name
+    .split(" ")
+    .map((n) => n[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "?";
+
+const formatTime = (value) =>
+  value
+    ? new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+    : "—";
+
+// Map a backend OutingRequest (with populated student) to the pending-card shape.
+const mapPending = (o) => ({
+  id: o._id,
+  name: o.student?.name || "Unknown Student",
+  branch: [o.student?.year, o.student?.department].filter(Boolean).join(", ") || "—",
+  roll: o.student?.studentId || "",
+  destination: o.destination || "",
+  out: formatTime(o.outTime),
+  return: formatTime(o.inTime),
+  initials: initials(o.student?.name),
+});
+
+// Complaint category → icon/tone styling used by the complaint cards.
+const complaintTone = (category) => {
+  switch (category) {
+    case "Electrical":
+      return { tone: "bg-amber-100 text-amber-500", icon: AlertTriangle };
+    case "Plumbing":
+      return { tone: "bg-sky-100 text-sky-500", icon: AlertCircle };
+    case "Security":
+      return { tone: "bg-rose-100 text-rose-500", icon: ShieldAlert };
+    default:
+      return { tone: "bg-orange-100 text-orange-500", icon: AlertCircle };
+  }
+};
+
+const statusToneFor = (status) =>
+  status === "Resolved"
+    ? "bg-emerald-100 text-emerald-600"
+    : status === "In Progress"
+    ? "bg-amber-100 text-amber-600"
+    : "bg-rose-100 text-rose-600";
+
+// Map a backend Complaint (with populated student) to the report-card shape.
+const mapReport = (c) => {
+  const { tone, icon } = complaintTone(c.category);
+  return {
+    id: c._id,
+    title: c.description || c.category,
+    by: c.student?.name || "Unknown Student",
+    time: c.createdAt
+      ? new Date(c.createdAt).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+      : "—",
+    status: c.status || "Open",
+    tone,
+    icon,
+    statusTone: statusToneFor(c.status),
+  };
+};
 
 export default function WardenDashboardPage() {
   const [now, setNow] = useState(null);
@@ -48,23 +114,50 @@ export default function WardenDashboardPage() {
   const formattedDate = now ? now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short" }) : "Loading...";
   const formattedTime = now ? now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "Loading...";
 
-  // Make lists stateful so quick-action interactions reflect immediately
-  const [pending, setPending] = useState([
-    { id: 1, name: "Ananya Verma", branch: "2nd Year, CSE", roll: "STU2024CSE102", out: "06:15 PM", return: "08:30 PM", initials: "AV" },
-    { id: 2, name: "Riya Patel", branch: "3rd Year, ECE", roll: "STU2023ECE089", out: "06:45 PM", return: "09:00 PM", initials: "RP" },
-    { id: 3, name: "Neha Joshi", branch: "2nd Year, IT", roll: "STU2024IT045", out: "07:00 PM", return: "09:30 PM", initials: "NJ" },
-  ]);
+  // Lists are loaded from the backend; approve/reject/resolve mutate the server
+  // and then update these so the UI reflects changes immediately.
+  const [pending, setPending] = useState([]);
+  const [approved, setApproved] = useState([]);
+  const [reports, setReports] = useState([]);
 
-  const [approved, setApproved] = useState([
-    { id: 1, name: "Sneha Reddy", outSince: "04:10 PM", initials: "SR" },
-    { id: 2, name: "Aarav Sharma", outSince: "04:25 PM", initials: "AS" },
-    { id: 3, name: "Manav Singh", outSince: "04:40 PM", initials: "MS" },
-  ]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  const [loadingReports, setLoadingReports] = useState(true);
+  const [requestsError, setRequestsError] = useState("");
+  const [reportsError, setReportsError] = useState("");
 
-  const [reports, setReports] = useState([
-    { id: 1, title: "Water leakage in Room 201", by: "Riya Patel", time: "19 May, 08:30 AM", status: "New", tone: "bg-rose-100 text-rose-500", icon: AlertCircle, statusTone: "bg-rose-100 text-rose-600" },
-    { id: 2, title: "Mess food quality issue", by: "Neha Joshi", time: "19 May, 07:45 AM", status: "New", tone: "bg-orange-100 text-orange-500", icon: AlertTriangle, statusTone: "bg-rose-100 text-rose-600" },
-  ]);
+  // Pending outing requests awaiting warden action.
+  const loadRequests = useCallback(async () => {
+    setLoadingRequests(true);
+    setRequestsError("");
+    try {
+      const data = await apiFetch("/outing/pending");
+      setPending(data.map(mapPending));
+    } catch (err) {
+      setRequestsError(err.message || "Could not load requests");
+    } finally {
+      setLoadingRequests(false);
+    }
+  }, []);
+
+  // All complaints for the recent-reports and complaints views.
+  const loadReports = useCallback(async () => {
+    setLoadingReports(true);
+    setReportsError("");
+    try {
+      const data = await apiFetch("/complaint");
+      const open = data.filter((c) => c.status !== "Resolved");
+      setReports(open.map(mapReport));
+    } catch (err) {
+      setReportsError(err.message || "Could not load complaints");
+    } finally {
+      setLoadingReports(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRequests();
+    loadReports();
+  }, [loadRequests, loadReports]);
 
   function openPanel(key) {
     setActivePanel(key);
@@ -77,19 +170,53 @@ export default function WardenDashboardPage() {
     setActivePanel(null);
   }
 
-  function approveRequest(id) {
+  async function approveRequest(id) {
+    const req = pending.find((p) => p.id === id);
+    if (!req) return;
+    // Optimistically move the card, then persist to the backend.
+    setPending((p) => p.filter((r) => r.id !== id));
+    setApproved((a) => [{ id: req.id, name: req.name, outSince: req.out, initials: req.initials }, ...a]);
+    try {
+      await apiFetch(`/outing/${id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "Approved" }),
+      });
+    } catch (err) {
+      // Roll back on failure.
+      setApproved((a) => a.filter((r) => r.id !== id));
+      setPending((p) => [req, ...p]);
+      setRequestsError(err.message || "Could not approve request");
+    }
+  }
+
+  async function rejectRequest(id) {
     const req = pending.find((p) => p.id === id);
     if (!req) return;
     setPending((p) => p.filter((r) => r.id !== id));
-    setApproved((a) => [{ id: Date.now(), name: req.name, outSince: req.out, initials: req.initials }, ...a]);
+    try {
+      await apiFetch(`/outing/${id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "Rejected" }),
+      });
+    } catch (err) {
+      setPending((p) => [req, ...p]);
+      setRequestsError(err.message || "Could not reject request");
+    }
   }
 
-  function rejectRequest(id) {
-    setPending((p) => p.filter((r) => r.id !== id));
-  }
-
-  function resolveReport(id) {
-    setReports((r) => r.filter((rep) => rep.id !== id));
+  async function resolveReport(id) {
+    const rep = reports.find((r) => r.id === id);
+    if (!rep) return;
+    setReports((r) => r.filter((item) => item.id !== id));
+    try {
+      await apiFetch(`/complaint/${id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "Resolved" }),
+      });
+    } catch (err) {
+      setReports((r) => [rep, ...r]);
+      setReportsError(err.message || "Could not resolve complaint");
+    }
   }
 
   function toggleAutoRule() {
@@ -274,7 +401,14 @@ export default function WardenDashboardPage() {
                 <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-semibold">Priority</span>
               </div>
               <div className="mt-5 space-y-4">
-                {reports.map((comp, i) => (
+                {loadingReports ? (
+                  <p className="text-sm text-slate-500">Loading complaints…</p>
+                ) : reportsError ? (
+                  <p className="text-sm font-semibold text-rose-600">{reportsError}</p>
+                ) : reports.length === 0 ? (
+                  <p className="text-sm text-slate-500">No open complaints.</p>
+                ) : (
+                  reports.map((comp, i) => (
                   <div key={comp.id} className="sd-luxe-card sd-timeline-item sd-luxe-rise sd-luxe-tilt flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5" style={{ animationDelay: `${0.08 + i * 0.06}s` }}>
                     <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${comp.tone}`}>
                       <comp.icon className="h-5 w-5" />
@@ -287,11 +421,23 @@ export default function WardenDashboardPage() {
                       <span className={`text-[10px] font-bold px-3 py-1 rounded-md ${comp.statusTone}`}>{comp.status}</span>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
               </section>
             </>
+          )}
+
+          {view === 'requests' && (
+            <RequestsView
+              pending={pending}
+              approveRequest={approveRequest}
+              rejectRequest={rejectRequest}
+              loading={loadingRequests}
+              error={requestsError}
+              onRefresh={loadRequests}
+            />
           )}
 
           {view === 'approved' && (

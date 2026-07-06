@@ -29,6 +29,7 @@ import StudentFeatureShell, {
   StudentFeaturePanel,
   StudentFeatureCentered,
 } from "@/app/components/student/StudentFeatureShell";
+import { apiFetch } from "@/app/lib/api";
 
 const STEPS = ["form", "review", "success"];
 
@@ -147,7 +148,6 @@ export default function GenerateTicket() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:${window.location.port === "3000" ? "5000" : window.location.port}/api` : "http://localhost:5000/api");
       const body = {
         destination: form.destination,
         purpose: form.note || "Outing",
@@ -155,19 +155,11 @@ export default function GenerateTicket() {
         inTime: new Date(`${form.dateReturn} ${form.timeReturn}`).toISOString(),
       };
 
-      const res = await fetch(`${apiBase}/outing`, {
+      const data = await apiFetch("/outing", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(body),
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to create outing");
-      }
-
-      const data = await res.json();
       setCreatedOuting(data);
       setLoading(false);
       setStep("success");
