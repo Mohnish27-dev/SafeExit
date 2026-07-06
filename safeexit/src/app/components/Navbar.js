@@ -12,6 +12,7 @@ export default function Navbar() {
   useEffect(() => {
     // Check initial class on documentElement
     const isDark = document.documentElement.classList.contains("dark");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reading theme from the DOM (client-only external source) after mount.
     setTheme(isDark ? "dark" : "light");
 
     const handleScroll = () => {
@@ -56,8 +57,8 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-2 cursor-pointer">
-            <div className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/30">
+          <div className="flex items-center gap-2 cursor-pointer group">
+            <div className="nav-logo-glow h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/30">
               <Shield className="h-5.5 w-5.5" />
             </div>
             <div>
@@ -76,7 +77,7 @@ export default function Navbar() {
               <a
                 key={link.name}
                 href={link.href}
-                className="text-sm font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-white transition-colors duration-200"
+                className="nav-link text-sm font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-white transition-colors duration-200"
               >
                 {link.name}
               </a>
@@ -94,10 +95,10 @@ export default function Navbar() {
             </button>
             <Link
               href="/login"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-gradient-to-r from-slate-900 to-indigo-600 text-white hover:brightness-110 shadow-md shadow-indigo-600/20 active:scale-95 transition-all duration-200"
+              className="cta-shine group inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-gradient-to-r from-slate-900 to-indigo-600 text-white hover:brightness-110 hover:scale-105 shadow-md shadow-indigo-600/20 active:scale-95 transition-all duration-200"
             >
               Login
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </div>
 
