@@ -137,7 +137,9 @@ export default function StudentDashboardPage() {
       try {
         const me = await apiFetch("/auth/profile");
         if (cancelled || !me?.studentId) return;
-        setProfile((prev) => ({ ...prev, rollNo: me.studentId }));
+        // Carry both the roll number and the immutable Mongo _id: the gate scanner
+        // resolves by _id first, so a stale/whitespace roll number can't 404.
+        setProfile((prev) => ({ ...prev, rollNo: me.studentId, sid: me._id }));
       } catch {
         /* Not authenticated on the server yet — keep the locally stored profile. */
       }
@@ -151,8 +153,11 @@ export default function StudentDashboardPage() {
   // QR pass; the full list drives the Recent Outings, stats and timeline cards.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setOutingsLoading(true);
+
+    // background=true suppresses the loading state so the poll / focus refetch
+    // updates statuses silently without flickering the "Loading…" placeholders.
+    const loadOutings = async (background = false) => {
+      if (!background) setOutingsLoading(true);
       try {
         const data = await apiFetch("/outing/myrequests");
         if (cancelled) return;
@@ -168,13 +173,28 @@ export default function StudentDashboardPage() {
         }));
         setOutings(mapped);
       } catch {
-        if (!cancelled) setOutings([]);
+        if (!cancelled && !background) setOutings([]);
       } finally {
         if (!cancelled) setOutingsLoading(false);
       }
-    })();
+    };
+
+    loadOutings();
+
+    // The guard's gate entry scan flips the active pass to "Returned" server-side.
+    // Poll and refetch on tab focus so the dashboard reflects it without a reload.
+    const interval = setInterval(() => loadOutings(true), 15000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadOutings(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, []);
 
@@ -195,13 +215,18 @@ export default function StudentDashboardPage() {
   const qrRollNo = useMemo(() => {
     const roll = profile.rollNo && profile.rollNo !== defaultStudentProfile.rollNo ? profile.rollNo : "";
     if (roll) return roll;
-    // Last resort: a non-email id is the roll number too; never a fabricated value.
-    return profile.id && !String(profile.id).includes("@") ? profile.id : "";
+    // Last resort: a non-email id is the roll number too; never a fabricated value
+    // and never the "—" placeholder (which the scanner can't resolve → 404).
+    const id = profile.id;
+    if (!id || id === defaultStudentProfile.id || String(id).includes("@")) return "";
+    return id;
   }, [profile]);
 
   const qrValue = useMemo(() => {
     const data = {
       id: qrRollNo,
+      // Immutable Mongo _id; the gate scanner resolves by this first when present.
+      sid: profile.sid || undefined,
       name: profile.name,
       recentTicket: latestApproved
         ? {
@@ -211,7 +236,7 @@ export default function StudentDashboardPage() {
         : { status: "None", validWindow: "N/A" },
     };
     return JSON.stringify(data);
-  }, [qrRollNo, profile.name, latestApproved]);
+  }, [qrRollNo, profile.sid, profile.name, latestApproved]);
 
   const formattedDate = useMemo(
     () => now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),

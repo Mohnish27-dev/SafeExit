@@ -15,6 +15,7 @@ import {
   Eye,
   AlertCircle,
   Ticket,
+  LogOut,
 } from "lucide-react";
 import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
@@ -25,6 +26,7 @@ import { apiFetch } from "@/app/lib/api";
 
 const statusConfig = {
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
+  out: { label: "Outside", color: "text-sky-700", bg: "bg-sky-100", icon: LogOut },
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
   returned: { label: "Returned", color: "text-slate-600", bg: "bg-slate-100", icon: RotateCcw },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
@@ -33,6 +35,7 @@ const statusConfig = {
 const filters = [
   { key: "all", label: "All" },
   { key: "approved", label: "Approved" },
+  { key: "out", label: "Outside" },
   { key: "pending", label: "Pending" },
   { key: "returned", label: "Returned" },
   { key: "rejected", label: "Rejected" },
@@ -56,11 +59,15 @@ export default function MyOutings() {
 
   useEffect(() => {
     if (!hydrated) return;
+    let cancelled = false;
 
-    const fetchOutings = async () => {
-      setLoading(true);
+    // background=true is used by the poll / focus refetch so the full-page loader
+    // doesn't flash on every silent refresh.
+    const fetchOutings = async (background = false) => {
+      if (!background) setLoading(true);
       try {
         const data = await apiFetch("/outing/myrequests");
+        if (cancelled) return;
         const mapped = data.map((o) => ({
           id: `SE-${String(o._id).slice(-6).toUpperCase()}`,
           destination: o.destination,
@@ -72,13 +79,30 @@ export default function MyOutings() {
         }));
         setOutings(mapped);
       } catch (err) {
-        setOutings([]);
+        if (!cancelled && !background) setOutings([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchOutings();
+
+    // The guard's gate entry scan flips this student's active pass to "Returned"
+    // on the server. Poll and refetch when the tab regains focus so that status
+    // shows here without needing a manual page reload.
+    const interval = setInterval(() => fetchOutings(true), 15000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchOutings(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [hydrated]);
 
   const filtered = outings.filter((outing) => {

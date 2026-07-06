@@ -111,7 +111,7 @@ export default function SecurityDashboardPage() {
 
   // Persist the in-progress scan as a real gate movement, then refresh the feed.
   const confirmScan = async () => {
-    if (!scanResult?.id) {
+    if (!scanResult?.id && !scanResult?.sid) {
       setScanResult(null);
       return;
     }
@@ -127,6 +127,8 @@ export default function SecurityDashboardPage() {
       await apiFetch("/scan", {
         method: "POST",
         body: JSON.stringify({
+          // _id resolves reliably; roll number is the fallback for older QRs.
+          student: scanResult.sid,
           studentId: scanResult.id,
           direction,
           punctuality,
