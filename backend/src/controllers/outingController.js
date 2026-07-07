@@ -8,11 +8,17 @@ const createOutingRequest = async (req, res) => {
   const { destination, purpose, outTime, inTime } = req.body;
 
   try {
-    // Low-risk passes (return on or before 5:30 PM) are approved automatically
-    // so the student's DB status actually matches what the success screen
-    // tells them — otherwise a "scannable at the gate" ticket would still be
-    // Pending and get turned away by the exit scan.
-    const autoApproved = qualifiesForAutoApproval(inTime);
+    // A student who is currently outside (or overdue) must log an entry at the
+    // gate before requesting another outing — otherwise a single student could
+    // stack passes while off-campus. campusStatus is flipped by gate scans, so
+    // 'Inside' is the only state from which a fresh request is valid.
+    if (req.user.campusStatus && req.user.campusStatus !== 'Inside') {
+      return res.status(409).json({
+        message:
+          'You are currently marked outside campus. Log your entry at the gate before creating a new outing request.',
+        campusStatus: req.user.campusStatus,
+      });
+    }
 
     const outingRequest = await OutingRequest.create({
       student: req.user._id,

@@ -29,6 +29,7 @@ import StudentFeatureShell, {
   StudentFeaturePanel,
   StudentFeatureCentered,
 } from "@/app/components/student/StudentFeatureShell";
+import { apiFetch } from "@/app/lib/api";
 
 const STEPS = ["form", "review", "success"];
 
@@ -36,14 +37,14 @@ const departureTimeOptions = [
   "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
   "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
   "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM", "04:00 PM", "04:30 PM",
-  "05:00 PM", "05:30 PM", "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM"
+  "05:00 PM", "05:30 PM", "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM", "08:30 PM" , "09:00 PM"
 ];
 
 const returnTimeOptions = [
   "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
   "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
   "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM", "04:00 PM", "04:30 PM",
-  "05:00 PM", "05:30 PM", "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM", "08:00 PM"
+  "05:00 PM", "05:30 PM", "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM", "08:00 PM", "09:00 PM", "09:30 PM"
 ];
 
 function StepBar({ current }) {
@@ -191,10 +192,8 @@ export default function GenerateTicket() {
         inTime: new Date(`${form.dateReturn} ${form.timeReturn}`).toISOString(),
       };
 
-      const res = await fetch(`${apiBase}/outing`, {
+      const data = await apiFetch("/outing", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(body),
       });
 
@@ -477,32 +476,32 @@ export default function GenerateTicket() {
   const now = new Date();
   const isPastCutoff = now.getHours() > 19 || (now.getHours() === 19 && now.getMinutes() > 30);
 
-  if (isPastCutoff && step === "form") {
-    return (
-      <StudentFeatureShell
-        eyebrow="New Request"
-        title="Generate Outing Ticket"
-        icon={Ticket}
-        iconTone="ticket"
-        onBack={() => router.push("/dashboard/student")}
-        contentClassName="space-y-5"
-      >
-        <StudentFeaturePanel className="p-8 text-center animate-scale-in">
-          <div className="w-20 h-20 mx-auto bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-6 shadow-lg">
-            <AlertCircle size={40} />
-          </div>
-          <h2 className="font-sora text-2xl font-bold text-slate-800 mb-2">Outing Generation Closed</h2>
-          <p className="text-slate-600 text-sm mb-8 leading-relaxed max-w-sm mx-auto">
-            Outing requests for today can only be generated before 7:30 PM. 
-            Please try again tomorrow.
-          </p>
-          <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full max-w-sm mx-auto">
-            Back to Dashboard
-          </button>
-        </StudentFeaturePanel>
-      </StudentFeatureShell>
-    );
-  }
+  // if (isPastCutoff && step === "form") {
+  //   return (
+  //     <StudentFeatureShell
+  //       eyebrow="New Request"
+  //       title="Generate Outing Ticket"
+  //       icon={Ticket}
+  //       iconTone="ticket"
+  //       onBack={() => router.push("/dashboard/student")}
+  //       contentClassName="space-y-5"
+  //     >
+  //       <StudentFeaturePanel className="p-8 text-center animate-scale-in">
+  //         <div className="w-20 h-20 mx-auto bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-6 shadow-lg">
+  //           <AlertCircle size={40} />
+  //         </div>
+  //         <h2 className="font-sora text-2xl font-bold text-slate-800 mb-2">Outing Generation Closed</h2>
+  //         <p className="text-slate-600 text-sm mb-8 leading-relaxed max-w-sm mx-auto">
+  //           Outing requests for today can only be generated before 7:30 PM. 
+  //           Please try again tomorrow.
+  //         </p>
+  //         <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full max-w-sm mx-auto">
+  //           Back to Dashboard
+  //         </button>
+  //       </StudentFeaturePanel>
+  //     </StudentFeatureShell>
+  //   );
+  // }
 
   return (
     <StudentFeatureShell

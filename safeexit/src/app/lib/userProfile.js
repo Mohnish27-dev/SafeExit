@@ -82,7 +82,12 @@ export const normalizeStudentProfile = (stored) => {
       : stored.subtitle || defaultStudentProfile.subtitle;
 
   const isEmailId = stored.id && String(stored.id).includes("@");
-  const rollNo = stored.rollNo || (isEmailId ? "STU2024CSE102" : stored.id || "STU2024CSE102");
+  // Never fabricate a roll number: the QR encodes this exact value as the student's
+  // `studentId`, and the gate scanner looks it up in the DB. A made-up fallback like
+  // "STU2024CSE102" is guaranteed not to exist → every scan returns "Student not found".
+  // Use the real registered roll number, then the non-email id, else the neutral
+  // "unknown" marker from the default profile.
+  const rollNo = stored.rollNo || (isEmailId ? "" : stored.id) || defaultStudentProfile.rollNo;
   const email = stored.email || (isEmailId ? stored.id : `${stored.name.toLowerCase().replace(/\s+/g, ".")}@nitp.ac.in`);
 
   return {
