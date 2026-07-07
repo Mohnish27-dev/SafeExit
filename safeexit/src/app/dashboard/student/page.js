@@ -35,8 +35,9 @@ import {
 import { getTimeGreeting } from "@/app/lib/greeting";
 import { apiFetch } from "@/app/lib/api";
 
-// Format a stored Date/ISO string as e.g. "05:30 PM". This exact shape is what the
-// gate scanner parses out of the QR's validWindow (it splits on " to " then on " ").
+// Format a stored Date/ISO string as e.g. "05:30 PM". Used by the pass/timeline
+// cards below. (The QR itself no longer carries any formatted window — it's
+// identity-only; the gate reads the live window from the backend at scan time.)
 const formatClock = (value) =>
   new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
@@ -223,21 +224,21 @@ export default function StudentDashboardPage() {
     return id;
   }, [profile]);
 
+  // Identity-only QR: it carries WHO the student is, never any outing status.
+  // Because it holds no per-trip data, its value never changes between outings —
+  // the student can screenshot it once and reuse it forever. The gate resolves
+  // the student's *current* approved pass live at scan time (see /scan/preview
+  // and POST /scan on the backend), so a replayed screenshot can't smuggle a
+  // stale "Approved" status past the guard — there is nothing to replay.
   const qrValue = useMemo(() => {
     const data = {
       id: qrRollNo,
       // Immutable Mongo _id; the gate scanner resolves by this first when present.
       sid: profile.sid || undefined,
       name: profile.name,
-      recentTicket: latestApproved
-        ? {
-            status: latestApproved.status,
-            validWindow: `${formatClock(latestApproved.outTime)} to ${formatClock(latestApproved.inTime)}`,
-          }
-        : { status: "None", validWindow: "N/A" },
     };
     return JSON.stringify(data);
-  }, [qrRollNo, profile.sid, profile.name, latestApproved]);
+  }, [qrRollNo, profile.sid, profile.name]);
 
   const formattedDate = useMemo(
     () => now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),

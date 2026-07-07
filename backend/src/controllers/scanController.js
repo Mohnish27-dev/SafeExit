@@ -198,6 +198,37 @@ const previewScan = async (req, res) => {
       ? (isReturnLate(activeOuting.inTime) ? 'Overdue' : 'On-Time')
       : 'N/A';
 
+    // Exit eligibility: a READ-ONLY mirror of the OUT enforcement in
+    // createScanLog, so the guard's exit dialog shows the real verdict BEFORE
+    // confirming instead of trusting the QR (which no longer carries a status at
+    // all). Performs no writes — unlike the live scan it never persists 'Expired';
+    // it only reports what an OUT scan would decide against the DB right now. The
+    // newest 'Approved' pass is the one the live OUT scan would consume.
+    const approvedOuting = await OutingRequest.findOne({
+      student: studentDoc._id,
+      status: 'Approved',
+    }).sort({ createdAt: -1 });
+
+    let exit;
+    if (!approvedOuting) {
+      // No warden-approved pass → the live scan would 403. This is exactly the
+      // replayed-QR case: a screenshot from a finished trip resolves to nothing.
+      exit = { allowed: false, reason: 'no-approved', outing: null };
+    } else if (isDeparturePassed(approvedOuting.outTime)) {
+      // Approved but the departure deadline has passed → the live scan would 403.
+      exit = {
+        allowed: false,
+        reason: 'expired',
+        outing: { outTime: approvedOuting.outTime, inTime: approvedOuting.inTime },
+      };
+    } else {
+      exit = {
+        allowed: true,
+        reason: null,
+        outing: { outTime: approvedOuting.outTime, inTime: approvedOuting.inTime },
+      };
+    }
+
     res.json({
       student: {
         _id: studentDoc._id,
@@ -209,6 +240,7 @@ const previewScan = async (req, res) => {
         ? { outTime: activeOuting.outTime, inTime: activeOuting.inTime, status: activeOuting.status }
         : null,
       punctuality,
+      exit,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
