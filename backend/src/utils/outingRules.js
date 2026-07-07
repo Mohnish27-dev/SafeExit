@@ -5,15 +5,33 @@
 // Rule: a request whose expected return time is on or before 5:30 PM is
 // low-risk enough to skip warden review and be approved automatically.
 
-const AUTO_APPROVE_CUTOFF_MINUTES = 17 * 60 + 30; // 5:30 PM
+// The cutoff is evaluated in the campus's own timezone rather than the
+// server process's local time. `Date#getHours()` reads out in whatever TZ
+// the host happens to be configured with — identical code would compute a
+// different cutoff on a UTC-default cloud host than on a machine set to
+// IST, silently moving "5:30 PM" to a different real-world time depending
+// on where this process is deployed. Pinning it keeps the rule's meaning
+// fixed regardless of host configuration.
+const CAMPUS_TIMEZONE = 'Asia/Kolkata';
+const AUTO_APPROVE_CUTOFF_MINUTES = 17 * 60 + 30; // 5:30 PM, campus local time
 
-const minutesOfDay = (date) => date.getHours() * 60 + date.getMinutes();
+const minutesOfDayInTimeZone = (date, timeZone) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: 'numeric',
+    minute: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour').value);
+  const minute = Number(parts.find((part) => part.type === 'minute').value);
+  return hour * 60 + minute;
+};
 
 // `inTime` is the student's expected return Date (as sent from the client / stored on the request).
 const qualifiesForAutoApproval = (inTime) => {
   const returnDate = new Date(inTime);
   if (Number.isNaN(returnDate.getTime())) return false;
-  return minutesOfDay(returnDate) <= AUTO_APPROVE_CUTOFF_MINUTES;
+  return minutesOfDayInTimeZone(returnDate, CAMPUS_TIMEZONE) <= AUTO_APPROVE_CUTOFF_MINUTES;
 };
 
-module.exports = { qualifiesForAutoApproval, AUTO_APPROVE_CUTOFF_MINUTES };
+module.exports = { qualifiesForAutoApproval, AUTO_APPROVE_CUTOFF_MINUTES, CAMPUS_TIMEZONE };

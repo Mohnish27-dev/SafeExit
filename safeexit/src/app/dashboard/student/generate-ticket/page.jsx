@@ -212,9 +212,6 @@ export default function GenerateTicket() {
       setStep("success");
     } catch (error) {
       setLoading(false);
-      // eslint-disable-next-line no-console -- keep the raw error in the
-      // console for debugging; the UI only ever shows the friendly copy.
-      console.error("Outing submission failed:", error);
       setErrors((prev) => ({
         ...prev,
         submit: describeSubmitError(error),
