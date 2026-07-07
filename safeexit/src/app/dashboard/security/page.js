@@ -51,6 +51,13 @@ const defaultProfile = {
   roleLabel: "Security Guard",
 };
 
+const formatClock = (value) => {
+  if (!value) return "N/A";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "N/A";
+  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+};
+
 const checkIsOverdue = (returnTimeStr) => {
   if (!returnTimeStr) return false;
   try {
@@ -76,6 +83,10 @@ export default function SecurityDashboardPage() {
   const [now, setNow] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  // Authoritative pre-confirm preview from the backend (entry scans): the real
+  // active pass + the punctuality the log will record. Preferred over the QR's
+  // own window, which can be stale/absent and mislabel a late entry "On-Time".
+  const [scanPreview, setScanPreview] = useState(null);
   const [scanMode, setScanMode] = useState(null);
   const [scans, setScans] = useState([]);
   const [counts, setCounts] = useState({ inside: 0, outside: 0, overdue: 0 });
@@ -120,12 +131,10 @@ export default function SecurityDashboardPage() {
     setLogging(true);
     setLogError("");
     const direction = scanMode === "exit" ? "OUT" : "IN";
-    let punctuality = "N/A";
-    if (direction === "IN") {
-      const returnTimeStr = (scanResult.recentTicket?.validWindow || "").split(" to ")[1];
-      punctuality = checkIsOverdue(returnTimeStr) ? "Overdue" : "On-Time";
-    }
     try {
+      // Punctuality is intentionally not sent: the server recomputes it against
+      // the real pass, so a client guess would be ignored anyway. Keeping it out
+      // makes it explicit that the gate is the source of truth.
       await apiFetch("/scan", {
         method: "POST",
         body: JSON.stringify({
@@ -133,10 +142,10 @@ export default function SecurityDashboardPage() {
           student: scanResult.sid,
           studentId: scanResult.id,
           direction,
-          punctuality,
         }),
       });
       setScanResult(null);
+      setScanPreview(null);
       await loadScans();
     } catch (err) {
       setLogError(err.message || "Could not log this scan");
@@ -182,6 +191,23 @@ export default function SecurityDashboardPage() {
 
         setScanResult(parsed);
         setIsScanning(false);
+
+        // For an entry, ask the backend what the scan will actually record so the
+        // dialog shows the authoritative punctuality (judged against the real pass)
+        // rather than the QR's possibly-stale window. Failure is non-fatal — the
+        // dialog falls back to the QR window if this doesn't resolve.
+        setScanPreview(null);
+        if (scanMode === "entry") {
+          try {
+            const params = new URLSearchParams();
+            if (parsed.sid) params.set("sid", parsed.sid);
+            if (parsed.id) params.set("studentId", parsed.id);
+            const preview = await apiFetch(`/scan/preview?${params.toString()}`);
+            setScanPreview(preview);
+          } catch (e) {
+            console.error("Failed to load scan preview:", e);
+          }
+        }
       } catch (err) {
         console.error("Invalid QR code:", err);
       }
@@ -474,7 +500,7 @@ export default function SecurityDashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in">
           <div className="relative w-full max-w-sm bg-white rounded-[2rem] p-6 text-center shadow-2xl animate-scale-in">
             <button 
-              onClick={() => setScanResult(null)} 
+              onClick={() => { setScanResult(null); setScanPreview(null); }}
               className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 transition cursor-pointer text-slate-400"
             >
               <X className="h-5 w-5" />
@@ -508,9 +534,16 @@ export default function SecurityDashboardPage() {
                     </span>
                   ) : (
                     (() => {
-                      const validWindow = scanResult.recentTicket?.validWindow || "";
-                      const returnTimeStr = validWindow.split(" to ")[1];
-                      const isOverdue = checkIsOverdue(returnTimeStr);
+                      // Prefer the backend's authoritative verdict; fall back to the
+                      // QR window only if the preview call didn't resolve.
+                      let isOverdue;
+                      if (scanPreview?.punctuality) {
+                        isOverdue = scanPreview.punctuality === "Overdue";
+                      } else {
+                        const validWindow = scanResult.recentTicket?.validWindow || "";
+                        const returnTimeStr = validWindow.split(" to ")[1];
+                        isOverdue = checkIsOverdue(returnTimeStr);
+                      }
                       return (
                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                           isOverdue ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
@@ -532,11 +565,13 @@ export default function SecurityDashboardPage() {
                     }
                   </span>
                 </div>
-                {scanMode === 'entry' && scanResult.recentTicket?.validWindow && (
+                {scanMode === 'entry' && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Allowed Return</span>
                     <span className="text-sm font-semibold text-slate-800">
-                      {scanResult.recentTicket.validWindow.split(" to ")[1] || "N/A"}
+                      {scanPreview?.activeOuting?.inTime
+                        ? formatClock(scanPreview.activeOuting.inTime)
+                        : (scanResult.recentTicket?.validWindow?.split(" to ")[1] || "N/A")}
                     </span>
                   </div>
                 )}
@@ -548,7 +583,7 @@ export default function SecurityDashboardPage() {
 
               <div className="flex gap-3 w-full">
                 <button
-                  onClick={() => { setLogError(""); setScanResult(null); }}
+                  onClick={() => { setLogError(""); setScanResult(null); setScanPreview(null); }}
                   disabled={logging}
                   className="flex-1 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
                 >

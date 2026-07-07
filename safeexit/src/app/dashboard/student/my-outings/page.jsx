@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Ticket,
   LogOut,
+  TimerOff,
 } from "lucide-react";
 import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
@@ -30,6 +31,7 @@ const statusConfig = {
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
   returned: { label: "Returned", color: "text-slate-600", bg: "bg-slate-100", icon: RotateCcw },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
+  expired: { label: "Expired", color: "text-rose-700", bg: "bg-rose-100", icon: TimerOff },
 };
 
 const filters = [
@@ -39,6 +41,7 @@ const filters = [
   { key: "pending", label: "Pending" },
   { key: "returned", label: "Returned" },
   { key: "rejected", label: "Rejected" },
+  { key: "expired", label: "Expired" },
 ];
 
 const statAccents = {
@@ -275,6 +278,12 @@ export default function MyOutings() {
                         <div className="mt-3 pt-3 border-t border-amber-100 flex items-start gap-2.5">
                           <Loader2 size={15} className="text-amber-500 shrink-0 mt-0.5 animate-spin" />
                           <p className="text-xs font-semibold text-amber-705">Awaiting warden approval. You will be notified.</p>
+                        </div>
+                      )}
+                      {outing.status === "expired" && (
+                        <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
+                          <TimerOff size={15} className="text-rose-500 shrink-0 mt-0.5" />
+                          <p className="text-xs font-semibold text-rose-600">Departure time passed before exit. This pass has expired — file a new request to go out.</p>
                         </div>
                       )}
                     </div>

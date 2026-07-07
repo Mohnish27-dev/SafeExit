@@ -2,9 +2,31 @@ const mongoose = require('mongoose');
 const ScanLog = require('../models/ScanLog');
 const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
+const { isDeparturePassed, isReturnLate } = require('../utils/outingRules');
 
 // Escape a user-supplied string for safe use inside a RegExp.
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Resolve a student from a scanned QR payload. Prefer the immutable Mongo _id
+// when present; otherwise fall back to the roll number with a trimmed, case-
+// insensitive match so a stray space/case in the QR doesn't wrongly 404. Shared
+// by the live scan and the pre-confirm preview so both resolve identically.
+const resolveStudent = async ({ student, studentId }) => {
+  let studentDoc = null;
+  if (student && mongoose.isValidObjectId(student)) {
+    studentDoc = await User.findById(student);
+  }
+  if (!studentDoc && studentId) {
+    const roll = String(studentId).trim();
+    if (roll) {
+      studentDoc = await User.findOne({
+        role: 'Student',
+        studentId: { $regex: `^${escapeRegex(roll)}$`, $options: 'i' },
+      });
+    }
+  }
+  return studentDoc;
+};
 
 // @desc    Record a gate scan (entry/exit) for a student
 // @route   POST /api/scan
@@ -25,22 +47,8 @@ const createScanLog = async (req, res) => {
   }
 
   try {
-    // Resolve the student. Prefer the immutable Mongo _id when the QR carries it;
-    // otherwise fall back to the roll number with a trimmed, case-insensitive match
-    // so a stray space or case difference in the QR doesn't wrongly 404.
-    let studentDoc = null;
-    if (student && mongoose.isValidObjectId(student)) {
-      studentDoc = await User.findById(student);
-    }
-    if (!studentDoc && studentId) {
-      const roll = String(studentId).trim();
-      if (roll) {
-        studentDoc = await User.findOne({
-          role: 'Student',
-          studentId: { $regex: `^${escapeRegex(roll)}$`, $options: 'i' },
-        });
-      }
-    }
+    // Resolve the student from the scanned QR (by _id, then roll number).
+    const studentDoc = await resolveStudent({ student, studentId });
 
     if (!studentDoc) {
       return res.status(404).json({ message: 'Student not found for this QR code' });
@@ -62,6 +70,22 @@ const createScanLog = async (req, res) => {
         return res.status(403).json({
           message:
             'This student has no warden-approved outing pass. Exit denied until a request is approved.',
+          campusStatus: studentDoc.campusStatus,
+        });
+      }
+
+      // Treat the pass's departure time (`outTime`) as a hard deadline: once the
+      // scheduled departure has passed, the QR is expired and the exit is denied
+      // — the student must file a fresh request. We also persist the terminal
+      // 'Expired' status here so every dashboard that reads the pass stops
+      // showing it as active/approved, matching what the gate just enforced.
+      if (isDeparturePassed(linkedOuting.outTime)) {
+        linkedOuting.status = 'Expired';
+        await linkedOuting.save();
+        return res.status(403).json({
+          message:
+            'This outing pass has expired — the approved departure time has already passed. Exit denied; the student must file a new request.',
+          outTime: linkedOuting.outTime,
           campusStatus: studentDoc.campusStatus,
         });
       }
@@ -100,6 +124,14 @@ const createScanLog = async (req, res) => {
     // OUT consumes the Approved pass (→ Out); IN closes the active trip (→ Returned).
     // Doing this only after the atomic flip succeeds means a lost race (409 above)
     // never wrongly mutates the pass.
+    //
+    // Punctuality is decided HERE, server-side, never from the request body: a
+    // guard's client can send a stale or missing value (its check reads the QR's
+    // return window, which may be absent), which is how a late entry could be
+    // logged "On-Time". For an entry we judge the scan's real arrival instant
+    // against the resolved pass's expected return time (`inTime`); anything after
+    // it is 'Overdue'. With no pass to judge against, there's no window → 'N/A'.
+    let resolvedPunctuality = 'N/A';
     if (direction === 'OUT' && linkedOuting) {
       linkedOuting.status = 'Out';
       await linkedOuting.save();
@@ -109,6 +141,7 @@ const createScanLog = async (req, res) => {
         status: 'Out',
       }).sort({ createdAt: -1 });
       if (linkedOuting) {
+        resolvedPunctuality = isReturnLate(linkedOuting.inTime) ? 'Overdue' : 'On-Time';
         linkedOuting.status = 'Returned';
         await linkedOuting.save();
       }
@@ -121,7 +154,7 @@ const createScanLog = async (req, res) => {
       // Prefer the server-resolved pass so the movement is tied to the real trip;
       // fall back to any id the caller supplied for backward compatibility.
       outing: linkedOuting?._id || outing || undefined,
-      punctuality: punctuality || 'N/A',
+      punctuality: resolvedPunctuality,
       gate: gate || 'Main Gate'
     });
 
@@ -130,6 +163,53 @@ const createScanLog = async (req, res) => {
 
     const populated = await log.populate('student', 'name studentId roomNumber department year hostelName');
     res.status(201).json(populated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Preview what an entry scan will record, before the guard confirms it.
+// @route   GET /api/scan/preview?studentId=<roll>&sid=<_id>
+// @access  Private (Guard / Admin)
+//
+// The guard's confirm dialog must NOT judge punctuality from the QR image: that
+// snapshot can be stale or carry no return window (validWindow: "N/A"), which
+// made a late entry preview as "On-Time". This returns the authoritative
+// punctuality the live scan would stamp — computed server-side against the
+// student's active trip's expected return time (`inTime`) — so the preview and
+// the persisted log always agree.
+const previewScan = async (req, res) => {
+  const { studentId, sid } = req.query;
+
+  try {
+    const studentDoc = await resolveStudent({ student: sid, studentId });
+    if (!studentDoc) {
+      return res.status(404).json({ message: 'Student not found for this QR code' });
+    }
+
+    // The trip an entry would close: the newest pass the student actually left on.
+    const activeOuting = await OutingRequest.findOne({
+      student: studentDoc._id,
+      status: 'Out',
+    }).sort({ createdAt: -1 });
+
+    // No active trip → nothing to judge against (matches the live scan's 'N/A').
+    const punctuality = activeOuting
+      ? (isReturnLate(activeOuting.inTime) ? 'Overdue' : 'On-Time')
+      : 'N/A';
+
+    res.json({
+      student: {
+        _id: studentDoc._id,
+        name: studentDoc.name,
+        studentId: studentDoc.studentId,
+        campusStatus: studentDoc.campusStatus,
+      },
+      activeOuting: activeOuting
+        ? { outTime: activeOuting.outTime, inTime: activeOuting.inTime, status: activeOuting.status }
+        : null,
+      punctuality,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -159,5 +239,6 @@ const getScanLogs = async (req, res) => {
 
 module.exports = {
   createScanLog,
+  previewScan,
   getScanLogs
 };

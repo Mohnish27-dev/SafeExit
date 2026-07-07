@@ -1,5 +1,32 @@
 const OutingRequest = require('../models/OutingRequest');
-const { qualifiesForAutoApproval } = require('../utils/outingRules');
+const { qualifiesForAutoApproval, isDeparturePassed } = require('../utils/outingRules');
+
+// Lazily expire approved-but-unused passes at read time. A pass that was
+// Approved (by warden or auto-rule) but whose departure `outTime` has passed
+// without the student exiting the gate is no longer usable — the gate scan
+// already refuses it. We flip such passes to 'Expired' here so every read
+// (student dashboard, my-outings, warden views) reflects the same terminal
+// state, instead of showing a stale "Approved/Active" pass forever. Only
+// 'Approved' passes are eligible: 'Out'/'Returned' trips already left, and
+// 'Pending' ones haven't been approved yet. Persistence is best-effort and
+// per-doc so one failed save doesn't block the whole list response.
+const expireStaleApproved = async (requests) => {
+  const list = Array.isArray(requests) ? requests : [requests];
+  await Promise.all(
+    list.map(async (reqDoc) => {
+      if (!reqDoc || reqDoc.status !== 'Approved') return;
+      if (!isDeparturePassed(reqDoc.outTime)) return;
+      reqDoc.status = 'Expired';
+      try {
+        await reqDoc.save();
+      } catch (err) {
+        // Leave the in-memory doc as 'Expired' for this response even if the
+        // write lost a race; the next read will retry the persist.
+      }
+    })
+  );
+  return requests;
+};
 
 // @desc    Create new outing request
 // @route   POST /api/outing
@@ -45,6 +72,7 @@ const createOutingRequest = async (req, res) => {
 const getMyOutingRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find({ student: req.user._id }).sort({ createdAt: -1 });
+    await expireStaleApproved(requests);
     res.json(requests);
   } catch (error) {
     res.status(500).json({ message: error.message });
