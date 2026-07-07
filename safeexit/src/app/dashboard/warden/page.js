@@ -23,7 +23,7 @@ import ProfileView from "./components/ProfileView";
 import ComplaintsView from "./components/ComplaintsView";
 import AutoApprovedView from "./components/AutoApprovedView";
 import RequestsView from "./components/RequestsView";
-import { apiFetch } from "@/app/lib/api";
+import { apiFetch, getApiBase } from "@/app/lib/api";
 
 const initials = (name = "") =>
   name
@@ -101,7 +101,7 @@ export default function WardenDashboardPage() {
   useEffect(() => {
     // load stored profile from localStorage if available
     try {
-      const raw = typeof window !== "undefined" && localStorage.getItem("safeexit:user");
+      const raw = typeof window !== "undefined" && sessionStorage.getItem("safeexit:user");
       if (raw) {
         const parsed = JSON.parse(raw);
         setUser(parsed);
@@ -158,6 +158,24 @@ export default function WardenDashboardPage() {
     loadRequests();
     loadReports();
   }, [loadRequests, loadReports]);
+
+  // Live updates: a new outing request (or an approval/rejection from another
+  // warden/guard) pushes an event over SSE so the pending list refetches
+  // instantly instead of requiring a manual refresh while this tab is open.
+  useEffect(() => {
+    const source = new EventSource(`${getApiBase()}/outing/stream`, { withCredentials: true });
+    source.addEventListener("outing:changed", () => {
+      loadRequests();
+    });
+    return () => source.close();
+  }, [loadRequests]);
+
+  // Safety net in case the SSE connection is silently dropped (proxies,
+  // flaky networks) — a low-frequency background poll keeps data fresh.
+  useEffect(() => {
+    const interval = setInterval(loadRequests, 30000);
+    return () => clearInterval(interval);
+  }, [loadRequests]);
 
   function openPanel(key) {
     setActivePanel(key);

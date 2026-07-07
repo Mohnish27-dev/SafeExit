@@ -144,7 +144,7 @@ export default function AdminLoginPage() {
 
       // 1. Create the account (or sign in if it already exists) to get a JWT.
       const token = await registerAdminAccount(profile);
-      localStorage.setItem("safeexit_token", token);
+      sessionStorage.setItem("safeexit_token", token);
 
       const authHeaders = {
         "Content-Type": "application/json",
@@ -197,7 +197,7 @@ export default function AdminLoginPage() {
     try {
       const profile = JSON.parse(localStorage.getItem("safeexit_admin_profile"));
       const token = await registerAdminAccount(profile);
-      localStorage.setItem("safeexit_token", token);
+      sessionStorage.setItem("safeexit_token", token);
       persistAdminSession(profile);
       router.push("/dashboard/admin");
     } catch (err) {
@@ -239,7 +239,7 @@ export default function AdminLoginPage() {
       if (!verifyRes.ok) {
         throw new Error(data.message || "Biometric login failed on server.");
       }
-      localStorage.setItem("safeexit_token", data.token);
+      sessionStorage.setItem("safeexit_token", data.token);
 
       persistAdminSession(storedProfile);
       router.push("/dashboard/admin");

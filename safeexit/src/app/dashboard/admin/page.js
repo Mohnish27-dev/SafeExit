@@ -95,8 +95,9 @@ export default function AdminDashboardPage() {
     } catch {
       /* ignore network errors on logout */
     }
-    ["safeexit_token", "safeexit:user", "safeexit_webauthn_registered_admin", "safeexit_admin_profile"].forEach(
-      (k) => localStorage.removeItem(k)
+    ["safeexit_token", "safeexit:user"].forEach((k) => sessionStorage.removeItem(k));
+    ["safeexit_webauthn_registered_admin", "safeexit_admin_profile"].forEach((k) =>
+      localStorage.removeItem(k)
     );
     router.push("/login");
   };

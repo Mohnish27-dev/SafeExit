@@ -1,10 +1,13 @@
 // Shared helpers for talking to the Express backend.
 //
 // In dev the frontend runs on :3000 and the API on :5000. The same origin is
-// reused in production via NEXT_PUBLIC_API_URL. Auth rides on the httpOnly `jwt`
-// cookie (credentials: "include"); we also attach the localStorage token as a
-// Bearer fallback so protected calls survive a fresh page load before the cookie
-// is re-issued. The backend's `protect` middleware accepts either.
+// reused in production via NEXT_PUBLIC_API_URL. Auth is carried primarily via
+// the sessionStorage token as a Bearer header, kept in sessionStorage (not
+// localStorage) so each browser TAB has its own independent session — logging
+// into a different role in another tab can't hijack this tab's identity. The
+// httpOnly `jwt` cookie (credentials: "include") rides along as a fallback for
+// requests that can't attach custom headers (e.g. EventSource). The backend's
+// `protect` middleware prefers the header over the cookie for this reason.
 
 export const getApiBase = () => {
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
@@ -19,7 +22,7 @@ export const getApiBase = () => {
 const authHeaders = () => {
   const headers = { "Content-Type": "application/json" };
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("safeexit_token");
+    const token = sessionStorage.getItem("safeexit_token");
     if (token) headers.Authorization = `Bearer ${token}`;
   }
   return headers;

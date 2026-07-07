@@ -47,9 +47,8 @@ export default function SecurityProfilePage() {
     } catch {
       /* ignore network errors on logout */
     }
-    ["safeexit_token", "safeexit:user", "safeexit_guard_profile", "safeexit_guard_registered"].forEach((k) =>
-      localStorage.removeItem(k)
-    );
+    ["safeexit_token", "safeexit:user"].forEach((k) => sessionStorage.removeItem(k));
+    ["safeexit_guard_profile", "safeexit_guard_registered"].forEach((k) => localStorage.removeItem(k));
     router.push("/login/security");
   };
 

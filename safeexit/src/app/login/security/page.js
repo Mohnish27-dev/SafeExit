@@ -144,7 +144,7 @@ export default function SecurityLoginPage() {
 
       // 1. Create the account (or sign in if it already exists) to get a JWT.
       const token = await registerGuardAccount(profile);
-      localStorage.setItem("safeexit_token", token);
+      sessionStorage.setItem("safeexit_token", token);
 
       const authHeaders = {
         "Content-Type": "application/json",
@@ -197,7 +197,7 @@ export default function SecurityLoginPage() {
     try {
       const profile = JSON.parse(localStorage.getItem("safeexit_guard_profile"));
       const token = await registerGuardAccount(profile);
-      localStorage.setItem("safeexit_token", token);
+      sessionStorage.setItem("safeexit_token", token);
       persistGuardSession(profile);
       router.push("/dashboard/security");
     } catch (err) {
@@ -239,7 +239,7 @@ export default function SecurityLoginPage() {
       if (!verifyRes.ok) {
         throw new Error(data.message || "Biometric login failed on server.");
       }
-      localStorage.setItem("safeexit_token", data.token);
+      sessionStorage.setItem("safeexit_token", data.token);
 
       persistGuardSession(storedProfile);
       router.push("/dashboard/security");

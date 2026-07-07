@@ -16,7 +16,7 @@ export default function Footer() {
 
   useEffect(() => {
     try {
-      const raw = typeof window !== "undefined" && localStorage.getItem("safeexit:user");
+      const raw = typeof window !== "undefined" && sessionStorage.getItem("safeexit:user");
       // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrating from localStorage (client-only external source) after mount.
       if (raw) setUser(JSON.parse(raw));
     } catch (e) {}
