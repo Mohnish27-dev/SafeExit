@@ -58,24 +58,6 @@ const formatClock = (value) => {
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 };
 
-const checkIsOverdue = (returnTimeStr) => {
-  if (!returnTimeStr) return false;
-  try {
-    const [time, period] = returnTimeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-    if (period === 'PM' && hours !== 12) hours += 12;
-    if (period === 'AM' && hours === 12) hours = 0;
-    
-    const nowTime = new Date();
-    const returnDate = new Date();
-    returnDate.setHours(hours, minutes, 0, 0);
-    
-    return nowTime > returnDate;
-  } catch(e) {
-    return false;
-  }
-};
-
 export default function SecurityDashboardPage() {
   const [profile, setProfile] = useState(defaultProfile);
   // Start null so the server render and the first client render agree (no
@@ -83,10 +65,15 @@ export default function SecurityDashboardPage() {
   const [now, setNow] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
-  // Authoritative pre-confirm preview from the backend (entry scans): the real
-  // active pass + the punctuality the log will record. Preferred over the QR's
-  // own window, which can be stale/absent and mislabel a late entry "On-Time".
+  // Authoritative pre-confirm preview from the backend, for BOTH directions.
+  // Entry: the real active pass + the punctuality the log will record. Exit: the
+  // live eligibility verdict (is there an Approved, unexpired pass right now).
+  // The QR no longer carries any status/window, so this server lookup is the only
+  // source of truth the dialog shows — a replayed screenshot resolves live here.
   const [scanPreview, setScanPreview] = useState(null);
+  // True while that preview is in flight, so the dialog shows "Checking…" rather
+  // than a premature verdict before the server responds.
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [scanMode, setScanMode] = useState(null);
   const [scans, setScans] = useState([]);
   const [counts, setCounts] = useState({ inside: 0, outside: 0, overdue: 0 });
@@ -192,21 +179,24 @@ export default function SecurityDashboardPage() {
         setScanResult(parsed);
         setIsScanning(false);
 
-        // For an entry, ask the backend what the scan will actually record so the
-        // dialog shows the authoritative punctuality (judged against the real pass)
-        // rather than the QR's possibly-stale window. Failure is non-fatal — the
-        // dialog falls back to the QR window if this doesn't resolve.
+        // Ask the backend what this scan will actually decide, for BOTH modes.
+        // Entry: the authoritative punctuality (judged against the real pass).
+        // Exit: the live eligibility verdict (Approved & unexpired?) — since the
+        // QR carries no status anymore, this is the only thing that can reveal a
+        // replayed screenshot as having no current pass. Failure is non-fatal:
+        // the dialog copes (exit falls back to letting the backend enforce 403).
         setScanPreview(null);
-        if (scanMode === "entry") {
-          try {
-            const params = new URLSearchParams();
-            if (parsed.sid) params.set("sid", parsed.sid);
-            if (parsed.id) params.set("studentId", parsed.id);
-            const preview = await apiFetch(`/scan/preview?${params.toString()}`);
-            setScanPreview(preview);
-          } catch (e) {
-            console.error("Failed to load scan preview:", e);
-          }
+        setPreviewLoading(true);
+        try {
+          const params = new URLSearchParams();
+          if (parsed.sid) params.set("sid", parsed.sid);
+          if (parsed.id) params.set("studentId", parsed.id);
+          const preview = await apiFetch(`/scan/preview?${params.toString()}`);
+          setScanPreview(preview);
+        } catch (e) {
+          console.error("Failed to load scan preview:", e);
+        } finally {
+          setPreviewLoading(false);
         }
       } catch (err) {
         console.error("Invalid QR code:", err);
@@ -525,25 +515,48 @@ export default function SecurityDashboardPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Status</span>
                   {scanMode === 'exit' ? (
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      scanResult.recentTicket?.status === "Approved" 
-                        ? "bg-emerald-100 text-emerald-700" 
-                        : "bg-amber-100 text-amber-700"
-                    }`}>
-                      {scanResult.recentTicket?.status || "N/A"}
-                    </span>
+                    (() => {
+                      // Exit verdict comes ONLY from the live backend preview — the
+                      // QR carries no status anymore. While it loads, show
+                      // "Checking…"; a replayed screenshot with no current pass
+                      // resolves here to "No Approved Outing" and blocks the exit.
+                      if (previewLoading) {
+                        return (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500">
+                            Checking…
+                          </span>
+                        );
+                      }
+                      if (scanPreview?.exit) {
+                        const { allowed, reason } = scanPreview.exit;
+                        const label = allowed
+                          ? "Approved"
+                          : reason === "expired"
+                            ? "Expired Pass"
+                            : "No Approved Outing";
+                        return (
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            allowed ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                          }`}>
+                            {label}
+                          </span>
+                        );
+                      }
+                      // Preview didn't resolve (network/500). Don't assert a verdict
+                      // the server didn't give — the backend still enforces on submit.
+                      return (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                          Unverified
+                        </span>
+                      );
+                    })()
                   ) : (
                     (() => {
-                      // Prefer the backend's authoritative verdict; fall back to the
-                      // QR window only if the preview call didn't resolve.
-                      let isOverdue;
-                      if (scanPreview?.punctuality) {
-                        isOverdue = scanPreview.punctuality === "Overdue";
-                      } else {
-                        const validWindow = scanResult.recentTicket?.validWindow || "";
-                        const returnTimeStr = validWindow.split(" to ")[1];
-                        isOverdue = checkIsOverdue(returnTimeStr);
-                      }
+                      // Entry punctuality comes from the backend preview (judged
+                      // against the real active trip). The QR carries no window to
+                      // fall back on anymore, so while the preview is loading or
+                      // absent we simply don't assert Overdue.
+                      const isOverdue = scanPreview?.punctuality === "Overdue";
                       return (
                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                           isOverdue ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
@@ -559,8 +572,10 @@ export default function SecurityDashboardPage() {
                     {scanMode === 'exit' ? "Valid Window" : "Logged Time"}
                   </span>
                   <span className="text-sm font-semibold text-slate-800">
-                    {scanMode === 'exit' 
-                      ? (scanResult.recentTicket?.validWindow || "N/A")
+                    {scanMode === 'exit'
+                      ? (scanPreview?.exit?.outing
+                          ? `${formatClock(scanPreview.exit.outing.outTime)} to ${formatClock(scanPreview.exit.outing.inTime)}`
+                          : "N/A")
                       : formattedTime
                     }
                   </span>
@@ -571,7 +586,7 @@ export default function SecurityDashboardPage() {
                     <span className="text-sm font-semibold text-slate-800">
                       {scanPreview?.activeOuting?.inTime
                         ? formatClock(scanPreview.activeOuting.inTime)
-                        : (scanResult.recentTicket?.validWindow?.split(" to ")[1] || "N/A")}
+                        : "N/A"}
                     </span>
                   </div>
                 )}
@@ -581,26 +596,53 @@ export default function SecurityDashboardPage() {
                 <p className="mb-3 w-full rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">{logError}</p>
               )}
 
-              <div className="flex gap-3 w-full">
-                <button
-                  onClick={() => { setLogError(""); setScanResult(null); setScanPreview(null); }}
-                  disabled={logging}
-                  className="flex-1 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmScan}
-                  disabled={logging}
-                  className={`flex-1 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 ${
-                    scanMode === 'exit'
-                      ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"
-                      : "bg-emerald-500 shadow-emerald-500/30 hover:bg-emerald-600"
-                  }`}
-                >
-                  {logging ? "Logging…" : scanMode === 'exit' ? "Log Exit" : "Log Entry"}
-                </button>
-              </div>
+              {(() => {
+                // Block the exit at the button when the live preview says this
+                // student has no usable pass. This is UX only — the backend still
+                // enforces the same rule on POST /scan — but it stops the guard
+                // from confirming an exit that would just 403, and makes the
+                // replayed-QR case unmistakable at the gate.
+                const exitBlocked =
+                  scanMode === "exit" && !previewLoading && scanPreview?.exit && !scanPreview.exit.allowed;
+                const blockedMsg =
+                  scanPreview?.exit?.reason === "expired"
+                    ? "This pass has expired — its departure time has passed. Student must file a new request."
+                    : "No warden-approved outing for this student. Exit denied until a new request is approved.";
+
+                return (
+                  <>
+                    {exitBlocked && (
+                      <p className="mb-3 w-full rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">
+                        {blockedMsg}
+                      </p>
+                    )}
+                    <div className="flex gap-3 w-full">
+                      <button
+                        onClick={() => { setLogError(""); setScanResult(null); setScanPreview(null); }}
+                        disabled={logging}
+                        className="flex-1 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={confirmScan}
+                        disabled={logging || previewLoading || exitBlocked}
+                        className={`flex-1 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                          scanMode === 'exit'
+                            ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"
+                            : "bg-emerald-500 shadow-emerald-500/30 hover:bg-emerald-600"
+                        }`}
+                      >
+                        {logging
+                          ? "Logging…"
+                          : exitBlocked
+                            ? "Exit Denied"
+                            : scanMode === 'exit' ? "Log Exit" : "Log Entry"}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
