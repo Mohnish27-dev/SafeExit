@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Scanner } from '@yudiel/react-qr-scanner';
 import {
   Bell,
   CalendarDays,
   ChevronRight,
   Clock3,
-  History,
-  Home,
   LogIn,
   LogOut,
   ScanLine,
@@ -16,11 +15,11 @@ import {
   ShieldCheck,
   UserCheck,
   UserRound,
-  UsersRound,
   X,
 } from "lucide-react";
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
+import SecurityBottomNav from "./components/SecurityBottomNav";
 
 const statusCards = [
   {
@@ -256,7 +255,10 @@ export default function SecurityDashboardPage() {
               </div>
             </div>
 
-            <div className="dash-card flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3">
+            <Link
+              href="/dashboard/security/profile"
+              className="dash-card flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 transition hover:opacity-90"
+            >
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
                 <ShieldCheck className="h-6 w-6" />
               </div>
@@ -265,7 +267,7 @@ export default function SecurityDashboardPage() {
                 <p className="text-sm font-medium text-slate-500">{profile.roleLabel}</p>
               </div>
               <ChevronRight className="h-5 w-5 rotate-90 text-slate-400" />
-            </div>
+            </Link>
           </header>
 
           <section className="dash-surface dash-animate-rise dash-stagger-2 mt-6 rounded-[2.5rem] p-6 shadow-xl">
@@ -445,24 +447,7 @@ export default function SecurityDashboardPage() {
             </button>
           </section>
 
-          <nav className="dash-card mt-6 hidden md:grid grid-cols-4 rounded-[2rem] p-3 shadow-xl backdrop-blur">
-            {[
-              { label: "Home", icon: Home, active: true },
-              { label: "Students", icon: UsersRound },
-              { label: "History", icon: History },
-              { label: "Profile", icon: UserRound },
-            ].map((item) => (
-              <button
-                key={item.label}
-                className={`flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-3 text-xs font-semibold uppercase tracking-[0.18em] ${
-                  item.active ? "bg-indigo-100 text-indigo-700" : "text-slate-500"
-                }`}
-              >
-                <item.icon className="h-6 w-6" />
-                {item.label}
-              </button>
-            ))}
-          </nav>
+          <SecurityBottomNav active="Home" />
         </div>
       </div>
 
