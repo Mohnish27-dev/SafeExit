@@ -11,6 +11,12 @@ const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // @access  Private (Guard / Admin)
 // Body: { studentId (roll number) OR student (_id), direction: 'IN'|'OUT',
 //         outing?, punctuality?, gate? }
+//
+// Gate enforcement: an OUT (exit) scan is only allowed against an outing pass
+// whose `status` is actually 'Approved' in the DB — whether that approval came
+// from a warden or from the auto-approval rule at creation time (see
+// outingController.createOutingRequest). We never trust a client-supplied
+// status for this; it's always re-checked here against the database.
 const createScanLog = async (req, res) => {
   const { studentId, student, direction, outing, punctuality, gate } = req.body;
 

@@ -1504,6 +1504,19 @@ body {
   to { opacity: 1; }
 }
 
+/* Restrained attention cue for a freshly-surfaced submit error — enough
+   motion to catch the eye on a screen the user is already looking at,
+   never enough to feel alarming. */
+@keyframes sf-notice-in {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  60% { opacity: 1; transform: translateY(0.5px) scale(1.005); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-notice-in {
+  animation: sf-notice-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @keyframes sf-shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
@@ -1996,4 +2009,619 @@ body {
 .sd-stagger > *:nth-child(8) { animation-delay: .46s; }
 
 .sd-action-card.sd-card-hover { transform-origin: center; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   3D / Motion toolkit for the landing hero + section polish
+   Pure CSS 3D (perspective + preserve-3d) driven by React pointer tracking.
+   No external libraries; fully dark-mode aware; reduced-motion safe.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Perspective scene: children with translateZ gain real depth/parallax. */
+.scene-3d {
+  perspective: 1400px;
+  perspective-origin: 50% 40%;
+}
+
+/* The tiltable card. --rx / --ry are set inline from JS pointer movement;
+   they default to 0 so the card sits flat until the cursor enters. */
+.tilt-3d {
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+/* Depth layers — lift elements toward the viewer for parallax separation. */
+.depth-1 { transform: translateZ(28px); }
+.depth-2 { transform: translateZ(55px); }
+.depth-3 { transform: translateZ(85px); }
+.depth-4 { transform: translateZ(120px); }
+
+/* Moving glare that follows the pointer across the glass surface.
+   --mx / --my are pointer coords (%) written from JS. */
+.tilt-glare {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.08) 25%,
+    transparent 55%
+  );
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+}
+
+.scene-3d:hover .tilt-glare { opacity: 1; }
+
+/* Holographic verification core (shield / QR) with a sweeping sheen. */
+.holo-core {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #0f172a 0%, #4338ca 48%, #06b6d4 100%);
+  box-shadow:
+    0 30px 60px -25px rgba(67, 56, 202, 0.65),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25);
+}
+
+.holo-core::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
+  transform: translateX(-120%);
+  animation: holo-sweep 3.4s ease-in-out infinite;
+}
+
+@keyframes holo-sweep {
+  0%, 100% { transform: translateX(-120%); }
+  50% { transform: translateX(120%); }
+}
+
+/* Gentle 3D-aware float for parallax badges (kept in preserve-3d context). */
+.float-3d { animation: float-3d 6s ease-in-out infinite; }
+.float-3d-slow { animation: float-3d 8.5s ease-in-out infinite; }
+.float-3d-delay { animation-delay: 1.6s; }
+
+@keyframes float-3d {
+  0%, 100% { transform: translateY(0) translateZ(var(--tz, 0)); }
+  50% { transform: translateY(-10px) translateZ(var(--tz, 0)); }
+}
+
+/* Concentric scan rings behind the core. */
+.scan-ring {
+  position: absolute;
+  border-radius: 9999px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  animation: scan-ring-pulse 3s ease-out infinite;
+}
+
+@keyframes scan-ring-pulse {
+  0% { transform: scale(0.75); opacity: 0.7; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+/* Scroll reveal: elements fade + rise as they enter the viewport.
+   .reveal starts hidden; .reveal.in-view (added by IntersectionObserver)
+   animates in. Staggering via inline transition-delay. */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Subtle lift + tilt on hover for section cards. */
+.card-3d-hover {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease;
+  transform-style: preserve-3d;
+}
+
+.card-3d-hover:hover {
+  transform: translateY(-8px) rotateX(4deg) rotateY(-4deg) scale(1.02);
+  box-shadow: 0 34px 70px -34px rgba(67, 56, 202, 0.5);
+}
+
+/* Slow-drifting conic aurora for the hero backdrop. */
+.hero-aurora-3d {
+  position: absolute;
+  inset: -30%;
+  background:
+    radial-gradient(35% 45% at 25% 30%, rgba(14, 165, 164, 0.35) 0%, transparent 60%),
+    radial-gradient(30% 40% at 75% 25%, rgba(56, 189, 248, 0.32) 0%, transparent 60%),
+    radial-gradient(40% 50% at 60% 75%, rgba(99, 102, 241, 0.28) 0%, transparent 62%);
+  filter: blur(40px);
+  opacity: 0.65;
+  animation: aurora-shift 16s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ── Bento feature grid: live mini-visuals ─────────────────────────────── */
+
+/* Card wrapper: gradient hairline border that lights up on hover + lift. */
+.bento-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+  will-change: transform;
+}
+
+.bento-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(140deg, rgba(56, 189, 248, 0.5), rgba(99, 102, 241, 0.15) 40%, transparent 70%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.bento-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 34px 70px -38px rgba(67, 56, 202, 0.5);
+}
+
+.bento-card:hover::before { opacity: 1; }
+
+/* Radial spotlight that blooms on hover behind card content. */
+.bento-spot {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 60% at 30% 20%, rgba(56, 189, 248, 0.16) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.bento-card:hover .bento-spot { opacity: 1; }
+
+/* Horizontal scan line sweeping down a QR/box visual. */
+.feature-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #38bdf8 50%, transparent);
+  box-shadow: 0 0 10px 1px rgba(56, 189, 248, 0.7);
+  animation: feature-scan 2.6s ease-in-out infinite;
+}
+
+@keyframes feature-scan {
+  0%, 100% { top: 8%; opacity: 0.4; }
+  50% { top: 88%; opacity: 1; }
+}
+
+/* Vertical auto-scrolling ticker (audit log). Track is duplicated; -50% loops. */
+.ticker-mask {
+  position: relative;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+}
+
+.ticker-track {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  animation: ticker-scroll 11s linear infinite;
+}
+
+.bento-card:hover .ticker-track { animation-play-state: paused; }
+
+@keyframes ticker-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+
+/* Masking shimmer for the redacted phone digits. */
+.mask-shimmer {
+  background: linear-gradient(100deg, #6366f1 0%, #22d3ee 50%, #6366f1 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mask-shimmer-move 3s linear infinite;
+}
+
+@keyframes mask-shimmer-move {
+  0% { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Expanding SOS radar rings. */
+.sos-radar {
+  position: absolute;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(244, 63, 94, 0.5);
+  animation: sos-radar 2.4s ease-out infinite;
+}
+
+@keyframes sos-radar {
+  0% { transform: scale(0.5); opacity: 0.8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* Animated approval progress bar. */
+.approve-bar {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.25);
+}
+
+.approve-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #10b981, #06b6d4);
+  transform-origin: left;
+  animation: approve-fill 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes approve-fill {
+  0% { transform: scaleX(0); }
+  55%, 100% { transform: scaleX(1); }
+}
+
+/* ── "Journey of a Safe Exit": interactive step flow ───────────────────── */
+
+/* Connecting rail + energy fill that tracks journey progress (--progress 0–1). */
+.journey-rail {
+  position: absolute;
+  background: rgba(148, 163, 184, 0.25);
+  overflow: hidden;
+  border-radius: 9999px;
+}
+
+.dark .journey-rail { background: rgba(51, 65, 85, 0.55); }
+
+.journey-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: linear-gradient(90deg, #0ea5a4, #4338ca 45%, #06b6d4);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.6);
+  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A comet that rides along the filled portion of the rail. */
+.journey-comet {
+  position: absolute;
+  top: 50%;
+  height: 12px;
+  width: 12px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.35), 0 0 22px 4px rgba(56, 189, 248, 0.8);
+  transition: left 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Step node states. */
+.journey-node {
+  position: relative;
+  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+.journey-node__ring {
+  transition: box-shadow 0.45s ease, border-color 0.45s ease, background 0.45s ease, color 0.45s ease;
+}
+
+.journey-node--active { transform: translateY(-6px); }
+
+.journey-node--active .journey-node__ring {
+  border-color: transparent;
+  background: linear-gradient(135deg, #0f172a 0%, #4338ca 50%, #06b6d4 100%);
+  color: #fff;
+  box-shadow: 0 22px 45px -18px rgba(67, 56, 202, 0.75), 0 0 0 6px rgba(56, 189, 248, 0.14);
+}
+
+.journey-node--active .journey-node__pulse {
+  animation: journey-pulse 1.8s ease-out infinite;
+}
+
+.journey-node--done .journey-node__ring {
+  border-color: rgba(16, 185, 129, 0.6);
+  color: #10b981;
+}
+
+@keyframes journey-pulse {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+
+/* The morphing "pass" preview panel. */
+.journey-stage {
+  animation: journey-stage-in 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes journey-stage-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.journey-progress-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, #0ea5a4, #4338ca, #06b6d4);
+  transition: height 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Global scroll progress bar (top of viewport) ──────────────────────── */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  z-index: 60;
+  width: 100%;
+  transform-origin: 0 50%;
+  transform: scaleX(var(--scroll, 0));
+  background: linear-gradient(90deg, #0ea5a4, #4338ca 50%, #06b6d4);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.7);
+  will-change: transform;
+}
+
+/* ── Interactive encryption vault (Security section) ───────────────────── */
+.vault {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(90% 90% at 30% 10%, rgba(67, 56, 202, 0.28) 0%, transparent 55%),
+    radial-gradient(90% 90% at 90% 100%, rgba(6, 182, 212, 0.22) 0%, transparent 55%),
+    linear-gradient(160deg, #0b1220 0%, #0f172a 60%, #0b1424 100%);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 40px 90px -50px rgba(2, 6, 23, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Falling code-rain columns behind the vault content. */
+.vault-rain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.14;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.vault-rain span {
+  position: absolute;
+  top: -20%;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  line-height: 1.1;
+  color: #22d3ee;
+  white-space: pre;
+  writing-mode: vertical-rl;
+  animation: vault-rain-fall linear infinite;
+}
+
+@keyframes vault-rain-fall {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(260%); }
+}
+
+/* The digits that flip between ciphertext and plaintext. */
+.cipher-char {
+  display: inline-block;
+  transition: color 0.25s ease, text-shadow 0.25s ease;
+}
+
+.cipher-char--locked { color: #f43f5e; text-shadow: 0 0 12px rgba(244, 63, 94, 0.35); }
+.cipher-char--open { color: #34d399; text-shadow: 0 0 12px rgba(52, 211, 153, 0.35); }
+
+/* Sweep that runs across the plate the moment it decrypts. */
+.decrypt-sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(52, 211, 153, 0.25) 50%, transparent 60%);
+  transform: translateX(-120%);
+}
+
+.decrypt-sweep--run { animation: decrypt-sweep 0.9s ease-out; }
+
+@keyframes decrypt-sweep {
+  to { transform: translateX(120%); }
+}
+
+/* Rotating key-halo ring. */
+.key-halo {
+  position: absolute;
+  border-radius: 9999px;
+  border: 1.5px dashed rgba(56, 189, 248, 0.35);
+  animation: key-spin 12s linear infinite;
+}
+
+@keyframes key-spin {
+  to { transform: rotate(360deg); }
+}
+
+.count-glow { text-shadow: 0 0 24px rgba(56, 189, 248, 0.18); }
+
+/* ── Animated gradient headline (hero) ─────────────────────────────────── */
+.text-shimmer-gradient {
+  background: linear-gradient(100deg, #0ea5a4 0%, #4338ca 25%, #06b6d4 50%, #4338ca 75%, #0ea5a4 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: headline-shimmer 6s linear infinite;
+}
+
+@keyframes headline-shimmer {
+  0% { background-position: 0% 0; }
+  100% { background-position: 250% 0; }
+}
+
+/* ── Navbar polish ─────────────────────────────────────────────────────── */
+.nav-logo-glow {
+  position: relative;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-logo-glow::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.55), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  z-index: -1;
+}
+
+.group:hover .nav-logo-glow { transform: rotate(-6deg) scale(1.06); }
+.group:hover .nav-logo-glow::after { opacity: 1; }
+
+/* Animated underline for nav links. */
+.nav-link {
+  position: relative;
+}
+
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  height: 2px;
+  width: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #0ea5a4, #06b6d4);
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-link:hover::after {
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+
+/* Shine sweep on the login CTA. */
+.cta-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.35) 50%, transparent 62%);
+  transform: translateX(-130%);
+  animation: cta-shine 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes cta-shine {
+  0%, 100% { transform: translateX(-130%); }
+  45%, 55% { transform: translateX(130%); }
+}
+
+/* ── Footer polish ─────────────────────────────────────────────────────── */
+.footer-beam {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #4338ca 30%, #06b6d4 50%, #0ea5a4 70%, transparent);
+  background-size: 200% 100%;
+  animation: footer-beam 8s linear infinite;
+}
+
+@keyframes footer-beam {
+  0% { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.footer-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.25s ease, transform 0.25s ease;
+}
+
+.footer-link:hover {
+  transform: translateX(4px);
+}
+
+.footer-link::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  height: 5px;
+  width: 5px;
+  margin-top: -2.5px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #4338ca, #06b6d4);
+  opacity: 0;
+  transform: scale(0);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.footer-link:hover::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-shimmer-gradient,
+  .cta-shine::after,
+  .footer-beam {
+    animation: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tilt-3d,
+  .card-3d-hover {
+    transform: none !important;
+    transition: none !important;
+  }
+  .holo-core::after,
+  .float-3d,
+  .float-3d-slow,
+  .scan-ring,
+  .hero-aurora-3d,
+  .feature-scanline,
+  .ticker-track,
+  .mask-shimmer,
+  .sos-radar,
+  .approve-bar::after,
+  .journey-node__pulse,
+  .journey-stage,
+  .vault-rain span,
+  .key-halo,
+  .decrypt-sweep--run {
+    animation: none !important;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
 

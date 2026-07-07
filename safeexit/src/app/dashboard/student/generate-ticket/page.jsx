@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
@@ -80,6 +80,7 @@ export default function GenerateTicket() {
   });
   const [errors, setErrors] = useState({});
   const [createdOuting, setCreatedOuting] = useState(null);
+  const submitErrorRef = useRef(null);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -141,13 +142,49 @@ export default function GenerateTicket() {
     return Object.keys(nextErrors).length === 0;
   };
 
+  // fetch() and JSON parsing throw low-level, browser-specific errors
+  // ("Failed to fetch", "NetworkError when attempting to fetch resource.",
+  // "Load failed", "Unexpected token < in JSON...") that mean nothing to a
+  // student trying to submit an outing pass. This maps them to copy that
+  // matches the rest of the form's error tone, while letting a message the
+  // server deliberately sent back (from the res.ok check below) through
+  // untouched — that one was already written for a human to read.
+  const describeSubmitError = (error) => {
+    if (error instanceof TypeError) {
+      // The only way fetch() itself rejects: offline, DNS failure, CORS
+      // block, or the server/API host being unreachable. There's no server
+      // response to read a message from either way.
+      return "We couldn't reach the server. Check your internet connection and try again.";
+    }
+    if (error.name === "AbortError") {
+      return "The request took too long to respond. Please try again.";
+    }
+    if (error instanceof SyntaxError) {
+      // res.json() failed to parse — the server responded with something
+      // that wasn't valid JSON (an HTML error page from a proxy, etc.).
+      return "The server sent back an unexpected response. Please try again.";
+    }
+    return error.message || "Something went wrong while submitting your request. Please try again.";
+  };
+
   const handleReview = () => {
+    // validate() replaces the whole errors object each call, so a stale
+    // "submit" failure from a previous attempt is naturally dropped here —
+    // nothing extra needed to clear it on re-entry to review.
     if (validate()) setStep("review");
   };
 
   const handleSubmit = async () => {
     setLoading(true);
+    // Clear any stale failure from a previous attempt before retrying, so a
+    // second click that succeeds doesn't leave a dead error node behind.
+    setErrors((prev) => {
+      if (!prev.submit) return prev;
+      const { submit, ...rest } = prev;
+      return rest;
+    });
     try {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:${window.location.port === "3000" ? "5000" : window.location.port}/api` : "http://localhost:5000/api");
       const body = {
         destination: form.destination,
         purpose: form.note || "Outing",
@@ -160,14 +197,37 @@ export default function GenerateTicket() {
         body: JSON.stringify(body),
       });
 
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 401 || res.status === 403) {
+          throw new Error("Your session has expired. Please log in again and resubmit your request.");
+        }
+        throw new Error(err.message || "The server couldn't create your outing pass right now. Please try again.");
+      }
+
+      const data = await res.json();
       setCreatedOuting(data);
       setLoading(false);
       setStep("success");
     } catch (error) {
       setLoading(false);
-      setErrors((prev) => ({ ...prev, submit: error.message }));
+      setErrors((prev) => ({
+        ...prev,
+        submit: describeSubmitError(error),
+      }));
     }
   };
+
+  // A failure lands while the student is still on the review screen — pull
+  // the notice into view in case the CTA sits below the fold, and hand focus
+  // to it so screen readers actually announce the failure instead of it
+  // sitting silently under the button.
+  useEffect(() => {
+    if (step === "review" && errors.submit && submitErrorRef.current) {
+      submitErrorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      submitErrorRef.current.focus({ preventScroll: true });
+    }
+  }, [step, errors.submit]);
 
   const destLabel = form.destination;
   const ticketId = createdOuting ? `SE-${String(createdOuting._id).slice(-6).toUpperCase()}` : "SE-" + Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -212,7 +272,10 @@ export default function GenerateTicket() {
   ];
 
   if (step === "success") {
-    const isAutoApproved = parseTimeToMinutes(form.timeReturn) <= parseTimeToMinutes("05:30 PM");
+    // Trust the server's persisted status rather than recomputing the auto-approval
+    // rule on the client — the backend is the source of truth the gate scanner
+    // actually checks, so the success screen must reflect the same value.
+    const isAutoApproved = createdOuting?.status === "Approved";
 
     return (
       <StudentFeatureCentered>
@@ -250,7 +313,6 @@ export default function GenerateTicket() {
                   <span className="text-xs font-bold text-emerald-800 bg-linear-to-r from-emerald-100 to-emerald-50 rounded-full px-3.5 py-1.5 border border-emerald-200 shadow-xs">
                     Approved
                   </span>
-                  {errors.submit && <p className="text-xs text-rose-500 mt-2">{errors.submit}</p>}
                   <div className="h-2" />
                   <button type="button" onClick={() => router.push("/dashboard/student/my-outings")} className="sf-btn-secondary w-full">
                     View My Outings
@@ -364,6 +426,21 @@ export default function GenerateTicket() {
           </div>
         </StudentFeaturePanel>
 
+        {errors.submit && (
+          <div
+            ref={submitErrorRef}
+            tabIndex={-1}
+            role="alert"
+            className="sf-notice sf-notice--danger animate-notice-in"
+          >
+            <AlertCircle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-bold text-rose-700">Submission failed</p>
+              <p className="text-xs text-rose-600 mt-0.5">{errors.submit}</p>
+            </div>
+          </div>
+        )}
+
         <div className="sf-notice sf-notice--warn">
           <Shield size={14} className="text-amber-600 shrink-0 mt-0.5" />
           <p className="text-xs text-amber-800">
@@ -385,6 +462,8 @@ export default function GenerateTicket() {
               <>
                 <Loader2 size={16} className="animate-spin" /> Submitting...
               </>
+            ) : errors.submit ? (
+              "Try Again"
             ) : (
               "Submit Request"
             )}

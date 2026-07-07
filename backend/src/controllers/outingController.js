@@ -1,4 +1,5 @@
 const OutingRequest = require('../models/OutingRequest');
+const { qualifiesForAutoApproval } = require('../utils/outingRules');
 
 // @desc    Create new outing request
 // @route   POST /api/outing
@@ -24,7 +25,9 @@ const createOutingRequest = async (req, res) => {
       destination,
       purpose,
       outTime,
-      inTime
+      inTime,
+      status: autoApproved ? 'Approved' : 'Pending',
+      autoApproved
     });
 
     res.status(201).json(outingRequest);

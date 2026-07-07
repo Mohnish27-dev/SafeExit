@@ -27,6 +27,14 @@ const outingRequestSchema = new mongoose.Schema({
     enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned'],
     default: 'Pending'
   },
+  // True when `status` was set to 'Approved' by the system rule (return time
+  // on or before 5:30 PM) rather than by a warden/guard action. Kept distinct
+  // from `approvedBy` (which stays null for these) so admin views can tell
+  // the two apart.
+  autoApproved: {
+    type: Boolean,
+    default: false
+  },
   remarks: {
     type: String
   },
