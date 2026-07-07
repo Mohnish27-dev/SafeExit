@@ -184,7 +184,6 @@ export default function GenerateTicket() {
       return rest;
     });
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:${window.location.port === "3000" ? "5000" : window.location.port}/api` : "http://localhost:5000/api");
       const body = {
         destination: form.destination,
         purpose: form.note || "Outing",
@@ -192,20 +191,12 @@ export default function GenerateTicket() {
         inTime: new Date(`${form.dateReturn} ${form.timeReturn}`).toISOString(),
       };
 
+      // apiFetch parses JSON and throws on non-2xx (message caught below).
       const data = await apiFetch("/outing", {
         method: "POST",
         body: JSON.stringify(body),
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        if (res.status === 401 || res.status === 403) {
-          throw new Error("Your session has expired. Please log in again and resubmit your request.");
-        }
-        throw new Error(err.message || "The server couldn't create your outing pass right now. Please try again.");
-      }
-
-      const data = await res.json();
       setCreatedOuting(data);
       setLoading(false);
       setStep("success");

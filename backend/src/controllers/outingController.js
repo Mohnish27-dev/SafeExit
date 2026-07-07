@@ -20,6 +20,9 @@ const createOutingRequest = async (req, res) => {
       });
     }
 
+    // Low-risk trips returning by the campus cutoff skip warden review.
+    const autoApproved = qualifiesForAutoApproval(inTime);
+
     const outingRequest = await OutingRequest.create({
       student: req.user._id,
       destination,

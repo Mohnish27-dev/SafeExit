@@ -71,7 +71,9 @@ const checkIsOverdue = (returnTimeStr) => {
 
 export default function SecurityDashboardPage() {
   const [profile, setProfile] = useState(defaultProfile);
-  const [now, setNow] = useState(() => new Date());
+  // Start null so the server render and the first client render agree (no
+  // Date on the server). The mount effect below fills it in and starts ticking.
+  const [now, setNow] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [scanMode, setScanMode] = useState(null);
@@ -198,6 +200,7 @@ export default function SecurityDashboardPage() {
   }, []);
 
   useEffect(() => {
+    setNow(new Date());
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -208,12 +211,12 @@ export default function SecurityDashboardPage() {
   }, [profile.name]);
 
   const formattedDate = useMemo(
-    () => now.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" }),
+    () => (now ? now.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" }) : ""),
     [now]
   );
 
   const formattedTime = useMemo(
-    () => now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    () => (now ? now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : ""),
     [now]
   );
 
