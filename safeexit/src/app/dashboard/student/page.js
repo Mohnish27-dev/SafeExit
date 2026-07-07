@@ -48,6 +48,7 @@ const outingStatusStyle = (status) => {
     case "returned":
       return "bg-slate-100 text-slate-600";
     case "rejected":
+    case "expired":
       return "bg-rose-100 text-rose-700";
     default:
       return "bg-amber-100 text-amber-700"; // Pending

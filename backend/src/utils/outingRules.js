@@ -34,4 +34,32 @@ const qualifiesForAutoApproval = (inTime) => {
   return minutesOfDayInTimeZone(returnDate, CAMPUS_TIMEZONE) <= AUTO_APPROVE_CUTOFF_MINUTES;
 };
 
-module.exports = { qualifiesForAutoApproval, AUTO_APPROVE_CUTOFF_MINUTES, CAMPUS_TIMEZONE };
+// The pass's departure time (`outTime`) is a hard deadline: once it passes, the
+// pass can no longer be used to exit. This is a comparison of absolute instants
+// (`outTime` is a stored Date), so it's timezone-safe — the moment itself is
+// unambiguous regardless of where the server runs. `at` is injectable for tests.
+const isDeparturePassed = (outTime, at = Date.now()) => {
+  const departure = new Date(outTime);
+  if (Number.isNaN(departure.getTime())) return false;
+  return at > departure.getTime();
+};
+
+// A return is late when the student is scanned back IN after the pass's expected
+// return time (`inTime`). Like `isDeparturePassed`, this compares absolute
+// instants (`inTime` is a stored Date), so it's timezone-safe. This is the
+// authoritative punctuality check for entry scans — the gate must not trust a
+// client-supplied value, which can be missing or stale. `at` is injectable for
+// tests. Returns false for an unparseable/absent time (no window to judge).
+const isReturnLate = (inTime, at = Date.now()) => {
+  const expectedReturn = new Date(inTime);
+  if (Number.isNaN(expectedReturn.getTime())) return false;
+  return at > expectedReturn.getTime();
+};
+
+module.exports = {
+  qualifiesForAutoApproval,
+  isDeparturePassed,
+  isReturnLate,
+  AUTO_APPROVE_CUTOFF_MINUTES,
+  CAMPUS_TIMEZONE,
+};

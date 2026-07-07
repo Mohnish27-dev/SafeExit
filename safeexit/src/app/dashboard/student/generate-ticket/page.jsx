@@ -33,19 +33,35 @@ import { apiFetch } from "@/app/lib/api";
 
 const STEPS = ["form", "review", "success"];
 
-const departureTimeOptions = [
-  "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
-  "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
-  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM", "04:00 PM", "04:30 PM",
-  "05:00 PM", "05:30 PM", "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM", "08:30 PM" , "09:00 PM"
-];
+// The rest of this screen — validation (parseTimeToMinutes), the ISO body sent
+// to /outing, and the review/success displays — all speak the "hh:mm AM/PM"
+// string format. The native <input type="time"> element, however, works in a
+// 24-hour "HH:MM" value. These two helpers bridge that gap so students can pick
+// ANY minute of the day while everything downstream keeps receiving the exact
+// same format it always has.
 
-const returnTimeOptions = [
-  "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
-  "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
-  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM", "04:00 PM", "04:30 PM",
-  "05:00 PM", "05:30 PM", "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM", "08:00 PM", "09:00 PM", "09:30 PM"
-];
+// "14:30" (input value, 24h) -> "02:30 PM" (stored form value)
+const from24Hour = (hhmm) => {
+  if (!hhmm) return "";
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return "";
+  const period = h >= 12 ? "PM" : "AM";
+  let hour12 = h % 12;
+  if (hour12 === 0) hour12 = 12;
+  return `${String(hour12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+};
+
+// "02:30 PM" (stored form value) -> "14:30" (input value, 24h) so the picker
+// shows the currently-selected time when the student re-opens it.
+const to24Hour = (timeStr) => {
+  if (!timeStr) return "";
+  const [time, period] = timeStr.split(" ");
+  let [hours, minutes] = time.split(":").map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return "";
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+};
 
 function StepBar({ current }) {
   const idx = STEPS.indexOf(current);
@@ -104,6 +120,11 @@ export default function GenerateTicket() {
 
   const set = (key) => (event) =>
     setForm((value) => ({ ...value, [key]: event.target.value }));
+
+  // <input type="time"> hands back a 24-hour "HH:MM" string; store it in the
+  // "hh:mm AM/PM" format every downstream consumer already expects.
+  const setTime = (key) => (event) =>
+    setForm((value) => ({ ...value, [key]: from24Hour(event.target.value) }));
 
   const parseTimeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
@@ -568,16 +589,12 @@ export default function GenerateTicket() {
               <Clock size={11} className="inline mr-1 text-sky-500" />
               Departure Time *
             </label>
-            <select
-              value={form.timeOut}
-              onChange={set("timeOut")}
+            <input
+              type="time"
+              value={to24Hour(form.timeOut)}
+              onChange={setTime("timeOut")}
               className={`sf-input ${errors.timeOut ? "sf-input--error" : ""}`}
-            >
-              <option value="">Select time</option>
-              {departureTimeOptions.map((time) => (
-                <option key={time} value={time}>{time}</option>
-              ))}
-            </select>
+            />
             {errors.timeOut && <p className="text-xs text-rose-500 mt-1">{errors.timeOut}</p>}
           </div>
 
@@ -586,16 +603,12 @@ export default function GenerateTicket() {
               <Clock size={11} className="inline mr-1 text-sky-500" />
               Return Time *
             </label>
-            <select
-              value={form.timeReturn}
-              onChange={set("timeReturn")}
+            <input
+              type="time"
+              value={to24Hour(form.timeReturn)}
+              onChange={setTime("timeReturn")}
               className={`sf-input ${errors.timeReturn ? "sf-input--error" : ""}`}
-            >
-              <option value="">Select time</option>
-              {returnTimeOptions.map((time) => (
-                <option key={time} value={time}>{time}</option>
-              ))}
-            </select>
+            />
             {errors.timeReturn && <p className="text-xs text-rose-500 mt-1">{errors.timeReturn}</p>}
           </div>
         </div>

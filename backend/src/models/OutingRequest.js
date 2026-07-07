@@ -23,8 +23,12 @@ const outingRequestSchema = new mongoose.Schema({
     required: true
   },
   status: {
+    // 'Expired' = the pass was approved but its departure time (`outTime`)
+    // passed before the student exited the gate, so it can no longer be used.
+    // The transition is applied lazily when a request is read (see
+    // outingController) — there is no background job flipping it.
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned'],
+    enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned', 'Expired'],
     default: 'Pending'
   },
   // True when `status` was set to 'Approved' by the system rule (return time
