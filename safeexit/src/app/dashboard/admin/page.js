@@ -18,6 +18,7 @@ import {
   MessageSquareWarning,
   CalendarDays,
   RefreshCw,
+  DoorOpen,
 } from "lucide-react";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { getStoredUser, getFirstName, getInitials } from "@/app/lib/userProfile";
@@ -118,6 +119,14 @@ export default function AdminDashboardPage() {
     { icon: Siren, label: "Active SOS", value: overview?.activeSOS ?? "—", note: "Awaiting response", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: ShieldCheck, label: "Guards On Duty", value: overview ? `${overview.guards.onDuty}/${overview.guards.total}` : "—", note: "Active security staff", tone: "border-indigo-200 bg-indigo-50 text-indigo-700" },
     { icon: CalendarDays, label: "Pending Outings", value: overview?.pendingOutings ?? "—", note: "Awaiting warden approval", tone: "border-sky-200 bg-sky-50 text-sky-700" },
+    // Distinct from "Outside Campus" above: that tile counts User.campusStatus
+    // ('Outside'), set the moment a student scans out. This one counts
+    // OutingRequest.status === 'Out' — the pass-level lifecycle stage set by
+    // the same scan. They usually move together but aren't the same field,
+    // so surfacing both lets an admin spot the two ever drifting apart
+    // (e.g. an overdue student is 'Overdue' in campusStatus but their pass
+    // is still 'Out' until they're scanned back in).
+    { icon: DoorOpen, label: "Gate: Out", value: overview?.studentsOut ?? "—", note: "Outing passes currently 'Out'", tone: "border-cyan-200 bg-cyan-50 text-cyan-700" },
     { icon: MessageSquareWarning, label: "Open Complaints", value: overview?.openComplaints ?? "—", note: "Unresolved reports", tone: "border-orange-200 bg-orange-50 text-orange-700" },
     { icon: Building2, label: "Total Students", value: s.total ?? "—", note: "Registered on platform", tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];
