@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, X, ClipboardList, Loader2, RefreshCcw } from "lucide-react";
+import { useTranslation } from "@/app/lib/i18n";
 
 export default function RequestsView({
   pending = [],
@@ -10,18 +11,21 @@ export default function RequestsView({
   error = "",
   onRefresh = () => {},
 }) {
+  const { t } = useTranslation("warden");
+  const { t: tc } = useTranslation("common");
+
   return (
     <section className="sd-luxe-panel sd-luxe-rise mt-6 rounded-4xl p-6 sm:p-7 shadow-xl">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="sd-eyebrow">Outing Requests</p>
-          <h2 className="sd-title sd-title-sm">Manage Requests</h2>
+          <p className="sd-eyebrow">{t("outingRequests")}</p>
+          <h2 className="sd-title sd-title-sm">{t("manageRequests")}</h2>
         </div>
         <button
           onClick={onRefresh}
           className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
         >
-          <RefreshCcw className="h-4 w-4" /> Refresh
+          <RefreshCcw className="h-4 w-4" /> {tc("refresh")}
         </button>
       </div>
 
@@ -33,15 +37,15 @@ export default function RequestsView({
         {loading ? (
           <div className="flex flex-col items-center gap-3 py-12 text-slate-500">
             <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-            <p className="text-sm font-semibold">Loading requests…</p>
+            <p className="text-sm font-semibold">{t("loadingRequests")}</p>
           </div>
         ) : pending.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-12 text-slate-500">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
               <ClipboardList className="h-7 w-7 text-slate-400" />
             </div>
-            <p className="font-semibold text-slate-700">No pending requests</p>
-            <p className="text-sm text-slate-500">New outing requests will appear here.</p>
+            <p className="font-semibold text-slate-700">{t("noPendingRequests")}</p>
+            <p className="text-sm text-slate-500">{t("noRequestsYet")}</p>
           </div>
         ) : (
           pending.map((req, i) => (
@@ -61,14 +65,14 @@ export default function RequestsView({
                     {req.roll ? <> • <span className="font-mono">{req.roll}</span></> : null}
                   </p>
                   {req.destination && (
-                    <p className="sd-micro mt-0.5 text-slate-500">To: {req.destination}</p>
+                    <p className="sd-micro mt-0.5 text-slate-500">{t("toDestination")} {req.destination}</p>
                   )}
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
                 <div className="text-right mr-2">
-                  <p className="text-xs text-slate-500">Out</p>
+                  <p className="text-xs text-slate-500">{tc("out")}</p>
                   <p className="font-semibold text-slate-900">{req.out}</p>
                 </div>
                 <div className="flex sm:flex-col gap-2">
@@ -76,13 +80,13 @@ export default function RequestsView({
                     onClick={() => approveRequest(req.id)}
                     className="flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-white font-bold shadow hover:-translate-y-0.5 transition-transform"
                   >
-                    <Check className="h-4 w-4" /> Approve
+                    <Check className="h-4 w-4" /> {tc("approve")}
                   </button>
                   <button
                     onClick={() => rejectRequest(req.id)}
                     className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-rose-300 text-rose-600 font-bold hover:bg-rose-50 transition-colors"
                   >
-                    <X className="h-4 w-4" /> Reject
+                    <X className="h-4 w-4" /> {tc("reject")}
                   </button>
                 </div>
               </div>

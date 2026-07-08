@@ -161,7 +161,7 @@ const createScanLog = async (req, res) => {
     // Any scan implies the scanning guard is active / on duty.
     await User.findByIdAndUpdate(req.user._id, { onDuty: true, lastActiveAt: new Date() });
 
-    const populated = await log.populate('student', 'name studentId roomNumber department year hostelName');
+    const populated = await log.populate('student', 'name studentId');
     res.status(201).json(populated);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -259,7 +259,7 @@ const getScanLogs = async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
     const logs = await ScanLog.find(filter)
-      .populate('student', 'name studentId roomNumber department year hostelName campusStatus')
+      .populate('student', 'name studentId campusStatus')
       .populate('guard', 'name studentId')
       .sort({ createdAt: -1 })
       .limit(limit);

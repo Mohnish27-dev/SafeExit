@@ -1,6 +1,7 @@
 import { Outfit, Manrope, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
+import { LanguageProvider } from "./lib/i18n";
 
 const displayFont = Outfit({
   variable: "--font-space-grotesk",
@@ -47,7 +48,7 @@ export default function RootLayout({ children }) {
           `}
         </Script>
       </head>
-      <body className="min-h-full flex flex-col transition-colors duration-300">{children}</body>
+      <body className="min-h-full flex flex-col transition-colors duration-300"><LanguageProvider>{children}</LanguageProvider></body>
     </html>
   );
 }
