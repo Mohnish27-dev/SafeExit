@@ -15,8 +15,12 @@ import {
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { getInitials } from "@/app/lib/userProfile";
 import SecurityBottomNav from "../components/SecurityBottomNav";
+import { useTranslation } from "@/app/lib/i18n";
+import LanguageSwitcher from "@/app/components/LanguageSwitcher";
 
 export default function SecurityProfilePage() {
+  const { t } = useTranslation("security");
+  const { t: tc } = useTranslation("common");
   const router = useRouter();
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,11 +34,11 @@ export default function SecurityProfilePage() {
       setMe(data);
       setError("");
     } catch (err) {
-      setError(err.message || "Could not load your profile");
+      setError(err.message || t("couldNotLoadProfile"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -67,10 +71,11 @@ export default function SecurityProfilePage() {
             >
               <ArrowLeft className="h-7 w-7" />
             </Link>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">Account</p>
-              <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">Profile</h1>
+            <div className="flex-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">{t("account")}</p>
+              <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">{tc("profile")}</h1>
             </div>
+            <LanguageSwitcher />
           </header>
 
           <section className="dash-surface dash-animate-rise mt-6 rounded-[2.5rem] p-6 shadow-xl">
@@ -81,7 +86,7 @@ export default function SecurityProfilePage() {
             )}
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
-                <Loader2 className="h-5 w-5 animate-spin" /> Loading profile…
+                <Loader2 className="h-5 w-5 animate-spin" /> {t("loadingProfile")}
               </div>
             ) : me ? (
               <>
@@ -110,7 +115,7 @@ export default function SecurityProfilePage() {
                   )}
                   {me.studentId && (
                     <p className="dash-outline flex items-center gap-3 rounded-2xl px-4 py-3">
-                      <Building2 className="h-4 w-4 text-slate-400" /> Guard ID: {me.studentId}
+                      <Building2 className="h-4 w-4 text-slate-400" /> {t("guardId")} {me.studentId}
                     </p>
                   )}
                 </div>
@@ -121,7 +126,7 @@ export default function SecurityProfilePage() {
                   className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-50 px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-rose-600 shadow-sm transition hover:bg-rose-100 disabled:opacity-60 cursor-pointer"
                 >
                   <LogOut className="h-5 w-5" />
-                  {loggingOut ? "Logging out…" : "Logout"}
+                  {loggingOut ? tc("loggingOut") : tc("logout")}
                 </button>
               </>
             ) : null}

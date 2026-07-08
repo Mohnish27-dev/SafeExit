@@ -5,14 +5,20 @@ import Link from "next/link";
 import { ArrowLeft, History as HistoryIcon, Loader2, LogIn, LogOut, Search } from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
 import SecurityBottomNav from "../components/SecurityBottomNav";
-
-const DIRECTIONS = [
-  { key: "all", label: "All" },
-  { key: "IN", label: "Entries" },
-  { key: "OUT", label: "Exits" },
-];
+import { useTranslation, useDateLocale } from "@/app/lib/i18n";
+import LanguageSwitcher from "@/app/components/LanguageSwitcher";
 
 export default function SecurityHistoryPage() {
+  const { t } = useTranslation("security");
+  const { t: tc } = useTranslation("common");
+  const dateLocale = useDateLocale();
+
+  const DIRECTIONS = useMemo(() => [
+    { key: "all", label: t("all") },
+    { key: "IN", label: t("entries") },
+    { key: "OUT", label: t("exits") },
+  ], [t]);
+
   const [logs, setLogs] = useState([]);
   const [direction, setDirection] = useState("all");
   const [search, setSearch] = useState("");
@@ -64,20 +70,23 @@ export default function SecurityHistoryPage() {
                 <ArrowLeft className="h-7 w-7" />
               </Link>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">Gate Log</p>
-                <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">Scan History</h1>
-                <p className="text-sm font-medium text-slate-500">{visible.length} movements</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">{t("gateLog")}</p>
+                <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">{t("scanHistory")}</h1>
+                <p className="text-sm font-medium text-slate-500">{visible.length} {t("movements")}</p>
               </div>
             </div>
 
-            <div className="dash-card flex items-center gap-3 rounded-2xl px-4 py-3">
-              <Search className="h-4 w-4 text-slate-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name / roll no"
-                className="w-56 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
-              />
+            <div className="flex items-center gap-3">
+              <LanguageSwitcher />
+              <div className="dash-card flex items-center gap-3 rounded-2xl px-4 py-3">
+                <Search className="h-4 w-4 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t("searchNameRoll")}
+                  className="w-56 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                />
+              </div>
             </div>
           </header>
 
@@ -105,19 +114,18 @@ export default function SecurityHistoryPage() {
             )}
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
-                <Loader2 className="h-5 w-5 animate-spin" /> Loading scan history…
+                <Loader2 className="h-5 w-5 animate-spin" /> {t("loadingScanHistory")}
               </div>
             ) : visible.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-200 py-16 text-center">
                 <HistoryIcon className="mx-auto h-10 w-10 text-slate-300" />
-                <p className="mt-3 font-semibold text-slate-700">No scans found</p>
-                <p className="text-sm text-slate-400">Logged entries and exits will appear here.</p>
+                <p className="mt-3 font-semibold text-slate-700">{t("noScansFound")}</p>
+                <p className="text-sm text-slate-400">{t("scansWillAppear")}</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {visible.map((log) => {
                   const st = log.student || {};
-                  const meta = [st.year, st.department].filter(Boolean).join(", ");
                   return (
                     <div
                       key={log._id}
@@ -132,8 +140,8 @@ export default function SecurityHistoryPage() {
                           {log.direction === "IN" ? <LogIn className="h-5 w-5" /> : <LogOut className="h-5 w-5" />}
                         </span>
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">{st.name || "Unknown Student"}</p>
-                          <p className="text-xs text-slate-500">{[meta, st.studentId].filter(Boolean).join(" - ") || "—"}</p>
+                          <p className="text-sm font-semibold text-slate-900">{st.name || t("unknownStudent")}</p>
+                          <p className="text-xs text-slate-500">{st.studentId || "—"}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -149,7 +157,7 @@ export default function SecurityHistoryPage() {
                           </span>
                         )}
                         <span className="text-xs font-semibold text-slate-500">
-                          {new Date(log.createdAt).toLocaleString("en-US", {
+                          {new Date(log.createdAt).toLocaleString(dateLocale, {
                             day: "2-digit",
                             month: "short",
                             hour: "2-digit",

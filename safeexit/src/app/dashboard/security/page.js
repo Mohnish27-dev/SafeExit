@@ -20,30 +20,8 @@ import {
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
 import SecurityBottomNav from "./components/SecurityBottomNav";
-
-const statusCards = [
-  {
-    key: "inside",
-    label: "Inside Campus",
-    note: "Latest gate scan was an entry",
-    tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    icon: UserCheck,
-  },
-  {
-    key: "outside",
-    label: "Outside Campus",
-    note: "Latest gate scan was an exit",
-    tone: "border-amber-200 bg-amber-50 text-amber-700",
-    icon: UserRound,
-  },
-  {
-    key: "overdue",
-    label: "Overdue",
-    note: "Returned late / not yet back",
-    tone: "border-rose-200 bg-rose-50 text-rose-700",
-    icon: Clock3,
-  },
-];
+import { useTranslation, useDateLocale } from "@/app/lib/i18n";
+import LanguageSwitcher from "@/app/components/LanguageSwitcher";
 
 const defaultProfile = {
   name: "Security Guard",
@@ -58,6 +36,34 @@ const formatClock = (value) => {
 };
 
 export default function SecurityDashboardPage() {
+  const { t } = useTranslation("security");
+  const { t: tc } = useTranslation("common");
+  const dateLocale = useDateLocale();
+
+  const statusCards = useMemo(() => [
+    {
+      key: "inside",
+      label: t("insideCampus"),
+      note: t("insideCampusNote"),
+      tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      icon: UserCheck,
+    },
+    {
+      key: "outside",
+      label: t("outsideCampus"),
+      note: t("outsideCampusNote"),
+      tone: "border-amber-200 bg-amber-50 text-amber-700",
+      icon: UserRound,
+    },
+    {
+      key: "overdue",
+      label: t("overdue"),
+      note: t("overdueNote"),
+      tone: "border-rose-200 bg-rose-50 text-rose-700",
+      icon: Clock3,
+    },
+  ], [t]);
+
   const [profile, setProfile] = useState(defaultProfile);
   // Start null so the server render and the first client render agree (no
   // Date on the server). The mount effect below fills it in and starts ticking.
@@ -65,13 +71,7 @@ export default function SecurityDashboardPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   // Authoritative pre-confirm preview from the backend, for BOTH directions.
-  // Entry: the real active pass + the punctuality the log will record. Exit: the
-  // live eligibility verdict (is there an Approved, unexpired pass right now).
-  // The QR no longer carries any status/window, so this server lookup is the only
-  // source of truth the dialog shows — a replayed screenshot resolves live here.
   const [scanPreview, setScanPreview] = useState(null);
-  // True while that preview is in flight, so the dialog shows "Checking…" rather
-  // than a premature verdict before the server responds.
   const [previewLoading, setPreviewLoading] = useState(false);
   const [scanMode, setScanMode] = useState(null);
   const [scans, setScans] = useState([]);
@@ -118,13 +118,9 @@ export default function SecurityDashboardPage() {
     setLogError("");
     const direction = scanMode === "exit" ? "OUT" : "IN";
     try {
-      // Punctuality is intentionally not sent: the server recomputes it against
-      // the real pass, so a client guess would be ignored anyway. Keeping it out
-      // makes it explicit that the gate is the source of truth.
       await apiFetch("/scan", {
         method: "POST",
         body: JSON.stringify({
-          // _id resolves reliably; roll number is the fallback for older QRs.
           student: scanResult.sid,
           studentId: scanResult.id,
           direction,
@@ -134,7 +130,7 @@ export default function SecurityDashboardPage() {
       setScanPreview(null);
       await loadScans();
     } catch (err) {
-      setLogError(err.message || "Could not log this scan");
+      setLogError(err.message || t("couldNotLogScan"));
     } finally {
       setLogging(false);
     }
@@ -144,17 +140,16 @@ export default function SecurityDashboardPage() {
     () =>
       scans.slice(0, 8).map((log) => {
         const st = log.student || {};
-        const meta = [st.year, st.department].filter(Boolean).join(", ");
         return {
           id: log._id,
-          name: st.name || "Unknown Student",
-          meta: [meta, st.studentId].filter(Boolean).join(" - ") || "—",
-          tag: log.direction === "IN" ? "Entry (IN)" : "Exit (OUT)",
-          time: new Date(log.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+          name: st.name || t("unknownStudent"),
+          meta: st.studentId || "—",
+          tag: log.direction === "IN" ? t("entryIn") : t("exitOut"),
+          time: new Date(log.createdAt).toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" }),
           type: log.direction === "IN" ? "in" : "out",
         };
       }),
-    [scans]
+    [scans, t, dateLocale]
   );
 
   const handleScan = async (result) => {
@@ -178,12 +173,6 @@ export default function SecurityDashboardPage() {
         setScanResult(parsed);
         setIsScanning(false);
 
-        // Ask the backend what this scan will actually decide, for BOTH modes.
-        // Entry: the authoritative punctuality (judged against the real pass).
-        // Exit: the live eligibility verdict (Approved & unexpired?) — since the
-        // QR carries no status anymore, this is the only thing that can reveal a
-        // replayed screenshot as having no current pass. Failure is non-fatal:
-        // the dialog copes (exit falls back to letting the backend enforce 403).
         setScanPreview(null);
         setPreviewLoading(true);
         try {
@@ -226,13 +215,13 @@ export default function SecurityDashboardPage() {
   }, [profile.name]);
 
   const formattedDate = useMemo(
-    () => (now ? now.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" }) : ""),
-    [now]
+    () => (now ? now.toLocaleDateString(dateLocale, { day: "2-digit", month: "short", year: "numeric" }) : ""),
+    [now, dateLocale]
   );
 
   const formattedTime = useMemo(
-    () => (now ? now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : ""),
-    [now]
+    () => (now ? now.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : ""),
+    [now, dateLocale]
   );
 
   return (
@@ -249,25 +238,28 @@ export default function SecurityDashboardPage() {
                 <Shield className="h-7 w-7" />
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">Live Command</p>
-                <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">SafeExit Control</h1>
-                <p className="text-sm font-medium text-slate-500">Security Guard Operations</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">{t("liveCommand")}</p>
+                <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">{t("controlTitle")}</h1>
+                <p className="text-sm font-medium text-slate-500">{t("guardOps")}</p>
               </div>
             </div>
 
-            <Link
-              href="/dashboard/security/profile"
-              className="dash-card flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 transition hover:opacity-90"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
-                <ShieldCheck className="h-6 w-6" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-bold text-slate-900">{profile.name}</p>
-                <p className="text-sm font-medium text-slate-500">{profile.roleLabel}</p>
-              </div>
-              <ChevronRight className="h-5 w-5 rotate-90 text-slate-400" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <LanguageSwitcher />
+              <Link
+                href="/dashboard/security/profile"
+                className="dash-card flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 transition hover:opacity-90"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-900">{profile.name}</p>
+                  <p className="text-sm font-medium text-slate-500">{profile.roleLabel}</p>
+                </div>
+                <ChevronRight className="h-5 w-5 rotate-90 text-slate-400" />
+              </Link>
+            </div>
           </header>
 
           <section className="dash-surface dash-animate-rise dash-stagger-2 mt-6 rounded-[2.5rem] p-6 shadow-xl">
@@ -277,12 +269,12 @@ export default function SecurityDashboardPage() {
                   <Clock3 className="h-10 w-10" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Shift Pulse</p>
+                  <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">{t("shiftPulse")}</p>
                   <h2 className="font-display text-3xl font-bold tracking-tight text-slate-900">
-                    Good Morning, {greetingName}.
+                    {t("goodMorning")} {greetingName}.
                   </h2>
                   <p className="mt-2 text-lg font-normal text-slate-600">
-                    Live gates synced. Your patrol window is active.
+                    {t("gatesSynced")}
                   </p>
                 </div>
               </div>
@@ -294,7 +286,7 @@ export default function SecurityDashboardPage() {
                 <span className="dash-pill inline-flex items-center gap-3 rounded-full px-4 py-2">
                   <Clock3 className="h-5 w-5 text-slate-500" />
                   {formattedTime}
-                  <span className="dash-chip ml-auto rounded-full px-3 py-1 text-xs font-semibold">Live</span>
+                  <span className="dash-chip ml-auto rounded-full px-3 py-1 text-xs font-semibold">{tc("live")}</span>
                 </span>
               </div>
             </div>
@@ -304,26 +296,26 @@ export default function SecurityDashboardPage() {
             <div className="dash-surface dash-animate-rise dash-stagger-3 rounded-[2.5rem] p-6 shadow-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Quick Scan</p>
-                  <h2 className="font-display text-2xl font-bold tracking-tight">Scan Gateway</h2>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">{t("quickScan")}</p>
+                  <h2 className="font-display text-2xl font-bold tracking-tight">{t("scanGateway")}</h2>
                 </div>
-                <span className="dash-chip rounded-full px-3 py-1 text-xs font-semibold">Realtime</span>
+                <span className="dash-chip rounded-full px-3 py-1 text-xs font-semibold">{t("realtime")}</span>
               </div>
               <div className="mt-6 grid gap-6 md:grid-cols-2">
                 <div className="dash-card-strong dash-animate-shimmer rounded-[2.25rem] p-6 text-center">
                   <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-sky-100 text-sky-700">
                     <LogOut className="h-12 w-12" />
                   </div>
-                  <h3 className="mt-5 text-2xl font-bold text-sky-700">Scan Exit</h3>
+                  <h3 className="mt-5 text-2xl font-bold text-sky-700">{t("scanExit")}</h3>
                   <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
-                    Approve exits instantly and sync safe return windows.
+                    {t("scanExitDesc")}
                   </p>
                   <button 
                     onClick={() => { setScanMode('exit'); setIsScanning(true); }}
                     className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5 cursor-pointer"
                   >
                     <ScanLine className="h-6 w-6" />
-                    Scan Exit
+                    {t("scanExit")}
                   </button>
                 </div>
 
@@ -331,32 +323,32 @@ export default function SecurityDashboardPage() {
                   <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                     <LogIn className="h-12 w-12" />
                   </div>
-                  <h3 className="mt-5 text-2xl font-bold text-emerald-700">Scan Entry</h3>
+                  <h3 className="mt-5 text-2xl font-bold text-emerald-700">{t("scanEntry")}</h3>
                   <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
-                    Validate every student check-in with a single QR scan.
+                    {t("scanEntryDesc")}
                   </p>
                   <button 
                     onClick={() => { setScanMode('entry'); setIsScanning(true); }}
                     className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5 cursor-pointer"
                   >
                     <ScanLine className="h-6 w-6" />
-                    Scan Entry
+                    {t("scanEntry")}
                   </button>
                 </div>
               </div>
             </div>
 
             <aside className="dash-card dash-animate-rise rounded-[2.5rem] p-6 shadow-xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Shift Signal</p>
-              <h3 className="font-display mt-3 text-2xl font-bold">Zone Readiness</h3>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">{t("shiftSignal")}</p>
+              <h3 className="font-display mt-3 text-2xl font-bold">{t("zoneReadiness")}</h3>
               <p className="mt-2 text-sm text-slate-500">
-                Main gate and hostel blocks are synced. One checkpoint needs attention.
+                {t("zoneReadinessDesc")}
               </p>
               <div className="mt-5 space-y-3">
                 {[
-                  { label: "Main gate", status: "Online", tone: "bg-emerald-100 text-emerald-700" },
-                  { label: "Hostel block A", status: "Online", tone: "bg-emerald-100 text-emerald-700" },
-                  { label: "Hostel block B", status: "Offline", tone: "bg-rose-100 text-rose-700" },
+                  { label: t("mainGate"), status: tc("online"), tone: "bg-emerald-100 text-emerald-700" },
+                  { label: t("hostelBlockA"), status: tc("online"), tone: "bg-emerald-100 text-emerald-700" },
+                  { label: t("hostelBlockB"), status: tc("offline"), tone: "bg-rose-100 text-rose-700" },
                 ].map((item) => (
                   <div
                     key={item.label}
@@ -375,12 +367,12 @@ export default function SecurityDashboardPage() {
           <section className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
             <div className="dash-card rounded-[2.5rem] p-6 shadow-xl">
               <div className="flex items-center justify-between">
-                <h2 className="font-display text-2xl font-bold tracking-tight">Students Status</h2>
-                <button className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">View All</button>
+                <h2 className="font-display text-2xl font-bold tracking-tight">{t("studentsStatus")}</h2>
+                <Link href="/dashboard/security/students" className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 hover:text-indigo-600 transition">{tc("viewAll")}</Link>
               </div>
               <div className="mt-5 space-y-4">
                 {statusCards.map((card) => (
-                  <div key={card.label} className={`rounded-3xl border p-5 ${card.tone}`}>
+                  <div key={card.key} className={`rounded-3xl border p-5 ${card.tone}`}>
                     <div className="flex items-center gap-4">
                       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/80">
                         <card.icon className="h-6 w-6" />
@@ -398,13 +390,13 @@ export default function SecurityDashboardPage() {
 
             <div className="dash-card rounded-[2.5rem] p-6 shadow-xl">
               <div className="flex items-center justify-between">
-                <h2 className="font-display text-2xl font-bold tracking-tight">Recent Scans</h2>
-                <button className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">View All</button>
+                <h2 className="font-display text-2xl font-bold tracking-tight">{t("recentScans")}</h2>
+                <Link href="/dashboard/security/history" className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 hover:text-indigo-600 transition">{tc("viewAll")}</Link>
               </div>
               <div className="mt-4 space-y-3">
                 {recentScans.length === 0 && (
                   <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400">
-                    No scans yet. Logged entries and exits will appear here.
+                    {t("noScansYet")}
                   </p>
                 )}
                 {recentScans.map((scan) => (
@@ -431,21 +423,23 @@ export default function SecurityDashboardPage() {
             </div>
           </section>
 
+          {counts.overdue > 0 && (
           <section className="dash-animate-rise mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[2.5rem] border border-rose-200/70 bg-rose-50/80 p-6 shadow-lg">
             <div className="flex items-center gap-4">
               <span className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 text-rose-600">
                 <Bell className="h-7 w-7" />
               </span>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-400">Alerts</p>
-                <h2 className="font-display text-xl font-bold">2 Students Overdue</h2>
-                <p className="text-sm text-slate-600">Immediate attention required for delayed returns.</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-400">{t("alerts")}</p>
+                <h2 className="font-display text-xl font-bold">{counts.overdue} {counts.overdue === 1 ? t("studentOverdue") : t("studentsOverduePlural")}</h2>
+                <p className="text-sm text-slate-600">{t("overdueAttention")}</p>
               </div>
             </div>
-            <button className="dash-chip rounded-2xl bg-rose-500 px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-lg">
-              View Now
-            </button>
+            <Link href="/dashboard/security/students?filter=overdue" className="dash-chip rounded-2xl bg-rose-500 px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-lg hover:bg-rose-600 transition">
+              {t("viewNow")}
+            </Link>
           </section>
+          )}
 
           <SecurityBottomNav active="Home" />
         </div>
@@ -455,7 +449,7 @@ export default function SecurityDashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
           <div className="relative w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl">
             <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-display text-lg font-bold">Scan Student QR</h3>
+              <h3 className="font-display text-lg font-bold">{t("scanStudentQR")}</h3>
               <button onClick={() => setIsScanning(false)} className="p-2 rounded-full hover:bg-slate-100 transition cursor-pointer">
                 <X className="h-5 w-5 text-slate-500" />
               </button>
@@ -491,34 +485,30 @@ export default function SecurityDashboardPage() {
                 )}
               </div>
               
-              <h2 className="font-display text-2xl font-bold text-slate-900">{scanResult.name || "Unknown Student"}</h2>
+              <h2 className="font-display text-2xl font-bold text-slate-900">{scanResult.name || t("unknownStudent")}</h2>
               <p className="text-sm font-semibold text-slate-500 uppercase tracking-widest mt-1 mb-6">
                 {scanResult.id}
               </p>
 
               <div className="w-full bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-4 mb-6">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Status</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("status")}</span>
                   {scanMode === 'exit' ? (
                     (() => {
-                      // Exit verdict comes ONLY from the live backend preview — the
-                      // QR carries no status anymore. While it loads, show
-                      // "Checking…"; a replayed screenshot with no current pass
-                      // resolves here to "No Approved Outing" and blocks the exit.
                       if (previewLoading) {
                         return (
                           <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500">
-                            Checking…
+                            {t("checking")}
                           </span>
                         );
                       }
                       if (scanPreview?.exit) {
                         const { allowed, reason } = scanPreview.exit;
                         const label = allowed
-                          ? "Approved"
+                          ? t("approved")
                           : reason === "expired"
-                            ? "Expired Pass"
-                            : "No Approved Outing";
+                            ? t("expiredPass")
+                            : t("noApprovedOuting");
                         return (
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                             allowed ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
@@ -527,26 +517,20 @@ export default function SecurityDashboardPage() {
                           </span>
                         );
                       }
-                      // Preview didn't resolve (network/500). Don't assert a verdict
-                      // the server didn't give — the backend still enforces on submit.
                       return (
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
-                          Unverified
+                          {t("unverified")}
                         </span>
                       );
                     })()
                   ) : (
                     (() => {
-                      // Entry punctuality comes from the backend preview (judged
-                      // against the real active trip). The QR carries no window to
-                      // fall back on anymore, so while the preview is loading or
-                      // absent we simply don't assert Overdue.
                       const isOverdue = scanPreview?.punctuality === "Overdue";
                       return (
                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                           isOverdue ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
                         }`}>
-                          {isOverdue ? "Overdue" : "On-Time IN"}
+                          {isOverdue ? t("overdue") : t("onTimeIn")}
                         </span>
                       );
                     })()
@@ -554,24 +538,24 @@ export default function SecurityDashboardPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    {scanMode === 'exit' ? "Valid Window" : "Logged Time"}
+                    {scanMode === 'exit' ? t("validWindow") : t("loggedTime")}
                   </span>
                   <span className="text-sm font-semibold text-slate-800">
                     {scanMode === 'exit'
                       ? (scanPreview?.exit?.outing
                           ? `${formatClock(scanPreview.exit.outing.outTime)} to ${formatClock(scanPreview.exit.outing.inTime)}`
-                          : "N/A")
+                          : t("na"))
                       : formattedTime
                     }
                   </span>
                 </div>
                 {scanMode === 'entry' && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Allowed Return</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("allowedReturn")}</span>
                     <span className="text-sm font-semibold text-slate-800">
                       {scanPreview?.activeOuting?.inTime
                         ? formatClock(scanPreview.activeOuting.inTime)
-                        : "N/A"}
+                        : t("na")}
                     </span>
                   </div>
                 )}
@@ -582,27 +566,17 @@ export default function SecurityDashboardPage() {
               )}
 
               {(() => {
-                // Block the exit at the button when the live preview says this
-                // student has no usable pass. This is UX only — the backend still
-                // enforces the same rule on POST /scan — but it stops the guard
-                // from confirming an exit that would just 403, and makes the
-                // replayed-QR case unmistakable at the gate.
                 const exitBlocked =
                   scanMode === "exit" && !previewLoading && scanPreview?.exit && !scanPreview.exit.allowed;
                 const exitBlockedMsg =
                   scanPreview?.exit?.reason === "expired"
-                    ? "This pass has expired — its departure time has passed. Student must file a new request."
-                    : "No warden-approved outing for this student. Exit denied until a new request is approved.";
+                    ? t("exitBlockedExpired")
+                    : t("exitBlockedNoPass");
 
-                // Block the entry at the button when the live preview says this
-                // student is already inside campus (no active 'Out' trip). This
-                // mirrors the exit-side blocking: the guard sees the denial
-                // immediately on scan, not only after pressing "Log Entry".
                 const entryBlocked =
                   scanMode === "entry" && !previewLoading && scanPreview?.student &&
                   scanPreview.student.campusStatus === "Inside";
-                const entryBlockedMsg =
-                  "This student is already inside — an entry has already been logged. Log an exit first.";
+                const entryBlockedMsg = t("entryBlockedInside");
 
                 const isBlocked = exitBlocked || entryBlocked;
                 const blockedMsg = exitBlocked ? exitBlockedMsg : entryBlockedMsg;
@@ -620,7 +594,7 @@ export default function SecurityDashboardPage() {
                         disabled={logging}
                         className="flex-1 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
                       >
-                        Cancel
+                        {tc("cancel")}
                       </button>
                       <button
                         onClick={confirmScan}
@@ -632,12 +606,12 @@ export default function SecurityDashboardPage() {
                         }`}
                       >
                         {logging
-                          ? "Logging…"
+                          ? t("logging")
                           : exitBlocked
-                            ? "Exit Denied"
+                            ? t("exitDenied")
                             : entryBlocked
-                              ? "Entry Denied"
-                              : scanMode === 'exit' ? "Log Exit" : "Log Entry"}
+                              ? t("entryDenied")
+                              : scanMode === 'exit' ? t("logExit") : t("logEntry")}
                       </button>
                     </div>
                   </>

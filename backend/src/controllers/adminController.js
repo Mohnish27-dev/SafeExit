@@ -63,8 +63,12 @@ const getUsers = async (req, res) => {
     // Guards may only browse the student roster, never staff accounts.
     if (req.user.role === 'Guard') filter.role = 'Student';
 
+    // Guards only see non-confidential fields (photo, name, roll number, status).
+    const guardFields = 'name studentId campusStatus lastSeenAt photo';
+    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
+
     const users = await User.find(filter)
-      .select('name email role studentId department year roomNumber hostelName phoneNumber campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt')
+      .select(req.user.role === 'Guard' ? guardFields : allFields)
       .sort({ createdAt: -1 });
     res.json(users);
   } catch (error) {
