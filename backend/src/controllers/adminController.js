@@ -60,6 +60,8 @@ const getUsers = async (req, res) => {
   try {
     const filter = {};
     if (req.query.role) filter.role = req.query.role;
+    // Guards may only browse the student roster, never staff accounts.
+    if (req.user.role === 'Guard') filter.role = 'Student';
 
     const users = await User.find(filter)
       .select('name email role studentId department year roomNumber hostelName phoneNumber campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt')

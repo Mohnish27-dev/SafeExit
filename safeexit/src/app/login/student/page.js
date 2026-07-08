@@ -209,12 +209,13 @@ export default function StudentLoginPage() {
       });
 
       if (!registerRes.ok) {
-         throw new Error("Registration failed");
+         const errBody = await registerRes.json().catch(() => ({}));
+         throw new Error(errBody.message || "Registration failed");
       }
 
       const registerData = await registerRes.json();
       const token = registerData.token;
-      localStorage.setItem('safeexit_token', token);
+      sessionStorage.setItem('safeexit_token', token);
 
       const authHeaders = {
         'Content-Type': 'application/json',
@@ -315,7 +316,7 @@ export default function StudentLoginPage() {
       if (!verifyRes.ok) {
         throw new Error(data.message || "Biometric login failed on server.");
       }
-      localStorage.setItem('safeexit_token', data.token);
+      sessionStorage.setItem('safeexit_token', data.token);
 
       // Re-publish the photo so the guard's scanner can find it even after the
       // in-memory profile store was cleared (e.g. a server restart since signup).
@@ -653,7 +654,8 @@ export default function StudentLoginPage() {
                      onClick={async () => {
                        // Skip webauthn, just save and go
                        const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
-                       
+                       setIsProcessing(true);
+                       setErrorMsg("");
                        try {
                          // Real Backend API Call - Register User without WebAuthn
                          const registerRes = await fetch('/api/backend/auth/register', {
@@ -674,7 +676,7 @@ export default function StudentLoginPage() {
                          });
                          if (registerRes.ok) {
                            const registerData = await registerRes.json();
-                           localStorage.setItem('safeexit_token', registerData.token);
+                           sessionStorage.setItem('safeexit_token', registerData.token);
                            setStoredUser({
                              name: profile.fullName,
                              role: "student",
@@ -689,12 +691,18 @@ export default function StudentLoginPage() {
                              photo: profile.photo
                            });
                            router.push("/dashboard/student");
+                         } else {
+                           const errBody = await registerRes.json().catch(() => ({}));
+                           setErrorMsg(errBody.message || "Registration failed. Please try again.");
                          }
                        } catch (e) {
-                         console.error(e);
+                         setErrorMsg(e?.message || "Registration failed. Please try again.");
+                       } finally {
+                         setIsProcessing(false);
                        }
-                     }} 
-                     className="text-sm font-semibold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                     }}
+                     disabled={isProcessing}
+                     className="text-sm font-semibold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer disabled:opacity-50"
                    >
                      Maybe later, continue to dashboard
                    </button>

@@ -1,5 +1,6 @@
 const OutingRequest = require('../models/OutingRequest');
 const { qualifiesForAutoApproval, isDeparturePassed } = require('../utils/outingRules');
+const sseHub = require('../utils/sseHub');
 
 // Lazily expire approved-but-unused passes at read time. A pass that was
 // Approved (by warden or auto-rule) but whose departure `outTime` has passed
@@ -60,6 +61,14 @@ const createOutingRequest = async (req, res) => {
       autoApproved
     });
 
+    // Push to any warden/guard dashboards currently open so a new pending
+    // request shows up instantly instead of waiting for a manual refresh.
+    sseHub.broadcast('outing:changed', {
+      reason: 'created',
+      id: outingRequest._id,
+      status: outingRequest.status,
+    });
+
     res.status(201).json(outingRequest);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -112,6 +121,16 @@ const updateRequestStatus = async (req, res) => {
       }
 
       const updatedRequest = await request.save();
+
+      // Keep every other open warden/guard dashboard in sync (e.g. two wardens
+      // reviewing the same queue) so an already-decided request disappears
+      // from their pending list without a manual refresh.
+      sseHub.broadcast('outing:changed', {
+        reason: 'status',
+        id: updatedRequest._id,
+        status: updatedRequest.status,
+      });
+
       res.json(updatedRequest);
     } else {
       res.status(404).json({ message: 'Request not found' });
@@ -121,9 +140,37 @@ const updateRequestStatus = async (req, res) => {
   }
 };
 
+// @desc    Live stream of outing-request changes (new requests, approvals,
+//          rejections) so warden/guard dashboards update in real time.
+// @route   GET /api/outing/stream
+// @access  Private (Warden/Guard)
+const streamOutingEvents = (req, res) => {
+  req.socket.setTimeout(0);
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write('retry: 3000\n\n');
+
+  sseHub.addClient(res);
+
+  // Proxies/load balancers tend to kill idle connections; a periodic comment
+  // keeps this one alive without triggering any client-side event handler.
+  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseHub.removeClient(res);
+  });
+};
+
 module.exports = {
   createOutingRequest,
   getMyOutingRequests,
   getPendingRequests,
-  updateRequestStatus
+  updateRequestStatus,
+  streamOutingEvents
 };

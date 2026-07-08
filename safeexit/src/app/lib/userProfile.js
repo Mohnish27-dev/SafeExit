@@ -13,10 +13,15 @@ export const defaultStudentProfile = {
   mobile: "",
 };
 
+// Tab-scoped: sessionStorage, not localStorage. This holds whichever role is
+// actively logged in on THIS tab. If it lived in localStorage, logging into a
+// different role in another tab of the same browser would overwrite it for
+// every open tab — showing one role's name while requests authenticate as
+// another (see safeexit_token in api.js for the matching auth-side fix).
 export const getStoredUser = () => {
   if (typeof window === "undefined") return null;
 
-  const raw = localStorage.getItem(USER_PROFILE_KEY);
+  const raw = sessionStorage.getItem(USER_PROFILE_KEY);
   if (!raw) return null;
 
   try {
@@ -29,7 +34,7 @@ export const getStoredUser = () => {
 export const setStoredUser = (profile) => {
   if (typeof window === "undefined") return;
 
-  localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+  sessionStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
 };
 
 export const getInitials = (name) => {
