@@ -17,6 +17,7 @@ import {
   Ticket,
   LogOut,
   TimerOff,
+  Ban,
 } from "lucide-react";
 import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
@@ -32,6 +33,7 @@ const statusConfig = {
   returned: { label: "Returned", color: "text-slate-600", bg: "bg-slate-100", icon: RotateCcw },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
   expired: { label: "Expired", color: "text-rose-700", bg: "bg-rose-100", icon: TimerOff },
+  cancelled: { label: "Cancelled", color: "text-slate-500", bg: "bg-slate-100", icon: Ban },
 };
 
 const filters = [
@@ -42,6 +44,7 @@ const filters = [
   { key: "returned", label: "Returned" },
   { key: "rejected", label: "Rejected" },
   { key: "expired", label: "Expired" },
+  { key: "cancelled", label: "Cancelled" },
 ];
 
 const statAccents = {
@@ -59,6 +62,8 @@ export default function MyOutings() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(null);
+  const [confirmCancel, setConfirmCancel] = useState(null); // _id of outing being confirmed
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -72,6 +77,7 @@ export default function MyOutings() {
         const data = await apiFetch("/outing/myrequests");
         if (cancelled) return;
         const mapped = data.map((o) => ({
+          _id: o._id,
           id: `SE-${String(o._id).slice(-6).toUpperCase()}`,
           destination: o.destination,
           dateOut: new Date(o.outTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
@@ -107,6 +113,21 @@ export default function MyOutings() {
       window.removeEventListener("focus", onVisible);
     };
   }, [hydrated]);
+
+  const handleCancel = async (outingId) => {
+    setCancelling(true);
+    try {
+      await apiFetch(`/outing/${outingId}/cancel`, { method: "PATCH" });
+      setOutings((prev) =>
+        prev.map((o) => (o._id === outingId ? { ...o, status: "cancelled" } : o))
+      );
+      setConfirmCancel(null);
+    } catch (err) {
+      console.error("Failed to cancel outing:", err);
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const filtered = outings.filter((outing) => {
     const matchFilter = filter === "all" || outing.status === filter;
@@ -284,6 +305,48 @@ export default function MyOutings() {
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
                           <TimerOff size={15} className="text-rose-500 shrink-0 mt-0.5" />
                           <p className="text-xs font-semibold text-rose-600">Departure time passed before this pass could be used. This request has expired — file a new one to go out.</p>
+                        </div>
+                      )}
+                      {outing.status === "cancelled" && (
+                        <div className="mt-3 pt-3 border-t border-slate-200 flex items-start gap-2.5">
+                          <Ban size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                          <p className="text-xs font-semibold text-slate-500">You cancelled this outing request.</p>
+                        </div>
+                      )}
+                      {(outing.status === "approved" || outing.status === "pending") && (
+                        <div className="mt-4 pt-3 border-t border-slate-100">
+                          {confirmCancel === outing._id ? (
+                            <div className="flex flex-col gap-2">
+                              <p className="text-xs font-semibold text-slate-600">Are you sure you want to cancel this pass?</p>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={cancelling}
+                                  onClick={(e) => { e.stopPropagation(); handleCancel(outing._id); }}
+                                  className="flex-1 py-2 rounded-xl bg-rose-500 text-white text-xs font-bold shadow-sm hover:bg-rose-600 transition disabled:opacity-60 cursor-pointer"
+                                >
+                                  {cancelling ? "Cancelling…" : "Yes, Cancel"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={cancelling}
+                                  onClick={(e) => { e.stopPropagation(); setConfirmCancel(null); }}
+                                  className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 transition cursor-pointer"
+                                >
+                                  Keep Pass
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setConfirmCancel(outing._id); }}
+                              className="w-full py-2.5 rounded-xl border border-rose-200 text-rose-600 text-xs font-bold hover:bg-rose-50 transition cursor-pointer flex items-center justify-center gap-2"
+                            >
+                              <Ban size={13} />
+                              Cancel Pass
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

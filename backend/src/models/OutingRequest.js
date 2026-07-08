@@ -28,7 +28,7 @@ const outingRequestSchema = new mongoose.Schema({
     // The transition is applied lazily when a request is read (see
     // outingController) — there is no background job flipping it.
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned', 'Expired'],
+    enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned', 'Expired', 'Cancelled'],
     default: 'Pending'
   },
   // True when `status` was set to 'Approved' by the system rule (return time
