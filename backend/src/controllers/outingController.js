@@ -2,20 +2,27 @@ const OutingRequest = require('../models/OutingRequest');
 const { qualifiesForAutoApproval, isDeparturePassed } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
 
-// Lazily expire approved-but-unused passes at read time. A pass that was
-// Approved (by warden or auto-rule) but whose departure `outTime` has passed
-// without the student exiting the gate is no longer usable — the gate scan
-// already refuses it. We flip such passes to 'Expired' here so every read
-// (student dashboard, my-outings, warden views) reflects the same terminal
-// state, instead of showing a stale "Approved/Active" pass forever. Only
-// 'Approved' passes are eligible: 'Out'/'Returned' trips already left, and
-// 'Pending' ones haven't been approved yet. Persistence is best-effort and
-// per-doc so one failed save doesn't block the whole list response.
-const expireStaleApproved = async (requests) => {
+// Lazily expire stale requests at read time. Two categories qualify:
+//
+// 1. **Approved-but-unused**: the pass was approved (by warden or auto-rule)
+//    but its departure `outTime` passed without the student exiting the gate,
+//    so the gate scan would refuse it anyway. Flipping to 'Expired' keeps
+//    every dashboard consistent with the gate's enforcement.
+//
+// 2. **Pending-and-missed**: the request was never acted on by the warden and
+//    the departure time has already passed. There's no point keeping it in the
+//    warden's approval queue — the student can't leave for a time that's gone.
+//
+// 'Out'/'Returned' trips have already left the gate, and 'Rejected' ones are
+// terminal, so those are never touched. Persistence is best-effort and per-doc
+// so one failed save doesn't block the whole list response.
+const expireStaleRequests = async (requests) => {
   const list = Array.isArray(requests) ? requests : [requests];
   await Promise.all(
     list.map(async (reqDoc) => {
-      if (!reqDoc || reqDoc.status !== 'Approved') return;
+      if (!reqDoc) return;
+      // Only 'Approved' and 'Pending' requests can expire on departure time.
+      if (reqDoc.status !== 'Approved' && reqDoc.status !== 'Pending') return;
       if (!isDeparturePassed(reqDoc.outTime)) return;
       reqDoc.status = 'Expired';
       try {
@@ -81,7 +88,7 @@ const createOutingRequest = async (req, res) => {
 const getMyOutingRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find({ student: req.user._id }).sort({ createdAt: -1 });
-    await expireStaleApproved(requests);
+    await expireStaleRequests(requests);
     res.json(requests);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -96,7 +103,13 @@ const getPendingRequests = async (req, res) => {
     const requests = await OutingRequest.find({ status: 'Pending' })
       .populate('student', 'name studentId roomNumber')
       .sort({ createdAt: 1 });
-    res.json(requests);
+
+    // Expire any pending requests whose departure time has already passed
+    // so the warden never sees stale entries they can no longer act on.
+    await expireStaleRequests(requests);
+    const stillPending = requests.filter((r) => r.status === 'Pending');
+
+    res.json(stillPending);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -112,6 +125,31 @@ const updateRequestStatus = async (req, res) => {
     const request = await OutingRequest.findById(req.params.id);
 
     if (request) {
+      // Guard against approving a request whose departure time has already
+      // passed. The warden may have had the pending card open and clicked
+      // "Approve" after the window closed — accepting it now would create
+      // an already-expired pass.
+      if (
+        request.status === 'Pending' &&
+        status === 'Approved' &&
+        isDeparturePassed(request.outTime)
+      ) {
+        request.status = 'Expired';
+        await request.save();
+
+        sseHub.broadcast('outing:changed', {
+          reason: 'expired',
+          id: request._id,
+          status: 'Expired',
+        });
+
+        return res.status(409).json({
+          message:
+            'This request has expired — the departure time has already passed. It can no longer be approved.',
+          status: 'Expired',
+        });
+      }
+
       request.status = status;
       if (remarks) request.remarks = remarks;
       

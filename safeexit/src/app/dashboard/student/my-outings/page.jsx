@@ -283,7 +283,7 @@ export default function MyOutings() {
                       {outing.status === "expired" && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
                           <TimerOff size={15} className="text-rose-500 shrink-0 mt-0.5" />
-                          <p className="text-xs font-semibold text-rose-600">Departure time passed before exit. This pass has expired — file a new request to go out.</p>
+                          <p className="text-xs font-semibold text-rose-600">Departure time passed before this pass could be used. This request has expired — file a new one to go out.</p>
                         </div>
                       )}
                     </div>

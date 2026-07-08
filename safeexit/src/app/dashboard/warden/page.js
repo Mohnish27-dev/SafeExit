@@ -200,7 +200,14 @@ export default function WardenDashboardPage() {
         body: JSON.stringify({ status: "Approved" }),
       });
     } catch (err) {
-      // Roll back on failure.
+      // If the request expired before the warden could approve it, don't roll
+      // back — the card should simply vanish from both pending and approved.
+      if (err?.status === 409) {
+        setApproved((a) => a.filter((r) => r.id !== id));
+        setRequestsError("That request expired — the departure time has already passed.");
+        return;
+      }
+      // Roll back on other failures.
       setApproved((a) => a.filter((r) => r.id !== id));
       setPending((p) => [req, ...p]);
       setRequestsError(err.message || "Could not approve request");
