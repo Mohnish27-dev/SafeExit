@@ -178,6 +178,48 @@ const updateRequestStatus = async (req, res) => {
   }
 };
 
+// @desc    Cancel an outing request (student withdraws their own pass)
+// @route   PATCH /api/outing/:id/cancel
+// @access  Private (Student)
+const cancelOutingRequest = async (req, res) => {
+  try {
+    const request = await OutingRequest.findById(req.params.id);
+
+    if (!request) {
+      return res.status(404).json({ message: 'Request not found' });
+    }
+
+    // Only the student who created the request can cancel it.
+    if (request.student.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'You can only cancel your own outing requests.' });
+    }
+
+    // Only actionable passes (still waiting or approved but unused) can be cancelled.
+    // Once the student has scanned out, the trip is live and must close normally.
+    if (request.status !== 'Pending' && request.status !== 'Approved') {
+      return res.status(409).json({
+        message: `Cannot cancel a request that is already ${request.status.toLowerCase()}.`,
+        status: request.status,
+      });
+    }
+
+    request.status = 'Cancelled';
+    const updatedRequest = await request.save();
+
+    // Notify warden/guard dashboards so a cancelled pending request
+    // disappears from their queue in real time.
+    sseHub.broadcast('outing:changed', {
+      reason: 'cancelled',
+      id: updatedRequest._id,
+      status: 'Cancelled',
+    });
+
+    res.json(updatedRequest);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Live stream of outing-request changes (new requests, approvals,
 //          rejections) so warden/guard dashboards update in real time.
 // @route   GET /api/outing/stream
@@ -210,5 +252,6 @@ module.exports = {
   getMyOutingRequests,
   getPendingRequests,
   updateRequestStatus,
+  cancelOutingRequest,
   streamOutingEvents
 };
