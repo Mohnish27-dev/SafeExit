@@ -589,14 +589,27 @@ export default function SecurityDashboardPage() {
                 // replayed-QR case unmistakable at the gate.
                 const exitBlocked =
                   scanMode === "exit" && !previewLoading && scanPreview?.exit && !scanPreview.exit.allowed;
-                const blockedMsg =
+                const exitBlockedMsg =
                   scanPreview?.exit?.reason === "expired"
                     ? "This pass has expired — its departure time has passed. Student must file a new request."
                     : "No warden-approved outing for this student. Exit denied until a new request is approved.";
 
+                // Block the entry at the button when the live preview says this
+                // student is already inside campus (no active 'Out' trip). This
+                // mirrors the exit-side blocking: the guard sees the denial
+                // immediately on scan, not only after pressing "Log Entry".
+                const entryBlocked =
+                  scanMode === "entry" && !previewLoading && scanPreview?.student &&
+                  scanPreview.student.campusStatus === "Inside";
+                const entryBlockedMsg =
+                  "This student is already inside — an entry has already been logged. Log an exit first.";
+
+                const isBlocked = exitBlocked || entryBlocked;
+                const blockedMsg = exitBlocked ? exitBlockedMsg : entryBlockedMsg;
+
                 return (
                   <>
-                    {exitBlocked && (
+                    {isBlocked && (
                       <p className="mb-3 w-full rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">
                         {blockedMsg}
                       </p>
@@ -611,7 +624,7 @@ export default function SecurityDashboardPage() {
                       </button>
                       <button
                         onClick={confirmScan}
-                        disabled={logging || previewLoading || exitBlocked}
+                        disabled={logging || previewLoading || isBlocked}
                         className={`flex-1 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                           scanMode === 'exit'
                             ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"
@@ -622,7 +635,9 @@ export default function SecurityDashboardPage() {
                           ? "Logging…"
                           : exitBlocked
                             ? "Exit Denied"
-                            : scanMode === 'exit' ? "Log Exit" : "Log Entry"}
+                            : entryBlocked
+                              ? "Entry Denied"
+                              : scanMode === 'exit' ? "Log Exit" : "Log Entry"}
                       </button>
                     </div>
                   </>
