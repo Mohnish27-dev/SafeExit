@@ -1,6 +1,8 @@
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
+const { isValidStudentEmail, normalizeEmail } = require('../config/emailPolicy');
+const { isEmailVerificationValid } = require('./otpController');
 
 // Every account is keyed on a single canonical identifier: `loginId`.
 //   - Students: their real @nitp.ac.in email.
@@ -33,7 +35,7 @@ const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
 // @route   POST /api/auth/register
 // @access  Public
 const registerUser = async (req, res) => {
-  const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber } = req.body;
+  const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber, emailVerificationToken } = req.body;
 
   try {
     // Privileged roles are NEVER self-registered through this public endpoint.
@@ -49,6 +51,24 @@ const registerUser = async (req, res) => {
       return res.status(403).json({
         message: `${role} accounts cannot be self-registered. Contact an administrator to be provisioned.`,
       });
+    }
+
+    // Students may only register with a real, VERIFIED @nitp.ac.in email. Both
+    // checks run server-side because the browser form can be bypassed with a
+    // direct API call — which is exactly how the "make a second account from a
+    // personal Gmail" bypass would work.
+    //   1. Domain check: the address must be a college email.
+    //   2. Verification check: they must present the short-lived token minted by
+    //      /otp/verify for THIS email, proving they actually control the inbox.
+    // Together these guarantee one real student = one account (the DB's unique
+    // email index is the final backstop).
+    if (role === 'Student') {
+      if (!isValidStudentEmail(email)) {
+        return res.status(400).json({ message: 'Please use your college email ending in @nitp.ac.in.' });
+      }
+      if (!isEmailVerificationValid(emailVerificationToken, email)) {
+        return res.status(403).json({ message: 'Please verify your college email with the code we sent before continuing.' });
+      }
     }
 
     // Canonical account key. Students identify with their real email; staff

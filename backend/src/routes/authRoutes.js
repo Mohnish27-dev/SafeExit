@@ -10,8 +10,13 @@ const {
   getAuthenticationOptions,
   verifyAuthentication
 } = require('../controllers/authController');
+const { sendOtp, verifyOtp } = require('../controllers/otpController');
 const { protect } = require('../middlewares/authMiddleware');
-const { authLimiter, registerLimiter } = require('../middlewares/rateLimit');
+const { authLimiter, registerLimiter, otpLimiter } = require('../middlewares/rateLimit');
+
+// Email verification for student self-registration (must precede /register).
+router.post('/otp/send', otpLimiter, sendOtp);
+router.post('/otp/verify', authLimiter, verifyOtp);
 
 router.post('/register', registerLimiter, registerUser);
 router.post('/login', authLimiter, authUser);
