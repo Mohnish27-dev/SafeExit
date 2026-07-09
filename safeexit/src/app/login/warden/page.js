@@ -16,11 +16,11 @@ import Link from "next/link";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 
-// Wardens have no college email, so we synthesize a stable one from the Warden ID.
-// The backend keys every account + passkey login on `email`, and the ID is unique
-// per warden, so this gives each warden a consistent server identity.
-const buildWardenEmail = (wardenId) =>
-  `${wardenId.trim().toLowerCase().replace(/\s+/g, "")}@warden.safeexit.local`;
+// Wardens have no college email. The backend keys every account + passkey login
+// on `loginId`, so a warden's normalized ID IS their identity — no fabricated
+// "@warden.safeexit.local" email required anywhere.
+const buildWardenLoginId = (wardenId) =>
+  wardenId.trim().toLowerCase().replace(/\s+/g, "");
 
 export default function WardenLoginPage() {
   const router = useRouter();
@@ -71,14 +71,14 @@ export default function WardenLoginPage() {
 
   // Shared helper: create the backend account. Returns the auth token.
   const registerWardenAccount = async (profile) => {
-    const email = buildWardenEmail(profile.wardenId);
+    const loginId = buildWardenLoginId(profile.wardenId);
     const registerRes = await fetch("/api/backend/auth/register", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: profile.fullName,
-        email,
+        loginId,
         password: profile.pin, // 4-digit PIN doubles as the account password
         role: "Warden",
         studentId: profile.wardenId,
@@ -94,7 +94,7 @@ export default function WardenLoginPage() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password: profile.pin }),
+          body: JSON.stringify({ loginId, password: profile.pin }),
         });
         if (!loginRes.ok) throw new Error("Account exists. Could not sign in to add a passkey.");
         const loginData = await loginRes.json();
@@ -113,7 +113,7 @@ export default function WardenLoginPage() {
       role: "warden",
       roleLabel: "Warden",
       id: profile.wardenId,
-      email: buildWardenEmail(profile.wardenId),
+      // Staff are identified by their ID, not an email — leave email unset.
     });
   };
 
@@ -192,14 +192,14 @@ export default function WardenLoginPage() {
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      const email = buildWardenEmail(storedProfile.wardenId);
+      const loginId = buildWardenLoginId(storedProfile.wardenId);
 
       // 1. Get an authentication challenge scoped to this account's passkeys.
       const optionsRes = await fetch("/api/backend/auth/webauthn/login/options", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ loginId }),
       });
       if (!optionsRes.ok) {
         throw new Error("No passkey found for this account on the server.");
@@ -214,7 +214,7 @@ export default function WardenLoginPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, response: asseResp }),
+        body: JSON.stringify({ loginId, response: asseResp }),
       });
       const data = await verifyRes.json();
       if (!verifyRes.ok) {

@@ -1,6 +1,20 @@
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
-const { findAllowedAdmin, isAllowedAdminEmail } = require('../config/adminAllowlist');
+const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
+
+// Every account is keyed on a single canonical identifier: `loginId`.
+//   - Students: their real @nitp.ac.in email.
+//   - Staff (Warden/Guard/Admin): their normalized staff ID (e.g. "wdn001").
+// Staff therefore no longer need a fabricated "*.safeexit.local" email just to
+// have a unique handle. Callers may still send the old `email` field; we accept
+// it as a legacy alias. Returns a normalized (trimmed, lowercased) key.
+const resolveLoginId = (body = {}) =>
+  (body.loginId || body.email || '').trim().toLowerCase();
+
+// Look a user up by their canonical loginId, falling back to a legacy `email`
+// match so accounts created before this field existed still resolve.
+const findByLoginId = (key) =>
+  User.findOne({ $or: [{ loginId: key }, { email: key }] });
 const {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -22,27 +36,37 @@ const registerUser = async (req, res) => {
   const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber } = req.body;
 
   try {
-    // Admin access is restricted to a fixed allowlist (see config/adminAllowlist.js).
-    // The admin login page sends the Admin ID in `studentId`. The name + ID must
-    // match an authorized admin, and the PIN (sent as `password`) must be correct.
+    // Admin accounts are NOT created through this public endpoint. They are
+    // pre-provisioned by an operator via `npm run seed:admins`, which reads the
+    // ADMIN_*_ allowlist from the (gitignored) .env. This closes the door where
+    // anyone could POST role:'Admin' and rely on the allowlist as the only gate.
     if (role === 'Admin') {
-      const allowed = findAllowedAdmin({ name, adminId: studentId, email });
-      if (!allowed) {
-        return res.status(403).json({ message: 'This name / Admin ID is not authorized for admin access.' });
-      }
-      if (allowed.pin !== String(password)) {
-        return res.status(401).json({ message: 'Incorrect admin PIN.' });
-      }
+      return res.status(403).json({
+        message: 'Admin accounts cannot be self-registered. Contact an operator to be provisioned.',
+      });
     }
 
-    const userExists = await User.findOne({ email });
+    // Canonical account key. Students identify with their real email; staff
+    // (Warden/Guard) identify with their staff ID (sent as studentId). Either
+    // way we settle on one normalized loginId — no synthetic email required.
+    const loginId = resolveLoginId(req.body) || (studentId || '').trim().toLowerCase();
+    if (!loginId) {
+      return res.status(400).json({ message: 'A login identifier (email or ID) is required.' });
+    }
+
+    const userExists = await findByLoginId(loginId);
 
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
+    // Only students carry a real email. For staff we leave it unset so the DB
+    // never stores a fabricated "*.safeexit.local" address.
+    const realEmail = role === 'Student' ? (email || '').trim().toLowerCase() : undefined;
+
     const user = await User.create({
-      name, email, password, role, studentId, roomNumber, department, year, phoneNumber
+      name, loginId, email: realEmail, password, role,
+      studentId, roomNumber, department, year, phoneNumber
     });
 
     if (user) {
@@ -50,6 +74,7 @@ const registerUser = async (req, res) => {
       res.status(201).json({
         _id: user._id,
         name: user.name,
+        loginId: user.loginId,
         email: user.email,
         role: user.role,
         webAuthnRegistered: user.webAuthnRegistered,
@@ -67,15 +92,27 @@ const registerUser = async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 const authUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const loginId = resolveLoginId(req.body);
 
   try {
-    const user = await User.findOne({ email });
+    const user = await findByLoginId(loginId);
 
     if (user && (await user.matchPassword(password))) {
       // Even with valid credentials, only allowlisted admins may use an Admin account.
-      if (user.role === 'Admin' && !isAllowedAdminEmail(user.email)) {
+      if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
         return res.status(403).json({ message: 'This account is not authorized for admin access.' });
+      }
+
+      // PIN login for an admin is a ONE-TIME bootstrap to attach the first
+      // passkey to a device. Once a passkey exists, the PIN is no longer a valid
+      // way in — the registered hardware authenticator becomes the required
+      // factor, so a leaked/guessed PIN alone cannot sign in.
+      if (user.role === 'Admin' && user.webAuthnRegistered) {
+        return res.status(403).json({
+          message:
+            'This admin already has a passkey. Please sign in with your fingerprint / device passkey instead of the PIN.',
+        });
       }
 
       const token = generateToken(res, user._id);
@@ -91,6 +128,7 @@ const authUser = async (req, res) => {
       res.json({
         _id: user._id,
         name: user.name,
+        loginId: user.loginId,
         email: user.email,
         role: user.role,
         studentId: user.studentId,
@@ -98,7 +136,7 @@ const authUser = async (req, res) => {
         token
       });
     } else {
-      res.status(401).json({ message: 'Invalid email or password' });
+      res.status(401).json({ message: 'Invalid credentials' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -115,6 +153,7 @@ const getUserProfile = async (req, res) => {
     res.json({
       _id: user._id,
       name: user.name,
+      loginId: user.loginId,
       email: user.email,
       role: user.role,
       studentId: user.studentId,
@@ -160,7 +199,9 @@ const getRegistrationOptions = async (req, res) => {
     const options = await generateRegistrationOptions({
       rpName,
       rpID,
-      userName: user.email,
+      // Label shown in the OS/browser passkey manager. Use the canonical loginId
+      // (email for students, staff ID for staff) — never a fabricated address.
+      userName: user.loginId || user.email || user.studentId,
       userDisplayName: user.name,
       // Stable per-user handle so re-registration maps to the same account.
       userID: new TextEncoder().encode(user._id.toString()),
@@ -239,14 +280,14 @@ const verifyRegistration = async (req, res) => {
 // @route   POST /api/auth/webauthn/login/options
 // @access  Public
 const getAuthenticationOptions = async (req, res) => {
-  const { email } = req.body;
+  const loginId = resolveLoginId(req.body);
   try {
-    const user = await User.findOne({ email });
+    const user = await findByLoginId(loginId);
     if (!user || !user.webAuthnRegistered || user.webAuthnCredentials.length === 0) {
       return res.status(404).json({ message: 'No passkey registered for this account' });
     }
     // Block passkey login for any Admin account outside the allowlist.
-    if (user.role === 'Admin' && !isAllowedAdminEmail(user.email)) {
+    if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
       return res.status(403).json({ message: 'This account is not authorized for admin access.' });
     }
 
@@ -271,14 +312,15 @@ const getAuthenticationOptions = async (req, res) => {
 // @route   POST /api/auth/webauthn/login/verify
 // @access  Public
 const verifyAuthentication = async (req, res) => {
-  const { email, response } = req.body;
+  const { response } = req.body;
+  const loginId = resolveLoginId(req.body);
   try {
-    const user = await User.findOne({ email });
+    const user = await findByLoginId(loginId);
     if (!user || !user.currentChallenge) {
       return res.status(400).json({ message: 'No login in progress for this account' });
     }
     // Block passkey login for any Admin account outside the allowlist.
-    if (user.role === 'Admin' && !isAllowedAdminEmail(user.email)) {
+    if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
       return res.status(403).json({ message: 'This account is not authorized for admin access.' });
     }
 
@@ -326,6 +368,7 @@ const verifyAuthentication = async (req, res) => {
     res.json({
       _id: user._id,
       name: user.name,
+      loginId: user.loginId,
       email: user.email,
       role: user.role,
       studentId: user.studentId,
