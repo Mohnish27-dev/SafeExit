@@ -28,4 +28,15 @@ const registerLimiter = rateLimit({
   message: { message: 'Too many registration attempts. Please try again later.' },
 });
 
-module.exports = { authLimiter, registerLimiter };
+// OTP delivery is an email-spam vector if left open (each call sends mail to an
+// inbox), so cap sends per IP. The per-email 60s cooldown lives in the controller;
+// this is the coarser per-IP backstop. Every send counts, successful or not.
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many code requests. Please wait a few minutes and try again.' },
+});
+
+module.exports = { authLimiter, registerLimiter, otpLimiter };

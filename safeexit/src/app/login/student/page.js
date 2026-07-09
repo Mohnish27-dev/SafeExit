@@ -49,9 +49,24 @@ export default function StudentLoginPage() {
   const [photoPreview, setPhotoPreview] = useState(null);
   const fileInputRef = useRef(null);
 
+  // Email verification (OTP) state
+  const [otp, setOtp] = useState("");
+  const [emailToken, setEmailToken] = useState(null); // signed proof from /otp/verify
+  const [resendIn, setResendIn] = useState(0);         // resend cooldown (seconds)
+  const [devOtp, setDevOtp] = useState(null);          // dev-only: code shown when SMTP is off
+
   // Status
   const [errorMsg, setErrorMsg] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Returning-user fallback: when the passkey is unavailable (sensor disabled,
+  // credential wiped, new browser profile) a student can still sign in with the
+  // email + roll number they registered with. `credentialMode` toggles that form
+  // on the RETURNING_USER card without wiping the stored passkey shortcut.
+  const [credentialMode, setCredentialMode] = useState(false);
+  // Only the roll number (password) is entered; the email is fixed to this
+  // device's onboarded account and never editable.
+  const [credentials, setCredentials] = useState({ password: "" });
 
   useEffect(() => {
     // Check if user is already registered on this device
@@ -66,9 +81,69 @@ export default function StudentLoginPage() {
     }
   }, []);
 
+  // Resend cooldown ticker — counts `resendIn` down to 0 once per second.
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setInterval(() => setResendIn((s) => (s <= 1 ? 0 : s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [resendIn]);
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Request a verification code for the entered college email. Shared by the
+  // "Continue" button on step 1 and the "Resend" button on step 2.
+  const sendEmailOtp = async () => {
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const res = await fetch('/api/backend/auth/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Couldn't send the code. Please try again.");
+      setResendIn(60);
+      // In local dev (no SMTP configured) the backend returns the code so the
+      // flow is testable without a real inbox. Never present in production.
+      setDevOtp(data.devOtp || null);
+      return true;
+    } catch (err) {
+      setErrorMsg(err.message);
+      return false;
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Check the 6-digit code. On success we receive a signed token proving the
+  // email was verified, which is later required by the register endpoint.
+  const verifyEmailOtp = async () => {
+    if (otp.trim().length < 6) {
+      setErrorMsg("Please enter the 6-digit code sent to your email.");
+      return;
+    }
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const res = await fetch('/api/backend/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email.trim(), otp: otp.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.verified) throw new Error(data.message || "Verification failed.");
+      setEmailToken(data.emailVerificationToken);
+      setDevOtp(null);
+      setOnboardingStep(3); // proceed to Photo
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handlePhotoUpload = (e) => {
@@ -129,11 +204,14 @@ export default function StudentLoginPage() {
     return true;
   };
 
-  const submitStep1 = (e) => {
+  const submitStep1 = async (e) => {
     e.preventDefault();
-    if (validateStep1()) {
-      setOnboardingStep(2);
-    }
+    if (!validateStep1()) return;
+    // Fire off the verification email, then move to the code-entry step.
+    setOtp("");
+    setEmailToken(null);
+    const sent = await sendEmailOtp();
+    if (sent) setOnboardingStep(2);
   };
 
   const skipOrSubmitPhoto = () => {
@@ -177,7 +255,7 @@ export default function StudentLoginPage() {
           console.error('Unable to persist profile to localStorage after error', e);
         }
       } finally {
-        setOnboardingStep(3);
+        setOnboardingStep(4);
       }
     })();
   };
@@ -204,7 +282,8 @@ export default function StudentLoginPage() {
           year: profile.yearLevel,
           roomNumber: profile.roomNumber,
           hostelName: profile.hostelBlock,
-          phoneNumber: profile.phoneNumber
+          phoneNumber: profile.phoneNumber,
+          emailVerificationToken: emailToken // proves the college email was verified
         })
       });
 
@@ -359,9 +438,111 @@ export default function StudentLoginPage() {
     }
   };
 
+  // Sign in with the registered college email + roll number instead of the
+  // passkey. The account's password IS the roll number (set at registration),
+  // and the backend /auth/login accepts it for students even after a passkey is
+  // enrolled — so this is a genuine fallback, not a second registration.
+  const handleCredentialLogin = async (e) => {
+    e.preventDefault();
+    // The email is FIXED to the account this device was onboarded with — it is
+    // never taken from the input. This scopes the fallback to "recover my own
+    // account" and prevents typing a classmate's email to hijack their session.
+    // (The password is still a roll number, a weak secret — see the backend note.)
+    const email = (storedProfile?.email || "").trim();
+    const password = credentials.password.trim();
+    if (!email) {
+      setErrorMsg("No account is set up on this device. Use \"Sign in as someone else\".");
+      return;
+    }
+    if (!password) {
+      setErrorMsg("Please enter your roll number.");
+      return;
+    }
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const res = await fetch('/api/backend/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loginId: email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          res.status === 401
+            ? "Email or roll number is incorrect. Please try again."
+            : data.message || "Login failed."
+        );
+      }
+      // Defence in depth: keep non-students off the student dashboard even if
+      // someone reuses staff credentials here (the route guards are the real gate).
+      if (data.role !== 'Student') {
+        throw new Error("This account is not authorized for student access.");
+      }
+      // Defence in depth: the account that authenticated must be the one this
+      // device belongs to, so the token and the profile we display can't diverge.
+      if (data.email && data.email.toLowerCase() !== email.toLowerCase()) {
+        throw new Error("This account doesn't match this device. Use \"Sign in as someone else\".");
+      }
+      sessionStorage.setItem('safeexit_token', data.token);
+
+      // Re-publish the photo so the guard's scanner can find it, mirroring the
+      // biometric login path.
+      if (storedProfile?.photo) {
+        fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rollNo: storedProfile.rollNumber,
+            name: storedProfile.fullName,
+            photo: storedProfile.photo,
+          }),
+        }).catch((err) => console.error("Failed to publish profile photo", err));
+      }
+
+      setStoredUser({
+        name: storedProfile.fullName,
+        role: "student",
+        roleLabel: "Student",
+        subtitle: `${storedProfile.yearLevel} Year, ${storedProfile.branch}`,
+        id: storedProfile.rollNumber,
+        rollNo: storedProfile.rollNumber,
+        email: storedProfile.email,
+        hostel: `Block ${storedProfile.hostelBlock}, Room ${storedProfile.roomNumber}`,
+        room: storedProfile.roomNumber,
+        mobile: storedProfile.phoneNumber,
+        photo: storedProfile.photo
+      });
+
+      router.push("/dashboard/student");
+    } catch (err) {
+      setErrorMsg(err?.message || "Login failed.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Returning student wants to type email + roll number instead of using the
+  // passkey (biometric failed / sensor unavailable). Unlike resetToOnboarding
+  // this keeps the stored passkey shortcut so the NEXT visit still offers it — it
+  // just shows the credential form for this one sign-in. Email is prefilled from
+  // the stored profile since we already know it.
+  const switchToCredentialLogin = () => {
+    setCredentials({ password: "" });
+    setErrorMsg("");
+    setCredentialMode(true);
+  };
+
+  const backToPasskey = () => {
+    setErrorMsg("");
+    setCredentialMode(false);
+  };
+
   const resetToOnboarding = () => {
     localStorage.removeItem("safeexit_webauthn_registered");
     localStorage.removeItem("safeexit_user_profile");
+    setCredentialMode(false);
     setAppState("ONBOARDING");
     setOnboardingStep(1);
     setFormData({
@@ -369,6 +550,10 @@ export default function StudentLoginPage() {
       hostelBlock: "", roomNumber: "", phoneNumber: "", emergencyContact: ""
     });
     setPhotoPreview(null);
+    setOtp("");
+    setEmailToken(null);
+    setResendIn(0);
+    setDevOtp(null);
   };
 
   if (appState === "LOADING") return null;
@@ -410,28 +595,98 @@ export default function StudentLoginPage() {
             </div>
             
             <h1 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back, {storedProfile?.fullName?.split(' ')[0]} 👋</h1>
-            <p className="text-sm text-slate-500 mb-8">Use your fingerprint or face to securely login to your dashboard.</p>
+            <p className="text-sm text-slate-500 mb-8">
+              {credentialMode
+                ? "Enter your college email and roll number to sign in."
+                : "Use your fingerprint or face to securely login to your dashboard."}
+            </p>
 
             {errorMsg && <p className="text-rose-500 text-sm mb-4 font-medium bg-rose-50 p-2 rounded-lg w-full">{errorMsg}</p>}
 
-            <button
-              onClick={handleBiometricLogin}
-              disabled={isProcessing}
-              className="w-full relative group overflow-hidden flex items-center justify-center gap-3 py-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white font-bold text-[15px] shadow-xl shadow-slate-900/20 hover:shadow-slate-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-70 disabled:scale-100"
-            >
-               <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
-               {isProcessing ? (
-                 <span className="flex items-center gap-2 relative z-10">
-                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                   Authenticating...
-                 </span>
-               ) : (
-                 <span className="flex items-center gap-2 relative z-10">
-                   <Fingerprint className="w-6 h-6" />
-                   Login with Passkey
-                 </span>
-               )}
-            </button>
+            {credentialMode ? (
+              // FALLBACK: email + roll number sign-in for when the passkey can't be used.
+              <form onSubmit={handleCredentialLogin} className="w-full space-y-4 text-left">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">College Email</label>
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Mail className="w-4 h-4" /></div>
+                    {/* Locked to this device's account — you can only sign back into your own. */}
+                    <input
+                      type="email"
+                      value={storedProfile?.email || ""}
+                      readOnly
+                      aria-readonly="true"
+                      tabIndex={-1}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-sm text-slate-500 cursor-not-allowed focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Roll Number</label>
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><ShieldCheck className="w-4 h-4" /></div>
+                    <input
+                      type="password"
+                      value={credentials.password}
+                      onChange={(e) => setCredentials((p) => ({ ...p, password: e.target.value }))}
+                      placeholder="Your roll number"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70"
+                >
+                  {isProcessing ? (
+                    <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Signing in…</>
+                  ) : (
+                    <>Sign In <ArrowRight className="w-4 h-4" /></>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={backToPasskey}
+                  disabled={isProcessing}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
+                >
+                  <Fingerprint className="w-4 h-4" /> Back to passkey login
+                </button>
+              </form>
+            ) : (
+              <>
+                <button
+                  onClick={handleBiometricLogin}
+                  disabled={isProcessing}
+                  className="w-full relative group overflow-hidden flex items-center justify-center gap-3 py-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white font-bold text-[15px] shadow-xl shadow-slate-900/20 hover:shadow-slate-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-70 disabled:scale-100"
+                >
+                   <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
+                   {isProcessing ? (
+                     <span className="flex items-center gap-2 relative z-10">
+                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                       Authenticating...
+                     </span>
+                   ) : (
+                     <span className="flex items-center gap-2 relative z-10">
+                       <Fingerprint className="w-6 h-6" />
+                       Login with Passkey
+                     </span>
+                   )}
+                </button>
+
+                <button
+                  onClick={switchToCredentialLogin}
+                  disabled={isProcessing}
+                  className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
+                >
+                  <ShieldCheck className="w-4 h-4" /> Sign in with Email &amp; Roll Number instead
+                </button>
+              </>
+            )}
 
             <button onClick={resetToOnboarding} className="mt-6 text-sm text-slate-400 hover:text-indigo-600 transition-colors">
               Not {storedProfile?.fullName?.split(' ')[0]}? Sign in as someone else
@@ -450,11 +705,16 @@ export default function StudentLoginPage() {
                <div className={`h-px flex-1 mx-2 ${onboardingStep >= 2 ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
                <div className={`flex items-center gap-2 ${onboardingStep >= 2 ? 'text-indigo-600' : 'text-slate-400'}`}>
                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 2 ? 'bg-indigo-100' : 'bg-slate-200'}`}>2</div>
-                 <span className="text-xs font-semibold hidden sm:inline">Photo</span>
+                 <span className="text-xs font-semibold hidden sm:inline">Verify</span>
                </div>
                <div className={`h-px flex-1 mx-2 ${onboardingStep >= 3 ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
                <div className={`flex items-center gap-2 ${onboardingStep >= 3 ? 'text-indigo-600' : 'text-slate-400'}`}>
                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 3 ? 'bg-indigo-100' : 'bg-slate-200'}`}>3</div>
+                 <span className="text-xs font-semibold hidden sm:inline">Photo</span>
+               </div>
+               <div className={`h-px flex-1 mx-2 ${onboardingStep >= 4 ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
+               <div className={`flex items-center gap-2 ${onboardingStep >= 4 ? 'text-indigo-600' : 'text-slate-400'}`}>
+                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 4 ? 'bg-indigo-100' : 'bg-slate-200'}`}>4</div>
                  <span className="text-xs font-semibold hidden sm:inline">Security</span>
                </div>
             </div>
@@ -569,8 +829,94 @@ export default function StudentLoginPage() {
                 </form>
               )}
 
-              {/* STEP 2: Photo Upload */}
+              {/* STEP 2: Verify College Email (OTP) */}
               {onboardingStep === 2 && (
+                <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
+                   <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-2">
+                     <Mail className="w-8 h-8" />
+                   </div>
+
+                   {emailToken ? (
+                     // Already verified (e.g. user navigated back from the Photo step).
+                     // The one-time code has been consumed server-side, so we show a
+                     // confirmed state instead of asking them to re-enter it.
+                     <>
+                       <div>
+                         <h2 className="text-2xl font-bold text-slate-900">Email Verified</h2>
+                         <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
+                           <span className="font-semibold text-slate-700">{formData.email}</span> is confirmed. You can continue.
+                         </p>
+                       </div>
+                       <div className="w-full bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-2xl p-4 flex items-center gap-3">
+                         <CheckCircle className="w-5 h-5 shrink-0" />
+                         <span className="text-sm font-semibold text-left">Your college email is verified.</span>
+                       </div>
+                       <div className="w-full flex gap-3 pt-2">
+                         <button onClick={() => setOnboardingStep(1)} className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer">
+                           Back
+                         </button>
+                         <button onClick={() => setOnboardingStep(3)} className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer">
+                           Continue <ArrowRight className="w-4 h-4" />
+                         </button>
+                       </div>
+                     </>
+                   ) : (
+                     <>
+                       <div>
+                         <h2 className="text-2xl font-bold text-slate-900">Verify Your Email</h2>
+                         <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
+                           We sent a 6-digit code to <span className="font-semibold text-slate-700">{formData.email}</span>. Enter it below to confirm this is your college email.
+                         </p>
+                       </div>
+
+                       {devOtp && (
+                         <div className="w-full bg-amber-50 border border-amber-200 text-amber-700 rounded-xl p-3 text-xs font-medium">
+                           Dev mode (email not configured): your code is <span className="font-bold tracking-widest">{devOtp}</span>
+                         </div>
+                       )}
+
+                       <input
+                         type="text"
+                         inputMode="numeric"
+                         autoComplete="one-time-code"
+                         maxLength={6}
+                         value={otp}
+                         onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                         placeholder="------"
+                         className="w-full max-w-[240px] text-center text-3xl font-bold tracking-[0.5em] py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                       />
+
+                       <button
+                         onClick={verifyEmailOtp}
+                         disabled={isProcessing || otp.length < 6}
+                         className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                       >
+                         {isProcessing ? (
+                           <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Verifying...</>
+                         ) : (
+                           <>Verify & Continue <ArrowRight className="w-4 h-4" /></>
+                         )}
+                       </button>
+
+                       <div className="w-full flex items-center justify-between text-sm">
+                         <button onClick={() => setOnboardingStep(1)} className="text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer">
+                           Back
+                         </button>
+                         <button
+                           onClick={sendEmailOtp}
+                           disabled={isProcessing || resendIn > 0}
+                           className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
+                         >
+                           {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                         </button>
+                       </div>
+                     </>
+                   )}
+                </div>
+              )}
+
+              {/* STEP 3: Photo Upload */}
+              {onboardingStep === 3 && (
                 <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
                    <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-2">
                      <Camera className="w-8 h-8" />
@@ -597,7 +943,7 @@ export default function StudentLoginPage() {
                    </div>
 
                    <div className="w-full flex gap-3 pt-4">
-                     <button onClick={() => setOnboardingStep(1)} className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer">
+                     <button onClick={() => setOnboardingStep(2)} className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer">
                        Back
                      </button>
                      <button onClick={skipOrSubmitPhoto} className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer">
@@ -607,8 +953,8 @@ export default function StudentLoginPage() {
                 </div>
               )}
 
-              {/* STEP 3: WebAuthn Setup */}
-              {onboardingStep === 3 && (
+              {/* STEP 4: WebAuthn Setup */}
+              {onboardingStep === 4 && (
                 <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
                    <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-2">
                      <ShieldCheck className="w-10 h-10" />
@@ -671,7 +1017,8 @@ export default function StudentLoginPage() {
                              year: profile.yearLevel,
                              roomNumber: profile.roomNumber,
                              hostelName: profile.hostelBlock,
-                             phoneNumber: profile.phoneNumber
+                             phoneNumber: profile.phoneNumber,
+                             emailVerificationToken: emailToken // proves the college email was verified
                            })
                          });
                          if (registerRes.ok) {
