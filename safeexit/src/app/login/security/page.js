@@ -6,7 +6,6 @@ import {
   Shield,
   ShieldCheck,
   User,
-  Phone,
   ArrowRight,
   Fingerprint,
   CheckCircle,
@@ -32,11 +31,10 @@ export default function SecurityLoginPage() {
   const [onboardingStep, setOnboardingStep] = useState(1); // 1: Details, 2: Quick Login
   const [storedProfile, setStoredProfile] = useState(null);
 
-  // Form States
+  // Login fields: the Guard ID + PIN an admin provisioned for them.
   const [formData, setFormData] = useState({
-    fullName: "",
     guardId: "",
-    phoneNumber: "",
+    pin: "",
   });
 
   // Status
@@ -62,67 +60,73 @@ export default function SecurityLoginPage() {
   };
 
   const validateStep1 = () => {
-    if (!formData.fullName.trim()) {
-      setErrorMsg("Please enter your full name.");
-      return false;
-    }
     if (!formData.guardId.trim()) {
       setErrorMsg("Please enter your Guard ID.");
       return false;
     }
-    if (formData.phoneNumber.replace(/\D/g, "").length < 10) {
-      setErrorMsg("Please enter a valid 10-digit phone number.");
+    if (formData.pin.trim().length < 4) {
+      setErrorMsg("Please enter your PIN.");
       return false;
     }
     setErrorMsg("");
     return true;
   };
 
-  const submitStep1 = (e) => {
-    e.preventDefault();
-    if (!validateStep1()) return;
-    // Persist the details so step 2 (and any retry) can read them back.
-    localStorage.setItem("safeexit_guard_profile", JSON.stringify(formData));
-    setOnboardingStep(2);
-  };
-
-  // Shared helper: create the backend account. Returns the auth token.
-  const registerGuardAccount = async (profile) => {
-    const loginId = buildGuardLoginId(profile.guardId);
-    const registerRes = await fetch("/api/backend/auth/register", {
+  // Sign in against an admin-provisioned Guard account. Guards are no longer
+  // self-registered — an administrator creates the account, and this page simply
+  // authenticates it. Returns the login response (name, token, role, …).
+  const loginGuardAccount = async (loginId, pin) => {
+    const res = await fetch("/api/backend/auth/login", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: profile.fullName,
-        loginId,
-        password: profile.guardId, // Default password (ID) for simplicity
-        role: "Guard",
-        studentId: profile.guardId,
-        phoneNumber: profile.phoneNumber,
-      }),
+      body: JSON.stringify({ loginId, password: pin }),
     });
-
-    // A 400 "User already exists" is fine — the guard registered before on
-    // another device; we just need a token to attach a passkey to this device.
-    if (!registerRes.ok) {
-      const data = await registerRes.json().catch(() => ({}));
-      if (registerRes.status === 400 && /exists/i.test(data.message || "")) {
-        const loginRes = await fetch("/api/backend/auth/login", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ loginId, password: profile.guardId }),
-        });
-        if (!loginRes.ok) throw new Error("Account exists. Could not sign in to add a passkey.");
-        const loginData = await loginRes.json();
-        return loginData.token;
-      }
-      throw new Error(data.message || "Registration failed");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        res.status === 401
+          ? "Account not found or PIN incorrect. Ask your administrator to provision or reset your guard account."
+          : data.message || "Login failed."
+      );
     }
+    // Defence in depth: the backend route guards are the real gate, but reject a
+    // non-guard here so, e.g., a student's own credentials can't land on the
+    // guard dashboard (where every request would just 403 anyway).
+    if (data.role !== "Guard") {
+      throw new Error("This account is not authorized for guard access.");
+    }
+    return data;
+  };
 
-    const registerData = await registerRes.json();
-    return registerData.token;
+  const submitStep1 = async (e) => {
+    e.preventDefault();
+    if (!validateStep1()) return;
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const loginId = buildGuardLoginId(formData.guardId);
+      const data = await loginGuardAccount(loginId, formData.pin);
+      sessionStorage.setItem("safeexit_token", data.token);
+
+      // Persist just enough for the returning-user passkey path (needs the ID to
+      // rebuild the loginId) — never the PIN.
+      const profile = { guardId: formData.guardId, fullName: data.name };
+      localStorage.setItem("safeexit_guard_profile", JSON.stringify(profile));
+      persistGuardSession(profile);
+
+      // If this device already has a passkey enrolled for this guard, skip the
+      // setup step and go straight in. Otherwise offer to enrol one.
+      if (localStorage.getItem("safeexit_guard_registered") === "true") {
+        router.push("/dashboard/security");
+      } else {
+        setOnboardingStep(2);
+      }
+    } catch (err) {
+      setErrorMsg(err?.message || "Login failed. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const persistGuardSession = (profile) => {
@@ -132,7 +136,6 @@ export default function SecurityLoginPage() {
       roleLabel: "Security Guard",
       id: profile.guardId,
       // Staff are identified by their ID, not an email — leave email unset.
-      mobile: profile.phoneNumber,
     });
   };
 
@@ -142,9 +145,10 @@ export default function SecurityLoginPage() {
     try {
       const profile = JSON.parse(localStorage.getItem("safeexit_guard_profile"));
 
-      // 1. Create the account (or sign in if it already exists) to get a JWT.
-      const token = await registerGuardAccount(profile);
-      sessionStorage.setItem("safeexit_token", token);
+      // Already authenticated in step 1 — reuse that session token to bind a
+      // passkey to this device.
+      const token = sessionStorage.getItem("safeexit_token");
+      if (!token) throw new Error("Your session expired. Please sign in again.");
 
       const authHeaders = {
         "Content-Type": "application/json",
@@ -191,20 +195,10 @@ export default function SecurityLoginPage() {
     }
   };
 
-  const skipWebAuthn = async () => {
-    setIsProcessing(true);
-    setErrorMsg("");
-    try {
-      const profile = JSON.parse(localStorage.getItem("safeexit_guard_profile"));
-      const token = await registerGuardAccount(profile);
-      sessionStorage.setItem("safeexit_token", token);
-      persistGuardSession(profile);
-      router.push("/dashboard/security");
-    } catch (err) {
-      setErrorMsg(err?.message || "Could not continue. Please try again.");
-    } finally {
-      setIsProcessing(false);
-    }
+  const skipWebAuthn = () => {
+    // Already signed in from step 1 — just proceed to the dashboard without
+    // enrolling a passkey on this device.
+    router.push("/dashboard/security");
   };
 
   const handleBiometricLogin = async () => {
@@ -254,12 +248,23 @@ export default function SecurityLoginPage() {
     }
   };
 
+  // Returning guard wants to type their ID + PIN instead of using the passkey
+  // (e.g. biometric failed or the device sensor is unavailable). Unlike
+  // resetToOnboarding, this keeps the stored passkey shortcut so the NEXT visit
+  // still offers biometric — it just shows the form for this one sign-in.
+  const switchToIdPin = () => {
+    setAppState("ONBOARDING");
+    setOnboardingStep(1);
+    setFormData({ guardId: "", pin: "" });
+    setErrorMsg("");
+  };
+
   const resetToOnboarding = () => {
     localStorage.removeItem("safeexit_guard_registered");
     localStorage.removeItem("safeexit_guard_profile");
     setAppState("ONBOARDING");
     setOnboardingStep(1);
-    setFormData({ fullName: "", guardId: "", phoneNumber: "" });
+    setFormData({ guardId: "", pin: "" });
     setErrorMsg("");
   };
 
@@ -372,8 +377,16 @@ export default function SecurityLoginPage() {
               </button>
 
               <button
+                onClick={switchToIdPin}
+                disabled={isProcessing}
+                className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
+              >
+                <ShieldCheck className="w-4 h-4" /> Sign in with ID &amp; PIN instead
+              </button>
+
+              <button
                 onClick={resetToOnboarding}
-                className="mt-6 text-sm text-slate-400 hover:text-indigo-600 transition-colors"
+                className="mt-4 text-sm text-slate-400 hover:text-indigo-600 transition-colors"
               >
                 Not {storedProfile?.fullName?.split(" ")[0]}? Sign in as someone else
               </button>
@@ -408,28 +421,7 @@ export default function SecurityLoginPage() {
                       Guard Login
                     </h1>
                     <p className="text-sm text-slate-500 mt-1.5">
-                      Please fill in your details to setup your profile.
-                    </p>
-                  </div>
-
-                  {/* Full Name */}
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-800 mb-1.5">Full Name</label>
-                    <div className="relative">
-                      <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                        <User className="h-[18px] w-[18px]" />
-                      </div>
-                      <input
-                        type="text"
-                        name="fullName"
-                        value={formData.fullName}
-                        onChange={handleInputChange}
-                        placeholder="Enter your full name"
-                        className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50/60 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 focus:border-indigo-500 focus:ring-[3px] focus:ring-indigo-500/15 focus:bg-white hover:border-slate-300"
-                      />
-                    </div>
-                    <p className="text-xs text-slate-400 mt-1.5 pl-0.5">
-                      This name will appear on your dashboard.
+                      Sign in with the Guard ID and PIN issued by your administrator.
                     </p>
                   </div>
 
@@ -454,33 +446,33 @@ export default function SecurityLoginPage() {
                     </p>
                   </div>
 
-                  {/* Phone Number */}
+                  {/* PIN */}
                   <div>
-                    <label className="block text-sm font-semibold text-slate-800 mb-1.5">Phone Number</label>
+                    <label className="block text-sm font-semibold text-slate-800 mb-1.5">PIN</label>
                     <div className="relative">
                       <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                        <Phone className="h-[18px] w-[18px]" />
+                        <Fingerprint className="h-[18px] w-[18px]" />
                       </div>
                       <input
-                        type="tel"
-                        name="phoneNumber"
-                        value={formData.phoneNumber}
+                        type="password"
+                        name="pin"
+                        value={formData.pin}
                         onChange={handleInputChange}
-                        inputMode="numeric"
-                        placeholder="10-digit number"
+                        placeholder="Enter your PIN"
                         className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50/60 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all duration-200 focus:border-indigo-500 focus:ring-[3px] focus:ring-indigo-500/15 focus:bg-white hover:border-slate-300"
                       />
                     </div>
                     <p className="text-xs text-slate-400 mt-1.5 pl-0.5">
-                      Used for important security notifications.
+                      Set by your administrator. Forgot it? Ask them to reset it.
                     </p>
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 hover:shadow-xl hover:shadow-indigo-600/30 hover:brightness-110 active:scale-[0.98] transition-all duration-200"
+                    disabled={isProcessing}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 hover:shadow-xl hover:shadow-indigo-600/30 hover:brightness-110 active:scale-[0.98] transition-all duration-200 disabled:opacity-70"
                   >
-                    Continue <ArrowRight className="h-[18px] w-[18px]" />
+                    {isProcessing ? "Signing in…" : (<>Continue <ArrowRight className="h-[18px] w-[18px]" /></>)}
                   </button>
                 </form>
               )}

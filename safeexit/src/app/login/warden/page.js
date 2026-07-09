@@ -30,8 +30,8 @@ export default function WardenLoginPage() {
   const [onboardingStep, setOnboardingStep] = useState(1); // 1: Details, 2: Quick Login
   const [storedProfile, setStoredProfile] = useState(null);
 
-  // Form data for warden
-  const [formData, setFormData] = useState({ fullName: "", wardenId: "", pin: "" });
+  // Form data for warden login: the ID + PIN an admin provisioned for them.
+  const [formData, setFormData] = useState({ wardenId: "", pin: "" });
 
   const [errorMsg, setErrorMsg] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -53,58 +53,69 @@ export default function WardenLoginPage() {
   };
 
   const validateStep1 = () => {
-    if (!formData.fullName.trim() || !formData.wardenId.trim() || formData.pin.trim().length !== 4) {
-      setErrorMsg("Please fill name, Warden ID and 4-digit PIN.");
+    if (!formData.wardenId.trim() || formData.pin.trim().length < 4) {
+      setErrorMsg("Please enter your Warden ID and PIN.");
       return false;
     }
     setErrorMsg("");
     return true;
   };
 
-  const submitStep1 = (e) => {
-    e.preventDefault();
-    if (!validateStep1()) return;
-    // Persist the details so step 2 (and any retry) can read them back.
-    localStorage.setItem("safeexit_warden_profile", JSON.stringify(formData));
-    setOnboardingStep(2);
-  };
-
-  // Shared helper: create the backend account. Returns the auth token.
-  const registerWardenAccount = async (profile) => {
-    const loginId = buildWardenLoginId(profile.wardenId);
-    const registerRes = await fetch("/api/backend/auth/register", {
+  // Sign in against an admin-provisioned Warden account. Wardens are no longer
+  // self-registered — an administrator creates the account, and this page simply
+  // authenticates it. Returns the login response (name, token, role, …).
+  const loginWardenAccount = async (loginId, pin) => {
+    const res = await fetch("/api/backend/auth/login", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: profile.fullName,
-        loginId,
-        password: profile.pin, // 4-digit PIN doubles as the account password
-        role: "Warden",
-        studentId: profile.wardenId,
-      }),
+      body: JSON.stringify({ loginId, password: pin }),
     });
-
-    // A 400 "User already exists" is fine — the warden registered before on
-    // another device; we just need a token to attach a passkey to this device.
-    if (!registerRes.ok) {
-      const data = await registerRes.json().catch(() => ({}));
-      if (registerRes.status === 400 && /exists/i.test(data.message || "")) {
-        const loginRes = await fetch("/api/backend/auth/login", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ loginId, password: profile.pin }),
-        });
-        if (!loginRes.ok) throw new Error("Account exists. Could not sign in to add a passkey.");
-        const loginData = await loginRes.json();
-        return loginData.token;
-      }
-      throw new Error(data.message || "Registration failed");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        res.status === 401
+          ? "Account not found or PIN incorrect. Ask your administrator to provision or reset your warden account."
+          : data.message || "Login failed."
+      );
     }
+    // Defence in depth: the backend route guards are the real gate, but reject a
+    // non-warden here so, e.g., a student's own credentials can't land on the
+    // warden dashboard (where every request would just 403 anyway).
+    if (data.role !== "Warden") {
+      throw new Error("This account is not authorized for warden access.");
+    }
+    return data;
+  };
 
-    const registerData = await registerRes.json();
-    return registerData.token;
+  const submitStep1 = async (e) => {
+    e.preventDefault();
+    if (!validateStep1()) return;
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const loginId = buildWardenLoginId(formData.wardenId);
+      const data = await loginWardenAccount(loginId, formData.pin);
+      sessionStorage.setItem("safeexit_token", data.token);
+
+      // Persist just enough for the returning-user passkey path (needs the ID to
+      // rebuild the loginId) — never the PIN.
+      const profile = { wardenId: formData.wardenId, fullName: data.name };
+      localStorage.setItem("safeexit_warden_profile", JSON.stringify(profile));
+      persistWardenSession(profile);
+
+      // If this device already has a passkey enrolled for this warden, skip the
+      // setup step and go straight in. Otherwise offer to enrol one.
+      if (localStorage.getItem("safeexit_webauthn_registered_warden") === "true") {
+        router.push("/dashboard/warden");
+      } else {
+        setOnboardingStep(2);
+      }
+    } catch (err) {
+      setErrorMsg(err?.message || "Login failed. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const persistWardenSession = (profile) => {
@@ -123,9 +134,10 @@ export default function WardenLoginPage() {
     try {
       const profile = JSON.parse(localStorage.getItem("safeexit_warden_profile"));
 
-      // 1. Create the account (or sign in if it already exists) to get a JWT.
-      const token = await registerWardenAccount(profile);
-      sessionStorage.setItem("safeexit_token", token);
+      // Already authenticated in step 1 — reuse that session token to bind a
+      // passkey to this device.
+      const token = sessionStorage.getItem("safeexit_token");
+      if (!token) throw new Error("Your session expired. Please sign in again.");
 
       const authHeaders = {
         "Content-Type": "application/json",
@@ -172,20 +184,10 @@ export default function WardenLoginPage() {
     }
   };
 
-  const skipWebAuthn = async () => {
-    setIsProcessing(true);
-    setErrorMsg("");
-    try {
-      const profile = JSON.parse(localStorage.getItem("safeexit_warden_profile"));
-      const token = await registerWardenAccount(profile);
-      sessionStorage.setItem("safeexit_token", token);
-      persistWardenSession(profile);
-      router.push("/dashboard/warden");
-    } catch (err) {
-      setErrorMsg(err?.message || "Could not continue. Please try again.");
-    } finally {
-      setIsProcessing(false);
-    }
+  const skipWebAuthn = () => {
+    // Already signed in from step 1 — just proceed to the dashboard without
+    // enrolling a passkey on this device.
+    router.push("/dashboard/warden");
   };
 
   const handleBiometricLogin = async () => {
@@ -235,12 +237,23 @@ export default function WardenLoginPage() {
     }
   };
 
+  // Returning warden wants to type their ID + PIN instead of using the passkey
+  // (e.g. biometric failed or the device sensor is unavailable). Unlike
+  // resetToOnboarding, this keeps the stored passkey shortcut so the NEXT visit
+  // still offers biometric — it just shows the form for this one sign-in.
+  const switchToIdPin = () => {
+    setAppState("ONBOARDING");
+    setOnboardingStep(1);
+    setFormData({ wardenId: "", pin: "" });
+    setErrorMsg("");
+  };
+
   const resetToOnboarding = () => {
     localStorage.removeItem("safeexit_webauthn_registered_warden");
     localStorage.removeItem("safeexit_warden_profile");
     setAppState("ONBOARDING");
     setOnboardingStep(1);
-    setFormData({ fullName: "", wardenId: "", pin: "" });
+    setFormData({ wardenId: "", pin: "" });
     setErrorMsg("");
   };
 
@@ -294,7 +307,11 @@ export default function WardenLoginPage() {
                )}
             </button>
 
-            <button onClick={resetToOnboarding} className="mt-6 text-sm text-slate-400 hover:text-indigo-600 transition-colors">Not {storedProfile?.fullName?.split(" ")[0]}? Sign in as someone else</button>
+            <button onClick={switchToIdPin} disabled={isProcessing} className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70">
+              <ShieldCheck className="w-4 h-4" /> Sign in with ID &amp; PIN instead
+            </button>
+
+            <button onClick={resetToOnboarding} className="mt-4 text-sm text-slate-400 hover:text-indigo-600 transition-colors">Not {storedProfile?.fullName?.split(" ")[0]}? Sign in as someone else</button>
           </div>
         ) : (
           <div className="w-full max-w-[500px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 overflow-hidden animate-fade-in-up">
@@ -321,19 +338,11 @@ export default function WardenLoginPage() {
               {onboardingStep === 1 && (
                 <form onSubmit={submitStep1} className="space-y-4 animate-fade-in-up">
                   <div className="text-center mb-6">
-                    <h2 className="text-2xl font-bold text-slate-900">Warden Registration</h2>
-                    <p className="text-sm text-slate-500 mt-1">Please fill in your details to setup your profile.</p>
+                    <h2 className="text-2xl font-bold text-slate-900">Warden Login</h2>
+                    <p className="text-sm text-slate-500 mt-1">Sign in with the Warden ID and PIN issued by your administrator.</p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Full Name</label>
-                      <div className="relative">
-                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><User className="w-4 h-4" /></div>
-                        <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} placeholder="E.g. Priya Rao" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
-                      </div>
-                    </div>
-
+                  <div className="grid grid-cols-1 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Warden ID</label>
                       <div className="relative">
@@ -343,16 +352,16 @@ export default function WardenLoginPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">4-Digit PIN</label>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">PIN</label>
                       <div className="relative">
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Fingerprint className="w-4 h-4" /></div>
-                        <input type="password" name="pin" value={formData.pin} onChange={(e) => setFormData(p => ({ ...p, pin: e.target.value.replace(/\D/g, "").slice(0,4) }))} placeholder="4-digit PIN" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
+                        <input type="password" name="pin" value={formData.pin} onChange={handleInputChange} placeholder="Enter your PIN" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
                       </div>
                     </div>
                   </div>
 
-                  <button type="submit" className="w-full mt-6 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer">
-                    Continue <ArrowRight className="w-4 h-4" />
+                  <button type="submit" disabled={isProcessing} className="w-full mt-6 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70">
+                    {isProcessing ? "Signing in…" : (<>Continue <ArrowRight className="w-4 h-4" /></>)}
                   </button>
                 </form>
               )}
