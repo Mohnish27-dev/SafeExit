@@ -36,13 +36,18 @@ const registerUser = async (req, res) => {
   const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber } = req.body;
 
   try {
-    // Admin accounts are NOT created through this public endpoint. They are
-    // pre-provisioned by an operator via `npm run seed:admins`, which reads the
-    // ADMIN_*_ allowlist from the (gitignored) .env. This closes the door where
-    // anyone could POST role:'Admin' and rely on the allowlist as the only gate.
-    if (role === 'Admin') {
+    // Privileged roles are NEVER self-registered through this public endpoint.
+    // Only Students may self-register (and they verify a real @nitp.ac.in email).
+    //   - Admins are pre-provisioned from the ADMIN_*_ allowlist in the (gitignored)
+    //     .env via `npm run seed:admins` / ensureAdmins on boot.
+    //   - Wardens and Guards are provisioned at runtime by an admin from the
+    //     dashboard (POST /api/admin/staff).
+    // This closes the hole where anyone could POST role:'Warden' / 'Guard' and
+    // instantly gain staff powers — approving outings, reading student data, or
+    // authorising gate exits — just by opening the staff login page.
+    if (['Admin', 'Warden', 'Guard'].includes(role)) {
       return res.status(403).json({
-        message: 'Admin accounts cannot be self-registered. Contact an operator to be provisioned.',
+        message: `${role} accounts cannot be self-registered. Contact an administrator to be provisioned.`,
       });
     }
 
