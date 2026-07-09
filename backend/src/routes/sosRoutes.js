@@ -4,7 +4,8 @@ const {
   createSOSAlert,
   getMySOSAlerts,
   getSOSAlerts,
-  updateSOSStatus
+  updateSOSStatus,
+  streamSOSEvents
 } = require('../controllers/sosController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authorizeRoles } = require('../middlewares/roleMiddleware');
@@ -14,6 +15,8 @@ router.route('/')
   .get(protect, authorizeRoles('Admin', 'Warden', 'Guard'), getSOSAlerts);
 
 router.get('/mine', protect, authorizeRoles('Student'), getMySOSAlerts);
+
+router.get('/stream', protect, authorizeRoles('Admin', 'Warden', 'Guard'), streamSOSEvents);
 
 router.patch('/:id/status', protect, authorizeRoles('Admin', 'Warden'), updateSOSStatus);
 

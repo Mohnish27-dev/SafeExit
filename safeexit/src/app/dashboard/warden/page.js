@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   ArrowRight,
   ShieldAlert,
+  Siren,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import ProfileView from "./components/ProfileView";
 import ComplaintsView from "./components/ComplaintsView";
 import AutoApprovedView from "./components/AutoApprovedView";
 import RequestsView from "./components/RequestsView";
+import SOSAlertsView from "./components/SOSAlertsView";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
@@ -130,6 +132,36 @@ export default function WardenDashboardPage() {
   const [loadingReports, setLoadingReports] = useState(true);
   const [requestsError, setRequestsError] = useState("");
   const [reportsError, setReportsError] = useState("");
+
+  // Count of unresolved SOS alerts, surfaced as a badge on the nav + quick
+  // action. Kept live independently of the SOS view so the badge shows even
+  // when the warden is on another tab. The SOS view reports its own count back
+  // via onCountChange; this listener catches new alerts while it's unmounted.
+  const [sosCount, setSosCount] = useState(0);
+
+  const loadSosCount = useCallback(async () => {
+    try {
+      const data = await apiFetch("/sos?status=Active");
+      setSosCount(data.length);
+    } catch {
+      /* badge is best-effort; ignore transient errors */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSosCount();
+    const interval = setInterval(loadSosCount, 30000);
+    return () => clearInterval(interval);
+  }, [loadSosCount]);
+
+  // Live SOS push: a new student alert (or a status change) refreshes the badge
+  // instantly, so a warden idling on the home tab still sees the count climb.
+  useEffect(() => {
+    const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
+    source.addEventListener("sos:created", () => loadSosCount());
+    source.addEventListener("sos:updated", () => loadSosCount());
+    return () => source.close();
+  }, [loadSosCount]);
 
   // Pending outing requests awaiting warden action.
   const loadRequests = useCallback(async () => {
@@ -337,16 +369,22 @@ export default function WardenDashboardPage() {
               },{
                 title: t("safetyAlerts"),
                 desc: t("safetyAlertsDesc"),
-                icon: ShieldAlert,
-                tone: 'from-emerald-600',
+                icon: Siren,
+                tone: 'from-rose-600',
+                badge: sosCount,
               },{
                 title: t("autoApprovals"),
                 desc: t("autoApprovalsDesc"),
                 icon: Sparkles,
                 tone: 'from-sky-600',
               }].map((a, idx) => (
-                <button key={idx} onClick={() => openPanel(idx === 0 ? 'manage' : (idx === 1 ? 'alerts' : 'auto'))} style={{ animationDelay: `${0.08 + idx * 0.06}s` }} className="sd-luxe-card sd-action-card sd-luxe-shimmer sd-card-hover sd-animate-pop group flex flex-col items-start gap-4 rounded-4xl p-6 text-left">
-                  <div className="rounded-full bg-white p-3 inline-flex items-center justify-center"><a.icon className="h-6 w-6 text-indigo-600" /></div>
+                <button key={idx} onClick={() => (idx === 1 ? setView('sos') : openPanel(idx === 0 ? 'manage' : 'auto'))} style={{ animationDelay: `${0.08 + idx * 0.06}s` }} className="sd-luxe-card sd-action-card sd-luxe-shimmer sd-card-hover sd-animate-pop group relative flex flex-col items-start gap-4 rounded-4xl p-6 text-left">
+                  <div className="relative rounded-full bg-white p-3 inline-flex items-center justify-center">
+                    <a.icon className="h-6 w-6 text-indigo-600" />
+                    {a.badge ? (
+                      <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
+                    ) : null}
+                  </div>
                   <div>
                     <div className="sd-card-title">{a.title}</div>
                     <div className="sd-body mt-2">{a.desc}</div>
@@ -478,12 +516,20 @@ export default function WardenDashboardPage() {
             <AutoApprovedView approved={approved} compact={false} onBack={() => setView('home')} onClear={() => setApproved([])} pageSize={6} />
           )}
 
+          {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
           {view === 'profile' && <ProfileView user={user} displayName={displayName} />}
           {view === 'complaints' && <ComplaintsView reports={reports} resolveReport={resolveReport} setReports={setReports} />}
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-5 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
             <button onClick={() => setView('home')} className={`sd-nav-link ${view === 'home' ? 'sd-nav-link--active' : ''}`}><Home className="h-6 w-6" />{tc("home")}</button>
             <button onClick={() => setView('requests')} className={`sd-nav-link ${view === 'requests' ? 'sd-nav-link--active' : ''}`}><ClipboardList className="h-6 w-6" />{t("requests")}</button>
+            <button onClick={() => setView('sos')} className={`sd-nav-link ${view === 'sos' ? 'sd-nav-link--active' : ''}`}>
+              <span className="relative inline-flex">
+                <Siren className="h-6 w-6" />
+                {sosCount > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
+              </span>
+              {t("safetyAlerts")}
+            </button>
             <button onClick={() => setView('complaints')} className={`sd-nav-link ${view === 'complaints' ? 'sd-nav-link--active' : ''}`}>
               <span className="relative inline-flex">
                 <MessageSquare className="h-6 w-6" />
@@ -568,6 +614,13 @@ export default function WardenDashboardPage() {
         <div className="mx-auto max-w-md flex items-center justify-between">
           <button onClick={() => setView('home')} className="flex flex-col items-center gap-1 text-indigo-700"><Home className="h-6 w-6" /><span className="text-[10px] font-bold">{tc("home")}</span></button>
           <button onClick={() => setView('requests')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors"><ClipboardList className="h-6 w-6" /><span className="text-[10px] font-semibold">{t("requests")}</span></button>
+          <button onClick={() => setView('sos')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
+            <span className="relative inline-flex">
+              <Siren className="h-6 w-6" />
+              {sosCount > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
+            </span>
+            <span className="text-[10px] font-semibold">{t("safetyAlerts")}</span>
+          </button>
           <button onClick={() => setView('complaints')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
             <span className="relative inline-flex">
               <MessageSquare className="h-6 w-6" />

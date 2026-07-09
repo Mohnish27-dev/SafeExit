@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Siren,
   Shield,
   HeartPulse,
   AlertTriangle,
@@ -17,9 +16,18 @@ import {
   DoorOpen,
 } from "lucide-react";
 import { apiFetch, getApiBase } from "@/app/lib/api";
-import { getInitials } from "@/app/lib/userProfile";
 
-// Visual + label config per alert type, mirroring the student SOS screen.
+const getInitials = (name = "") =>
+  name
+    .split(" ")
+    .map((n) => n[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "?";
+
+// Visual + label config per alert type, mirroring the student SOS screen and
+// the admin console so the same emergency reads identically everywhere.
 const TYPE_META = {
   harassment: { label: "Harassment / Threat", icon: Shield, tone: "bg-rose-100 text-rose-600" },
   medical: { label: "Medical Emergency", icon: HeartPulse, tone: "bg-orange-100 text-orange-600" },
@@ -39,7 +47,11 @@ const FILTERS = ["Active", "Acknowledged", "Resolved", "All"];
 const formatTime = (iso) =>
   new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
-export default function SOSAlertsView({ onChange }) {
+// Live SOS feed for the warden. Data path mirrors the admin console: fetch
+// GET /sos (already authorized for Warden), subscribe to the shared SSE stream
+// so a student's alert appears the instant it's raised, and keep a low-rate
+// poll as a safety net if the SSE connection is silently dropped.
+export default function SOSAlertsView({ onCountChange }) {
   const [alerts, setAlerts] = useState([]);
   const [filter, setFilter] = useState("Active");
   const [loading, setLoading] = useState(true);
@@ -51,39 +63,36 @@ export default function SOSAlertsView({ onChange }) {
       const data = await apiFetch("/sos");
       setAlerts(data);
       setError("");
+      onCountChange?.(data.filter((a) => a.status === "Active").length);
     } catch (err) {
       setError(err.message || "Could not load SOS alerts");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onCountChange]);
 
   useEffect(() => {
     load();
-    // Poll frequently — these are emergencies. Fallback for when SSE drops.
+    // Poll frequently — these are emergencies. This is the fallback; the SSE
+    // stream below is what makes new alerts appear instantly.
     const t = setInterval(load, 8000);
     return () => clearInterval(t);
   }, [load]);
 
-  // Real-time push so a new SOS lands in the command center the instant a
-  // student raises it, and status changes from wardens/guards sync live.
+  // Real-time push: refetch the moment a student raises a new alert or another
+  // responder changes one, instead of waiting for the next poll tick.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
-    const refresh = () => {
-      load();
-      onChange?.();
-    };
-    source.addEventListener("sos:created", refresh);
-    source.addEventListener("sos:updated", refresh);
+    source.addEventListener("sos:created", () => load());
+    source.addEventListener("sos:updated", () => load());
     return () => source.close();
-  }, [load, onChange]);
+  }, [load]);
 
   const updateStatus = async (id, status) => {
     setBusyId(id);
     try {
       await apiFetch(`/sos/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
       await load();
-      onChange?.();
     } catch (err) {
       setError(err.message || "Could not update alert");
     } finally {
@@ -104,7 +113,7 @@ export default function SOSAlertsView({ onChange }) {
           </span>
           <div>
             <h2 className="text-lg font-bold text-slate-900">Emergency SOS Feed</h2>
-            <p className="text-sm text-slate-600">{activeCount} active · auto-refreshing every 8s</p>
+            <p className="text-sm text-slate-600">{activeCount} active · live + auto-refreshing</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -184,7 +193,7 @@ export default function SOSAlertsView({ onChange }) {
                   </div>
                 </div>
 
-                {/* Student profile strip */}
+                {/* Student profile strip — who, where, and how to reach them fast. */}
                 <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 text-sm font-bold text-white">
