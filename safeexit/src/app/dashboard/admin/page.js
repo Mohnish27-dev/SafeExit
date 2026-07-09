@@ -89,6 +89,16 @@ export default function AdminDashboardPage() {
     return () => clearInterval(t);
   }, [loadOverview]);
 
+  // Live SOS push: refresh the overview (and its "Active SOS" badge) the moment
+  // a student raises an alert or a responder resolves one, without waiting for
+  // the 15s tick.
+  useEffect(() => {
+    const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
+    source.addEventListener("sos:created", () => loadOverview());
+    source.addEventListener("sos:updated", () => loadOverview());
+    return () => source.close();
+  }, [loadOverview]);
+
   const handleLogout = async () => {
     try {
       await fetch(`${getApiBase()}/auth/logout`, { method: "POST", credentials: "include" });
