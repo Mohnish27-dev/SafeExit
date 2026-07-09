@@ -3,7 +3,16 @@ const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  // Canonical login identifier — the ONE field every account is keyed and looked
+  // up on (password login + passkey ceremonies). For students this is their real
+  // college email; for staff (Warden/Guard/Admin) it is their normalized staff ID
+  // (e.g. "wdn001", "adm-mohnish"). This is why staff no longer need a fabricated
+  // "*.safeexit.local" email just to have a unique handle.
+  loginId: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+  // Real email address. Kept for students (who genuinely have an @nitp.ac.in
+  // address); left empty for staff, who are identified by loginId instead.
+  // Sparse+unique so many staff can share "no email" without collisions.
+  email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
   password: { type: String }, // optional for webauthn-only, but usually required for first login
   role: { type: String, enum: ['Student', 'Warden', 'Guard', 'Admin'], default: 'Student' },
   studentId: { type: String }, // e.g., register number
@@ -33,10 +42,7 @@ const userSchema = new mongoose.Schema({
     publicKey: { type: Buffer },             // COSE public key bytes (WebAuthnCredential.publicKey)
     counter: { type: Number, default: 0 },   // signature counter, bumped on each auth to block replay
     transports: { type: [String], default: [] }
-  }],
-  // Short-lived challenge for the in-flight registration/authentication ceremony.
-  // Cleared as soon as the ceremony is verified.
-  currentChallenge: { type: String }
+  }]
 }, {
   timestamps: true
 });

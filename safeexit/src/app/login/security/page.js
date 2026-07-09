@@ -18,11 +18,11 @@ import Link from "next/link";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 
-// Guards have no college email, so we synthesize a stable one from the Guard ID.
-// The backend keys every account + passkey login on `email`, and the ID is unique
-// per guard, so this gives each guard a consistent server identity.
-const buildGuardEmail = (guardId) =>
-  `${guardId.trim().toLowerCase().replace(/\s+/g, "")}@guard.safeexit.local`;
+// Guards have no college email. The backend keys every account + passkey login
+// on `loginId`, so a guard's normalized ID IS their identity — no fabricated
+// "@guard.safeexit.local" email required anywhere.
+const buildGuardLoginId = (guardId) =>
+  guardId.trim().toLowerCase().replace(/\s+/g, "");
 
 export default function SecurityLoginPage() {
   const router = useRouter();
@@ -88,14 +88,14 @@ export default function SecurityLoginPage() {
 
   // Shared helper: create the backend account. Returns the auth token.
   const registerGuardAccount = async (profile) => {
-    const email = buildGuardEmail(profile.guardId);
+    const loginId = buildGuardLoginId(profile.guardId);
     const registerRes = await fetch("/api/backend/auth/register", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: profile.fullName,
-        email,
+        loginId,
         password: profile.guardId, // Default password (ID) for simplicity
         role: "Guard",
         studentId: profile.guardId,
@@ -112,7 +112,7 @@ export default function SecurityLoginPage() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password: profile.guardId }),
+          body: JSON.stringify({ loginId, password: profile.guardId }),
         });
         if (!loginRes.ok) throw new Error("Account exists. Could not sign in to add a passkey.");
         const loginData = await loginRes.json();
@@ -131,7 +131,7 @@ export default function SecurityLoginPage() {
       role: "security",
       roleLabel: "Security Guard",
       id: profile.guardId,
-      email: buildGuardEmail(profile.guardId),
+      // Staff are identified by their ID, not an email — leave email unset.
       mobile: profile.phoneNumber,
     });
   };
@@ -211,14 +211,14 @@ export default function SecurityLoginPage() {
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      const email = buildGuardEmail(storedProfile.guardId);
+      const loginId = buildGuardLoginId(storedProfile.guardId);
 
       // 1. Get an authentication challenge scoped to this account's passkeys.
       const optionsRes = await fetch("/api/backend/auth/webauthn/login/options", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ loginId }),
       });
       if (!optionsRes.ok) {
         throw new Error("No passkey found for this account on the server.");
@@ -233,7 +233,7 @@ export default function SecurityLoginPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, response: asseResp }),
+        body: JSON.stringify({ loginId, response: asseResp }),
       });
       const data = await verifyRes.json();
       if (!verifyRes.ok) {

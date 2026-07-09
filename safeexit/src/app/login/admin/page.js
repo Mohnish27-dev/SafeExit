@@ -16,11 +16,11 @@ import Link from "next/link";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 
-// Admins have no college email, so we synthesize a stable one from the Admin ID.
-// The backend keys every account + passkey login on `email`, and the ID is unique
-// per admin, so this gives each admin a consistent server identity.
-const buildAdminEmail = (adminId) =>
-  `${adminId.trim().toLowerCase().replace(/\s+/g, "")}@admin.safeexit.local`;
+// Admins have no college email. The backend keys every account + passkey login
+// on `loginId`, so an admin's normalized ID IS their identity — no fabricated
+// "@admin.safeexit.local" email required anywhere.
+const buildAdminLoginId = (adminId) =>
+  adminId.trim().toLowerCase().replace(/\s+/g, "");
 
 // Admin access is restricted to these two people. This mirrors the backend
 // allowlist (backend/src/config/adminAllowlist.js) purely for a friendly early
@@ -88,42 +88,57 @@ export default function AdminLoginPage() {
     setOnboardingStep(2);
   };
 
-  // Shared helper: create the backend account. Returns the auth token.
+  // Shared helper: sign in to the pre-provisioned admin account with the PIN and
+  // return a JWT. Admin accounts are seeded server-side (npm run seed:admins) —
+  // they are NOT self-registered here — so this is a plain login. The PIN is only
+  // a one-time bootstrap to attach a passkey to this device; once a passkey
+  // exists the backend rejects PIN login and the admin must use the passkey.
   const registerAdminAccount = async (profile) => {
-    const email = buildAdminEmail(profile.adminId);
-    const registerRes = await fetch("/api/backend/auth/register", {
+    const loginId = buildAdminLoginId(profile.adminId);
+    const loginRes = await fetch("/api/backend/auth/login", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: profile.fullName,
-        email,
-        password: profile.pin, // 4-digit PIN doubles as the account password
-        role: "Admin",
-        studentId: profile.adminId,
-      }),
+      body: JSON.stringify({ loginId, password: profile.pin }),
     });
 
-    // A 400 "User already exists" is fine — the admin registered before on
-    // another device; we just need a token to attach a passkey to this device.
-    if (!registerRes.ok) {
-      const data = await registerRes.json().catch(() => ({}));
-      if (registerRes.status === 400 && /exists/i.test(data.message || "")) {
-        const loginRes = await fetch("/api/backend/auth/login", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password: profile.pin }),
-        });
-        if (!loginRes.ok) throw new Error("Account exists. Could not sign in to add a passkey.");
-        const loginData = await loginRes.json();
-        return loginData.token;
+    if (!loginRes.ok) {
+      const data = await loginRes.json().catch(() => ({}));
+      if (loginRes.status === 401) {
+        throw new Error("Incorrect name, Admin ID or PIN. Access is restricted to authorized administrators.");
       }
-      throw new Error(data.message || "Registration failed");
+      if (loginRes.status === 403) {
+        // Two distinct 403s: (a) this admin already set up a passkey, so PIN login
+        // is intentionally blocked — pivot to passkey login instead of erroring;
+        // (b) not on the allowlist at all.
+        if (/passkey/i.test(data.message || "")) {
+          const err = new Error(data.message);
+          err.code = "PASSKEY_EXISTS";
+          throw err;
+        }
+        throw new Error(
+          data.message ||
+            "This account is not authorized for admin access."
+        );
+      }
+      if (loginRes.status === 429) {
+        throw new Error("Too many attempts. Please wait a few minutes and try again.");
+      }
+      throw new Error(data.message || "Could not sign in.");
     }
 
-    const registerData = await registerRes.json();
-    return registerData.token;
+    const loginData = await loginRes.json();
+    return loginData.token;
+  };
+
+  // The account already has a passkey, so PIN login is blocked. Move the UI to
+  // the "Login with Passkey" screen for this admin instead of dead-ending.
+  const pivotToPasskeyLogin = (profile) => {
+    setStoredProfile(profile);
+    localStorage.setItem("safeexit_admin_profile", JSON.stringify(profile));
+    localStorage.setItem("safeexit_webauthn_registered_admin", "true");
+    setErrorMsg("");
+    setAppState("RETURNING_USER");
   };
 
   const persistAdminSession = (profile) => {
@@ -132,7 +147,7 @@ export default function AdminLoginPage() {
       role: "admin",
       roleLabel: "Administrator",
       id: profile.adminId,
-      email: buildAdminEmail(profile.adminId),
+      // Staff are identified by their ID, not an email — leave email unset.
     });
   };
 
@@ -179,7 +194,9 @@ export default function AdminLoginPage() {
       persistAdminSession(profile);
       router.push("/dashboard/admin");
     } catch (err) {
-      if (err?.name === "NotAllowedError") {
+      if (err?.code === "PASSKEY_EXISTS") {
+        pivotToPasskeyLogin(JSON.parse(localStorage.getItem("safeexit_admin_profile")));
+      } else if (err?.name === "NotAllowedError") {
         setErrorMsg("Passkey setup was cancelled or timed out. Please try again.");
       } else if (err?.name === "InvalidStateError") {
         setErrorMsg("A passkey is already registered on this device for this account.");
@@ -201,7 +218,11 @@ export default function AdminLoginPage() {
       persistAdminSession(profile);
       router.push("/dashboard/admin");
     } catch (err) {
-      setErrorMsg(err?.message || "Could not continue. Please try again.");
+      if (err?.code === "PASSKEY_EXISTS") {
+        pivotToPasskeyLogin(JSON.parse(localStorage.getItem("safeexit_admin_profile")));
+      } else {
+        setErrorMsg(err?.message || "Could not continue. Please try again.");
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -211,14 +232,14 @@ export default function AdminLoginPage() {
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      const email = buildAdminEmail(storedProfile.adminId);
+      const loginId = buildAdminLoginId(storedProfile.adminId);
 
       // 1. Get an authentication challenge scoped to this account's passkeys.
       const optionsRes = await fetch("/api/backend/auth/webauthn/login/options", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ loginId }),
       });
       if (!optionsRes.ok) {
         throw new Error("No passkey found for this account on the server.");
@@ -233,7 +254,7 @@ export default function AdminLoginPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, response: asseResp }),
+        body: JSON.stringify({ loginId, response: asseResp }),
       });
       const data = await verifyRes.json();
       if (!verifyRes.ok) {
@@ -340,8 +361,8 @@ export default function AdminLoginPage() {
               {onboardingStep === 1 && (
                 <form onSubmit={submitStep1} className="space-y-4 animate-fade-in-up">
                   <div className="text-center mb-6">
-                    <h2 className="text-2xl font-bold text-slate-900">Admin Registration</h2>
-                    <p className="text-sm text-slate-500 mt-1">Please fill in your details to setup the admin console.</p>
+                    <h2 className="text-2xl font-bold text-slate-900">Admin Sign In</h2>
+                    <p className="text-sm text-slate-500 mt-1">Authorized administrators only. Enter your details to set up this device.</p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
