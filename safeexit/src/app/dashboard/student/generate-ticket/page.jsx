@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
+import { useRequireAuth } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import {
@@ -81,6 +83,7 @@ function StepBar({ current }) {
 
 export default function GenerateTicket() {
   const router = useRouter();
+  const { checked, authorized } = useRequireAuth("student");
   const { display, hydrated } = useStudentProfile();
   const [step, setStep] = useState("form");
   const [loading, setLoading] = useState(false);
@@ -240,6 +243,8 @@ export default function GenerateTicket() {
       submitErrorRef.current.focus({ preventScroll: true });
     }
   }, [step, errors.submit]);
+
+  if (!checked || !authorized) return <AuthLoading />;
 
   const destLabel = form.destination;
   const ticketId = createdOuting ? `SE-${String(createdOuting._id).slice(-6).toUpperCase()}` : "SE-" + Math.random().toString(36).substring(2, 8).toUpperCase();

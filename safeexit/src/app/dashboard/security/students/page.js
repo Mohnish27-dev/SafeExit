@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
 import { getInitials } from "@/app/lib/userProfile";
+import { useRequireAuth } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "../components/SecurityBottomNav";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
@@ -27,6 +29,7 @@ export default function SecurityStudentsPage() {
   const { t } = useTranslation("security");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
+  const { checked, authorized } = useRequireAuth("security");
   const searchParams = useSearchParams();
   const initialFilter = searchParams.get("filter") || "";
 
@@ -84,6 +87,8 @@ export default function SecurityStudentsPage() {
         );
       });
   }, [students, search, statusFilter]);
+
+  if (!checked || !authorized) return <AuthLoading />;
 
   return (
     <main className="min-h-screen dashboard-neo text-slate-900">

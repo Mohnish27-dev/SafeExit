@@ -11,12 +11,26 @@ const {
   verifyAuthentication
 } = require('../controllers/authController');
 const { sendOtp, verifyOtp } = require('../controllers/otpController');
+const {
+  requestPasswordReset,
+  verifyResetOtp,
+  resetPassword,
+} = require('../controllers/passwordResetController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authLimiter, registerLimiter, otpLimiter } = require('../middlewares/rateLimit');
 
 // Email verification for student self-registration (must precede /register).
 router.post('/otp/send', otpLimiter, sendOtp);
 router.post('/otp/verify', authLimiter, verifyOtp);
+
+// Password recovery for students who forgot their password (and thus their device
+// Quick Login PIN, which just caches that password). Same OTP-by-email design as
+// registration: forgot (send code) → verify-otp (check code) → reset (set new
+// password + sign in). `forgot` sends mail so it uses the OTP send limiter;
+// `verify-otp` and `reset` are credential checks so they use authLimiter.
+router.post('/password/forgot', otpLimiter, requestPasswordReset);
+router.post('/password/verify-otp', authLimiter, verifyResetOtp);
+router.post('/password/reset', authLimiter, resetPassword);
 
 router.post('/register', registerLimiter, registerUser);
 router.post('/login', authLimiter, authUser);

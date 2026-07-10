@@ -25,6 +25,8 @@ import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { getFirstName } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
+import { useRequireAuth } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 
 const statusConfig = {
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
@@ -56,6 +58,7 @@ const statAccents = {
 
 export default function MyOutings() {
   const router = useRouter();
+  const { checked, authorized } = useRequireAuth("student");
   const { display, hydrated } = useStudentProfile();
   const [outings, setOutings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +146,8 @@ export default function MyOutings() {
     pending: outings.filter((outing) => outing.status === "pending").length,
     returned: outings.filter((outing) => outing.status === "returned").length,
   };
+
+  if (!checked || !authorized) return <AuthLoading />;
 
   return (
     <StudentFeatureShell

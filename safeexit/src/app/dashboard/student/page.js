@@ -23,6 +23,8 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
 import {
   buildSlug,
   defaultStudentProfile,
@@ -34,6 +36,8 @@ import {
 } from "@/app/lib/userProfile";
 import { getTimeGreeting } from "@/app/lib/greeting";
 import { apiFetch } from "@/app/lib/api";
+import { useRequireAuth, logout } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 
 // Format a stored Date/ISO string as e.g. "05:30 PM". Used by the pass/timeline
 // cards below. (The QR itself no longer carries any formatted window — it's
@@ -91,6 +95,8 @@ const navItems = [
 ];
 
 export default function StudentDashboardPage() {
+  const router = useRouter();
+  const { checked, authorized } = useRequireAuth("student");
   const [profile, setProfile] = useState(defaultStudentProfile);
   const [now, setNow] = useState(() => new Date());
   const [mounted, setMounted] = useState(false);
@@ -293,6 +299,12 @@ export default function StudentDashboardPage() {
     ];
   }, [latestApproved]);
 
+  const handleLogout = () => logout(router, { role: "student" });
+
+  // Don't render the protected dashboard until the session check passes; the
+  // hook redirects to /login/student when there's no valid student session.
+  if (!checked || !authorized) return <AuthLoading />;
+
   return (
     <main className="min-h-screen student-dashboard-luxe text-slate-900 pb-28">
       <div className="relative overflow-hidden">
@@ -320,14 +332,25 @@ export default function StudentDashboardPage() {
               </div>
             </div>
 
-            <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt flex items-center gap-3 rounded-2xl px-4 py-3 min-w-[200px]">
-              <div className="sd-profile-avatar">
-                {mounted ? getInitials(profile.name) : "?"}
+            <div className="flex items-center gap-3">
+              <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt flex items-center gap-3 rounded-2xl px-4 py-3 min-w-[200px]">
+                <div className="sd-profile-avatar">
+                  {mounted ? getInitials(profile.name) : "?"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-slate-900  gap-2 text-base">{profile.name}</p>
+                  <p className="text-sm text-slate-500">{profile.subtitle}</p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-bold text-slate-900  gap-2 text-base">{profile.name}</p>
-                <p className="text-sm text-slate-500">{profile.subtitle}</p>
-              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Log out"
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50"
+              >
+                <LogOut className="h-5 w-5" />
+                <span className="sr-only">Log out</span>
+              </button>
             </div>
           </header>
 

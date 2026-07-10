@@ -28,6 +28,10 @@ import SOSAlertsView from "./components/SOSAlertsView";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
+import { useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
+import { useRequireAuth, logout } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 
 const initials = (name = "") =>
   name
@@ -97,6 +101,8 @@ export default function WardenDashboardPage() {
   const { t } = useTranslation("warden");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
+  const router = useRouter();
+  const { checked, authorized } = useRequireAuth("warden");
 
   const [now, setNow] = useState(null);
   const [user, setUser] = useState(null);
@@ -290,6 +296,12 @@ export default function WardenDashboardPage() {
   const displayName = (user && (user.name || user.displayName)) || "Warden Priya";
   const firstName = displayName.split(" ")[0] || displayName;
 
+  const handleLogout = () => logout(router, { role: "warden" });
+
+  // Gate the dashboard on a valid warden session; the hook redirects to
+  // /login/warden when the token is missing or belongs to another role.
+  if (!checked || !authorized) return <AuthLoading />;
+
   return (
     <main className="min-h-screen student-dashboard-luxe text-slate-900 pb-28">
       <div className="relative overflow-hidden">
@@ -321,6 +333,15 @@ export default function WardenDashboardPage() {
                   <p className="text-sm text-slate-500">{(user && (user.roleLabel || user.role)) || t("chiefWarden")}</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                title={tc("logout")}
+                className="flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50"
+              >
+                <LogOut className="h-5 w-5" />
+                <span className="sr-only">{tc("logout")}</span>
+              </button>
             </div>
           </header>
 
