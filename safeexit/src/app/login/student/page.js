@@ -7,6 +7,7 @@ import {
   User,
   Phone,
   ArrowRight,
+  LogIn,
   ShieldCheck,
   ChevronDown,
   Camera,
@@ -17,19 +18,36 @@ import {
   AlertCircle,
   BookOpen,
   Mail,
+  Lock,
+  KeyRound,
+  Eye,
+  EyeOff,
   Image as ImageIcon
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
+import {
+  hasQuickPin,
+  hasBiometric,
+  getQuickLabel,
+  setQuickPin,
+  verifyQuickPin,
+  clearQuickLogin,
+} from "@/app/lib/quickLogin";
 
 export default function StudentLoginPage() {
   const router = useRouter();
-  
+
   // App States
-  const [appState, setAppState] = useState("LOADING"); // LOADING, RETURNING_USER, ONBOARDING
-  const [onboardingStep, setOnboardingStep] = useState(1); // 1: Form, 2: Photo, 3: WebAuthn
+  //   LOADING        — deciding the landing screen
+  //   RETURNING_USER — this device has Quick Login set up (PIN + optional biometric)
+  //   LOGIN          — editable email + password sign-in (fresh device / fallback)
+  //   ONBOARDING     — registration (steps 1-3) then Quick Login setup (step 4)
+  //   QUICK_SETUP    — after an email+password sign-in, (re)enrol Quick Login
+  const [appState, setAppState] = useState("LOADING");
+  const [onboardingStep, setOnboardingStep] = useState(1); // 1: Form, 2: Verify, 3: Photo, 4: Quick Login
   const [storedProfile, setStoredProfile] = useState(null);
 
   // Form States
@@ -43,8 +61,13 @@ export default function StudentLoginPage() {
     roomNumber: "",
     phoneNumber: "",
     emergencyContact: "",
+    // Login secret the student chooses (NOT the public roll number). Kept only in
+    // component state — never written to localStorage as plaintext. During Quick
+    // Login setup it is encrypted under the 4-digit PIN (see lib/quickLogin).
+    password: "",
+    confirmPassword: "",
   });
-  
+
   // Photo State
   const [photoPreview, setPhotoPreview] = useState(null);
   const fileInputRef = useRef(null);
@@ -59,25 +82,57 @@ export default function StudentLoginPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Returning-user fallback: when the passkey is unavailable (sensor disabled,
-  // credential wiped, new browser profile) a student can still sign in with the
-  // email + roll number they registered with. `credentialMode` toggles that form
-  // on the RETURNING_USER card without wiping the stored passkey shortcut.
-  const [credentialMode, setCredentialMode] = useState(false);
-  // Only the roll number (password) is entered; the email is fixed to this
-  // device's onboarded account and never editable.
-  const [credentials, setCredentials] = useState({ password: "" });
+  // Returning-user Quick Login state.
+  const [hasBio, setHasBio] = useState(false);     // is a passkey enrolled on THIS device?
+  const [quickLabel, setQuickLabel] = useState(""); // roll number shown on the PIN screen
+  const [loginPin, setLoginPin] = useState("");     // PIN typed on the returning screen
+  const [showLoginPin, setShowLoginPin] = useState(false);
+
+  // Quick Login SETUP state (onboarding step 4 + QUICK_SETUP).
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [showSetupPin, setShowSetupPin] = useState(false);
+  const [enableBiometric, setEnableBiometric] = useState(false); // optional, off by default
+  // A valid session token for the account being set up. In ONBOARDING it comes
+  // from /auth/register; in QUICK_SETUP from the email+password /auth/login. Kept
+  // so a retry (e.g. after a cancelled biometric prompt) doesn't re-register.
+  const [sessionToken, setSessionToken] = useState(null);
+  // The password to lock behind the PIN during QUICK_SETUP (typed at the login
+  // form). In ONBOARDING we use formData.password instead.
+  const [pendingPassword, setPendingPassword] = useState("");
+
+  // Generic email + password sign-in (fresh device, forgotten PIN, or "someone
+  // else"). Both fields are editable — unlike the old read-only-email fallback,
+  // which is removed.
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
 
   useEffect(() => {
-    // Check if user is already registered on this device
-    const isRegistered = localStorage.getItem("safeexit_webauthn_registered");
-    const profile = localStorage.getItem("safeexit_user_profile");
-    
-    if (isRegistered === "true" && profile) {
-      setStoredProfile(JSON.parse(profile));
+    // Decide the landing screen from what this device already knows.
+    const profileRaw = localStorage.getItem("safeexit_user_profile");
+
+    if (profileRaw && hasQuickPin()) {
+      // This device has an onboarded account AND a Quick Login PIN — greet them
+      // back and ask only for the PIN (plus biometric if it was enrolled).
+      try {
+        setStoredProfile(JSON.parse(profileRaw));
+      } catch {
+        setStoredProfile(null);
+      }
+      setHasBio(hasBiometric());
+      setQuickLabel(getQuickLabel());
       setAppState("RETURNING_USER");
     } else {
-      setAppState("ONBOARDING");
+      // No Quick Login on this device. Fall back to the email + password form. If
+      // we still remember the account's email, prefill it (still editable).
+      if (profileRaw) {
+        try {
+          const p = JSON.parse(profileRaw);
+          if (p?.email) setLoginForm((f) => ({ ...f, email: p.email }));
+        } catch {
+          /* ignore */
+        }
+      }
+      setAppState("LOGIN");
     }
   }, []);
 
@@ -91,6 +146,120 @@ export default function StudentLoginPage() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // ---- Shared helpers -------------------------------------------------------
+
+  // Publish the student's photo to the local profile store so the guard's scanner
+  // can find it even after the in-memory store was cleared (e.g. a server restart).
+  const publishPhoto = (p) => {
+    if (!p?.photo) return;
+    fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rollNo: p.rollNumber,
+        name: p.fullName,
+        photo: p.photo,
+      }),
+    }).catch((err) => console.error("Failed to publish profile photo", err));
+  };
+
+  // Persist the device profile (best-effort, tolerating localStorage quota).
+  const persistProfile = (p) => {
+    try {
+      localStorage.setItem("safeexit_user_profile", JSON.stringify(p));
+    } catch (err) {
+      console.warn("Could not persist profile to localStorage", err);
+      try {
+        localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...p, photo: null }));
+      } catch (e2) {
+        console.error("Unable to persist profile to localStorage", e2);
+      }
+    }
+  };
+
+  // Publish state to the app, then head to the dashboard.
+  const hydrateAndGo = (p) => {
+    publishPhoto(p);
+    setStoredUser({
+      name: p.fullName,
+      role: "student",
+      roleLabel: "Student",
+      subtitle: `${p.yearLevel} Year, ${p.branch}`,
+      id: p.rollNumber,
+      rollNo: p.rollNumber,
+      email: p.email,
+      hostel: p.hostelBlock
+        ? `Block ${p.hostelBlock}, Room ${p.roomNumber}`
+        : p.roomNumber
+        ? `Room ${p.roomNumber}`
+        : "—",
+      room: p.roomNumber,
+      mobile: p.phoneNumber,
+      photo: p.photo,
+    });
+    router.push("/dashboard/student");
+  };
+
+  // Run the real WebAuthn registration ceremony to enrol a passkey. Requires a
+  // valid session token. Sets the device's biometric marker on success.
+  const enrollBiometric = async (token) => {
+    const authHeaders = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+    const optionsRes = await fetch("/api/backend/auth/webauthn/register/options", {
+      method: "POST",
+      credentials: "include",
+      headers: authHeaders,
+    });
+    if (!optionsRes.ok) throw new Error("Could not start passkey setup");
+    const optionsJSON = await optionsRes.json();
+
+    const attResp = await startRegistration({ optionsJSON });
+
+    const verifyRes = await fetch("/api/backend/auth/webauthn/register/verify", {
+      method: "POST",
+      credentials: "include",
+      headers: authHeaders,
+      body: JSON.stringify(attResp),
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyRes.ok || !verifyData.verified) {
+      throw new Error(verifyData.message || "Passkey verification failed");
+    }
+    localStorage.setItem("safeexit_webauthn_registered", "true");
+  };
+
+  // Create the student account (onboarding). Returns a session token.
+  const registerAccount = async () => {
+    const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
+    const registerRes = await fetch("/api/backend/auth/register", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: profile.fullName,
+        email: profile.email,
+        password: formData.password, // student-chosen login secret (from step 1)
+        role: "Student",
+        studentId: profile.rollNumber,
+        department: profile.branch,
+        year: profile.yearLevel,
+        roomNumber: profile.roomNumber,
+        hostelName: profile.hostelBlock,
+        phoneNumber: profile.phoneNumber,
+        emailVerificationToken: emailToken, // proves the college email was verified
+      }),
+    });
+    if (!registerRes.ok) {
+      const errBody = await registerRes.json().catch(() => ({}));
+      throw new Error(errBody.message || "Registration failed");
+    }
+    const registerData = await registerRes.json();
+    sessionStorage.setItem("safeexit_token", registerData.token);
+    return registerData.token;
   };
 
   // Request a verification code for the entered college email. Shared by the
@@ -184,7 +353,7 @@ export default function StudentLoginPage() {
   };
 
   const validateStep1 = () => {
-    const requiredFields = ['fullName', 'email', 'rollNumber', 'branch', 'yearLevel', 'hostelBlock', 'roomNumber', 'phoneNumber', 'emergencyContact'];
+    const requiredFields = ['fullName', 'email', 'rollNumber', 'branch', 'yearLevel', 'hostelBlock', 'roomNumber', 'phoneNumber', 'emergencyContact', 'password', 'confirmPassword'];
     for (let field of requiredFields) {
       if (!formData[field] || formData[field].trim() === "") {
         setErrorMsg("Please fill in all fields.");
@@ -198,6 +367,16 @@ export default function StudentLoginPage() {
     }
     if (formData.phoneNumber.length < 10) {
       setErrorMsg("Please enter a valid phone number.");
+      return false;
+    }
+    // The password is the student's login secret — enforce a minimum length and a
+    // matching confirmation so they don't lock themselves out with a typo.
+    if (formData.password.length < 6) {
+      setErrorMsg("Password must be at least 6 characters.");
+      return false;
+    }
+    if (formData.password !== formData.confirmPassword) {
+      setErrorMsg("Passwords do not match.");
       return false;
     }
     setErrorMsg("");
@@ -217,7 +396,11 @@ export default function StudentLoginPage() {
   const skipOrSubmitPhoto = () => {
     // Save profile to localStorage temporarily
     (async () => {
-      const profileToSave = { ...formData };
+      // Never persist the login secret to localStorage — strip password fields
+      // before anything touches storage. The register call reads the password
+      // straight from component state instead.
+      const { password, confirmPassword, ...safeProfile } = formData;
+      const profileToSave = { ...safeProfile };
       try {
         if (photoPreview && typeof photoPreview === 'string' && photoPreview.startsWith('data:')) {
           // Try to compress large images before saving
@@ -240,7 +423,7 @@ export default function StudentLoginPage() {
             console.warn('second localStorage attempt failed, clearing old profile key and retrying', e2);
             try {
               localStorage.removeItem('safeexit_user_profile');
-              localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...formData, photo: null }));
+              localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...safeProfile, photo: null }));
             } catch (finalErr) {
               console.error('Unable to persist profile to localStorage', finalErr);
             }
@@ -250,112 +433,132 @@ export default function StudentLoginPage() {
         console.error('Error while processing photo for storage', err);
         // As a last resort, store only text data
         try {
-          localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...formData, photo: null }));
+          localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...safeProfile, photo: null }));
         } catch (e) {
           console.error('Unable to persist profile to localStorage after error', e);
         }
       } finally {
+        // Reset Quick Login setup fields before showing step 4.
+        setPin("");
+        setConfirmPin("");
+        setEnableBiometric(false);
+        setSessionToken(null);
         setOnboardingStep(4);
       }
     })();
   };
 
-  const setupWebAuthn = async () => {
+  // ---- Quick Login setup (onboarding step 4 + QUICK_SETUP) ------------------
+
+  // Enrol a PIN (and optional biometric), then go to the dashboard. Works for
+  // both ONBOARDING (register first) and QUICK_SETUP (already signed in).
+  const submitQuickSetup = async () => {
+    if (!/^\d{4}$/.test(pin)) {
+      setErrorMsg("Please set a 4-digit numeric PIN.");
+      return;
+    }
+    if (pin !== confirmPin) {
+      setErrorMsg("The PINs you entered do not match.");
+      return;
+    }
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
-      const email = profile.email;
+      let token = sessionToken;
+      let password;
+      let profile;
 
-      // 1. Create the account. The returned JWT authorizes the passkey registration below.
-      const registerRes = await fetch('/api/backend/auth/register', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: profile.fullName,
-          email,
-          password: profile.rollNumber, // Default password for simplicity
-          role: 'Student',
-          studentId: profile.rollNumber,
-          department: profile.branch,
-          year: profile.yearLevel,
-          roomNumber: profile.roomNumber,
-          hostelName: profile.hostelBlock,
-          phoneNumber: profile.phoneNumber,
-          emailVerificationToken: emailToken // proves the college email was verified
-        })
-      });
-
-      if (!registerRes.ok) {
-         const errBody = await registerRes.json().catch(() => ({}));
-         throw new Error(errBody.message || "Registration failed");
-      }
-
-      const registerData = await registerRes.json();
-      const token = registerData.token;
-      sessionStorage.setItem('safeexit_token', token);
-
-      const authHeaders = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      };
-
-      // 2. Ask the server for a registration challenge (PublicKeyCredentialCreationOptions).
-      const optionsRes = await fetch('/api/backend/auth/webauthn/register/options', {
-        method: 'POST',
-        credentials: 'include',
-        headers: authHeaders,
-      });
-      if (!optionsRes.ok) {
-        throw new Error("Could not start passkey setup");
-      }
-      const optionsJSON = await optionsRes.json();
-
-      // 3. Prompt the platform authenticator (fingerprint / FaceID) to create and
-      //    sign the credential. This is the real WebAuthn ceremony, not a mock.
-      const attResp = await startRegistration({ optionsJSON });
-
-      // 4. Send the signed attestation back; the server verifies it cryptographically
-      //    and stores the public key. Only a verified response counts as registered.
-      const verifyRes = await fetch('/api/backend/auth/webauthn/register/verify', {
-        method: 'POST',
-        credentials: 'include',
-        headers: authHeaders,
-        body: JSON.stringify(attResp),
-      });
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok || !verifyData.verified) {
-        throw new Error(verifyData.message || "Passkey verification failed");
-      }
-
-      // Mark as registered
-      localStorage.setItem("safeexit_webauthn_registered", "true");
-
-      // Update our global state
-      setStoredUser({
-        name: profile.fullName,
-        role: "student",
-        roleLabel: "Student",
-        subtitle: `${profile.yearLevel} Year, ${profile.branch}`,
-        id: profile.rollNumber,
-        rollNo: profile.rollNumber,
-        email,
-        hostel: `Block ${profile.hostelBlock}, Room ${profile.roomNumber}`,
-        room: profile.roomNumber,
-        mobile: profile.phoneNumber,
-        photo: profile.photo
-      });
-
-      router.push("/dashboard/student");
-    } catch (err) {
-      if (err?.name === 'NotAllowedError') {
-        setErrorMsg("Passkey setup was cancelled or timed out. Please try again.");
-      } else if (err?.name === 'InvalidStateError') {
-        setErrorMsg("A passkey is already registered on this device for this account.");
+      if (appState === "ONBOARDING") {
+        profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
+        password = formData.password;
+        // Register once; a retry (after a cancelled biometric) reuses the token.
+        if (!token) {
+          token = await registerAccount();
+          setSessionToken(token);
+        }
       } else {
-        setErrorMsg(err?.message || "Failed to setup Quick Login. Please try again.");
+        // QUICK_SETUP: account already exists, token + password captured at login.
+        profile = storedProfile;
+        password = pendingPassword;
       }
+
+      // Lock the password behind the PIN so the PIN can log in next time.
+      await setQuickPin(pin, password, profile.rollNumber || profile.email);
+
+      // Optional biometric — only enrol if requested and not already present.
+      if (enableBiometric && !hasBiometric()) {
+        await enrollBiometric(token);
+      }
+
+      hydrateAndGo(profile);
+    } catch (err) {
+      if (err?.name === "NotAllowedError") {
+        setErrorMsg("Biometric setup was cancelled. Your PIN is saved — press Enable again to finish, or turn off biometrics.");
+      } else if (err?.name === "InvalidStateError") {
+        setErrorMsg("A passkey already exists on this device for this account. Turn off biometrics to continue.");
+      } else {
+        setErrorMsg(err?.message || "Couldn't finish Quick Login setup. Please try again.");
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Skip Quick Login entirely and continue. In ONBOARDING this still needs to
+  // create the account first.
+  const skipQuickSetup = async () => {
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      let profile;
+      if (appState === "ONBOARDING") {
+        profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
+        if (!sessionToken) await registerAccount();
+      } else {
+        profile = storedProfile;
+      }
+      hydrateAndGo(profile);
+    } catch (err) {
+      setErrorMsg(err?.message || "Something went wrong. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // ---- Returning-user Quick Login (PIN / biometric) -------------------------
+
+  // Sign in with the 4-digit PIN: decrypt the stored password, then authenticate
+  // for real against the backend.
+  const handlePinLogin = async (e) => {
+    e.preventDefault();
+    if (!/^\d{4}$/.test(loginPin)) {
+      setErrorMsg("Please enter your 4-digit PIN.");
+      return;
+    }
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const password = await verifyQuickPin(loginPin);
+      if (!password) throw new Error("Incorrect PIN. Please try again.");
+
+      const email = (storedProfile?.email || "").trim();
+      const res = await fetch("/api/backend/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loginId: email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || "Login failed. Try signing in with your password.");
+      }
+      if (data.role !== "Student") {
+        throw new Error("This account is not authorized for student access.");
+      }
+      sessionStorage.setItem("safeexit_token", data.token);
+      hydrateAndGo(storedProfile);
+    } catch (err) {
+      setErrorMsg(err?.message || "Login failed.");
     } finally {
       setIsProcessing(false);
     }
@@ -396,37 +599,7 @@ export default function StudentLoginPage() {
         throw new Error(data.message || "Biometric login failed on server.");
       }
       sessionStorage.setItem('safeexit_token', data.token);
-
-      // Re-publish the photo so the guard's scanner can find it even after the
-      // in-memory profile store was cleared (e.g. a server restart since signup).
-      if (storedProfile.photo) {
-        fetch("/api/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            rollNo: storedProfile.rollNumber,
-            name: storedProfile.fullName,
-            photo: storedProfile.photo,
-          }),
-        }).catch((err) => console.error("Failed to publish profile photo", err));
-      }
-
-      // Login success
-      setStoredUser({
-        name: storedProfile.fullName,
-        role: "student",
-        roleLabel: "Student",
-        subtitle: `${storedProfile.yearLevel} Year, ${storedProfile.branch}`,
-        id: storedProfile.rollNumber,
-        rollNo: storedProfile.rollNumber,
-        email: storedProfile.email,
-        hostel: `Block ${storedProfile.hostelBlock}, Room ${storedProfile.roomNumber}`,
-        room: storedProfile.roomNumber,
-        mobile: storedProfile.phoneNumber,
-        photo: storedProfile.photo
-      });
-
-      router.push("/dashboard/student");
+      hydrateAndGo(storedProfile);
     } catch (err) {
       if (err?.name === 'NotAllowedError') {
         setErrorMsg("Login was cancelled or timed out. Please try again.");
@@ -438,24 +611,21 @@ export default function StudentLoginPage() {
     }
   };
 
-  // Sign in with the registered college email + roll number instead of the
-  // passkey. The account's password IS the roll number (set at registration),
-  // and the backend /auth/login accepts it for students even after a passkey is
-  // enrolled — so this is a genuine fallback, not a second registration.
-  const handleCredentialLogin = async (e) => {
+  // ---- Email + password sign-in (fallback / fresh device) -------------------
+
+  // Sign in with college email + password. On success we (re)build this device's
+  // profile from the server and hand off to Quick Login setup — so the student is
+  // prompted to create a PIN (and optionally biometric) again.
+  const handleGenericLogin = async (e) => {
     e.preventDefault();
-    // The email is FIXED to the account this device was onboarded with — it is
-    // never taken from the input. This scopes the fallback to "recover my own
-    // account" and prevents typing a classmate's email to hijack their session.
-    // (The password is still a roll number, a weak secret — see the backend note.)
-    const email = (storedProfile?.email || "").trim();
-    const password = credentials.password.trim();
+    const email = loginForm.email.trim();
+    const password = loginForm.password;
     if (!email) {
-      setErrorMsg("No account is set up on this device. Use \"Sign in as someone else\".");
+      setErrorMsg("Please enter your college email.");
       return;
     }
     if (!password) {
-      setErrorMsg("Please enter your roll number.");
+      setErrorMsg("Please enter your password.");
       return;
     }
     setIsProcessing(true);
@@ -471,51 +641,71 @@ export default function StudentLoginPage() {
       if (!res.ok) {
         throw new Error(
           res.status === 401
-            ? "Email or roll number is incorrect. Please try again."
+            ? "Email or password is incorrect. If you're new, create an account below."
             : data.message || "Login failed."
         );
       }
-      // Defence in depth: keep non-students off the student dashboard even if
-      // someone reuses staff credentials here (the route guards are the real gate).
+      // Keep non-students off the student dashboard even with valid staff creds.
       if (data.role !== 'Student') {
         throw new Error("This account is not authorized for student access.");
       }
-      // Defence in depth: the account that authenticated must be the one this
-      // device belongs to, so the token and the profile we display can't diverge.
-      if (data.email && data.email.toLowerCase() !== email.toLowerCase()) {
-        throw new Error("This account doesn't match this device. Use \"Sign in as someone else\".");
-      }
-      sessionStorage.setItem('safeexit_token', data.token);
+      const token = data.token;
+      sessionStorage.setItem('safeexit_token', token);
 
-      // Re-publish the photo so the guard's scanner can find it, mirroring the
-      // biometric login path.
-      if (storedProfile?.photo) {
-        fetch("/api/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            rollNo: storedProfile.rollNumber,
-            name: storedProfile.fullName,
-            photo: storedProfile.photo,
-          }),
-        }).catch((err) => console.error("Failed to publish profile photo", err));
+      // Pull the full profile so the dashboard, QR ticket, and guard scanner all
+      // have real data (roll number, room, phone) instead of just an email.
+      let profileData = {};
+      try {
+        const profRes = await fetch('/api/backend/auth/profile', {
+          method: 'GET',
+          credentials: 'include',
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (profRes.ok) profileData = await profRes.json();
+      } catch {
+        // Non-fatal: fall back to whatever the login response gave us.
       }
 
-      setStoredUser({
-        name: storedProfile.fullName,
-        role: "student",
-        roleLabel: "Student",
-        subtitle: `${storedProfile.yearLevel} Year, ${storedProfile.branch}`,
-        id: storedProfile.rollNumber,
-        rollNo: storedProfile.rollNumber,
-        email: storedProfile.email,
-        hostel: `Block ${storedProfile.hostelBlock}, Room ${storedProfile.roomNumber}`,
-        room: storedProfile.roomNumber,
-        mobile: storedProfile.phoneNumber,
-        photo: storedProfile.photo
-      });
+      const resolvedRoll = profileData.studentId || data.studentId || "";
+      const fullName = profileData.name || data.name || "Student";
+      const resolvedEmail = profileData.email || data.email || email;
 
-      router.push("/dashboard/student");
+      // The server doesn't store the profile photo. If this device still holds a
+      // profile for the SAME account (e.g. a "Forgot PIN" re-login), carry its
+      // photo over so the guard's face-match keeps working.
+      let carriedPhoto = null;
+      try {
+        const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null");
+        if (existing?.photo && (existing.email || "").toLowerCase() === resolvedEmail.toLowerCase()) {
+          carriedPhoto = existing.photo;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      const deviceProfile = {
+        fullName,
+        email: resolvedEmail,
+        rollNumber: resolvedRoll,
+        branch: profileData.department || "",
+        yearLevel: profileData.year || "",
+        hostelBlock: profileData.hostelName || "",
+        roomNumber: profileData.roomNumber || "",
+        phoneNumber: profileData.phoneNumber || "",
+        emergencyContact: "",
+        photo: carriedPhoto,
+      };
+      persistProfile(deviceProfile);
+
+      // Hand off to Quick Login setup (demand PIN + optional biometric again).
+      setStoredProfile(deviceProfile);
+      setSessionToken(token);
+      setPendingPassword(password);
+      setPin("");
+      setConfirmPin("");
+      setEnableBiometric(false);
+      setErrorMsg("");
+      setAppState("QUICK_SETUP");
     } catch (err) {
       setErrorMsg(err?.message || "Login failed.");
     } finally {
@@ -523,38 +713,165 @@ export default function StudentLoginPage() {
     }
   };
 
-  // Returning student wants to type email + roll number instead of using the
-  // passkey (biometric failed / sensor unavailable). Unlike resetToOnboarding
-  // this keeps the stored passkey shortcut so the NEXT visit still offers it — it
-  // just shows the credential form for this one sign-in. Email is prefilled from
-  // the stored profile since we already know it.
-  const switchToCredentialLogin = () => {
-    setCredentials({ password: "" });
+  // ---- Navigation between screens -------------------------------------------
+
+  // Show the email + password sign-in form. `keepProfile` prefills the email for
+  // the SAME student (forgot PIN); dropping it lets a DIFFERENT student sign in.
+  const goToLogin = ({ keepProfile = false } = {}) => {
     setErrorMsg("");
-    setCredentialMode(true);
+    setLoginPin("");
+    setLoginForm({
+      email: keepProfile ? storedProfile?.email || "" : "",
+      password: "",
+    });
+    if (!keepProfile) setStoredProfile(null);
+    setAppState("LOGIN");
   };
 
-  const backToPasskey = () => {
-    setErrorMsg("");
-    setCredentialMode(false);
+  // Forgot PIN / biometric unavailable — forget the Quick Login factors on this
+  // device but keep the account so the email is prefilled. After the email +
+  // password sign-in, Quick Login setup is demanded again.
+  const forgotQuickLogin = () => {
+    clearQuickLogin({ forgetProfile: false });
+    setHasBio(false);
+    goToLogin({ keepProfile: true });
   };
 
-  const resetToOnboarding = () => {
-    localStorage.removeItem("safeexit_webauthn_registered");
-    localStorage.removeItem("safeexit_user_profile");
-    setCredentialMode(false);
+  // "Not <name>? Sign in as someone else" — forget the account AND the Quick Login
+  // factors bound to this device so a different existing student can sign in.
+  const signInAsSomeoneElse = () => {
+    clearQuickLogin({ forgetProfile: true });
+    setHasBio(false);
+    setQuickLabel("");
+    goToLogin({ keepProfile: false });
+  };
+
+  // From the sign-in form, a genuinely new student heads into registration.
+  const goToRegister = () => {
+    setErrorMsg("");
     setAppState("ONBOARDING");
     setOnboardingStep(1);
     setFormData({
       fullName: "", email: "", rollNumber: "", branch: "", yearLevel: "",
-      hostelBlock: "", roomNumber: "", phoneNumber: "", emergencyContact: ""
+      hostelBlock: "", roomNumber: "", phoneNumber: "", emergencyContact: "",
+      password: "", confirmPassword: ""
     });
     setPhotoPreview(null);
     setOtp("");
     setEmailToken(null);
     setResendIn(0);
     setDevOtp(null);
+    setSessionToken(null);
   };
+
+  // ---- Quick Login setup card body (shared by step 4 and QUICK_SETUP) -------
+  const renderQuickSetupBody = () => (
+    <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
+      <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-1">
+        <ShieldCheck className="w-10 h-10" />
+      </div>
+      <div>
+        <h2 className="text-2xl font-bold text-slate-900">Set up Quick Login</h2>
+        <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
+          Create a 4-digit PIN to sign in fast next time. Add your fingerprint or face for even quicker access — it&apos;s optional.
+        </p>
+      </div>
+
+      <div className="w-full space-y-4 text-left">
+        {/* Create PIN */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Create 4-digit PIN</label>
+          <div className="relative">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><KeyRound className="w-4 h-4" /></div>
+            <input
+              type={showSetupPin ? "text" : "password"}
+              inputMode="numeric"
+              maxLength={4}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="••••"
+              autoComplete="off"
+              className="w-full pl-10 pr-11 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-lg font-bold tracking-[0.4em] text-slate-900 placeholder:text-slate-300 placeholder:tracking-[0.4em] focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+            />
+            <button
+              type="button"
+              onClick={() => setShowSetupPin((s) => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              tabIndex={-1}
+            >
+              {showSetupPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Confirm PIN */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Confirm PIN</label>
+          <div className="relative">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><KeyRound className="w-4 h-4" /></div>
+            <input
+              type={showSetupPin ? "text" : "password"}
+              inputMode="numeric"
+              maxLength={4}
+              value={confirmPin}
+              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="••••"
+              autoComplete="off"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-lg font-bold tracking-[0.4em] text-slate-900 placeholder:text-slate-300 placeholder:tracking-[0.4em] focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+            />
+          </div>
+        </div>
+
+        {/* Optional biometric toggle */}
+        <div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-indigo-600 shrink-0">
+              <Fingerprint className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-800">Biometric Authentication</p>
+              <p className="text-xs text-slate-500">Optional — Fingerprint / FaceID</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enableBiometric}
+            onClick={() => setEnableBiometric((v) => !v)}
+            className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${enableBiometric ? "bg-indigo-600" : "bg-slate-300"}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${enableBiometric ? "translate-x-5" : "translate-x-0"}`} />
+          </button>
+        </div>
+      </div>
+
+      <button
+        onClick={submitQuickSetup}
+        disabled={isProcessing}
+        className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-slate-900 text-white font-bold text-[15px] shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70 disabled:transform-none"
+      >
+        {isProcessing ? (
+          <>
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            Setting up…
+          </>
+        ) : (
+          <>
+            <ShieldCheck className="w-5 h-5" />
+            Enable Quick Login
+          </>
+        )}
+      </button>
+
+      <button
+        onClick={skipQuickSetup}
+        disabled={isProcessing}
+        className="text-sm font-semibold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer disabled:opacity-50"
+      >
+        Skip for now, continue to dashboard
+      </button>
+    </div>
+  );
 
   if (appState === "LOADING") return null;
 
@@ -581,7 +898,7 @@ export default function StudentLoginPage() {
         </Link>
 
         {appState === "RETURNING_USER" ? (
-          // RETURNING USER FLOW (WebAuthn)
+          // RETURNING USER — Quick Login with PIN (+ optional biometric)
           <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
             <div className="relative w-24 h-24 mb-6">
                <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 animate-pulse opacity-20"></div>
@@ -593,109 +910,151 @@ export default function StudentLoginPage() {
                  </div>
                )}
             </div>
-            
+
             <h1 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back, {storedProfile?.fullName?.split(' ')[0]} 👋</h1>
-            <p className="text-sm text-slate-500 mb-8">
-              {credentialMode
-                ? "Enter your college email and roll number to sign in."
-                : "Use your fingerprint or face to securely login to your dashboard."}
+            <p className="text-sm text-slate-500 mb-6">
+              Enter your 4-digit login PIN{quickLabel ? <> for <span className="font-semibold text-slate-700">{quickLabel}</span></> : null}.
             </p>
 
             {errorMsg && <p className="text-rose-500 text-sm mb-4 font-medium bg-rose-50 p-2 rounded-lg w-full">{errorMsg}</p>}
 
-            {credentialMode ? (
-              // FALLBACK: email + roll number sign-in for when the passkey can't be used.
-              <form onSubmit={handleCredentialLogin} className="w-full space-y-4 text-left">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">College Email</label>
-                  <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Mail className="w-4 h-4" /></div>
-                    {/* Locked to this device's account — you can only sign back into your own. */}
-                    <input
-                      type="email"
-                      value={storedProfile?.email || ""}
-                      readOnly
-                      aria-readonly="true"
-                      tabIndex={-1}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-sm text-slate-500 cursor-not-allowed focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Roll Number</label>
-                  <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><ShieldCheck className="w-4 h-4" /></div>
-                    <input
-                      type="password"
-                      value={credentials.password}
-                      onChange={(e) => setCredentials((p) => ({ ...p, password: e.target.value }))}
-                      placeholder="Your roll number"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isProcessing}
-                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70"
-                >
-                  {isProcessing ? (
-                    <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Signing in…</>
-                  ) : (
-                    <>Sign In <ArrowRight className="w-4 h-4" /></>
-                  )}
-                </button>
-
+            <form onSubmit={handlePinLogin} className="w-full space-y-4">
+              <div className="relative">
+                <input
+                  type={showLoginPin ? "text" : "password"}
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={loginPin}
+                  onChange={(e) => setLoginPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="••••"
+                  autoComplete="off"
+                  autoFocus
+                  className="w-full text-center text-3xl font-bold tracking-[0.6em] py-3 pr-12 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                />
                 <button
                   type="button"
-                  onClick={backToPasskey}
-                  disabled={isProcessing}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
+                  onClick={() => setShowLoginPin((s) => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  tabIndex={-1}
                 >
-                  <Fingerprint className="w-4 h-4" /> Back to passkey login
+                  {showLoginPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
-              </form>
-            ) : (
-              <>
-                <button
-                  onClick={handleBiometricLogin}
-                  disabled={isProcessing}
-                  className="w-full relative group overflow-hidden flex items-center justify-center gap-3 py-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white font-bold text-[15px] shadow-xl shadow-slate-900/20 hover:shadow-slate-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-70 disabled:scale-100"
-                >
-                   <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
-                   {isProcessing ? (
-                     <span className="flex items-center gap-2 relative z-10">
-                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                       Authenticating...
-                     </span>
-                   ) : (
-                     <span className="flex items-center gap-2 relative z-10">
-                       <Fingerprint className="w-6 h-6" />
-                       Login with Passkey
-                     </span>
-                   )}
-                </button>
+              </div>
 
-                <button
-                  onClick={switchToCredentialLogin}
-                  disabled={isProcessing}
-                  className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
-                >
-                  <ShieldCheck className="w-4 h-4" /> Sign in with Email &amp; Roll Number instead
-                </button>
-              </>
+              <button
+                type="submit"
+                disabled={isProcessing || loginPin.length < 4}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isProcessing ? (
+                  <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Signing in…</>
+                ) : (
+                  <>Login <ArrowRight className="w-4 h-4" /></>
+                )}
+              </button>
+            </form>
+
+            {/* Optional biometric — only when a passkey is enrolled on this device. */}
+            {hasBio && (
+              <button
+                onClick={handleBiometricLogin}
+                disabled={isProcessing}
+                className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
+              >
+                <Fingerprint className="w-5 h-5 text-indigo-600" /> Use fingerprint / FaceID
+              </button>
             )}
 
-            <button onClick={resetToOnboarding} className="mt-6 text-sm text-slate-400 hover:text-indigo-600 transition-colors">
-              Not {storedProfile?.fullName?.split(' ')[0]}? Sign in as someone else
-            </button>
+            <div className="mt-6 flex flex-col items-center gap-2">
+              <button onClick={forgotQuickLogin} className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 transition-colors">
+                Forgot PIN? Sign in with password
+              </button>
+              <button onClick={signInAsSomeoneElse} className="text-sm text-slate-400 hover:text-indigo-600 transition-colors">
+                Not {storedProfile?.fullName?.split(' ')[0]}? Sign in as someone else
+              </button>
+            </div>
+          </div>
+        ) : appState === "QUICK_SETUP" ? (
+          // QUICK LOGIN SETUP after an email + password sign-in.
+          <div className="w-full max-w-[440px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-6 sm:p-8 animate-fade-in-up">
+            {errorMsg && (
+              <div className="mb-6 bg-rose-50 text-rose-700 text-sm font-medium p-3 rounded-xl border border-rose-100 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" /> {errorMsg}
+              </div>
+            )}
+            {renderQuickSetupBody()}
+          </div>
+        ) : appState === "LOGIN" ? (
+          // EMAIL + PASSWORD SIGN-IN — fresh device, forgotten PIN, or "someone else".
+          <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
+            <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-5">
+              <LogIn className="w-8 h-8" />
+            </div>
+
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Sign In</h1>
+            <p className="text-sm text-slate-500 mb-8">
+              Enter your college email and password to sign in.
+            </p>
+
+            {errorMsg && <p className="text-rose-500 text-sm mb-4 font-medium bg-rose-50 p-2 rounded-lg w-full">{errorMsg}</p>}
+
+            <form onSubmit={handleGenericLogin} className="w-full space-y-4 text-left">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">College Email</label>
+                <div className="relative">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Mail className="w-4 h-4" /></div>
+                  <input
+                    type="email"
+                    value={loginForm.email}
+                    onChange={(e) => setLoginForm((p) => ({ ...p, email: e.target.value }))}
+                    placeholder="E.g. mohnishp.ug24.cs@nitp.ac.in"
+                    autoComplete="username"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Password</label>
+                <div className="relative">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Lock className="w-4 h-4" /></div>
+                  <input
+                    type="password"
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm((p) => ({ ...p, password: e.target.value }))}
+                    placeholder="Your password"
+                    autoComplete="current-password"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isProcessing}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70"
+              >
+                {isProcessing ? (
+                  <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Signing in…</>
+                ) : (
+                  <>Sign In <ArrowRight className="w-4 h-4" /></>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 pt-6 border-t border-slate-100 w-full">
+              <p className="text-sm text-slate-500">
+                New to SafeExit?{" "}
+                <button onClick={goToRegister} disabled={isProcessing} className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors disabled:opacity-50">
+                  Create an account
+                </button>
+              </p>
+            </div>
           </div>
         ) : (
           // ONBOARDING FLOW
           <div className="w-full max-w-[500px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 overflow-hidden animate-fade-in-up">
-            
+
             {/* Progress Bar */}
             <div className="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between">
                <div className={`flex items-center gap-2 ${onboardingStep >= 1 ? 'text-indigo-600' : 'text-slate-400'}`}>
@@ -821,11 +1180,40 @@ export default function StudentLoginPage() {
                         <input type="tel" name="emergencyContact" value={formData.emergencyContact} onChange={handleInputChange} placeholder="Emergency 10-digit number" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-rose-100 bg-rose-50/30 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-rose-400 focus:bg-white transition-colors" />
                       </div>
                     </div>
+
+                    {/* Create Password — the student's login secret (used instead of
+                        the public roll number, so no one else can sign in as them). */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Create Password</label>
+                      <div className="relative">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Lock className="w-4 h-4" /></div>
+                        <input type="password" name="password" value={formData.password} onChange={handleInputChange} autoComplete="new-password" placeholder="At least 6 characters" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
+                      </div>
+                    </div>
+
+                    {/* Confirm Password */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Confirm Password</label>
+                      <div className="relative">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Lock className="w-4 h-4" /></div>
+                        <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleInputChange} autoComplete="new-password" placeholder="Re-enter your password" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
+                      </div>
+                    </div>
                   </div>
 
                   <button type="submit" className="w-full mt-6 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer">
                     Continue <ArrowRight className="w-4 h-4" />
                   </button>
+
+                  {/* Escape hatch for a student who already has an account and
+                      landed here by mistake — otherwise registration would fail
+                      with "User already exists" and leave them stuck. */}
+                  <p className="text-center text-sm text-slate-500">
+                    Already registered?{" "}
+                    <button type="button" onClick={() => goToLogin()} className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors">
+                      Sign in instead
+                    </button>
+                  </p>
                 </form>
               )}
 
@@ -927,7 +1315,7 @@ export default function StudentLoginPage() {
                    </div>
 
                    {/* Upload Area */}
-                   <div 
+                   <div
                      className="w-40 h-40 rounded-full border-4 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer hover:border-indigo-400 transition-colors"
                      onClick={() => fileInputRef.current?.click()}
                    >
@@ -953,108 +1341,8 @@ export default function StudentLoginPage() {
                 </div>
               )}
 
-              {/* STEP 4: WebAuthn Setup */}
-              {onboardingStep === 4 && (
-                <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
-                   <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-2">
-                     <ShieldCheck className="w-10 h-10" />
-                   </div>
-                   <div>
-                     <h2 className="text-2xl font-bold text-slate-900">Enable Quick Login</h2>
-                     <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">Never type a password again! Use your device&apos;s fingerprint or face scan to log in securely next time.</p>
-                   </div>
-
-                   <div className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 my-2">
-                     <div className="flex items-center gap-4 mb-4">
-                        <div className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-indigo-600">
-                          <Fingerprint className="w-5 h-5" />
-                        </div>
-                        <div className="text-left">
-                          <p className="text-sm font-bold text-slate-800">Biometric Login</p>
-                          <p className="text-xs text-slate-500">Fingerprint, FaceID, or Device PIN</p>
-                        </div>
-                        <div className="ml-auto text-emerald-500"><CheckCircle className="w-5 h-5" /></div>
-                     </div>
-                     <p className="text-xs text-slate-500 text-left">Your biometric data never leaves your device. We use modern WebAuthn standards for maximum security.</p>
-                   </div>
-
-                   <button 
-                     onClick={setupWebAuthn}
-                     disabled={isProcessing}
-                     className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-slate-900 text-white font-bold text-[15px] shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70 disabled:transform-none"
-                   >
-                     {isProcessing ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                          Setting up Passkey...
-                        </>
-                     ) : (
-                        <>
-                          <Fingerprint className="w-5 h-5" />
-                          Enable Fingerprint / FaceID
-                        </>
-                     )}
-                   </button>
-                   
-                   <button 
-                     onClick={async () => {
-                       // Skip webauthn, just save and go
-                       const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
-                       setIsProcessing(true);
-                       setErrorMsg("");
-                       try {
-                         // Real Backend API Call - Register User without WebAuthn
-                         const registerRes = await fetch('/api/backend/auth/register', {
-                           method: 'POST',
-                           headers: { 'Content-Type': 'application/json' },
-                           body: JSON.stringify({
-                             name: profile.fullName,
-                             email: profile.email,
-                             password: profile.rollNumber, // Default password
-                             role: 'Student',
-                             studentId: profile.rollNumber,
-                             department: profile.branch,
-                             year: profile.yearLevel,
-                             roomNumber: profile.roomNumber,
-                             hostelName: profile.hostelBlock,
-                             phoneNumber: profile.phoneNumber,
-                             emailVerificationToken: emailToken // proves the college email was verified
-                           })
-                         });
-                         if (registerRes.ok) {
-                           const registerData = await registerRes.json();
-                           sessionStorage.setItem('safeexit_token', registerData.token);
-                           setStoredUser({
-                             name: profile.fullName,
-                             role: "student",
-                             roleLabel: "Student",
-                             subtitle: `${profile.yearLevel} Year, ${profile.branch}`,
-                             id: profile.rollNumber,
-                             rollNo: profile.rollNumber,
-                             email: profile.email,
-                             hostel: `Block ${profile.hostelBlock}, Room ${profile.roomNumber}`,
-                             room: profile.roomNumber,
-                             mobile: profile.phoneNumber,
-                             photo: profile.photo
-                           });
-                           router.push("/dashboard/student");
-                         } else {
-                           const errBody = await registerRes.json().catch(() => ({}));
-                           setErrorMsg(errBody.message || "Registration failed. Please try again.");
-                         }
-                       } catch (e) {
-                         setErrorMsg(e?.message || "Registration failed. Please try again.");
-                       } finally {
-                         setIsProcessing(false);
-                       }
-                     }}
-                     disabled={isProcessing}
-                     className="text-sm font-semibold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer disabled:opacity-50"
-                   >
-                     Maybe later, continue to dashboard
-                   </button>
-                </div>
-              )}
+              {/* STEP 4: Quick Login setup (4-digit PIN + optional biometric) */}
+              {onboardingStep === 4 && renderQuickSetupBody()}
 
             </div>
           </div>
