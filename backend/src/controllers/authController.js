@@ -17,6 +17,24 @@ const resolveLoginId = (body = {}) =>
 // match so accounts created before this field existed still resolve.
 const findByLoginId = (key) =>
   User.findOne({ $or: [{ loginId: key }, { email: key }] });
+
+// Escape a user-supplied string so it can be embedded in a RegExp literal without
+// being interpreted as regex metacharacters (ReDoS / injection safety).
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Password-login lookup. Beyond loginId/email, students may also sign in with
+// their ROLL NUMBER, which is stored in `studentId` (as entered, so match it
+// case-insensitively). This lets a student type the roll number they know instead
+// of their full college email. Only used by authUser — the WebAuthn/staff paths
+// keep the stricter findByLoginId.
+const findByIdentifier = async (rawKey) => {
+  const key = String(rawKey || '').trim().toLowerCase();
+  if (!key) return null;
+  return (
+    (await User.findOne({ $or: [{ loginId: key }, { email: key }] })) ||
+    (await User.findOne({ studentId: new RegExp(`^${escapeRegex(String(rawKey).trim())}$`, 'i') }))
+  );
+};
 const {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -69,6 +87,12 @@ const registerUser = async (req, res) => {
       if (!isEmailVerificationValid(emailVerificationToken, email)) {
         return res.status(403).json({ message: 'Please verify your college email with the code we sent before continuing.' });
       }
+      // The password is the student's login secret and must be a REAL secret they
+      // choose — never the (public) roll number. Enforce a minimum length here so
+      // the browser check can't be bypassed with a direct API call.
+      if (!password || String(password).length < 6) {
+        return res.status(400).json({ message: 'Please choose a password with at least 6 characters.' });
+      }
     }
 
     // Canonical account key. Students identify with their real email; staff
@@ -118,10 +142,12 @@ const registerUser = async (req, res) => {
 // @access  Public
 const authUser = async (req, res) => {
   const { password } = req.body;
-  const loginId = resolveLoginId(req.body);
 
   try {
-    const user = await findByLoginId(loginId);
+    // Students may authenticate with either their college email or their roll
+    // number; staff with their loginId. The secret is a real, user-chosen
+    // password (roll number is public and is NOT a valid secret).
+    const user = await findByIdentifier(req.body.loginId || req.body.email);
 
     if (user && (await user.matchPassword(password))) {
       // Even with valid credentials, only allowlisted admins may use an Admin account.

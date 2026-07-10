@@ -8,7 +8,9 @@ import {
   User,
   ArrowRight,
   Fingerprint,
-  CheckCircle,
+  KeyRound,
+  Eye,
+  EyeOff,
   AlertCircle,
   Headphones,
 } from "lucide-react";
@@ -16,6 +18,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
+import { makeQuickLogin } from "@/app/lib/quickLogin";
 
 // Guards have no college email. The backend keys every account + passkey login
 // on `loginId`, so a guard's normalized ID IS their identity — no fabricated
@@ -23,12 +26,21 @@ import { setStoredUser } from "@/app/lib/userProfile";
 const buildGuardLoginId = (guardId) =>
   guardId.trim().toLowerCase().replace(/\s+/g, "");
 
+// Quick Login for guards — its own localStorage namespace so it never collides
+// with the student or warden logins on the same browser.
+const quick = makeQuickLogin({
+  pinKey: "safeexit_quick_pin_guard",
+  labelKey: "safeexit_quick_label_guard",
+  profileKey: "safeexit_guard_profile",
+  webauthnKey: "safeexit_guard_registered",
+});
+
 export default function SecurityLoginPage() {
   const router = useRouter();
 
   // App States
   const [appState, setAppState] = useState("LOADING"); // LOADING, RETURNING_USER, ONBOARDING
-  const [onboardingStep, setOnboardingStep] = useState(1); // 1: Details, 2: Quick Login
+  const [onboardingStep, setOnboardingStep] = useState(1); // 1: Details, 2: Quick Login setup
   const [storedProfile, setStoredProfile] = useState(null);
 
   // Login fields: the Guard ID + PIN an admin provisioned for them.
@@ -41,13 +53,32 @@ export default function SecurityLoginPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
-    // Check if a guard is already registered on this device
-    const isRegistered = localStorage.getItem("safeexit_guard_registered");
-    const profile = localStorage.getItem("safeexit_guard_profile");
+  // Quick Login SETUP state (onboarding step 2).
+  const [quickPin, setQuickPin] = useState("");
+  const [confirmQuickPin, setConfirmQuickPin] = useState("");
+  const [showSetupPin, setShowSetupPin] = useState(false);
+  const [enableBiometric, setEnableBiometric] = useState(false);
+  // The admin-issued PIN (account secret) captured at step 1, locked behind the
+  // 4-digit Quick Login PIN during setup. A valid session token from that login.
+  const [pendingSecret, setPendingSecret] = useState("");
+  const [sessionToken, setSessionToken] = useState(null);
 
-    if (isRegistered === "true" && profile) {
-      setStoredProfile(JSON.parse(profile));
+  // Returning-user Quick Login state.
+  const [loginPin, setLoginPin] = useState("");
+  const [showLoginPin, setShowLoginPin] = useState(false);
+  const [hasBio, setHasBio] = useState(false);
+  const [quickLabel, setQuickLabel] = useState("");
+
+  useEffect(() => {
+    const profileRaw = localStorage.getItem("safeexit_guard_profile");
+    if (profileRaw && quick.hasQuickPin()) {
+      try {
+        setStoredProfile(JSON.parse(profileRaw));
+      } catch {
+        setStoredProfile(null);
+      }
+      setHasBio(quick.hasBiometric());
+      setQuickLabel(quick.getQuickLabel());
       setAppState("RETURNING_USER");
     } else {
       setAppState("ONBOARDING");
@@ -99,36 +130,6 @@ export default function SecurityLoginPage() {
     return data;
   };
 
-  const submitStep1 = async (e) => {
-    e.preventDefault();
-    if (!validateStep1()) return;
-    setIsProcessing(true);
-    setErrorMsg("");
-    try {
-      const loginId = buildGuardLoginId(formData.guardId);
-      const data = await loginGuardAccount(loginId, formData.pin);
-      sessionStorage.setItem("safeexit_token", data.token);
-
-      // Persist just enough for the returning-user passkey path (needs the ID to
-      // rebuild the loginId) — never the PIN.
-      const profile = { guardId: formData.guardId, fullName: data.name };
-      localStorage.setItem("safeexit_guard_profile", JSON.stringify(profile));
-      persistGuardSession(profile);
-
-      // If this device already has a passkey enrolled for this guard, skip the
-      // setup step and go straight in. Otherwise offer to enrol one.
-      if (localStorage.getItem("safeexit_guard_registered") === "true") {
-        router.push("/dashboard/security");
-      } else {
-        setOnboardingStep(2);
-      }
-    } catch (err) {
-      setErrorMsg(err?.message || "Login failed. Please try again.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   const persistGuardSession = (profile) => {
     setStoredUser({
       name: profile.fullName,
@@ -139,66 +140,128 @@ export default function SecurityLoginPage() {
     });
   };
 
-  const setupWebAuthn = async () => {
+  // Run the real WebAuthn registration ceremony to enrol a passkey. Requires a
+  // valid session token. Sets the device's biometric marker on success.
+  const enrollBiometric = async (token) => {
+    const authHeaders = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+    const optionsRes = await fetch("/api/backend/auth/webauthn/register/options", {
+      method: "POST",
+      credentials: "include",
+      headers: authHeaders,
+    });
+    if (!optionsRes.ok) throw new Error("Could not start passkey setup");
+    const optionsJSON = await optionsRes.json();
+
+    const attResp = await startRegistration({ optionsJSON });
+
+    const verifyRes = await fetch("/api/backend/auth/webauthn/register/verify", {
+      method: "POST",
+      credentials: "include",
+      headers: authHeaders,
+      body: JSON.stringify(attResp),
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyRes.ok || !verifyData.verified) {
+      throw new Error(verifyData.message || "Passkey verification failed");
+    }
+    localStorage.setItem("safeexit_guard_registered", "true");
+  };
+
+  // STEP 1: authenticate with ID + admin PIN, then move to Quick Login setup.
+  const submitStep1 = async (e) => {
+    e.preventDefault();
+    if (!validateStep1()) return;
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const loginId = buildGuardLoginId(formData.guardId);
+      const data = await loginGuardAccount(loginId, formData.pin);
+      sessionStorage.setItem("safeexit_token", data.token);
+
+      // Persist just enough for the returning-user path (needs the ID to rebuild
+      // the loginId) — never the admin PIN in plaintext.
+      const profile = { guardId: formData.guardId, fullName: data.name };
+      localStorage.setItem("safeexit_guard_profile", JSON.stringify(profile));
+      setStoredProfile(profile);
+      persistGuardSession(profile);
+
+      // Carry the secret + token into Quick Login setup.
+      setPendingSecret(formData.pin);
+      setSessionToken(data.token);
+      setQuickPin("");
+      setConfirmQuickPin("");
+      setEnableBiometric(false);
+      setOnboardingStep(2);
+    } catch (err) {
+      setErrorMsg(err?.message || "Login failed. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // STEP 2: enrol a 4-digit Quick Login PIN (+ optional biometric), then go in.
+  const submitQuickSetup = async () => {
+    if (!/^\d{4}$/.test(quickPin)) {
+      setErrorMsg("Please set a 4-digit numeric PIN.");
+      return;
+    }
+    if (quickPin !== confirmQuickPin) {
+      setErrorMsg("The PINs you entered do not match.");
+      return;
+    }
     setIsProcessing(true);
     setErrorMsg("");
     try {
       const profile = JSON.parse(localStorage.getItem("safeexit_guard_profile"));
+      // Lock the admin PIN behind the Quick Login PIN so it can log in next time.
+      await quick.setQuickPin(quickPin, pendingSecret, profile.guardId);
 
-      // Already authenticated in step 1 — reuse that session token to bind a
-      // passkey to this device.
-      const token = sessionStorage.getItem("safeexit_token");
-      if (!token) throw new Error("Your session expired. Please sign in again.");
-
-      const authHeaders = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      };
-
-      // 2. Ask the server for a registration challenge.
-      const optionsRes = await fetch("/api/backend/auth/webauthn/register/options", {
-        method: "POST",
-        credentials: "include",
-        headers: authHeaders,
-      });
-      if (!optionsRes.ok) throw new Error("Could not start passkey setup");
-      const optionsJSON = await optionsRes.json();
-
-      // 3. Prompt the platform authenticator (fingerprint / FaceID).
-      const attResp = await startRegistration({ optionsJSON });
-
-      // 4. Send the signed attestation back for cryptographic verification.
-      const verifyRes = await fetch("/api/backend/auth/webauthn/register/verify", {
-        method: "POST",
-        credentials: "include",
-        headers: authHeaders,
-        body: JSON.stringify(attResp),
-      });
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok || !verifyData.verified) {
-        throw new Error(verifyData.message || "Passkey verification failed");
+      if (enableBiometric && !quick.hasBiometric()) {
+        await enrollBiometric(sessionToken);
       }
 
-      localStorage.setItem("safeexit_guard_registered", "true");
       persistGuardSession(profile);
       router.push("/dashboard/security");
     } catch (err) {
       if (err?.name === "NotAllowedError") {
-        setErrorMsg("Passkey setup was cancelled or timed out. Please try again.");
+        setErrorMsg("Biometric setup was cancelled. Your PIN is saved — press Enable again to finish, or turn off biometrics.");
       } else if (err?.name === "InvalidStateError") {
-        setErrorMsg("A passkey is already registered on this device for this account.");
+        setErrorMsg("A passkey already exists on this device for this account. Turn off biometrics to continue.");
       } else {
-        setErrorMsg(err?.message || "Failed to setup Quick Login. Please try again.");
+        setErrorMsg(err?.message || "Couldn't finish Quick Login setup. Please try again.");
       }
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const skipWebAuthn = () => {
-    // Already signed in from step 1 — just proceed to the dashboard without
-    // enrolling a passkey on this device.
-    router.push("/dashboard/security");
+  // RETURNING: sign in with the 4-digit PIN (decrypt the admin PIN, then auth).
+  const handlePinLogin = async (e) => {
+    e.preventDefault();
+    if (!/^\d{4}$/.test(loginPin)) {
+      setErrorMsg("Please enter your 4-digit PIN.");
+      return;
+    }
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const secret = await quick.verifyQuickPin(loginPin);
+      if (!secret) throw new Error("Incorrect PIN. Please try again.");
+
+      const loginId = buildGuardLoginId(storedProfile.guardId);
+      const data = await loginGuardAccount(loginId, secret);
+      sessionStorage.setItem("safeexit_token", data.token);
+
+      persistGuardSession(storedProfile);
+      router.push("/dashboard/security");
+    } catch (err) {
+      setErrorMsg(err?.message || "Login failed.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleBiometricLogin = async () => {
@@ -246,26 +309,6 @@ export default function SecurityLoginPage() {
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  // Returning guard wants to type their ID + PIN instead of using the passkey
-  // (e.g. biometric failed or the device sensor is unavailable). Unlike
-  // resetToOnboarding, this keeps the stored passkey shortcut so the NEXT visit
-  // still offers biometric — it just shows the form for this one sign-in.
-  const switchToIdPin = () => {
-    setAppState("ONBOARDING");
-    setOnboardingStep(1);
-    setFormData({ guardId: "", pin: "" });
-    setErrorMsg("");
-  };
-
-  const resetToOnboarding = () => {
-    localStorage.removeItem("safeexit_guard_registered");
-    localStorage.removeItem("safeexit_guard_profile");
-    setAppState("ONBOARDING");
-    setOnboardingStep(1);
-    setFormData({ guardId: "", pin: "" });
-    setErrorMsg("");
   };
 
   if (appState === "LOADING") return null;
@@ -335,7 +378,7 @@ export default function SecurityLoginPage() {
         {/* ── WHITE CARD ── */}
         <div className="w-full max-w-[480px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-slate-200/60 px-6 sm:px-8 pt-10 pb-7 relative z-10">
           {appState === "RETURNING_USER" ? (
-            // ── RETURNING GUARD: biometric quick login ──
+            // ── RETURNING GUARD: Quick Login with PIN (+ passkey if enrolled) ──
             <div className="flex flex-col items-center text-center animate-fade-in-up">
               <div className="relative w-24 h-24 mb-6">
                 <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 animate-pulse opacity-20" />
@@ -347,8 +390,8 @@ export default function SecurityLoginPage() {
               <h1 className="text-2xl font-bold text-slate-900 mb-2">
                 Welcome Back, {storedProfile?.fullName?.split(" ")[0]} 👋
               </h1>
-              <p className="text-sm text-slate-500 mb-8">
-                Use your fingerprint or face to securely login to your dashboard.
+              <p className="text-sm text-slate-500 mb-6">
+                Enter your 4-digit login PIN{quickLabel ? <> for <span className="font-semibold text-slate-700">{quickLabel}</span></> : null}.
               </p>
 
               {errorMsg && (
@@ -357,39 +400,52 @@ export default function SecurityLoginPage() {
                 </p>
               )}
 
-              <button
-                onClick={handleBiometricLogin}
-                disabled={isProcessing}
-                className="w-full relative group overflow-hidden flex items-center justify-center gap-3 py-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white font-bold text-[15px] shadow-xl shadow-slate-900/20 hover:shadow-slate-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-70 disabled:scale-100"
-              >
-                <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out" />
-                {isProcessing ? (
-                  <span className="flex items-center gap-2 relative z-10">
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Authenticating...
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2 relative z-10">
-                    <Fingerprint className="w-6 h-6" />
-                    Login with Passkey
-                  </span>
-                )}
-              </button>
+              <form onSubmit={handlePinLogin} className="w-full space-y-4">
+                <div className="relative">
+                  <input
+                    type={showLoginPin ? "text" : "password"}
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={loginPin}
+                    onChange={(e) => setLoginPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="••••"
+                    autoComplete="off"
+                    autoFocus
+                    className="w-full text-center text-3xl font-bold tracking-[0.6em] py-3 pr-12 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPin((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    tabIndex={-1}
+                  >
+                    {showLoginPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
 
-              <button
-                onClick={switchToIdPin}
-                disabled={isProcessing}
-                className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
-              >
-                <ShieldCheck className="w-4 h-4" /> Sign in with ID &amp; PIN instead
-              </button>
+                <button
+                  type="submit"
+                  disabled={isProcessing || loginPin.length < 4}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 hover:shadow-xl hover:shadow-indigo-600/30 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isProcessing ? (
+                    <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Signing in…</>
+                  ) : (
+                    <>Login <ArrowRight className="w-4 h-4" /></>
+                  )}
+                </button>
+              </form>
 
-              <button
-                onClick={resetToOnboarding}
-                className="mt-4 text-sm text-slate-400 hover:text-indigo-600 transition-colors"
-              >
-                Not {storedProfile?.fullName?.split(" ")[0]}? Sign in as someone else
-              </button>
+              {/* Optional biometric — only when a passkey is enrolled on this device. */}
+              {hasBio && (
+                <button
+                  onClick={handleBiometricLogin}
+                  disabled={isProcessing}
+                  className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
+                >
+                  <Fingerprint className="w-5 h-5 text-indigo-600" /> Use fingerprint / FaceID
+                </button>
+              )}
             </div>
           ) : (
             // ── ONBOARDING FLOW ──
@@ -477,61 +533,90 @@ export default function SecurityLoginPage() {
                 </form>
               )}
 
-              {/* STEP 2: WebAuthn Setup (no photo step) */}
+              {/* STEP 2: Quick Login setup (4-digit PIN + optional biometric) */}
               {onboardingStep === 2 && (
                 <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
                   <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center">
                     <ShieldCheck className="w-10 h-10" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-slate-900">Enable Quick Login</h2>
+                    <h2 className="text-2xl font-bold text-slate-900">Set up Quick Login</h2>
                     <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
-                      Never type a password again! Use your device&apos;s fingerprint or face scan to log in securely next time.
+                      Create a 4-digit PIN to sign in fast next time. Add your fingerprint or face for even quicker access — it&apos;s optional.
                     </p>
                   </div>
 
-                  <div className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5">
-                    <div className="flex items-center gap-4 mb-4">
-                      <div className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-indigo-600">
-                        <Fingerprint className="w-5 h-5" />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-slate-800">Biometric Login</p>
-                        <p className="text-xs text-slate-500">Fingerprint, FaceID, or Device PIN</p>
-                      </div>
-                      <div className="ml-auto text-emerald-500">
-                        <CheckCircle className="w-5 h-5" />
+                  <div className="w-full space-y-4 text-left">
+                    {/* Create PIN */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Create 4-digit PIN</label>
+                      <div className="relative">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><KeyRound className="w-4 h-4" /></div>
+                        <input
+                          type={showSetupPin ? "text" : "password"}
+                          inputMode="numeric"
+                          maxLength={4}
+                          value={quickPin}
+                          onChange={(e) => setQuickPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                          placeholder="••••"
+                          autoComplete="off"
+                          className="w-full pl-10 pr-11 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-lg font-bold tracking-[0.4em] text-slate-900 placeholder:text-slate-300 placeholder:tracking-[0.4em] focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                        />
+                        <button type="button" onClick={() => setShowSetupPin((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" tabIndex={-1}>
+                          {showSetupPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
                       </div>
                     </div>
-                    <p className="text-xs text-slate-500 text-left">
-                      Your biometric data never leaves your device. We use modern WebAuthn standards for maximum security.
-                    </p>
+
+                    {/* Confirm PIN */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Confirm PIN</label>
+                      <div className="relative">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><KeyRound className="w-4 h-4" /></div>
+                        <input
+                          type={showSetupPin ? "text" : "password"}
+                          inputMode="numeric"
+                          maxLength={4}
+                          value={confirmQuickPin}
+                          onChange={(e) => setConfirmQuickPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                          placeholder="••••"
+                          autoComplete="off"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-lg font-bold tracking-[0.4em] text-slate-900 placeholder:text-slate-300 placeholder:tracking-[0.4em] focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Optional biometric toggle */}
+                    <div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-indigo-600 shrink-0"><Fingerprint className="w-5 h-5" /></div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">Biometric Authentication</p>
+                          <p className="text-xs text-slate-500">Optional — Fingerprint / FaceID</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={enableBiometric}
+                        onClick={() => setEnableBiometric((v) => !v)}
+                        className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${enableBiometric ? "bg-indigo-600" : "bg-slate-300"}`}
+                      >
+                        <span className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${enableBiometric ? "translate-x-5" : "translate-x-0"}`} />
+                      </button>
+                    </div>
                   </div>
 
                   <button
-                    onClick={setupWebAuthn}
+                    onClick={submitQuickSetup}
                     disabled={isProcessing}
                     className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-slate-900 text-white font-bold text-[15px] shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70 disabled:transform-none"
                   >
                     {isProcessing ? (
-                      <>
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Setting up Passkey...
-                      </>
+                      <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Setting up…</>
                     ) : (
-                      <>
-                        <Fingerprint className="w-5 h-5" />
-                        Enable Fingerprint / FaceID
-                      </>
+                      <><ShieldCheck className="w-5 h-5" /> Enable Quick Login</>
                     )}
-                  </button>
-
-                  <button
-                    onClick={skipWebAuthn}
-                    disabled={isProcessing}
-                    className="text-sm font-semibold text-slate-400 hover:text-slate-600 transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    Maybe later, continue to dashboard
                   </button>
                 </div>
               )}
