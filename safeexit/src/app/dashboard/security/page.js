@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
+import { useRequireAuth } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
@@ -39,6 +41,7 @@ export default function SecurityDashboardPage() {
   const { t } = useTranslation("security");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
+  const { checked, authorized } = useRequireAuth("security");
 
   const statusCards = useMemo(() => [
     {
@@ -223,6 +226,10 @@ export default function SecurityDashboardPage() {
     () => (now ? now.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : ""),
     [now, dateLocale]
   );
+
+  // Gate the guard console on a valid security session; redirects to
+  // /login/security when the token is missing or belongs to another role.
+  if (!checked || !authorized) return <AuthLoading />;
 
   return (
     <main className="min-h-screen dashboard-neo text-slate-900">

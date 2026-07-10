@@ -7,11 +7,14 @@ import { apiFetch } from "@/app/lib/api";
 import SecurityBottomNav from "../components/SecurityBottomNav";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
+import { useRequireAuth } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 
 export default function SecurityHistoryPage() {
   const { t } = useTranslation("security");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
+  const { checked, authorized } = useRequireAuth("security");
 
   const DIRECTIONS = useMemo(() => [
     { key: "all", label: t("all") },
@@ -52,6 +55,8 @@ export default function SecurityHistoryPage() {
         return (st.name || "").toLowerCase().includes(q) || (st.studentId || "").toLowerCase().includes(q);
       });
   }, [logs, direction, search]);
+
+  if (!checked || !authorized) return <AuthLoading />;
 
   return (
     <main className="min-h-screen dashboard-neo text-slate-900">

@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { getStoredUser, getFirstName, getInitials } from "@/app/lib/userProfile";
+import { useRequireAuth, logout } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 import SOSAlertsView from "./components/SOSAlertsView";
 import MovementLogsView from "./components/MovementLogsView";
 import PeopleView from "./components/PeopleView";
@@ -52,6 +54,7 @@ function StatCard({ icon: Icon, label, value, note, tone }) {
 
 export default function AdminDashboardPage() {
   const router = useRouter();
+  const { checked, authorized } = useRequireAuth("admin");
   const [view, setView] = useState("overview");
   const [profile, setProfile] = useState({ name: "Administrator", roleLabel: "Administrator" });
   const [overview, setOverview] = useState(null);
@@ -99,18 +102,7 @@ export default function AdminDashboardPage() {
     return () => source.close();
   }, [loadOverview]);
 
-  const handleLogout = async () => {
-    try {
-      await fetch(`${getApiBase()}/auth/logout`, { method: "POST", credentials: "include" });
-    } catch {
-      /* ignore network errors on logout */
-    }
-    ["safeexit_token", "safeexit:user"].forEach((k) => sessionStorage.removeItem(k));
-    ["safeexit_webauthn_registered_admin", "safeexit_admin_profile"].forEach((k) =>
-      localStorage.removeItem(k)
-    );
-    router.push("/login");
-  };
+  const handleLogout = () => logout(router, { role: "admin" });
 
   const greetingName = useMemo(() => getFirstName(profile.name) || profile.name, [profile.name]);
   const formattedDate = useMemo(
@@ -141,6 +133,10 @@ export default function AdminDashboardPage() {
     { icon: MessageSquareWarning, label: "Open Complaints", value: overview?.openComplaints ?? "—", note: "Unresolved reports", tone: "border-orange-200 bg-orange-50 text-orange-700" },
     { icon: Building2, label: "Total Students", value: s.total ?? "—", note: "Registered on platform", tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];
+
+  // Gate the admin console on a valid admin session; the hook redirects to
+  // /login/admin when the token is missing or belongs to another role.
+  if (!checked || !authorized) return <AuthLoading />;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#eef2ff] via-[#f5f7ff] to-[#eaf2ff] text-slate-900">

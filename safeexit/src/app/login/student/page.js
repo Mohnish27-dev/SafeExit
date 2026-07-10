@@ -106,6 +106,23 @@ export default function StudentLoginPage() {
   // which is removed.
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
 
+
+
+
+
+  
+  // Forgot-password flow state (student forgot BOTH the PIN and the password).
+  //   1: confirm college email  ·  2: enter emailed OTP  ·  3: choose new password
+  // On success the account is re-secured and we drop into QUICK_SETUP so the PIN
+  // (and optional passkey) is re-enrolled against the new password.
+  const [forgotStep, setForgotStep] = useState(1);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotOtp, setForgotOtp] = useState("");
+  const [resetToken, setResetToken] = useState(null);   // signed proof from /password/verify-otp
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
   useEffect(() => {
     // Decide the landing screen from what this device already knows.
     const profileRaw = localStorage.getItem("safeexit_user_profile");
@@ -613,6 +630,67 @@ export default function StudentLoginPage() {
 
   // ---- Email + password sign-in (fallback / fresh device) -------------------
 
+  // Given a valid session (token) and the plaintext `password` it was obtained
+  // with, (re)build this device's profile from the server and hand off to Quick
+  // Login setup — so the student re-enrols a PIN (and optionally biometric) that
+  // caches this password. Shared by password sign-in and password reset.
+  const enterQuickSetupWithSession = async (token, password, emailFallback) => {
+    sessionStorage.setItem('safeexit_token', token);
+
+    // Pull the full profile so the dashboard, QR ticket, and guard scanner all
+    // have real data (roll number, room, phone) instead of just an email.
+    let profileData = {};
+    try {
+      const profRes = await fetch('/api/backend/auth/profile', {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (profRes.ok) profileData = await profRes.json();
+    } catch {
+      // Non-fatal: fall back to whatever we already know.
+    }
+
+    const resolvedEmail = profileData.email || emailFallback;
+
+    // The server doesn't store the profile photo. If this device still holds a
+    // profile for the SAME account (e.g. a "Forgot PIN" re-login), carry its
+    // photo over so the guard's face-match keeps working.
+    let carriedPhoto = null;
+    try {
+      const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null");
+      if (existing?.photo && (existing.email || "").toLowerCase() === resolvedEmail.toLowerCase()) {
+        carriedPhoto = existing.photo;
+      }
+    } catch {
+      /* ignore */
+    }
+
+    const deviceProfile = {
+      fullName: profileData.name || "Student",
+      email: resolvedEmail,
+      rollNumber: profileData.studentId || "",
+      branch: profileData.department || "",
+      yearLevel: profileData.year || "",
+      hostelBlock: profileData.hostelName || "",
+      roomNumber: profileData.roomNumber || "",
+      phoneNumber: profileData.phoneNumber || "",
+      emergencyContact: "",
+      photo: carriedPhoto,
+    };
+    persistProfile(deviceProfile);
+
+    // Hand off to Quick Login setup (demand PIN + optional biometric again).
+    setStoredProfile(deviceProfile);
+    setSessionToken(token);
+    setPendingPassword(password);
+    setPin("");
+    setConfirmPin("");
+    setEnableBiometric(false);
+    setErrorMsg("");
+    setAppState("QUICK_SETUP");
+  };
+
   // Sign in with college email + password. On success we (re)build this device's
   // profile from the server and hand off to Quick Login setup — so the student is
   // prompted to create a PIN (and optionally biometric) again.
@@ -649,65 +727,110 @@ export default function StudentLoginPage() {
       if (data.role !== 'Student') {
         throw new Error("This account is not authorized for student access.");
       }
-      const token = data.token;
-      sessionStorage.setItem('safeexit_token', token);
-
-      // Pull the full profile so the dashboard, QR ticket, and guard scanner all
-      // have real data (roll number, room, phone) instead of just an email.
-      let profileData = {};
-      try {
-        const profRes = await fetch('/api/backend/auth/profile', {
-          method: 'GET',
-          credentials: 'include',
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (profRes.ok) profileData = await profRes.json();
-      } catch {
-        // Non-fatal: fall back to whatever the login response gave us.
-      }
-
-      const resolvedRoll = profileData.studentId || data.studentId || "";
-      const fullName = profileData.name || data.name || "Student";
-      const resolvedEmail = profileData.email || data.email || email;
-
-      // The server doesn't store the profile photo. If this device still holds a
-      // profile for the SAME account (e.g. a "Forgot PIN" re-login), carry its
-      // photo over so the guard's face-match keeps working.
-      let carriedPhoto = null;
-      try {
-        const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null");
-        if (existing?.photo && (existing.email || "").toLowerCase() === resolvedEmail.toLowerCase()) {
-          carriedPhoto = existing.photo;
-        }
-      } catch {
-        /* ignore */
-      }
-
-      const deviceProfile = {
-        fullName,
-        email: resolvedEmail,
-        rollNumber: resolvedRoll,
-        branch: profileData.department || "",
-        yearLevel: profileData.year || "",
-        hostelBlock: profileData.hostelName || "",
-        roomNumber: profileData.roomNumber || "",
-        phoneNumber: profileData.phoneNumber || "",
-        emergencyContact: "",
-        photo: carriedPhoto,
-      };
-      persistProfile(deviceProfile);
-
-      // Hand off to Quick Login setup (demand PIN + optional biometric again).
-      setStoredProfile(deviceProfile);
-      setSessionToken(token);
-      setPendingPassword(password);
-      setPin("");
-      setConfirmPin("");
-      setEnableBiometric(false);
-      setErrorMsg("");
-      setAppState("QUICK_SETUP");
+      await enterQuickSetupWithSession(data.token, password, email);
     } catch (err) {
       setErrorMsg(err?.message || "Login failed.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // ---- Forgot password (student forgot BOTH the PIN and the password) --------
+
+  // Step 1 → 2: email a reset code to the confirmed college address.
+  const submitForgotEmail = async (e) => {
+    e.preventDefault();
+    const email = forgotEmail.trim();
+    if (!/^[^\s@]+@nitp\.ac\.in$/i.test(email)) {
+      setErrorMsg("Please enter your college email ending in @nitp.ac.in.");
+      return;
+    }
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const res = await fetch('/api/backend/auth/password/forgot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Couldn't send the reset code. Please try again.");
+      setForgotOtp("");
+      setResendIn(60);
+      setDevOtp(data.devOtp || null); // dev-only, when SMTP is off
+      setForgotStep(2);
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Step 2 → 3: verify the emailed code, receiving a signed reset token.
+  const submitForgotOtp = async (e) => {
+    e.preventDefault();
+    if (forgotOtp.trim().length < 6) {
+      setErrorMsg("Please enter the 6-digit code sent to your email.");
+      return;
+    }
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const res = await fetch('/api/backend/auth/password/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim(), otp: forgotOtp.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.verified) throw new Error(data.message || "Verification failed.");
+      setResetToken(data.resetToken);
+      setDevOtp(null);
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setForgotStep(3);
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Step 3: set the new password, then drop into Quick Login setup to re-enrol the
+  // PIN (and optional passkey) against it — the old PIN cached the old password and
+  // was cleared, so it must be recreated.
+  const submitNewPassword = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setErrorMsg("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setErrorMsg("Passwords do not match.");
+      return;
+    }
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      const email = forgotEmail.trim();
+      const res = await fetch('/api/backend/auth/password/reset', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, resetToken, newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Couldn't reset your password. Please try again.");
+      if (data.role !== 'Student') {
+        throw new Error("This account is not authorized for student access.");
+      }
+      // The old device PIN encrypted the OLD password, so it's now useless — forget
+      // it (keep any profile/photo) before re-enrolling against the new password.
+      clearQuickLogin({ forgetProfile: false });
+      setHasBio(false);
+      setResetToken(null);
+      await enterQuickSetupWithSession(data.token, newPassword, email);
+    } catch (err) {
+      setErrorMsg(err?.message || "Couldn't reset your password.");
     } finally {
       setIsProcessing(false);
     }
@@ -744,6 +867,29 @@ export default function StudentLoginPage() {
     setHasBio(false);
     setQuickLabel("");
     goToLogin({ keepProfile: false });
+  };
+
+  // Enter the forgot-password flow. Prefill the email from the sign-in form (or the
+  // remembered profile) so a student who just failed a password login doesn't retype it.
+  const goToForgotPassword = () => {
+    setErrorMsg("");
+    setForgotStep(1);
+    setForgotEmail(loginForm.email?.trim() || storedProfile?.email || "");
+    setForgotOtp("");
+    setResetToken(null);
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setDevOtp(null);
+    setResendIn(0);
+    setAppState("FORGOT_PASSWORD");
+  };
+
+  // Back out of the forgot-password flow to the email + password sign-in screen.
+  const cancelForgotPassword = () => {
+    setErrorMsg("");
+    setDevOtp(null);
+    setResendIn(0);
+    setAppState("LOGIN");
   };
 
   // From the sign-in form, a genuinely new student heads into registration.
@@ -984,6 +1130,159 @@ export default function StudentLoginPage() {
             )}
             {renderQuickSetupBody()}
           </div>
+        ) : appState === "FORGOT_PASSWORD" ? (
+          // FORGOT PASSWORD — student forgot BOTH the PIN and the password. Confirm
+          // the college email, verify an emailed OTP, then set a new password. On
+          // success we fall through to QUICK_SETUP to re-enrol the PIN + passkey.
+          <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
+            <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-5">
+              <KeyRound className="w-8 h-8" />
+            </div>
+
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Reset Password</h1>
+            <p className="text-sm text-slate-500 mb-6">
+              {forgotStep === 1 && "Enter your college email and we'll send you a verification code."}
+              {forgotStep === 2 && <>Enter the 6-digit code we sent to <span className="font-semibold text-slate-700">{forgotEmail}</span>.</>}
+              {forgotStep === 3 && "Choose a new password for your account."}
+            </p>
+
+            {errorMsg && <p className="text-rose-500 text-sm mb-4 font-medium bg-rose-50 p-2 rounded-lg w-full">{errorMsg}</p>}
+            {devOtp && (
+              <p className="text-amber-600 text-xs mb-4 font-medium bg-amber-50 p-2 rounded-lg w-full">
+                Dev mode — your code is <span className="font-bold tracking-widest">{devOtp}</span>
+              </p>
+            )}
+
+            {/* STEP 1: Confirm email */}
+            {forgotStep === 1 && (
+              <form onSubmit={submitForgotEmail} className="w-full space-y-4 text-left">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">College Email</label>
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Mail className="w-4 h-4" /></div>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="E.g. mohnishp.ug24.cs@nitp.ac.in"
+                      autoComplete="username"
+                      autoFocus
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70"
+                >
+                  {isProcessing ? (
+                    <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Sending code…</>
+                  ) : (
+                    <>Send Code <ArrowRight className="w-4 h-4" /></>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* STEP 2: Verify OTP */}
+            {forgotStep === 2 && (
+              <form onSubmit={submitForgotOtp} className="w-full space-y-4">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={forgotOtp}
+                  onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="••••••"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  className="w-full text-center text-3xl font-bold tracking-[0.5em] py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                />
+                <button
+                  type="submit"
+                  disabled={isProcessing || forgotOtp.length < 6}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isProcessing ? (
+                    <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Verifying…</>
+                  ) : (
+                    <>Verify Code <ArrowRight className="w-4 h-4" /></>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={submitForgotEmail}
+                  disabled={isProcessing || resendIn > 0}
+                  className="w-full text-sm font-semibold text-indigo-600 hover:text-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {resendIn > 0 ? `Resend code in ${resendIn}s` : "Resend code"}
+                </button>
+              </form>
+            )}
+
+            {/* STEP 3: New password */}
+            {forgotStep === 3 && (
+              <form onSubmit={submitNewPassword} className="w-full space-y-4 text-left">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">New Password</label>
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Lock className="w-4 h-4" /></div>
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="At least 6 characters"
+                      autoComplete="new-password"
+                      autoFocus
+                      className="w-full pl-10 pr-11 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((s) => !s)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      tabIndex={-1}
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Confirm New Password</label>
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Lock className="w-4 h-4" /></div>
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Re-enter your new password"
+                      autoComplete="new-password"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70"
+                >
+                  {isProcessing ? (
+                    <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Saving…</>
+                  ) : (
+                    <>Reset Password <CheckCircle className="w-4 h-4" /></>
+                  )}
+                </button>
+              </form>
+            )}
+
+            <button
+              onClick={cancelForgotPassword}
+              disabled={isProcessing}
+              className="mt-6 text-sm text-slate-400 hover:text-indigo-600 transition-colors disabled:opacity-50"
+            >
+              Back to sign in
+            </button>
+          </div>
         ) : appState === "LOGIN" ? (
           // EMAIL + PASSWORD SIGN-IN — fresh device, forgotten PIN, or "someone else".
           <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
@@ -1041,6 +1340,14 @@ export default function StudentLoginPage() {
                 )}
               </button>
             </form>
+
+            <button
+              onClick={goToForgotPassword}
+              disabled={isProcessing}
+              className="mt-4 text-sm font-semibold text-indigo-600 hover:text-indigo-700 transition-colors disabled:opacity-50"
+            >
+              Forgot password?
+            </button>
 
             <div className="mt-6 pt-6 border-t border-slate-100 w-full">
               <p className="text-sm text-slate-500">

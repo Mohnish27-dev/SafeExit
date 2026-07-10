@@ -12,8 +12,10 @@ import {
   Phone,
   ShieldCheck,
 } from "lucide-react";
-import { apiFetch, getApiBase } from "@/app/lib/api";
+import { apiFetch } from "@/app/lib/api";
 import { getInitials } from "@/app/lib/userProfile";
+import { useRequireAuth, logout } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "../components/SecurityBottomNav";
 import { useTranslation } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
@@ -22,6 +24,7 @@ export default function SecurityProfilePage() {
   const { t } = useTranslation("security");
   const { t: tc } = useTranslation("common");
   const router = useRouter();
+  const { checked, authorized } = useRequireAuth("security");
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -46,15 +49,10 @@ export default function SecurityProfilePage() {
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    try {
-      await fetch(`${getApiBase()}/auth/logout`, { method: "POST", credentials: "include" });
-    } catch {
-      /* ignore network errors on logout */
-    }
-    ["safeexit_token", "safeexit:user"].forEach((k) => sessionStorage.removeItem(k));
-    ["safeexit_guard_profile", "safeexit_guard_registered"].forEach((k) => localStorage.removeItem(k));
-    router.push("/login/security");
+    await logout(router, { role: "security" });
   };
+
+  if (!checked || !authorized) return <AuthLoading />;
 
   return (
     <main className="min-h-screen dashboard-neo text-slate-900">
