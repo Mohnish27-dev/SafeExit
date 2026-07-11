@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { History, Home, UserRound, UsersRound } from "lucide-react";
+import { CalendarDays, History, Home, UserRound, UsersRound } from "lucide-react";
 import { useTranslation } from "@/app/lib/i18n";
 
 export default function SecurityBottomNav({ active }) {
@@ -11,12 +11,13 @@ export default function SecurityBottomNav({ active }) {
   const NAV_ITEMS = [
     { label: tc("home"), matchKey: "Home", icon: Home, href: "/dashboard/security" },
     { label: t("students"), matchKey: "Students", icon: UsersRound, href: "/dashboard/security/students" },
+    { label: t("leavePass"), matchKey: "LeavePass", icon: CalendarDays, href: "/dashboard/security/leave-verification" },
     { label: t("history"), matchKey: "History", icon: History, href: "/dashboard/security/history" },
     { label: tc("profile"), matchKey: "Profile", icon: UserRound, href: "/dashboard/security/profile" },
   ];
 
   return (
-    <nav className="dash-card mt-6 hidden md:grid grid-cols-4 rounded-[2rem] p-3 shadow-xl backdrop-blur">
+    <nav className="dash-card mt-6 hidden md:grid grid-cols-5 rounded-[2rem] p-3 shadow-xl backdrop-blur">
       {NAV_ITEMS.map((item) => (
         <Link
           key={item.matchKey}

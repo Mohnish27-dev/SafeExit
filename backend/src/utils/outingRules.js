@@ -56,10 +56,26 @@ const isReturnLate = (inTime, at = Date.now()) => {
   return at > expectedReturn.getTime();
 };
 
+// Separate rule for multi-day Leave Applications: female students must depart
+// on or before 5:30 PM (campus local time). This intentionally shares its
+// clock value with AUTO_APPROVE_CUTOFF_MINUTES but is a distinct policy (a
+// hard departure curfew, not an auto-approval threshold) and only applies to
+// Leave Applications, never same-day Outing — kept as its own named export so
+// the two rules can diverge independently in the future.
+const EVENING_CURFEW_MINUTES = 17 * 60 + 30; // 5:30 PM, campus local time
+
+const isBeforeEveningCurfew = (date) => {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return false;
+  return minutesOfDayInTimeZone(d, CAMPUS_TIMEZONE) <= EVENING_CURFEW_MINUTES;
+};
+
 module.exports = {
   qualifiesForAutoApproval,
   isDeparturePassed,
   isReturnLate,
+  isBeforeEveningCurfew,
   AUTO_APPROVE_CUTOFF_MINUTES,
+  EVENING_CURFEW_MINUTES,
   CAMPUS_TIMEZONE,
 };

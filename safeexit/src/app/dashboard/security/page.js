@@ -334,7 +334,7 @@ export default function SecurityDashboardPage() {
                   <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
                     {t("scanEntryDesc")}
                   </p>
-                  <button 
+                  <button
                     onClick={() => { setScanMode('entry'); setIsScanning(true); }}
                     className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5 cursor-pointer"
                   >
@@ -343,6 +343,22 @@ export default function SecurityDashboardPage() {
                   </button>
                 </div>
               </div>
+
+              <Link
+                href="/dashboard/security/leave-verification"
+                className="dash-outline mt-6 flex items-center justify-between gap-4 rounded-[2rem] px-6 py-5 transition hover:opacity-90"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-100 text-violet-700">
+                    <CalendarDays className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <p className="font-bold text-slate-900">{t("leavePass")}</p>
+                    <p className="text-sm font-medium text-slate-500">{t("leavePassDesc")}</p>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 text-slate-400" />
+              </Link>
             </div>
 
             <aside className="dash-card dash-animate-rise rounded-[2.5rem] p-6 shadow-xl">

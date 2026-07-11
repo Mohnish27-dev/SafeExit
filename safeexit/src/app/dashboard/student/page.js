@@ -140,6 +140,14 @@ const actions = [
     arrow: "text-orange-400",
     href: "/dashboard/student/complaint",
   },
+  {
+    title: "Leave Application",
+    description: "Apply for festival or multi-day home leave.",
+    icon: CalendarDays,
+    iconClass: "sd-action-icon sd-action-icon--leave",
+    arrow: "text-violet-400",
+    href: "/dashboard/student/leave-application",
+  },
 ];
 
 const navItems = [
@@ -148,6 +156,7 @@ const navItems = [
   { label: "New Pass", icon: Ticket, href: "/dashboard/student/generate-ticket" },
   { label: "SOS", icon: Siren, href: "/dashboard/student/sos" },
   { label: "Complaints", icon: MessageSquareWarning, href: "/dashboard/student/complaint" },
+  { label: "Leave", icon: CalendarDays, href: "/dashboard/student/leave-application" },
 ];
 
 export default function StudentDashboardPage() {
@@ -165,6 +174,15 @@ export default function StudentDashboardPage() {
   const [savingPhoto, setSavingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState("");
   const photoInputRef = useRef(null);
+
+  // One-time backfill prompt for accounts created before `gender` existed —
+  // needed so the Leave Application's 5:30 PM girls' curfew has something to
+  // check. Dismissing only hides it for this tab session; it reappears next
+  // login until the student actually sets a gender.
+  const [genderDismissed, setGenderDismissed] = useState(false);
+  const [genderDraft, setGenderDraft] = useState("");
+  const [savingGender, setSavingGender] = useState(false);
+  const [genderError, setGenderError] = useState("");
 
   // Crop step: the raw just-picked image awaits cropping before it ever
   // becomes `photoDraft`. Pan/zoom are plain pixel offsets in frame-space.
@@ -507,6 +525,28 @@ export default function StudentDashboardPage() {
     }
   };
 
+  const handleSaveGender = async () => {
+    if (!genderDraft) {
+      setGenderError("Please select a gender.");
+      return;
+    }
+    setSavingGender(true);
+    setGenderError("");
+    try {
+      const updated = await apiFetch("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ gender: genderDraft }),
+      });
+      const merged = { ...getStoredUser(), gender: updated.gender };
+      setStoredUser(merged);
+      setProfile((prev) => ({ ...prev, gender: updated.gender }));
+    } catch (err) {
+      setGenderError(err?.message || "Couldn't save your gender. Please try again.");
+    } finally {
+      setSavingGender(false);
+    }
+  };
+
   // Don't render the protected dashboard until the session check passes; the
   // hook redirects to /login/student when there's no valid student session.
   if (!checked || !authorized) return <AuthLoading />;
@@ -576,6 +616,59 @@ export default function StudentDashboardPage() {
             </div>
           </header>
 
+          {mounted && !profile.gender && !genderDismissed && (
+            <section className="sd-luxe-panel sd-luxe-rise mt-6 rounded-4xl p-5 sm:p-6 shadow-xl border border-indigo-100">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+                    <UserRound className="h-5.5 w-5.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="sd-card-title text-slate-900 text-base">Complete your profile</p>
+                    <p className="sd-micro mt-0.5">
+                      Add your gender so Leave Applications can apply the right rules for you.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={genderDraft}
+                    onChange={(e) => {
+                      setGenderDraft(e.target.value);
+                      setGenderError("");
+                    }}
+                    disabled={savingGender}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors disabled:opacity-50"
+                  >
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleSaveGender}
+                    disabled={savingGender || !genderDraft}
+                    className="sf-btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingGender ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGenderDismissed(true)}
+                    disabled={savingGender}
+                    title="Dismiss"
+                    className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              {genderError && <p className="text-xs text-rose-500 mt-3">{genderError}</p>}
+            </section>
+          )}
+
           <section className="sd-luxe-panel sd-luxe-rise sd-stagger-2 mt-6 rounded-4xl p-6 sm:p-7 shadow-xl">
             <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
               <div className="flex flex-wrap items-center gap-5">
@@ -615,7 +708,7 @@ export default function StudentDashboardPage() {
               </div>
               <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-bold animate-pulse">Updated</span>
             </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
               {actions.map((action, index) => (
                 <Link
                   key={action.title}
@@ -791,7 +884,7 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-5 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-6 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
             {navItems.map((item) => (
               <Link
                 key={item.label}

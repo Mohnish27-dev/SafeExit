@@ -28,6 +28,7 @@ export function useStudentProfile() {
       mobile: formatDisplayMobile(profile),
       subtitle: profile.subtitle,
       hostel: profile.hostel,
+      gender: profile.gender,
       isLoggedIn: hydrated && profile.name !== defaultStudentProfile.name,
     }),
     [profile, hydrated]

@@ -1092,6 +1092,11 @@ body {
   color: #fff;
 }
 
+.sf-icon-leave {
+  background: linear-gradient(135deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%);
+  color: #fff;
+}
+
 .sf-panel {
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.8);
@@ -1305,6 +1310,19 @@ body {
 .sf-outing-card--open { border-left: 4px solid #f97316; }
 .sf-outing-card--in-progress { border-left: 4px solid #f59e0b; }
 .sf-outing-card--resolved { border-left: 4px solid #10b981; }
+
+.sf-outing-card--completed { border-left: 4px solid #7c3aed; }
+
+.sf-letter-paper {
+  padding: 2rem 1.75rem;
+  background: linear-gradient(180deg, #fdfbf6 0%, #faf6ec 100%);
+  border-bottom: 1px solid rgba(180, 160, 120, 0.25);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: #3f3a2e;
+  white-space: pre-line;
+}
 
 .sf-step-bar {
   display: flex;
@@ -1610,6 +1628,10 @@ body {
   background: linear-gradient(145deg, #b45309 0%, #f97316 55%, #fbbf24 100%);
 }
 
+.sd-action-icon--leave {
+  background: linear-gradient(145deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%);
+}
+
 /* ─── Student dashboard enhancements ─── */
 .sd-gradient-text {
   background: linear-gradient(135deg, #0f172a 0%, #4338ca 42%, #06b6d4 100%);
@@ -1850,6 +1872,10 @@ body {
 
 .sf-hero-strip--complaint {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 237, 213, 0.9) 50%, rgba(254, 243, 199, 0.85) 100%);
+}
+
+.sf-hero-strip--leave {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(237, 233, 254, 0.9) 50%, rgba(250, 232, 255, 0.85) 100%);
 }
 
 .sf-page-title {
