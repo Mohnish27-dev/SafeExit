@@ -45,18 +45,25 @@ import AuthLoading from "@/app/components/AuthGate";
 const formatClock = (value) =>
   new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
-const outingStatusStyle = (status) => {
-  switch (String(status || "").toLowerCase()) {
+// Resolve the badge (label + tone) for an outing. A trip that closed late is
+// stored as status 'Returned' with returnPunctuality 'Overdue' — surface that
+// as a distinct "Returned late" badge rather than a plain, on-time "Returned".
+const outingBadge = (outing) => {
+  const status = String(outing?.status || "").toLowerCase();
+  if (status === "returned" && outing?.returnPunctuality === "Overdue") {
+    return { label: "Returned late", className: "bg-rose-100 text-rose-700" };
+  }
+  switch (status) {
     case "approved":
     case "out":
-      return "bg-emerald-100 text-emerald-700";
+      return { label: outing?.status, className: "bg-emerald-100 text-emerald-700" };
     case "returned":
-      return "bg-slate-100 text-slate-600";
+      return { label: "Returned", className: "bg-slate-100 text-slate-600" };
     case "rejected":
     case "expired":
-      return "bg-rose-100 text-rose-700";
+      return { label: outing?.status, className: "bg-rose-100 text-rose-700" };
     default:
-      return "bg-amber-100 text-amber-700"; // Pending
+      return { label: outing?.status || "Pending", className: "bg-amber-100 text-amber-700" };
   }
 };
 
@@ -174,6 +181,7 @@ export default function StudentDashboardPage() {
           place: o.destination,
           purpose: o.purpose,
           status: o.status || "Pending",
+          returnPunctuality: o.returnPunctuality || null,
           outTime: o.outTime,
           inTime: o.inTime,
           date: new Date(o.outTime).toLocaleDateString("en-US", { day: "2-digit", month: "short" }),
@@ -500,9 +508,14 @@ export default function StudentDashboardPage() {
                           {outing.date} at {outing.time}
                         </p>
                       </div>
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${outingStatusStyle(outing.status)}`}>
-                        {outing.status}
-                      </span>
+                      {(() => {
+                        const badge = outingBadge(outing);
+                        return (
+                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${badge.className}`}>
+                            {badge.label}
+                          </span>
+                        );
+                      })()}
                     </div>
                   ))
                 )}

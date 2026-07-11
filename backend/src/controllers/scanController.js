@@ -143,6 +143,10 @@ const createScanLog = async (req, res) => {
       if (linkedOuting) {
         resolvedPunctuality = isReturnLate(linkedOuting.inTime) ? 'Overdue' : 'On-Time';
         linkedOuting.status = 'Returned';
+        // Stamp the punctuality onto the pass too (not just the ScanLog) so the
+        // student's dashboards, which read the pass and never the scan logs, can
+        // show a late return as 'Overdue' instead of a plain 'Returned'.
+        linkedOuting.returnPunctuality = resolvedPunctuality;
         await linkedOuting.save();
       }
     }

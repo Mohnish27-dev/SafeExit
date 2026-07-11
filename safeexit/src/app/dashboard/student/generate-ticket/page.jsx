@@ -35,6 +35,30 @@ import { apiFetch } from "@/app/lib/api";
 
 const STEPS = ["form", "review", "success"];
 
+// The campus (and the backend's auto-approval rule in utils/outingRules.js) lives
+// in a single fixed timezone. The "departure can't be in the past" check must be
+// judged against THAT clock, not the browser's: a student on a device set to a
+// different timezone — or with a skewed clock — would otherwise be told a valid
+// departure is "in the past" (or be allowed to pick one that already passed),
+// disagreeing with what the server enforces. Pinning it here keeps the form's
+// verdict identical for every student regardless of their device settings.
+const CAMPUS_TIMEZONE = "Asia/Kolkata";
+
+// Current minute-of-day (0..1439) in the campus timezone. Mirrors the backend's
+// minutesOfDayInTimeZone so the client's past-time check and the server's rule
+// read the same wall clock.
+const nowMinutesInCampusTZ = () => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: CAMPUS_TIMEZONE,
+    hour: "numeric",
+    minute: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === "hour").value);
+  const minute = Number(parts.find((p) => p.type === "minute").value);
+  return hour * 60 + minute;
+};
+
 // The rest of this screen — validation (parseTimeToMinutes), the ISO body sent
 // to /outing, and the review/success displays — all speak the "hh:mm AM/PM"
 // string format. The native <input type="time"> element, however, works in a
@@ -138,6 +162,14 @@ export default function GenerateTicket() {
     return hours * 60 + minutes;
   };
 
+  // Build the outing's absolute timestamp for a same-day trip.
+  const buildTodayISO = (timeStr) => {
+    const totalMinutes = parseTimeToMinutes(timeStr);
+    const when = new Date(); // today, in the student's local timezone
+    when.setHours(Math.floor(totalMinutes / 60), totalMinutes % 60, 0, 0);
+    return when.toISOString();
+  };
+
   const validate = () => {
     const nextErrors = {};
     if (!form.destination.trim()) nextErrors.destination = "Destination is required";
@@ -146,9 +178,11 @@ export default function GenerateTicket() {
     
     if (form.timeOut) {
       const outMins = parseTimeToMinutes(form.timeOut);
-      const now = new Date();
-      const currentMins = now.getHours() * 60 + now.getMinutes();
-      
+      // Judge "past" against the campus clock (IST), matching the backend rule,
+      // so the verdict is the same for every student regardless of their device
+      // timezone or a skewed local clock.
+      const currentMins = nowMinutesInCampusTZ();
+
       if (outMins < currentMins) {
         nextErrors.timeOut = "Departure time cannot be in the past";
       }
@@ -165,14 +199,6 @@ export default function GenerateTicket() {
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
-
-  // fetch() and JSON parsing throw low-level, browser-specific errors
-  // ("Failed to fetch", "NetworkError when attempting to fetch resource.",
-  // "Load failed", "Unexpected token < in JSON...") that mean nothing to a
-  // student trying to submit an outing pass. This maps them to copy that
-  // matches the rest of the form's error tone, while letting a message the
-  // server deliberately sent back (from the res.ok check below) through
-  // untouched — that one was already written for a human to read.
   const describeSubmitError = (error) => {
     if (error instanceof TypeError) {
       // The only way fetch() itself rejects: offline, DNS failure, CORS
@@ -211,8 +237,8 @@ export default function GenerateTicket() {
       const body = {
         destination: form.destination,
         purpose: form.note || "Outing",
-        outTime: new Date(`${form.dateOut} ${form.timeOut}`).toISOString(),
-        inTime: new Date(`${form.dateReturn} ${form.timeReturn}`).toISOString(),
+        outTime: buildTodayISO(form.timeOut),
+        inTime: buildTodayISO(form.timeReturn),
       };
 
       // apiFetch parses JSON and throws on non-2xx (message caught below).
@@ -233,10 +259,6 @@ export default function GenerateTicket() {
     }
   };
 
-  // A failure lands while the student is still on the review screen — pull
-  // the notice into view in case the CTA sits below the fold, and hand focus
-  // to it so screen readers actually announce the failure instead of it
-  // sitting silently under the button.
   useEffect(() => {
     if (step === "review" && errors.submit && submitErrorRef.current) {
       submitErrorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -289,9 +311,6 @@ export default function GenerateTicket() {
   ];
 
   if (step === "success") {
-    // Trust the server's persisted status rather than recomputing the auto-approval
-    // rule on the client — the backend is the source of truth the gate scanner
-    // actually checks, so the success screen must reflect the same value.
     const isAutoApproved = createdOuting?.status === "Approved";
 
     return (
