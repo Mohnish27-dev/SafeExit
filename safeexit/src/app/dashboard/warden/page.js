@@ -221,6 +221,22 @@ export default function WardenDashboardPage() {
     return () => clearInterval(interval);
   }, [loadRequests]);
 
+  // Live updates: a new student complaint (or a status change from another
+  // warden) pushes an event over SSE so the complaints list + badge refresh
+  // instantly instead of requiring a manual refresh while this tab is open.
+  useEffect(() => {
+    const source = new EventSource(`${getApiBase()}/complaint/stream`, { withCredentials: true });
+    source.addEventListener("complaint:created", () => loadReports());
+    source.addEventListener("complaint:updated", () => loadReports());
+    return () => source.close();
+  }, [loadReports]);
+
+  // Safety net in case the SSE connection is silently dropped.
+  useEffect(() => {
+    const interval = setInterval(loadReports, 30000);
+    return () => clearInterval(interval);
+  }, [loadReports]);
+
   function openPanel(key) {
     setActivePanel(key);
   }
@@ -554,7 +570,7 @@ export default function WardenDashboardPage() {
             <button onClick={() => setView('complaints')} className={`sd-nav-link ${view === 'complaints' ? 'sd-nav-link--active' : ''}`}>
               <span className="relative inline-flex">
                 <MessageSquare className="h-6 w-6" />
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">3</span>
+                {reports.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
               </span>
               {t("complaints")}
             </button>
@@ -645,7 +661,7 @@ export default function WardenDashboardPage() {
           <button onClick={() => setView('complaints')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
             <span className="relative inline-flex">
               <MessageSquare className="h-6 w-6" />
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">3</span>
+              {reports.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
             </span>
             <span className="text-[10px] font-semibold">{t("complaints")}</span>
           </button>

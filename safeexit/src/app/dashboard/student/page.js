@@ -11,6 +11,7 @@ import {
   Home,
   House,
   IdCard,
+  MessageSquareWarning,
   QrCode,
   Shield,
   ShieldCheck,
@@ -85,6 +86,14 @@ const actions = [
     arrow: "text-rose-500",
     href: "/dashboard/student/sos",
   },
+  {
+    title: "Register Complaint",
+    description: "Report a maintenance, safety, or hostel issue.",
+    icon: MessageSquareWarning,
+    iconClass: "sd-action-icon sd-action-icon--complaint",
+    arrow: "text-orange-400",
+    href: "/dashboard/student/complaint",
+  },
 ];
 
 const navItems = [
@@ -92,6 +101,7 @@ const navItems = [
   { label: "Outings", icon: ClipboardList, href: "/dashboard/student/my-outings" },
   { label: "New Pass", icon: Ticket, href: "/dashboard/student/generate-ticket" },
   { label: "SOS", icon: Siren, href: "/dashboard/student/sos" },
+  { label: "Complaints", icon: MessageSquareWarning, href: "/dashboard/student/complaint" },
 ];
 
 export default function StudentDashboardPage() {
@@ -393,7 +403,7 @@ export default function StudentDashboardPage() {
               </div>
               <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-bold animate-pulse">Updated</span>
             </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {actions.map((action, index) => (
                 <Link
                   key={action.title}
@@ -569,7 +579,7 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-5 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
             {navItems.map((item) => (
               <Link
                 key={item.label}
