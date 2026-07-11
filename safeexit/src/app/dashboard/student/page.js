@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "react-qr-code";
 import {
   Bell,
+  Camera,
   CalendarDays,
+  CheckCircle2,
   ChevronRight,
   ClipboardList,
   Clock3,
   Home,
   House,
   IdCard,
+  ImageIcon,
+  Loader2,
   MessageSquareWarning,
   QrCode,
   Shield,
@@ -22,6 +26,8 @@ import {
   Mail,
   Phone,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -45,6 +51,46 @@ import AuthLoading from "@/app/components/AuthGate";
 // identity-only; the gate reads the live window from the backend at scan time.)
 const formatClock = (value) =>
   new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+
+// Downscale + re-encode a photo before it touches storage/network — the same
+// treatment the registration flow gives the very first photo, so a re-upload
+// years later doesn't suddenly blow past the localStorage quota.
+const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) =>
+  new Promise((resolve) => {
+    if (!dataUrl) return resolve(null);
+    const img = new window.Image();
+    img.onload = () => {
+      const ratio = img.width / img.height;
+      const width = Math.min(img.width, maxWidth);
+      const height = Math.round(width / ratio);
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+
+// The crop tool always displays the source image at "cover" scale for the
+// current zoom, centered in a square viewport of this size — so the pan-offset
+// math below only ever has to account for one degree of freedom (zoom * pan),
+// never the fit-to-frame scale.
+const CROP_FRAME = 260;
+
+const cropCoverScale = (natural, zoom) =>
+  Math.max(CROP_FRAME / natural.width, CROP_FRAME / natural.height) * zoom;
+
+const clampCropOffset = (offset, natural, zoom) => {
+  const scale = cropCoverScale(natural, zoom);
+  const maxX = Math.max(0, (natural.width * scale - CROP_FRAME) / 2);
+  const maxY = Math.max(0, (natural.height * scale - CROP_FRAME) / 2);
+  return {
+    x: Math.min(maxX, Math.max(-maxX, offset.x)),
+    y: Math.min(maxY, Math.max(-maxY, offset.y)),
+  };
+};
 
 const outingStatusStyle = (status) => {
   switch (String(status || "").toLowerCase()) {
@@ -113,6 +159,20 @@ export default function StudentDashboardPage() {
   const [showQrModal, setShowQrModal] = useState(false);
   const [outings, setOutings] = useState([]);
   const [outingsLoading, setOutingsLoading] = useState(true);
+
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [photoDraft, setPhotoDraft] = useState(null);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const photoInputRef = useRef(null);
+
+  // Crop step: the raw just-picked image awaits cropping before it ever
+  // becomes `photoDraft`. Pan/zoom are plain pixel offsets in frame-space.
+  const [cropSrc, setCropSrc] = useState(null);
+  const [cropNatural, setCropNatural] = useState(null);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const cropDragRef = useRef(null);
 
   useEffect(() => {
     const storedProfile = getStoredUser();
@@ -311,6 +371,142 @@ export default function StudentDashboardPage() {
 
   const handleLogout = () => logout(router, { role: "student" });
 
+  const openPhotoModal = () => {
+    setPhotoDraft(profile.photo || null);
+    setPhotoError("");
+    setShowPhotoModal(true);
+  };
+
+  const closePhotoModal = () => {
+    if (savingPhoto) return;
+    setShowPhotoModal(false);
+    setPhotoDraft(null);
+    setPhotoError("");
+    setCropSrc(null);
+    setCropNatural(null);
+  };
+
+  const handlePhotoFileChange = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        setCropNatural({ width: img.width, height: img.height });
+        setCropZoom(1);
+        setCropOffset({ x: 0, y: 0 });
+        setCropSrc(reader.result);
+      };
+      img.onerror = () => setPhotoError("Couldn't read that image. Please try a different photo.");
+      img.src = reader.result;
+    };
+    reader.onerror = () => setPhotoError("Couldn't read that file. Please try a different photo.");
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropZoomChange = (value) => {
+    const zoom = Number(value);
+    setCropZoom(zoom);
+    setCropOffset((prev) => (cropNatural ? clampCropOffset(prev, cropNatural, zoom) : prev));
+  };
+
+  const handleCropPointerDown = (e) => {
+    if (!cropNatural) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    cropDragRef.current = { startX: e.clientX, startY: e.clientY, origin: cropOffset };
+  };
+
+  const handleCropPointerMove = (e) => {
+    if (!cropDragRef.current || !cropNatural) return;
+    const dx = e.clientX - cropDragRef.current.startX;
+    const dy = e.clientY - cropDragRef.current.startY;
+    const next = {
+      x: cropDragRef.current.origin.x + dx,
+      y: cropDragRef.current.origin.y + dy,
+    };
+    setCropOffset(clampCropOffset(next, cropNatural, cropZoom));
+  };
+
+  const handleCropPointerUp = (e) => {
+    cropDragRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* pointer capture may already be released */
+    }
+  };
+
+  const handleCancelCrop = () => {
+    setCropSrc(null);
+    setCropNatural(null);
+  };
+
+  const handleConfirmCrop = () => {
+    if (!cropSrc || !cropNatural) return;
+    const img = new window.Image();
+    img.onload = () => {
+      const scale = cropCoverScale(cropNatural, cropZoom);
+      const sourceSize = CROP_FRAME / scale;
+      const sx = cropNatural.width / 2 - cropOffset.x / scale - sourceSize / 2;
+      const sy = cropNatural.height / 2 - cropOffset.y / scale - sourceSize / 2;
+      const OUTPUT = 480;
+      const canvas = document.createElement("canvas");
+      canvas.width = OUTPUT;
+      canvas.height = OUTPUT;
+      canvas.getContext("2d").drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, OUTPUT, OUTPUT);
+      setPhotoDraft(canvas.toDataURL("image/jpeg", 0.9));
+      setCropSrc(null);
+      setCropNatural(null);
+    };
+    img.src = cropSrc;
+  };
+
+  const handleSavePhoto = async () => {
+    if (!photoDraft || photoDraft === profile.photo) return;
+    setSavingPhoto(true);
+    setPhotoError("");
+    try {
+      const compressed = await compressImage(photoDraft, 800, 0.7);
+      const nextPhoto = compressed || photoDraft;
+      const updatedProfile = { ...profile, photo: nextPhoto };
+      setProfile(updatedProfile);
+      setStoredUser(updatedProfile);
+
+      // Keep the on-device onboarding blob in sync too, so quick-login re-auth
+      // and any local fallback carry the latest photo forward.
+      try {
+        const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null") || {};
+        localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...existing, photo: nextPhoto }));
+      } catch {
+        /* best-effort — device storage may be full or unavailable */
+      }
+
+      // Republish to the same store the guard's QR scanner reads from, keyed
+      // by roll number, so the new photo shows up at the gate immediately.
+      if (updatedProfile.rollNo && updatedProfile.rollNo !== defaultStudentProfile.rollNo) {
+        fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rollNo: updatedProfile.rollNo,
+            name: updatedProfile.name,
+            photo: nextPhoto,
+          }),
+        }).catch((err) => console.error("Failed to publish profile photo", err));
+      }
+
+      setShowPhotoModal(false);
+      setPhotoDraft(null);
+    } catch (err) {
+      setPhotoError("Couldn't process that image. Please try a different photo.");
+    } finally {
+      setSavingPhoto(false);
+    }
+  };
+
   // Don't render the protected dashboard until the session check passes; the
   // hook redirects to /login/student when there's no valid student session.
   if (!checked || !authorized) return <AuthLoading />;
@@ -344,8 +540,24 @@ export default function StudentDashboardPage() {
 
             <div className="flex items-center gap-3">
               <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt flex items-center gap-3 rounded-2xl px-4 py-3 min-w-[200px]">
-                <div className="sd-profile-avatar">
-                  {mounted ? getInitials(profile.name) : "?"}
+                <div className="relative shrink-0 group">
+                  <div className="sd-profile-avatar overflow-hidden">
+                    {mounted && profile.photo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={profile.photo} alt={profile.name} className="h-full w-full object-cover" />
+                    ) : (
+                      mounted ? getInitials(profile.name) : "?"
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openPhotoModal}
+                    title="Change profile photo"
+                    className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white text-indigo-600 shadow-md ring-2 ring-white transition-transform group-hover:scale-110 cursor-pointer"
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                    <span className="sr-only">Change profile photo</span>
+                  </button>
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-slate-900  gap-2 text-base">{profile.name}</p>
@@ -645,6 +857,161 @@ export default function StudentDashboardPage() {
               >
                 Close Pass
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPhotoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in text-slate-800">
+          <div className="relative w-full max-w-sm overflow-hidden bg-white rounded-3xl p-6 text-center shadow-2xl border border-slate-100 animate-scale-in">
+            <button
+              type="button"
+              onClick={closePhotoModal}
+              disabled={savingPhoto}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-655 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="mt-2 flex flex-col items-center">
+              <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-3">
+                <Camera className="w-7 h-7" />
+              </div>
+              <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">
+                {cropSrc ? "Adjust Your Photo" : "Update Profile Photo"}
+              </h2>
+              <p className="text-xs text-slate-400 mt-1 leading-normal max-w-xs mx-auto">
+                {cropSrc
+                  ? "Drag to reposition, use the slider to zoom, then confirm."
+                  : "Security guards use this photo to verify your identity at the gate. Choose a clear, recent face photo."}
+              </p>
+
+              {cropSrc ? (
+                <>
+                  <div
+                    className="mt-6 relative rounded-full overflow-hidden bg-slate-900 cursor-grab active:cursor-grabbing touch-none select-none ring-4 ring-indigo-100"
+                    style={{ width: CROP_FRAME, height: CROP_FRAME }}
+                    onPointerDown={handleCropPointerDown}
+                    onPointerMove={handleCropPointerMove}
+                    onPointerUp={handleCropPointerUp}
+                    onPointerCancel={handleCropPointerUp}
+                  >
+                    {cropNatural && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={cropSrc}
+                        alt="Crop preview"
+                        draggable={false}
+                        className="absolute top-1/2 left-1/2 max-w-none pointer-events-none"
+                        style={{
+                          width: cropNatural.width * cropCoverScale(cropNatural, cropZoom),
+                          height: cropNatural.height * cropCoverScale(cropNatural, cropZoom),
+                          transform: `translate(calc(-50% + ${cropOffset.x}px), calc(-50% + ${cropOffset.y}px))`,
+                        }}
+                      />
+                    )}
+                    <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-white/30" />
+                  </div>
+
+                  <div className="w-full flex items-center gap-2 mt-4 px-1">
+                    <ZoomOut className="w-4 h-4 text-slate-400 shrink-0" />
+                    <input
+                      type="range"
+                      min="1"
+                      max="3"
+                      step="0.01"
+                      value={cropZoom}
+                      onChange={(e) => handleCropZoomChange(e.target.value)}
+                      className="w-full accent-indigo-600 cursor-pointer"
+                    />
+                    <ZoomIn className="w-4 h-4 text-slate-400 shrink-0" />
+                  </div>
+
+                  {photoError && <p className="text-xs text-rose-500 mt-3">{photoError}</p>}
+
+                  <div className="w-full flex gap-3 pt-6">
+                    <button
+                      type="button"
+                      onClick={handleCancelCrop}
+                      className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
+                      Choose Different
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmCrop}
+                      className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> Use Photo
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div
+                    className="mt-6 w-36 h-36 rounded-full border-4 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer hover:border-indigo-400 transition-colors"
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    {photoDraft ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={photoDraft} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <>
+                        <ImageIcon className="w-9 h-9 text-slate-400 group-hover:text-indigo-500 transition-colors mb-2" />
+                        <span className="text-xs font-semibold text-slate-500 group-hover:text-indigo-600">Tap to upload</span>
+                      </>
+                    )}
+                  </div>
+
+                  {photoDraft && (
+                    <button
+                      type="button"
+                      onClick={() => photoInputRef.current?.click()}
+                      className="mt-3 text-xs font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer"
+                    >
+                      Choose a different photo
+                    </button>
+                  )}
+
+                  {photoError && <p className="text-xs text-rose-500 mt-3">{photoError}</p>}
+
+                  <div className="w-full flex gap-3 pt-6">
+                    <button
+                      type="button"
+                      onClick={closePhotoModal}
+                      disabled={savingPhoto}
+                      className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSavePhoto}
+                      disabled={savingPhoto || !photoDraft || photoDraft === profile.photo}
+                      className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                    >
+                      {savingPhoto ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" /> Saving...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" /> Save Photo
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              <input
+                type="file"
+                ref={photoInputRef}
+                onChange={handlePhotoFileChange}
+                accept="image/*"
+                className="hidden"
+              />
             </div>
           </div>
         </div>
