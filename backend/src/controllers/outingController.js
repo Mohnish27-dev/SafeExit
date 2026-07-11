@@ -121,19 +121,40 @@ const getPendingRequests = async (req, res) => {
 const updateRequestStatus = async (req, res) => {
   const { status, remarks } = req.body;
 
+  // This endpoint is a warden/guard *decision* on a pending request — the only
+  // two verdicts it may issue are 'Approved' and 'Rejected'. Every other status
+  // ('Out', 'Returned', 'Expired', 'Cancelled') belongs to the gate scan flow
+  // (scanController) or the lazy-expiry logic and must never be settable here;
+  // otherwise a warden could push a pass through its whole trip lifecycle —
+  // e.g. mark a student 'Returned' who never scanned in — bypassing the gate
+  // state machine entirely.
+  if (!['Approved', 'Rejected'].includes(status)) {
+    return res.status(400).json({
+      message: 'Status can only be set to Approved or Rejected.',
+    });
+  }
+
   try {
     const request = await OutingRequest.findById(req.params.id);
 
     if (request) {
+      // A decision can only be made on a request that is still awaiting one.
+      // Once a pass has left 'Pending' (approved, rejected, out on a trip,
+      // returned, expired or cancelled) it is out of the warden's hands — this
+      // stops an already-live or terminal pass being flipped back to
+      // Approved/Rejected.
+      if (request.status !== 'Pending') {
+        return res.status(409).json({
+          message: `This request has already been ${request.status.toLowerCase()} and can no longer be changed.`,
+          status: request.status,
+        });
+      }
+
       // Guard against approving a request whose departure time has already
       // passed. The warden may have had the pending card open and clicked
       // "Approve" after the window closed — accepting it now would create
       // an already-expired pass.
-      if (
-        request.status === 'Pending' &&
-        status === 'Approved' &&
-        isDeparturePassed(request.outTime)
-      ) {
+      if (status === 'Approved' && isDeparturePassed(request.outTime)) {
         request.status = 'Expired';
         await request.save();
 
