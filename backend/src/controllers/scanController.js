@@ -3,7 +3,12 @@ const ScanLog = require('../models/ScanLog');
 const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
 const LeaveApplication = require('../models/LeaveApplication');
-const { isDeparturePassed, isBeforeDeparture, isReturnLate } = require('../utils/outingRules');
+const {
+  isDeparturePassed,
+  isBeforeDeparture,
+  isReturnLate,
+  isAfterLeaveCurfew,
+} = require('../utils/outingRules');
 
 // Escape a user-supplied string for safe use inside a RegExp.
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -42,19 +47,36 @@ const passWindow = (passType, doc) =>
     ? { windowStart: doc.outTime, windowEnd: doc.inTime }
     : { windowStart: doc.leaveDate, windowEnd: doc.returnDate };
 
-// Resolve the Approved pass an OUT scan would consume. Outing is checked
-// first — this preserves the existing Outing behavior exactly unchanged — and
-// Leave Application is only consulted as a fallback when there is no
-// approved Outing, so a student can't accidentally have both compete.
+// Is a pass usable for an exit at this exact moment?
+//   Outing — `outTime` is a DEADLINE only: valid any time up to it (leaving
+//            early is fine). This is the original single-day outing behavior.
+//   Leave  — valid from its approved `leaveDate` until 5:30 PM (campus time)
+//            that same day; not before, and dead after the 5:30 PM curfew.
+const isOutingExitOpen = (doc) => !isDeparturePassed(doc.outTime);
+const isLeaveExitOpen = (doc) =>
+  !isBeforeDeparture(doc.leaveDate) && !isAfterLeaveCurfew(doc.leaveDate);
+
+// Resolve the Approved pass an OUT scan would consume. We prefer whichever
+// approved pass is actually usable RIGHT NOW so a stale or not-yet-open pass
+// can never shadow a currently-valid one — e.g. an approved future Leave (valid
+// only on its own date) must not intercept and block a same-day Outing, and an
+// approved-but-lapsed Outing must not block a Leave that is valid today. Outing
+// keeps priority when both are usable, preserving the original behavior. If
+// nothing is usable we still return an approved pass (Outing first) so the
+// caller can surface a precise reason (not-yet-valid / expired) rather than a
+// generic "no pass".
 const resolveApprovedPass = async (studentId) => {
   const outing = await OutingRequest.findOne({ student: studentId, status: 'Approved' }).sort({
     createdAt: -1,
   });
-  if (outing) return { passType: 'Outing', doc: outing };
-
   const leave = await LeaveApplication.findOne({ student: studentId, status: 'Approved' }).sort({
     createdAt: -1,
   });
+
+  if (outing && isOutingExitOpen(outing)) return { passType: 'Outing', doc: outing };
+  if (leave && isLeaveExitOpen(leave)) return { passType: 'Leave', doc: leave };
+
+  if (outing) return { passType: 'Outing', doc: outing };
   if (leave) return { passType: 'Leave', doc: leave };
 
   return null;
@@ -121,41 +143,54 @@ const createScanLog = async (req, res) => {
 
       const { windowStart, windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
 
-      // The pass's approved departure hasn't arrived yet — this is not an
-      // early exit, it's someone trying to leave on a pass that isn't valid
-      // until later (a Leave Application approved for the 13th cannot be used
-      // to exit on the 12th). The pass itself is still legitimately pending
-      // its future window, so it's left untouched — not mutated to 'Expired'
-      // like the deadline-passed case below.
-      if (isBeforeDeparture(windowStart)) {
-        return res.status(403).json({
-          message:
-            linkedPass.passType === 'Outing'
-              ? `This outing pass is not valid yet — the approved departure time is ${new Date(windowStart).toLocaleString()}. Exit denied until then.`
-              : `This leave pass is not valid yet — the approved departure date is ${new Date(windowStart).toLocaleString()}. Exit denied until then.`,
-          outTime: windowStart,
-          inTime: windowEnd,
-          campusStatus: studentDoc.campusStatus,
-        });
-      }
+      if (linkedPass.passType === 'Leave') {
+        // Leave pass window: valid from the approved leaveDate until 5:30 PM
+        // (campus time) that same day.
 
-      // Treat the pass's departure time as a hard deadline: once the
-      // scheduled departure has passed, the pass is expired and the exit is
-      // denied — the student must file a fresh request. We also persist the
-      // terminal 'Expired' status here so every dashboard that reads the pass
-      // stops showing it as active/approved, matching what the gate enforced.
-      if (isDeparturePassed(windowStart)) {
-        linkedPass.doc.status = 'Expired';
-        await linkedPass.doc.save();
-        return res.status(403).json({
-          message:
-            linkedPass.passType === 'Outing'
-              ? 'This outing pass has expired — the approved departure time has already passed. Exit denied; the student must file a new request.'
-              : 'This leave pass has expired — the approved departure date has already passed. Exit denied; the student must file a new request.',
-          outTime: windowStart,
-          inTime: windowEnd,
-          campusStatus: studentDoc.campusStatus,
-        });
+        // Not open yet — the approved leaveDate is still in the future (a leave
+        // approved for the 13th cannot be used to exit on the 12th). The pass
+        // is legitimately pending its window, so it's left untouched (not
+        // 'Expired') — the student can still use it on the right day.
+        if (isBeforeDeparture(windowStart)) {
+          return res.status(403).json({
+            message: `This leave pass is not valid yet — the approved departure is ${new Date(windowStart).toLocaleString()}. Exit denied until then.`,
+            outTime: windowStart,
+            inTime: windowEnd,
+            campusStatus: studentDoc.campusStatus,
+          });
+        }
+
+        // Past the 5:30 PM curfew on the departure day — the pass is dead. We
+        // persist the terminal 'Expired' status so every dashboard stops
+        // showing it as active, matching what the gate just enforced.
+        if (isAfterLeaveCurfew(windowStart)) {
+          linkedPass.doc.status = 'Expired';
+          await linkedPass.doc.save();
+          return res.status(403).json({
+            message:
+              'This leave pass has expired — leave passes are only valid until 5:30 PM on the departure day. Exit denied; the student must file a new request.',
+            outTime: windowStart,
+            inTime: windowEnd,
+            campusStatus: studentDoc.campusStatus,
+          });
+        }
+      } else {
+        // Outing pass: `outTime` is a hard DEADLINE only. The student may exit
+        // any time before it (leaving early is fine) but not after — this is
+        // the original single-day outing behavior. Once the departure time has
+        // passed the pass is expired; we persist the terminal 'Expired' status
+        // so every dashboard reflects what the gate enforced.
+        if (isDeparturePassed(windowStart)) {
+          linkedPass.doc.status = 'Expired';
+          await linkedPass.doc.save();
+          return res.status(403).json({
+            message:
+              'This outing pass has expired — the approved departure time has already passed. Exit denied; the student must file a new request.',
+            outTime: windowStart,
+            inTime: windowEnd,
+            campusStatus: studentDoc.campusStatus,
+          });
+        }
       }
     }
 
@@ -278,14 +313,22 @@ const previewScan = async (req, res) => {
       exit = { allowed: false, reason: 'no-approved', passType: null, pass: null };
     } else {
       const window = passWindow(approvedPass.passType, approvedPass.doc);
-      if (isBeforeDeparture(window.windowStart)) {
-        // Approved but the departure window hasn't opened yet -> the live scan would 403.
-        exit = { allowed: false, reason: 'not-yet-valid', passType: approvedPass.passType, pass: window };
-      } else if (isDeparturePassed(window.windowStart)) {
-        // Approved but the departure deadline has passed -> the live scan would 403.
-        exit = { allowed: false, reason: 'expired', passType: approvedPass.passType, pass: window };
+      if (approvedPass.passType === 'Leave') {
+        // Leave: valid from leaveDate until 5:30 PM (campus time) that same day.
+        if (isBeforeDeparture(window.windowStart)) {
+          exit = { allowed: false, reason: 'not-yet-valid', passType: 'Leave', pass: window };
+        } else if (isAfterLeaveCurfew(window.windowStart)) {
+          exit = { allowed: false, reason: 'expired', passType: 'Leave', pass: window };
+        } else {
+          exit = { allowed: true, reason: null, passType: 'Leave', pass: window };
+        }
       } else {
-        exit = { allowed: true, reason: null, passType: approvedPass.passType, pass: window };
+        // Outing: outTime is a deadline only — valid any time up to it.
+        if (isDeparturePassed(window.windowStart)) {
+          exit = { allowed: false, reason: 'expired', passType: 'Outing', pass: window };
+        } else {
+          exit = { allowed: true, reason: null, passType: 'Outing', pass: window };
+        }
       }
     }
 

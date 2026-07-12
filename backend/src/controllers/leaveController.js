@@ -83,14 +83,16 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
-    // Evening curfew: female students must depart on or before 5:30 PM (campus
-    // time). This is the authoritative check — it runs before the application
-    // can ever be created, so an application that later gets Approved by the
-    // warden is already guaranteed compliant (the guard verification screen
-    // does not need to re-check this).
-    if (req.user.gender === 'Female' && !isBeforeEveningCurfew(leaveDateObj)) {
+    // Departure curfew: a leave pass is only valid until 5:30 PM (campus time)
+    // on its departure day, so a leave departing after 5:30 PM could never be
+    // used at the gate. Reject it up front for EVERY student. The gate re-
+    // enforces the same 5:30 PM cap at scan time (see scanController's
+    // isAfterLeaveCurfew), so this early check is a friendly guard rail, not the
+    // security boundary — an application that gets Approved is already compliant.
+    if (!isBeforeEveningCurfew(leaveDateObj)) {
       return res.status(400).json({
-        message: 'Female students must depart on or before 5:30 PM (campus time). Please choose an earlier leave date & time.',
+        message:
+          'Leave departure must be on or before 5:30 PM (campus time) — a leave pass is only valid until 5:30 PM on the departure day. Please choose an earlier leave date & time.',
       });
     }
 

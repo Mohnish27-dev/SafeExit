@@ -174,8 +174,8 @@ export default function LeaveApplicationPage() {
       nextErrors.leaveDate = `Applications must be submitted at least ${MIN_LEAD_HOURS} hours in advance. Earliest allowed: ${formatDateTime(
         earliestAllowed
       )}`;
-    } else if (display.gender === "Female" && !isBeforeEveningCurfew(leaveDateObj)) {
-      nextErrors.leaveDate = "Female students must depart on or before 5:30 PM. Please choose an earlier leave date & time.";
+    } else if (!isBeforeEveningCurfew(leaveDateObj)) {
+      nextErrors.leaveDate = "Leave departure must be on or before 5:30 PM — a leave pass is only valid until 5:30 PM on the departure day. Please choose an earlier leave time.";
     }
     if (!form.returnDate) {
       nextErrors.returnDate = "Return date & time is required";
@@ -482,14 +482,14 @@ export default function LeaveApplicationPage() {
 
           <StudentFeaturePanel className="p-6 sm:p-7" delay={100}>
             <p className="sf-section-label mb-4">Schedule</p>
-            {display.gender === "Female" && (
-              <div className="sf-notice sf-notice--danger mb-4">
-                <ShieldAlert size={14} className="text-rose-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-rose-700 leading-relaxed">
-                  Female students must depart on or before <strong>5:30 PM</strong>. Please choose a leave time within this window.
-                </p>
-              </div>
-            )}
+            <div className="sf-notice sf-notice--danger mb-4">
+              <ShieldAlert size={14} className="text-rose-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-rose-700 leading-relaxed">
+                Your leave pass is valid <strong>only until 5:30 PM</strong> on the departure day. You must
+                leave at your approved time and on or before <strong>5:30 PM</strong> — after 5:30 PM the pass
+                expires and you can no longer leave on it. Please choose a departure time on or before 5:30 PM.
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1.5">
