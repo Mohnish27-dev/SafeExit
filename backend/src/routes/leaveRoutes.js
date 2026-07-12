@@ -6,7 +6,6 @@ const {
   getPendingLeaveApplications,
   updateLeaveStatus,
   cancelLeaveApplication,
-  lookupLeaveForGuard,
   streamLeaveEvents
 } = require('../controllers/leaveController');
 const { protect } = require('../middlewares/authMiddleware');
@@ -18,8 +17,6 @@ router.route('/')
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyLeaveApplications);
 
 router.get('/pending', protect, authorizeRoles('Warden'), getPendingLeaveApplications);
-
-router.get('/lookup', protect, authorizeRoles('Guard'), lookupLeaveForGuard);
 
 router.get('/stream', protect, authorizeRoles('Warden'), streamLeaveEvents);
 

@@ -44,18 +44,20 @@ const isBeforeEveningCurfew = (date) =>
 const statusConfig = {
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
+  out: { label: "On Leave", color: "text-sky-700", bg: "bg-sky-100", icon: MapPin },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
   cancelled: { label: "Cancelled", color: "text-slate-500", bg: "bg-slate-100", icon: Ban },
   expired: { label: "Expired", color: "text-rose-700", bg: "bg-rose-100", icon: TimerOff },
-  completed: { label: "Completed", color: "text-violet-700", bg: "bg-violet-100", icon: CheckCircle2 },
+  returned: { label: "Returned", color: "text-violet-700", bg: "bg-violet-100", icon: CheckCircle2 },
 };
 
 const filters = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
   { key: "approved", label: "Approved" },
+  { key: "out", label: "On Leave" },
   { key: "rejected", label: "Rejected" },
-  { key: "completed", label: "Completed" },
+  { key: "returned", label: "Returned" },
   { key: "expired", label: "Expired" },
   { key: "cancelled", label: "Cancelled" },
 ];

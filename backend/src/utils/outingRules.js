@@ -44,6 +44,19 @@ const isDeparturePassed = (outTime, at = Date.now()) => {
   return at > departure.getTime();
 };
 
+// Symmetric with isDeparturePassed: a scan before the pass's approved
+// departure time isn't a legitimate early exit, it's someone trying to use a
+// pass that hasn't opened yet. This matters most for multi-day Leave
+// Applications, which can be approved days ahead of the actual leave date —
+// without this check, an approved-for-the-13th pass would let a student exit
+// on the 12th. Same absolute-instant, timezone-safe comparison as
+// isDeparturePassed. `at` is injectable for tests.
+const isBeforeDeparture = (outTime, at = Date.now()) => {
+  const departure = new Date(outTime);
+  if (Number.isNaN(departure.getTime())) return false;
+  return at < departure.getTime();
+};
+
 // A return is late when the student is scanned back IN after the pass's expected
 // return time (`inTime`). Like `isDeparturePassed`, this compares absolute
 // instants (`inTime` is a stored Date), so it's timezone-safe. This is the
@@ -73,6 +86,7 @@ const isBeforeEveningCurfew = (date) => {
 module.exports = {
   qualifiesForAutoApproval,
   isDeparturePassed,
+  isBeforeDeparture,
   isReturnLate,
   isBeforeEveningCurfew,
   AUTO_APPROVE_CUTOFF_MINUTES,

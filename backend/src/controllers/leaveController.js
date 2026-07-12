@@ -1,23 +1,24 @@
 const LeaveApplication = require('../models/LeaveApplication');
-const User = require('../models/User');
 const sseHub = require('../utils/sseHub');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
-
-// Escape a user-supplied string so it can be embedded in a RegExp literal
-// without being interpreted as regex metacharacters (ReDoS / injection safety).
-const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Lazily transition stale applications at read time, mirroring
 // outingController's expireStaleRequests pattern:
 //
 // 1. **Pending-and-missed**: the warden never acted and the departure date
 //    has already passed — there's no point keeping it in the approval queue.
-// 2. **Approved-and-over**: the trip was approved and the return date has
-//    passed. There's no gate scan to close the loop here, so this is purely
-//    informational for the student's own history.
+// 2. **Approved-and-unused**: the trip was approved but the student never
+//    actually scanned out through the gate (see scanController), and the
+//    departure date has passed. Once a student does scan out, gate
+//    integration flips status to 'Out' before this can ever fire — so this
+//    only catches passes that were approved but never used, mirroring
+//    outingController's Approved-and-unused -> Expired pattern.
 //
+// 'Out' -> 'Returned' only happens via an actual gate entry scan (see
+// scanController), never lazily here — mirroring OutingRequest's
+// Out/Returned states, which are also never touched by time-based expiry.
 // 'Rejected'/'Cancelled' are terminal and never touched. Persistence is
 // best-effort and per-doc so one failed save doesn't block the whole list.
 const expireStaleApplications = async (applications) => {
@@ -28,8 +29,8 @@ const expireStaleApplications = async (applications) => {
       if (!appDoc) return;
       if (appDoc.status === 'Pending' && now > new Date(appDoc.leaveDate).getTime()) {
         appDoc.status = 'Expired';
-      } else if (appDoc.status === 'Approved' && now > new Date(appDoc.returnDate).getTime()) {
-        appDoc.status = 'Completed';
+      } else if (appDoc.status === 'Approved' && now > new Date(appDoc.leaveDate).getTime()) {
+        appDoc.status = 'Expired';
       } else {
         return;
       }
@@ -245,64 +246,6 @@ const cancelLeaveApplication = async (req, res) => {
   }
 };
 
-// @desc    Look up a student's most recent leave application by name/roll
-//          number, for a guard to visually verify at the gate. Read-only —
-//          it never mutates status; the warden's decision is already final
-//          by the time it reaches this screen.
-// @route   GET /api/leave/lookup?query=
-// @access  Private (Guard)
-const lookupLeaveForGuard = async (req, res) => {
-  const query = String(req.query.query || '').trim();
-
-  if (!query) {
-    return res.json([]);
-  }
-
-  try {
-    const regex = new RegExp(escapeRegex(query), 'i');
-    const students = await User.find({
-      role: 'Student',
-      $or: [{ studentId: regex }, { name: regex }],
-    })
-      .select('name studentId roomNumber hostelName')
-      .limit(15);
-
-    const results = await Promise.all(
-      students.map(async (student) => {
-        const application = await LeaveApplication.findOne({ student: student._id }).sort({ createdAt: -1 });
-        if (application) {
-          await expireStaleApplications(application);
-        }
-
-        return {
-          student: {
-            id: student._id,
-            name: student.name,
-            studentId: student.studentId,
-            room: student.roomNumber,
-            hostel: student.hostelName,
-          },
-          application: application
-            ? {
-                id: application._id,
-                status: application.status,
-                destination: application.destination,
-                reason: application.reason,
-                leaveDate: application.leaveDate,
-                returnDate: application.returnDate,
-                remarks: application.remarks,
-              }
-            : null,
-        };
-      })
-    );
-
-    res.json(results);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // @desc    Live stream of leave-application changes so the warden dashboard
 //          updates in real time.
 // @route   GET /api/leave/stream
@@ -334,6 +277,5 @@ module.exports = {
   getPendingLeaveApplications,
   updateLeaveStatus,
   cancelLeaveApplication,
-  lookupLeaveForGuard,
   streamLeaveEvents,
 };

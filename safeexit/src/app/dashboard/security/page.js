@@ -343,22 +343,6 @@ export default function SecurityDashboardPage() {
                   </button>
                 </div>
               </div>
-
-              <Link
-                href="/dashboard/security/leave-verification"
-                className="dash-outline mt-6 flex items-center justify-between gap-4 rounded-[2rem] px-6 py-5 transition hover:opacity-90"
-              >
-                <div className="flex items-center gap-4">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-100 text-violet-700">
-                    <CalendarDays className="h-6 w-6" />
-                  </span>
-                  <div>
-                    <p className="font-bold text-slate-900">{t("leavePass")}</p>
-                    <p className="text-sm font-medium text-slate-500">{t("leavePassDesc")}</p>
-                  </div>
-                </div>
-                <ChevronRight className="h-5 w-5 text-slate-400" />
-              </Link>
             </div>
 
             <aside className="dash-card dash-animate-rise rounded-[2.5rem] p-6 shadow-xl">
@@ -531,7 +515,9 @@ export default function SecurityDashboardPage() {
                           ? t("approved")
                           : reason === "expired"
                             ? t("expiredPass")
-                            : t("noApprovedOuting");
+                            : reason === "not-yet-valid"
+                              ? t("notYetValidPass")
+                              : t("noApprovedOuting");
                         return (
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                             allowed ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
@@ -540,6 +526,7 @@ export default function SecurityDashboardPage() {
                           </span>
                         );
                       }
+
                       return (
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
                           {t("unverified")}
@@ -565,8 +552,8 @@ export default function SecurityDashboardPage() {
                   </span>
                   <span className="text-sm font-semibold text-slate-800">
                     {scanMode === 'exit'
-                      ? (scanPreview?.exit?.outing
-                          ? `${formatClock(scanPreview.exit.outing.outTime)} to ${formatClock(scanPreview.exit.outing.inTime)}`
+                      ? (scanPreview?.exit?.pass
+                          ? `${formatClock(scanPreview.exit.pass.windowStart)} to ${formatClock(scanPreview.exit.pass.windowEnd)}`
                           : t("na"))
                       : formattedTime
                     }
@@ -576,9 +563,19 @@ export default function SecurityDashboardPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("allowedReturn")}</span>
                     <span className="text-sm font-semibold text-slate-800">
-                      {scanPreview?.activeOuting?.inTime
-                        ? formatClock(scanPreview.activeOuting.inTime)
+                      {scanPreview?.activePass?.windowEnd
+                        ? formatClock(scanPreview.activePass.windowEnd)
                         : t("na")}
+                    </span>
+                  </div>
+                )}
+                {((scanMode === 'exit' && scanPreview?.exit?.passType) || (scanMode === 'entry' && scanPreview?.activePass?.passType)) && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("passType")}</span>
+                    <span className="text-sm font-semibold text-slate-800">
+                      {(scanMode === 'exit' ? scanPreview.exit.passType : scanPreview.activePass.passType) === 'Leave'
+                        ? t("leavePass")
+                        : t("outingPass")}
                     </span>
                   </div>
                 )}
@@ -594,7 +591,9 @@ export default function SecurityDashboardPage() {
                 const exitBlockedMsg =
                   scanPreview?.exit?.reason === "expired"
                     ? t("exitBlockedExpired")
-                    : t("exitBlockedNoPass");
+                    : scanPreview?.exit?.reason === "not-yet-valid"
+                      ? t("exitBlockedNotYetValid")
+                      : t("exitBlockedNoPass");
 
                 const entryBlocked =
                   scanMode === "entry" && !previewLoading && scanPreview?.student &&

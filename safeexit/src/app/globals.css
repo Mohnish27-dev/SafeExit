@@ -1312,6 +1312,7 @@ body {
 .sf-outing-card--resolved { border-left: 4px solid #10b981; }
 
 .sf-outing-card--completed { border-left: 4px solid #7c3aed; }
+.sf-outing-card--out { border-left: 4px solid #0ea5e9; }
 
 .sf-letter-paper {
   padding: 2rem 1.75rem;
