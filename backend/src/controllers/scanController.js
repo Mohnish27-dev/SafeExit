@@ -32,7 +32,8 @@ const resolveStudent = async ({ student, studentId }) => {
 // @route   POST /api/scan
 // @access  Private (Guard / Admin)
 // Body: { studentId (roll number) OR student (_id), direction: 'IN'|'OUT',
-//         outing?, punctuality?, gate? }
+//         outing?, gate? }
+// (A body `punctuality` is ignored — punctuality is always decided server-side.)
 //
 // Gate enforcement: an OUT (exit) scan is only allowed against an outing pass
 // whose `status` is actually 'Approved' in the DB — whether that approval came
@@ -40,7 +41,9 @@ const resolveStudent = async ({ student, studentId }) => {
 // outingController.createOutingRequest). We never trust a client-supplied
 // status for this; it's always re-checked here against the database.
 const createScanLog = async (req, res) => {
-  const { studentId, student, direction, outing, punctuality, gate } = req.body;
+  // Note: `punctuality` is intentionally NOT read from the body — it's decided
+  // server-side below (both the campus status flip and the ScanLog stamp).
+  const { studentId, student, direction, outing, gate } = req.body;
 
   if (!direction || !['IN', 'OUT'].includes(direction)) {
     return res.status(400).json({ message: 'A valid direction (IN/OUT) is required' });
@@ -99,8 +102,13 @@ const createScanLog = async (req, res) => {
     // We flip the status with an atomic conditional update (gated on the allowed
     // "from" states) so it doubles as a lock — two near-simultaneous scans can't
     // both pass, since only the first one matches the filter and mutates the row.
-    const newStatus =
-      direction === 'OUT' ? (punctuality === 'Overdue' ? 'Overdue' : 'Outside') : 'Inside';
+    // An exit always lands the student 'Outside'. 'Overdue' is never an exit
+    // result — it's the state of a student already outside past their return
+    // window (it's an allowed "from" state for an IN scan below, not a "to"
+    // state here). We deliberately ignore the request body's `punctuality`:
+    // like the rest of this file, that verdict is decided server-side, never
+    // trusted from the untrusted scan payload.
+    const newStatus = direction === 'OUT' ? 'Outside' : 'Inside';
     const allowedFrom = direction === 'OUT' ? ['Inside'] : ['Outside', 'Overdue'];
 
     const updatedStudent = await User.findOneAndUpdate(
@@ -143,6 +151,10 @@ const createScanLog = async (req, res) => {
       if (linkedOuting) {
         resolvedPunctuality = isReturnLate(linkedOuting.inTime) ? 'Overdue' : 'On-Time';
         linkedOuting.status = 'Returned';
+        // Stamp the punctuality onto the pass too (not just the ScanLog) so the
+        // student's dashboards, which read the pass and never the scan logs, can
+        // show a late return as 'Overdue' instead of a plain 'Returned'.
+        linkedOuting.returnPunctuality = resolvedPunctuality;
         await linkedOuting.save();
       }
     }

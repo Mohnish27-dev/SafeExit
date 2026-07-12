@@ -56,43 +56,46 @@ const registerUser = async (req, res) => {
   const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber, emailVerificationToken } = req.body;
 
   try {
-    // Privileged roles are NEVER self-registered through this public endpoint.
-    // Only Students may self-register (and they verify a real @nitp.ac.in email).
+    // Resolve the account role SERVER-SIDE. `role` from the body is untrusted and
+    // OPTIONAL — an attacker could omit it to slip past checks that were gated on
+    // `role === 'Student'`, then have Mongoose's schema default silently create a
+    // Student anyway (the exact bypass this guards against). So we never branch on
+    // the raw body value: this public endpoint self-registers Students ONLY.
     //   - Admins are pre-provisioned from the ADMIN_*_ allowlist in the (gitignored)
     //     .env via `npm run seed:admins` / ensureAdmins on boot.
     //   - Wardens and Guards are provisioned at runtime by an admin from the
     //     dashboard (POST /api/admin/staff).
-    // This closes the hole where anyone could POST role:'Warden' / 'Guard' and
-    // instantly gain staff powers — approving outings, reading student data, or
-    // authorising gate exits — just by opening the staff login page.
-    if (['Admin', 'Warden', 'Guard'].includes(role)) {
+    // Any explicitly-requested non-Student role (Warden/Guard/Admin, or anything
+    // unrecognised) is rejected outright; a missing/blank role resolves to Student
+    // so the verification gate below ALWAYS runs and can never be skipped.
+    const requestedRole = (role || '').trim();
+    if (requestedRole && requestedRole !== 'Student') {
       return res.status(403).json({
-        message: `${role} accounts cannot be self-registered. Contact an administrator to be provisioned.`,
+        message: `${requestedRole} accounts cannot be self-registered. Contact an administrator to be provisioned.`,
       });
     }
+    const resolvedRole = 'Student';
 
-    // Students may only register with a real, VERIFIED @nitp.ac.in email. Both
-    // checks run server-side because the browser form can be bypassed with a
-    // direct API call — which is exactly how the "make a second account from a
+    // Students may only register with a real, VERIFIED @nitp.ac.in email. These
+    // checks run server-side and UNCONDITIONALLY — the browser form can be bypassed
+    // with a direct API call, which is exactly how the "make a second account from a
     // personal Gmail" bypass would work.
     //   1. Domain check: the address must be a college email.
     //   2. Verification check: they must present the short-lived token minted by
     //      /otp/verify for THIS email, proving they actually control the inbox.
     // Together these guarantee one real student = one account (the DB's unique
     // email index is the final backstop).
-    if (role === 'Student') {
-      if (!isValidStudentEmail(email)) {
-        return res.status(400).json({ message: 'Please use your college email ending in @nitp.ac.in.' });
-      }
-      if (!isEmailVerificationValid(emailVerificationToken, email)) {
-        return res.status(403).json({ message: 'Please verify your college email with the code we sent before continuing.' });
-      }
-      // The password is the student's login secret and must be a REAL secret they
-      // choose — never the (public) roll number. Enforce a minimum length here so
-      // the browser check can't be bypassed with a direct API call.
-      if (!password || String(password).length < 6) {
-        return res.status(400).json({ message: 'Please choose a password with at least 6 characters.' });
-      }
+    if (!isValidStudentEmail(email)) {
+      return res.status(400).json({ message: 'Please use your college email ending in @nitp.ac.in.' });
+    }
+    if (!isEmailVerificationValid(emailVerificationToken, email)) {
+      return res.status(403).json({ message: 'Please verify your college email with the code we sent before continuing.' });
+    }
+    // The password is the student's login secret and must be a REAL secret they
+    // choose — never the (public) roll number. Enforce a minimum length here so
+    // the browser check can't be bypassed with a direct API call.
+    if (!password || String(password).length < 6) {
+      return res.status(400).json({ message: 'Please choose a password with at least 6 characters.' });
     }
 
     // Canonical account key. Students identify with their real email; staff
@@ -110,11 +113,12 @@ const registerUser = async (req, res) => {
     }
 
     // Only students carry a real email. For staff we leave it unset so the DB
-    // never stores a fabricated "*.safeexit.local" address.
-    const realEmail = role === 'Student' ? (email || '').trim().toLowerCase() : undefined;
+    // never stores a fabricated "*.safeexit.local" address. (resolvedRole is always
+    // 'Student' here — self-registration mints Students only.)
+    const realEmail = resolvedRole === 'Student' ? (email || '').trim().toLowerCase() : undefined;
 
     const user = await User.create({
-      name, loginId, email: realEmail, password, role,
+      name, loginId, email: realEmail, password, role: resolvedRole,
       studentId, roomNumber, department, year, phoneNumber
     });
 
