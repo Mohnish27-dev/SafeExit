@@ -39,6 +39,16 @@ const outingRequestSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // How punctual the student's return was, stamped when the gate entry scan
+  // closes the trip (status → 'Returned'). Mirrors the ScanLog's punctuality so
+  // the student's own dashboards — which read the pass, not the scan logs — can
+  // tell a late return apart from an on-time one. Stays null for trips that
+  // never closed via an entry scan (still Out, Expired, Cancelled, etc.).
+  returnPunctuality: {
+    type: String,
+    enum: ['On-Time', 'Overdue', null],
+    default: null
+  },
   remarks: {
     type: String
   },

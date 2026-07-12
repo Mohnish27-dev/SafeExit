@@ -5,6 +5,11 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+// Refuse to boot if required secrets are missing, so failures surface here with
+// a clear message instead of as opaque 500s on the first auth/DB request.
+const validateEnv = require('./config/validateEnv');
+validateEnv();
+
 const authRoutes = require('./routes/authRoutes');
 const outingRoutes = require('./routes/outingRoutes');
 const complaintRoutes = require('./routes/complaintRoutes');

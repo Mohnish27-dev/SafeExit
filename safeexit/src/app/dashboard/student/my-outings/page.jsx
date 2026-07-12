@@ -36,7 +36,19 @@ const statusConfig = {
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
   expired: { label: "Expired", color: "text-rose-700", bg: "bg-rose-100", icon: TimerOff },
   cancelled: { label: "Cancelled", color: "text-slate-500", bg: "bg-slate-100", icon: Ban },
+  // Not a real backend status: derived in the UI when a 'Returned' trip was
+  // closed late (returnPunctuality === 'Overdue'), so a late return reads
+  // distinctly from an on-time one instead of a plain grey "Returned".
+  "returned-late": { label: "Returned late", color: "text-rose-700", bg: "bg-rose-100", icon: AlertCircle },
 };
+
+// Pick the statusConfig key for an outing, promoting a late return to the
+// derived "returned-late" badge. The card's own `outing.status` is left as the
+// real backend value so filters and CSS variants keep working unchanged.
+const badgeKeyFor = (outing) =>
+  outing.status === "returned" && outing.returnPunctuality === "Overdue"
+    ? "returned-late"
+    : outing.status;
 
 const filters = [
   { key: "all", label: "All" },
@@ -88,6 +100,7 @@ export default function MyOutings() {
           dateReturn: new Date(o.inTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
           timeReturn: new Date(o.inTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
           status: (o.status || "Pending").toLowerCase(),
+          returnPunctuality: o.returnPunctuality || null,
         }));
         setOutings(mapped);
       } catch (err) {
@@ -232,7 +245,7 @@ export default function MyOutings() {
       ) : (
         <div className="space-y-3">
           {filtered.map((outing, index) => {
-            const sc = statusConfig[outing.status];
+            const sc = statusConfig[badgeKeyFor(outing)];
             const StatusIcon = sc.icon;
             const isExpanded = expanded === outing.id;
 
