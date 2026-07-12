@@ -25,6 +25,7 @@ import ComplaintsView from "./components/ComplaintsView";
 import AutoApprovedView from "./components/AutoApprovedView";
 import RequestsView from "./components/RequestsView";
 import SOSAlertsView from "./components/SOSAlertsView";
+import LeaveApplicationsView from "./components/LeaveApplicationsView";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
@@ -79,6 +80,19 @@ const statusToneFor = (status) =>
     : status === "In Progress"
     ? "bg-amber-100 text-amber-600"
     : "bg-rose-100 text-rose-600";
+
+// Map a backend LeaveApplication (with populated student) to the pending-card shape.
+const mapLeavePending = (l) => ({
+  id: l._id,
+  name: l.student?.name || "Unknown Student",
+  roll: l.student?.studentId || "",
+  room: [l.student?.hostelName, l.student?.roomNumber].filter(Boolean).join(", ") || "—",
+  destination: l.destination || "",
+  reason: l.reason || "",
+  leaveDate: l.leaveDate,
+  returnDate: l.returnDate,
+  initials: initials(l.student?.name),
+});
 
 // Map a backend Complaint (with populated student) to the report-card shape.
 const mapReport = (c) => {
@@ -139,6 +153,11 @@ export default function WardenDashboardPage() {
   const [requestsError, setRequestsError] = useState("");
   const [reportsError, setReportsError] = useState("");
 
+  // Pending leave applications (multi-day, warden-approved) awaiting action.
+  const [leavePending, setLeavePending] = useState([]);
+  const [loadingLeave, setLoadingLeave] = useState(true);
+  const [leaveError, setLeaveError] = useState("");
+
   // Count of unresolved SOS alerts, surfaced as a badge on the nav + quick
   // action. Kept live independently of the SOS view so the badge shows even
   // when the warden is on another tab. The SOS view reports its own count back
@@ -198,10 +217,25 @@ export default function WardenDashboardPage() {
     }
   }, [t]);
 
+  // Pending leave applications awaiting warden action.
+  const loadLeaveApplications = useCallback(async () => {
+    setLoadingLeave(true);
+    setLeaveError("");
+    try {
+      const data = await apiFetch("/leave/pending");
+      setLeavePending(data.map(mapLeavePending));
+    } catch (err) {
+      setLeaveError(err.message || t("couldNotLoadLeave"));
+    } finally {
+      setLoadingLeave(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     loadRequests();
     loadReports();
-  }, [loadRequests, loadReports]);
+    loadLeaveApplications();
+  }, [loadRequests, loadReports, loadLeaveApplications]);
 
   // Live updates: a new outing request (or an approval/rejection from another
   // warden/guard) pushes an event over SSE so the pending list refetches
@@ -220,6 +254,37 @@ export default function WardenDashboardPage() {
     const interval = setInterval(loadRequests, 30000);
     return () => clearInterval(interval);
   }, [loadRequests]);
+
+  // Live updates: a new student complaint (or a status change from another
+  // warden) pushes an event over SSE so the complaints list + badge refresh
+  // instantly instead of requiring a manual refresh while this tab is open.
+  useEffect(() => {
+    const source = new EventSource(`${getApiBase()}/complaint/stream`, { withCredentials: true });
+    source.addEventListener("complaint:created", () => loadReports());
+    source.addEventListener("complaint:updated", () => loadReports());
+    return () => source.close();
+  }, [loadReports]);
+
+  // Safety net in case the SSE connection is silently dropped.
+  useEffect(() => {
+    const interval = setInterval(loadReports, 30000);
+    return () => clearInterval(interval);
+  }, [loadReports]);
+
+  // Live updates: a new leave application (or a status change from another
+  // warden) pushes an event over SSE so the pending list + badge refresh
+  // instantly instead of requiring a manual refresh while this tab is open.
+  useEffect(() => {
+    const source = new EventSource(`${getApiBase()}/leave/stream`, { withCredentials: true });
+    source.addEventListener("leave:changed", () => loadLeaveApplications());
+    return () => source.close();
+  }, [loadLeaveApplications]);
+
+  // Safety net in case the SSE connection is silently dropped.
+  useEffect(() => {
+    const interval = setInterval(loadLeaveApplications, 30000);
+    return () => clearInterval(interval);
+  }, [loadLeaveApplications]);
 
   function openPanel(key) {
     setActivePanel(key);
@@ -270,6 +335,44 @@ export default function WardenDashboardPage() {
     } catch (err) {
       setPending((p) => [req, ...p]);
       setRequestsError(err.message || t("couldNotReject"));
+    }
+  }
+
+  async function approveLeave(id) {
+    const req = leavePending.find((l) => l.id === id);
+    if (!req) return;
+    setLeavePending((l) => l.filter((r) => r.id !== id));
+    try {
+      await apiFetch(`/leave/${id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "Approved" }),
+      });
+    } catch (err) {
+      if (err?.status === 409) {
+        setLeaveError(t("leaveExpired"));
+        return;
+      }
+      setLeavePending((l) => [req, ...l]);
+      setLeaveError(err.message || t("couldNotApproveLeave"));
+    }
+  }
+
+  async function rejectLeave(id, remarks) {
+    const req = leavePending.find((l) => l.id === id);
+    if (!req) return;
+    setLeavePending((l) => l.filter((r) => r.id !== id));
+    try {
+      await apiFetch(`/leave/${id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "Rejected", remarks }),
+      });
+    } catch (err) {
+      if (err?.status === 409) {
+        setLeaveError(t("leaveExpired"));
+        return;
+      }
+      setLeavePending((l) => [req, ...l]);
+      setLeaveError(err.message || t("couldNotRejectLeave"));
     }
   }
 
@@ -381,25 +484,35 @@ export default function WardenDashboardPage() {
               </div>
               <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-bold animate-pulse">{t("autoRulesOn")}</span>
             </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-3 sd-stagger">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4 sd-stagger">
               {[{
                 title: t("manageRequests"),
                 desc: t("manageRequestsDesc"),
                 icon: Users,
                 tone: 'from-indigo-600',
+                onClick: () => openPanel('manage'),
               },{
                 title: t("safetyAlerts"),
                 desc: t("safetyAlertsDesc"),
                 icon: Siren,
                 tone: 'from-rose-600',
                 badge: sosCount,
+                onClick: () => setView('sos'),
+              },{
+                title: t("leaveApplications"),
+                desc: t("leaveApplicationsDesc"),
+                icon: CalendarDays,
+                tone: 'from-violet-600',
+                badge: leavePending.length,
+                onClick: () => setView('leave'),
               },{
                 title: t("autoApprovals"),
                 desc: t("autoApprovalsDesc"),
                 icon: Sparkles,
                 tone: 'from-sky-600',
+                onClick: () => openPanel('auto'),
               }].map((a, idx) => (
-                <button key={idx} onClick={() => (idx === 1 ? setView('sos') : openPanel(idx === 0 ? 'manage' : 'auto'))} style={{ animationDelay: `${0.08 + idx * 0.06}s` }} className="sd-luxe-card sd-action-card sd-luxe-shimmer sd-card-hover sd-animate-pop group relative flex flex-col items-start gap-4 rounded-4xl p-6 text-left">
+                <button key={idx} onClick={a.onClick} style={{ animationDelay: `${0.08 + idx * 0.06}s` }} className="sd-luxe-card sd-action-card sd-luxe-shimmer sd-card-hover sd-animate-pop group relative flex flex-col items-start gap-4 rounded-4xl p-6 text-left">
                   <div className="relative rounded-full bg-white p-3 inline-flex items-center justify-center">
                     <a.icon className="h-6 w-6 text-indigo-600" />
                     {a.badge ? (
@@ -540,10 +653,27 @@ export default function WardenDashboardPage() {
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
           {view === 'profile' && <ProfileView user={user} displayName={displayName} />}
           {view === 'complaints' && <ComplaintsView reports={reports} resolveReport={resolveReport} setReports={setReports} />}
+          {view === 'leave' && (
+            <LeaveApplicationsView
+              pending={leavePending}
+              approveLeave={approveLeave}
+              rejectLeave={rejectLeave}
+              loading={loadingLeave}
+              error={leaveError}
+              onRefresh={loadLeaveApplications}
+            />
+          )}
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-5 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-6 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
             <button onClick={() => setView('home')} className={`sd-nav-link ${view === 'home' ? 'sd-nav-link--active' : ''}`}><Home className="h-6 w-6" />{tc("home")}</button>
             <button onClick={() => setView('requests')} className={`sd-nav-link ${view === 'requests' ? 'sd-nav-link--active' : ''}`}><ClipboardList className="h-6 w-6" />{t("requests")}</button>
+            <button onClick={() => setView('leave')} className={`sd-nav-link ${view === 'leave' ? 'sd-nav-link--active' : ''}`}>
+              <span className="relative inline-flex">
+                <CalendarDays className="h-6 w-6" />
+                {leavePending.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
+              </span>
+              {t("leaveApplications")}
+            </button>
             <button onClick={() => setView('sos')} className={`sd-nav-link ${view === 'sos' ? 'sd-nav-link--active' : ''}`}>
               <span className="relative inline-flex">
                 <Siren className="h-6 w-6" />
@@ -554,7 +684,7 @@ export default function WardenDashboardPage() {
             <button onClick={() => setView('complaints')} className={`sd-nav-link ${view === 'complaints' ? 'sd-nav-link--active' : ''}`}>
               <span className="relative inline-flex">
                 <MessageSquare className="h-6 w-6" />
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">3</span>
+                {reports.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
               </span>
               {t("complaints")}
             </button>
@@ -635,6 +765,13 @@ export default function WardenDashboardPage() {
         <div className="mx-auto max-w-md flex items-center justify-between">
           <button onClick={() => setView('home')} className="flex flex-col items-center gap-1 text-indigo-700"><Home className="h-6 w-6" /><span className="text-[10px] font-bold">{tc("home")}</span></button>
           <button onClick={() => setView('requests')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors"><ClipboardList className="h-6 w-6" /><span className="text-[10px] font-semibold">{t("requests")}</span></button>
+          <button onClick={() => setView('leave')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
+            <span className="relative inline-flex">
+              <CalendarDays className="h-6 w-6" />
+              {leavePending.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
+            </span>
+            <span className="text-[10px] font-semibold">{t("leaveApplications")}</span>
+          </button>
           <button onClick={() => setView('sos')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
             <span className="relative inline-flex">
               <Siren className="h-6 w-6" />
@@ -645,7 +782,7 @@ export default function WardenDashboardPage() {
           <button onClick={() => setView('complaints')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
             <span className="relative inline-flex">
               <MessageSquare className="h-6 w-6" />
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">3</span>
+              {reports.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
             </span>
             <span className="text-[10px] font-semibold">{t("complaints")}</span>
           </button>

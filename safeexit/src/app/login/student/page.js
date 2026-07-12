@@ -57,6 +57,7 @@ export default function StudentLoginPage() {
     rollNumber: "",
     branch: "",
     yearLevel: "",
+    gender: "",
     hostelBlock: "",
     roomNumber: "",
     phoneNumber: "",
@@ -215,6 +216,7 @@ export default function StudentLoginPage() {
       room: p.roomNumber,
       mobile: p.phoneNumber,
       photo: p.photo,
+      gender: p.gender,
     });
     router.push("/dashboard/student");
   };
@@ -264,6 +266,7 @@ export default function StudentLoginPage() {
         studentId: profile.rollNumber,
         department: profile.branch,
         year: profile.yearLevel,
+        gender: profile.gender,
         roomNumber: profile.roomNumber,
         hostelName: profile.hostelBlock,
         phoneNumber: profile.phoneNumber,
@@ -370,7 +373,7 @@ export default function StudentLoginPage() {
   };
 
   const validateStep1 = () => {
-    const requiredFields = ['fullName', 'email', 'rollNumber', 'branch', 'yearLevel', 'hostelBlock', 'roomNumber', 'phoneNumber', 'emergencyContact', 'password', 'confirmPassword'];
+    const requiredFields = ['fullName', 'email', 'rollNumber', 'branch', 'yearLevel', 'gender', 'hostelBlock', 'roomNumber', 'phoneNumber', 'emergencyContact', 'password', 'confirmPassword'];
     for (let field of requiredFields) {
       if (!formData[field] || formData[field].trim() === "") {
         setErrorMsg("Please fill in all fields.");
@@ -675,6 +678,7 @@ export default function StudentLoginPage() {
       hostelBlock: profileData.hostelName || "",
       roomNumber: profileData.roomNumber || "",
       phoneNumber: profileData.phoneNumber || "",
+      gender: profileData.gender || "",
       emergencyContact: "",
       photo: carriedPhoto,
     };
@@ -898,7 +902,7 @@ export default function StudentLoginPage() {
     setAppState("ONBOARDING");
     setOnboardingStep(1);
     setFormData({
-      fullName: "", email: "", rollNumber: "", branch: "", yearLevel: "",
+      fullName: "", email: "", rollNumber: "", branch: "", yearLevel: "", gender: "",
       hostelBlock: "", roomNumber: "", phoneNumber: "", emergencyContact: "",
       password: "", confirmPassword: ""
     });
@@ -1448,6 +1452,20 @@ export default function StudentLoginPage() {
                           <option value="2nd">2nd Year</option>
                           <option value="3rd">3rd Year</option>
                           <option value="4th">4th Year</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Gender */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Gender</label>
+                      <div className="relative">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><ChevronDown className="w-4 h-4" /></div>
+                        <select name="gender" value={formData.gender} onChange={handleInputChange} className="w-full appearance-none pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors">
+                          <option value="">Select Gender</option>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Other">Other</option>
                         </select>
                       </div>
                     </div>

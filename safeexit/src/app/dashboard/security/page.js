@@ -334,7 +334,7 @@ export default function SecurityDashboardPage() {
                   <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
                     {t("scanEntryDesc")}
                   </p>
-                  <button 
+                  <button
                     onClick={() => { setScanMode('entry'); setIsScanning(true); }}
                     className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5 cursor-pointer"
                   >
@@ -515,7 +515,9 @@ export default function SecurityDashboardPage() {
                           ? t("approved")
                           : reason === "expired"
                             ? t("expiredPass")
-                            : t("noApprovedOuting");
+                            : reason === "not-yet-valid"
+                              ? t("notYetValidPass")
+                              : t("noApprovedOuting");
                         return (
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                             allowed ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
@@ -524,6 +526,7 @@ export default function SecurityDashboardPage() {
                           </span>
                         );
                       }
+
                       return (
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
                           {t("unverified")}
@@ -549,8 +552,8 @@ export default function SecurityDashboardPage() {
                   </span>
                   <span className="text-sm font-semibold text-slate-800">
                     {scanMode === 'exit'
-                      ? (scanPreview?.exit?.outing
-                          ? `${formatClock(scanPreview.exit.outing.outTime)} to ${formatClock(scanPreview.exit.outing.inTime)}`
+                      ? (scanPreview?.exit?.pass
+                          ? `${formatClock(scanPreview.exit.pass.windowStart)} to ${formatClock(scanPreview.exit.pass.windowEnd)}`
                           : t("na"))
                       : formattedTime
                     }
@@ -560,9 +563,19 @@ export default function SecurityDashboardPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("allowedReturn")}</span>
                     <span className="text-sm font-semibold text-slate-800">
-                      {scanPreview?.activeOuting?.inTime
-                        ? formatClock(scanPreview.activeOuting.inTime)
+                      {scanPreview?.activePass?.windowEnd
+                        ? formatClock(scanPreview.activePass.windowEnd)
                         : t("na")}
+                    </span>
+                  </div>
+                )}
+                {((scanMode === 'exit' && scanPreview?.exit?.passType) || (scanMode === 'entry' && scanPreview?.activePass?.passType)) && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("passType")}</span>
+                    <span className="text-sm font-semibold text-slate-800">
+                      {(scanMode === 'exit' ? scanPreview.exit.passType : scanPreview.activePass.passType) === 'Leave'
+                        ? t("leavePass")
+                        : t("outingPass")}
                     </span>
                   </div>
                 )}
@@ -578,7 +591,9 @@ export default function SecurityDashboardPage() {
                 const exitBlockedMsg =
                   scanPreview?.exit?.reason === "expired"
                     ? t("exitBlockedExpired")
-                    : t("exitBlockedNoPass");
+                    : scanPreview?.exit?.reason === "not-yet-valid"
+                      ? t("exitBlockedNotYetValid")
+                      : t("exitBlockedNoPass");
 
                 const entryBlocked =
                   scanMode === "entry" && !previewLoading && scanPreview?.student &&

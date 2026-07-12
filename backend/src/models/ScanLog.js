@@ -24,6 +24,20 @@ const scanLogSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'OutingRequest'
   },
+  // The leave application this movement is tied to, when one exists. A scan
+  // is tied to at most one of `outing`/`leave` — see scanController's
+  // Outing-first-then-Leave resolution priority.
+  leave: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LeaveApplication'
+  },
+  // Which kind of pass this movement was resolved against, when any. Lets
+  // history/admin views label a scan without having to populate and inspect
+  // both refs.
+  passType: {
+    type: String,
+    enum: ['Outing', 'Leave']
+  },
   // Whether the movement was within the approved window. 'N/A' when there is no
   // window to judge against (e.g. an exit without a return time yet).
   punctuality: {

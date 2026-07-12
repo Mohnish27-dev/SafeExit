@@ -53,7 +53,7 @@ const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
 // @route   POST /api/auth/register
 // @access  Public
 const registerUser = async (req, res) => {
-  const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber, emailVerificationToken } = req.body;
+  const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber, gender, emailVerificationToken } = req.body;
 
   try {
     // Resolve the account role SERVER-SIDE. `role` from the body is untrusted and
@@ -97,6 +97,11 @@ const registerUser = async (req, res) => {
     if (!password || String(password).length < 6) {
       return res.status(400).json({ message: 'Please choose a password with at least 6 characters.' });
     }
+    // Gender is required for students so departure rules and warden views can rely
+    // on it; enforce server-side since the browser form can be bypassed.
+    if (!['Male', 'Female', 'Other'].includes(gender)) {
+      return res.status(400).json({ message: 'Please select your gender.' });
+    }
 
     // Canonical account key. Students identify with their real email; staff
     // (Warden/Guard) identify with their staff ID (sent as studentId). Either
@@ -119,7 +124,7 @@ const registerUser = async (req, res) => {
 
     const user = await User.create({
       name, loginId, email: realEmail, password, role: resolvedRole,
-      studentId, roomNumber, department, year, phoneNumber
+      studentId, roomNumber, department, year, phoneNumber, gender
     });
 
     if (user) {
@@ -216,10 +221,50 @@ const getUserProfile = async (req, res) => {
       department: user.department,
       year: user.year,
       phoneNumber: user.phoneNumber,
+      gender: user.gender,
       webAuthnRegistered: user.webAuthnRegistered
     });
   } else {
     res.status(404).json({ message: 'User not found' });
+  }
+};
+
+// @desc    Update the logged-in student's own profile (currently: gender only,
+//          to backfill accounts created before the field existed)
+// @route   PATCH /api/auth/profile
+// @access  Private
+const updateUserProfile = async (req, res) => {
+  const { gender } = req.body;
+
+  if (!['Male', 'Female', 'Other'].includes(gender)) {
+    return res.status(400).json({ message: 'Please select a valid gender.' });
+  }
+
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.gender = gender;
+    await user.save();
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      loginId: user.loginId,
+      email: user.email,
+      role: user.role,
+      studentId: user.studentId,
+      roomNumber: user.roomNumber,
+      department: user.department,
+      year: user.year,
+      phoneNumber: user.phoneNumber,
+      gender: user.gender,
+      webAuthnRegistered: user.webAuthnRegistered,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 };
 
@@ -440,6 +485,7 @@ module.exports = {
   registerUser,
   authUser,
   getUserProfile,
+  updateUserProfile,
   logoutUser,
   getRegistrationOptions,
   verifyRegistration,

@@ -44,6 +44,19 @@ const isDeparturePassed = (outTime, at = Date.now()) => {
   return at > departure.getTime();
 };
 
+// Symmetric with isDeparturePassed: a scan before the pass's approved
+// departure time isn't a legitimate early exit, it's someone trying to use a
+// pass that hasn't opened yet. This matters most for multi-day Leave
+// Applications, which can be approved days ahead of the actual leave date —
+// without this check, an approved-for-the-13th pass would let a student exit
+// on the 12th. Same absolute-instant, timezone-safe comparison as
+// isDeparturePassed. `at` is injectable for tests.
+const isBeforeDeparture = (outTime, at = Date.now()) => {
+  const departure = new Date(outTime);
+  if (Number.isNaN(departure.getTime())) return false;
+  return at < departure.getTime();
+};
+
 // A return is late when the student is scanned back IN after the pass's expected
 // return time (`inTime`). Like `isDeparturePassed`, this compares absolute
 // instants (`inTime` is a stored Date), so it's timezone-safe. This is the
@@ -56,10 +69,55 @@ const isReturnLate = (inTime, at = Date.now()) => {
   return at > expectedReturn.getTime();
 };
 
+// Separate rule for multi-day Leave Applications: female students must depart
+// on or before 5:30 PM (campus local time). This intentionally shares its
+// clock value with AUTO_APPROVE_CUTOFF_MINUTES but is a distinct policy (a
+// hard departure curfew, not an auto-approval threshold) and only applies to
+// Leave Applications, never same-day Outing — kept as its own named export so
+// the two rules can diverge independently in the future.
+const EVENING_CURFEW_MINUTES = 17 * 60 + 30; // 5:30 PM, campus local time
+
+const isBeforeEveningCurfew = (date) => {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return false;
+  return minutesOfDayInTimeZone(d, CAMPUS_TIMEZONE) <= EVENING_CURFEW_MINUTES;
+};
+
+// A Leave Application pass is usable only until 5:30 PM (campus local time) on
+// its own departure day. Past that instant the pass is dead — the student may
+// no longer leave on it and must file a fresh application. This is the LATE
+// bound of the leave exit window; `isBeforeDeparture(leaveDate)` is the early
+// bound. Unlike a same-day Outing (whose only bound is its outTime deadline), a
+// leave gets this fixed 5:30 PM cap regardless of the exact approved leaveDate.
+//
+// Days are compared in campus-local time so a scan on ANY later calendar day
+// counts as past-curfew no matter the clock time. `at` is injectable for tests.
+const isAfterLeaveCurfew = (leaveDate, at = Date.now()) => {
+  const dep = new Date(leaveDate);
+  if (Number.isNaN(dep.getTime())) return false;
+  const now = new Date(at);
+  const campusDay = (d) =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: CAMPUS_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  const depDay = campusDay(dep);
+  const nowDay = campusDay(now);
+  if (nowDay < depDay) return false; // scan is before the departure day entirely
+  if (nowDay > depDay) return true; // a later calendar day — curfew long passed
+  return minutesOfDayInTimeZone(now, CAMPUS_TIMEZONE) > EVENING_CURFEW_MINUTES;
+};
+
 module.exports = {
   qualifiesForAutoApproval,
   isDeparturePassed,
+  isBeforeDeparture,
   isReturnLate,
+  isBeforeEveningCurfew,
+  isAfterLeaveCurfew,
   AUTO_APPROVE_CUTOFF_MINUTES,
+  EVENING_CURFEW_MINUTES,
   CAMPUS_TIMEZONE,
 };

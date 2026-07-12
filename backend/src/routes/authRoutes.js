@@ -4,6 +4,7 @@ const {
   registerUser,
   authUser,
   getUserProfile,
+  updateUserProfile,
   logoutUser,
   getRegistrationOptions,
   verifyRegistration,
@@ -36,6 +37,7 @@ router.post('/register', registerLimiter, registerUser);
 router.post('/login', authLimiter, authUser);
 router.post('/logout', logoutUser);
 router.get('/profile', protect, getUserProfile);
+router.patch('/profile', protect, updateUserProfile);
 
 // WebAuthn registration (requires an authenticated session to bind the passkey to)
 router.post('/webauthn/register/options', protect, getRegistrationOptions);

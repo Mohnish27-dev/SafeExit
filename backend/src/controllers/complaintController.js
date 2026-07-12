@@ -1,4 +1,5 @@
 const Complaint = require('../models/Complaint');
+const sseHub = require('../utils/sseHub');
 
 // @desc    Create new complaint
 // @route   POST /api/complaint
@@ -12,6 +13,15 @@ const createComplaint = async (req, res) => {
       roomNumber: req.user.roomNumber,
       category,
       description
+    });
+
+    // Push the new complaint to any open warden/admin dashboards instantly,
+    // same real-time pattern as outing requests and SOS alerts.
+    sseHub.broadcast('complaint:created', {
+      id: complaint._id,
+      category: complaint.category,
+      status: complaint.status,
+      studentName: req.user.name,
     });
 
     res.status(201).json(complaint);
@@ -60,6 +70,14 @@ const updateComplaintStatus = async (req, res) => {
       if (resolutionComments) complaint.resolutionComments = resolutionComments;
 
       const updatedComplaint = await complaint.save();
+
+      // Let every other open warden/admin dashboard reflect the resolution
+      // instantly, and let the student's own "My Complaints" poll pick it up.
+      sseHub.broadcast('complaint:updated', {
+        id: updatedComplaint._id,
+        status: updatedComplaint.status,
+      });
+
       res.json(updatedComplaint);
     } else {
       res.status(404).json({ message: 'Complaint not found' });
@@ -69,9 +87,37 @@ const updateComplaintStatus = async (req, res) => {
   }
 };
 
+// @desc    Live stream of complaint changes (new complaints, status updates)
+//          so warden/admin dashboards update in real time.
+// @route   GET /api/complaint/stream
+// @access  Private (Warden/Admin)
+const streamComplaintEvents = (req, res) => {
+  req.socket.setTimeout(0);
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write('retry: 3000\n\n');
+
+  sseHub.addClient(res);
+
+  // Proxies/load balancers tend to kill idle connections; a periodic comment
+  // keeps this one alive without triggering any client-side event handler.
+  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseHub.removeClient(res);
+  });
+};
+
 module.exports = {
   createComplaint,
   getMyComplaints,
   getComplaints,
-  updateComplaintStatus
+  updateComplaintStatus,
+  streamComplaintEvents
 };
