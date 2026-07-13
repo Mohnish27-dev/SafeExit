@@ -82,22 +82,26 @@ export default function SecurityDashboardPage() {
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
 
-  // Pull the latest gate movements and derive each student's current status from
-  // their most recent scan (logs are returned newest-first by the backend).
+  // Pull the latest gate movements for the Recent Scans list, and derive the
+  // Inside/Outside/Overdue counts from the student roster. campusStatus is the
+  // authoritative per-student location (written on every scan), and the backend
+  // overlays a live 'Overdue' status onto students out past their return window —
+  // so the counts (and the overdue alert) update on their own each poll cycle,
+  // without waiting for a return scan.
   const loadScans = useCallback(async () => {
     try {
-      const logs = await apiFetch("/scan?limit=100");
+      const [logs, students] = await Promise.all([
+        apiFetch("/scan?limit=100"),
+        apiFetch("/admin/users?role=Student"),
+      ]);
       setScans(logs);
 
-      const seen = new Set();
       const tally = { inside: 0, outside: 0, overdue: 0 };
-      for (const log of logs) {
-        const sid = log.student?._id || log.student?.studentId;
-        if (!sid || seen.has(sid)) continue; // only the most recent scan per student
-        seen.add(sid);
-        if (log.direction === "IN") tally.inside += 1;
-        else if (log.punctuality === "Overdue") tally.overdue += 1;
-        else tally.outside += 1;
+      for (const s of students) {
+        const status = (s.campusStatus || "").toLowerCase();
+        if (status === "inside") tally.inside += 1;
+        else if (status === "overdue") tally.overdue += 1;
+        else tally.outside += 1; // 'outside' and any unknown status
       }
       setCounts(tally);
     } catch {

@@ -2,6 +2,7 @@ const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
 const Complaint = require('../models/Complaint');
 const SOSAlert = require('../models/SOSAlert');
+const { getOverdueStudentIds } = require('../utils/overdue');
 
 // @desc    Aggregate counts for the admin overview dashboard
 // @route   GET /api/admin/overview
@@ -12,7 +13,7 @@ const getOverview = async (req, res) => {
       totalStudents,
       studentsInside,
       studentsOutside,
-      studentsOverdue,
+      overdueIds,
       totalGuards,
       guardsOnDuty,
       totalWardens,
@@ -24,7 +25,10 @@ const getOverview = async (req, res) => {
       User.countDocuments({ role: 'Student' }),
       User.countDocuments({ role: 'Student', campusStatus: 'Inside' }),
       User.countDocuments({ role: 'Student', campusStatus: 'Outside' }),
-      User.countDocuments({ role: 'Student', campusStatus: 'Overdue' }),
+      // 'Overdue' is a live time-based condition, never a stored campusStatus
+      // (the scan machine only ever writes Inside/Outside). Derive it at read
+      // time from passes still 'Out' past their return window.
+      getOverdueStudentIds(),
       User.countDocuments({ role: 'Guard' }),
       User.countDocuments({ role: 'Guard', onDuty: true }),
       User.countDocuments({ role: 'Warden' }),
@@ -34,11 +38,18 @@ const getOverview = async (req, res) => {
       Complaint.countDocuments({ status: { $in: ['Open', 'In Progress'] } })
     ]);
 
+    // An overdue student's campusStatus is still 'Outside' (it's never flipped to
+    // 'Overdue'), so they're included in the Outside count above. Subtract them so
+    // the Outside and Overdue tiles are disjoint buckets — Outside = out but still
+    // on time, Overdue = out past the return window.
+    const studentsOverdue = overdueIds.size;
+    const onTimeOutside = Math.max(0, studentsOutside - studentsOverdue);
+
     res.json({
       students: {
         total: totalStudents,
         inside: studentsInside,
-        outside: studentsOutside,
+        outside: onTimeOutside,
         overdue: studentsOverdue
       },
       guards: { total: totalGuards, onDuty: guardsOnDuty },
@@ -69,7 +80,18 @@ const getUsers = async (req, res) => {
 
     const users = await User.find(filter)
       .select(req.user.role === 'Guard' ? guardFields : allFields)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Overlay the live 'Overdue' status onto students who are out past their
+    // return window. campusStatus is only ever stored as Inside/Outside, so this
+    // derived value (not persisted) is what lets the roster views and their
+    // ?filter=overdue query surface late students without a background job.
+    const overdueIds = await getOverdueStudentIds();
+    for (const u of users) {
+      if (overdueIds.has(String(u._id))) u.campusStatus = 'Overdue';
+    }
+
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
