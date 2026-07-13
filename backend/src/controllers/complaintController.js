@@ -1,5 +1,6 @@
 const Complaint = require('../models/Complaint');
 const sseHub = require('../utils/sseHub');
+const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
 // @desc    Create new complaint
 // @route   POST /api/complaint
@@ -17,11 +18,13 @@ const createComplaint = async (req, res) => {
 
     // Push the new complaint to any open warden/admin dashboards instantly,
     // same real-time pattern as outing requests and SOS alerts.
+    // No student PII in the payload: the SSE hub broadcasts to every connected
+    // dashboard (including out-of-hostel wardens), so a name here would leak
+    // past the per-hostel visibility boundary. Clients refetch the scoped list.
     sseHub.broadcast('complaint:created', {
       id: complaint._id,
       category: complaint.category,
       status: complaint.status,
-      studentName: req.user.name,
     });
 
     res.status(201).json(complaint);
@@ -47,7 +50,7 @@ const getMyComplaints = async (req, res) => {
 // @access  Private (Warden/Admin)
 const getComplaints = async (req, res) => {
   try {
-    const complaints = await Complaint.find({})
+    const complaints = await Complaint.find({ ...(await scopedStudentFilter(req.user)) })
       .populate('student', 'name studentId roomNumber')
       .sort({ createdAt: -1 });
     res.json(complaints);
@@ -63,9 +66,16 @@ const updateComplaintStatus = async (req, res) => {
   const { status, resolutionComments } = req.body;
 
   try {
-    const complaint = await Complaint.findById(req.params.id);
+    const complaint = await Complaint.findById(req.params.id).populate('student', 'gender');
 
     if (complaint) {
+      // A warden may only act on complaints from students in their own hostel.
+      if (!studentGenderInScope(req.user, complaint.student?.gender)) {
+        return res.status(403).json({
+          message: 'This complaint belongs to a student outside your hostel.',
+        });
+      }
+
       complaint.status = status;
       if (resolutionComments) complaint.resolutionComments = resolutionComments;
 

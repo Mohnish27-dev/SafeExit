@@ -76,7 +76,7 @@ const getUsers = async (req, res) => {
 
     // Guards only see non-confidential fields (photo, name, roll number, status).
     const guardFields = 'name studentId campusStatus lastSeenAt photo';
-    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
+    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
 
     const users = await User.find(filter)
       .select(req.user.role === 'Guard' ? guardFields : allFields)
@@ -112,7 +112,7 @@ const buildStaffLoginId = (id) => (id || '').trim().toLowerCase().replace(/\s+/g
 // device passkey. No .env edit or redeploy per staff member.
 const createStaff = async (req, res) => {
   try {
-    const { name, staffId, role, pin, phoneNumber } = req.body;
+    const { name, staffId, role, pin, phoneNumber, managedGender } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Name is required.' });
@@ -128,6 +128,12 @@ const createStaff = async (req, res) => {
     if (!pin || String(pin).trim().length < 4) {
       return res.status(400).json({ message: 'An initial PIN of at least 4 characters is required.' });
     }
+    // A Warden must be tied to exactly one hostel so the system can route each
+    // student's requests to the right warden and keep the other hostel's student
+    // details private. 'Male' = boys' hostel, 'Female' = girls' hostel.
+    if (role === 'Warden' && !['Male', 'Female'].includes(managedGender)) {
+      return res.status(400).json({ message: "Select the warden's hostel (Boys' or Girls')." });
+    }
 
     const loginId = buildStaffLoginId(staffId);
     const exists = await User.findOne({ $or: [{ loginId }, { email: loginId }] });
@@ -142,6 +148,8 @@ const createStaff = async (req, res) => {
       role,
       studentId: staffId.trim(),
       phoneNumber,
+      // Only meaningful for wardens; left unset for guards.
+      managedGender: role === 'Warden' ? managedGender : undefined,
     });
 
     res.status(201).json({
@@ -151,6 +159,7 @@ const createStaff = async (req, res) => {
       role: user.role,
       studentId: user.studentId,
       phoneNumber: user.phoneNumber,
+      managedGender: user.managedGender,
       createdAt: user.createdAt,
     });
   } catch (error) {
@@ -191,6 +200,41 @@ const resetStaffPin = async (req, res) => {
   }
 };
 
+// @desc    Assign / change the hostel a Warden oversees
+// @route   PATCH /api/admin/staff/:id/scope
+// @access  Private (Admin)
+//
+// This is how wardens created before the per-hostel split (or any warden without
+// a hostel yet) get scoped. An unassigned warden sees no students until this is
+// set, so this endpoint is what turns them "on" for their hostel.
+const updateStaffScope = async (req, res) => {
+  try {
+    const { managedGender } = req.body;
+    if (!['Male', 'Female'].includes(managedGender)) {
+      return res.status(400).json({ message: "Hostel must be 'Male' (boys') or 'Female' (girls')." });
+    }
+
+    const user = await User.findById(req.params.id);
+    // Only wardens have a hostel scope — never students, guards, or admins.
+    if (!user || user.role !== 'Warden') {
+      return res.status(404).json({ message: 'Warden not found.' });
+    }
+
+    user.managedGender = managedGender;
+    await user.save();
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      loginId: user.loginId,
+      role: user.role,
+      managedGender: user.managedGender,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Remove a Warden or Guard account
 // @route   DELETE /api/admin/staff/:id
 // @access  Private (Admin)
@@ -214,5 +258,6 @@ module.exports = {
   getUsers,
   createStaff,
   resetStaffPin,
+  updateStaffScope,
   removeStaff
 };

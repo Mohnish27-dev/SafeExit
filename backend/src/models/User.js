@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
   password: { type: String }, // optional for webauthn-only, but usually required for first login
   role: { type: String, enum: ['Student', 'Warden', 'Guard', 'Admin'], default: 'Student' },
   gender: { type: String, enum: ['Male', 'Female', 'Other'] },
+  // Which hostel this Warden oversees: 'Male' = boys' hostel, 'Female' = girls'
+  // hostel. Only meaningful for role 'Warden'. Unset = not yet assigned by admin,
+  // which means the warden sees no students until configured.
+  managedGender: { type: String, enum: ['Male', 'Female'] },
   studentId: { type: String }, // e.g., register number
   department: { type: String },
   year: { type: String },
