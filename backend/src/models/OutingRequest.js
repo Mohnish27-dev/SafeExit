@@ -14,6 +14,23 @@ const outingRequestSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Which college outing rule set governs this pass. This, combined with the
+  // student's `gender` (on the User doc), decides the departure window, the
+  // fixed return deadline, and whether a warden must approve the pass:
+  //   'Nearby'  — female-only: a short walk (café/food nearby), no warden
+  //               approval, departs 6:00 AM-6:30 PM, must return by 8:00 PM.
+  //   'Market'  — female-only: a trip to the local market, warden approval
+  //               required, departs 6:00 AM-2:30 PM, must return by 5:30 PM.
+  //   'General' — male students: a single combined outing path (nearby and
+  //               market share identical rules for them), no warden approval,
+  //               departs 6:00 AM-7:59 PM (just before the fixed 8:00 PM
+  //               return), must return by 8:00 PM.
+  // The exact windows/deadlines live in utils/outingRules.js, never here.
+  outingType: {
+    type: String,
+    enum: ['Nearby', 'Market', 'General'],
+    default: 'General'
+  },
   outTime: {
     type: Date,
     required: true

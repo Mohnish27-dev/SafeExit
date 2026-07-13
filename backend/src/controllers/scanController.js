@@ -8,7 +8,18 @@ const {
   isBeforeDeparture,
   isReturnLate,
   isAfterLeaveCurfew,
+  resolveOutingPolicy,
+  isWithinDepartureWindow,
 } = require('../utils/outingRules');
+
+// Human-readable clock label for a minutes-since-midnight value, for messages.
+const clockLabel = (minutes) => {
+  const h24 = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const period = h24 < 12 ? 'AM' : 'PM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+};
 
 // Escape a user-supplied string for safe use inside a RegExp.
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -178,17 +189,33 @@ const createScanLog = async (req, res) => {
           });
         }
       } else {
-        // Outing pass: `outTime` is a hard DEADLINE only. The student may exit
-        // any time before it (leaving early is fine) but not after — this is
-        // the original single-day outing behavior. Once the departure time has
-        // passed the pass is expired; we persist the terminal 'Expired' status
-        // so every dashboard reflects what the gate enforced.
-        if (isDeparturePassed(windowStart)) {
-          linkedPass.doc.status = 'Expired';
-          await linkedPass.doc.save();
+        // Outing pass: exit is only allowed inside the gender/type policy
+        // departure window (e.g. a female 'Nearby' pass may only be used to
+        // leave between 6:00 PM and 6:30 PM). We judge the CURRENT moment
+        // against that window, not the student's exact chosen `outTime`, so the
+        // college's "no one leaves before/after X" rule is what the gate
+        // enforces. `studentDoc.gender` is trusted (from the DB), never the QR.
+        const policy = resolveOutingPolicy(studentDoc.gender, linkedPass.doc.outingType);
+        if (!isWithinDepartureWindow(studentDoc.gender, linkedPass.doc.outingType, new Date())) {
+          const windowText = `${clockLabel(policy.departStartMinutes)}-${clockLabel(
+            policy.departEndMinutes
+          )}`;
+          // Past the window's end -> the pass is dead for today; persist the
+          // terminal 'Expired' status so every dashboard reflects it. Before the
+          // window opens -> leave the pass untouched (the student can return and
+          // use it once the window opens), mirroring the leave not-yet-valid path.
+          if (isDeparturePassed(windowStart)) {
+            linkedPass.doc.status = 'Expired';
+            await linkedPass.doc.save();
+            return res.status(403).json({
+              message: `This outing pass has expired — its departure window (${windowText}, campus time) has already passed. Exit denied; the student must file a new request.`,
+              outTime: windowStart,
+              inTime: windowEnd,
+              campusStatus: studentDoc.campusStatus,
+            });
+          }
           return res.status(403).json({
-            message:
-              'This outing pass has expired — the approved departure time has already passed. Exit denied; the student must file a new request.',
+            message: `This outing may only be used to exit between ${windowText} (campus time). Exit denied until the window opens.`,
             outTime: windowStart,
             inTime: windowEnd,
             campusStatus: studentDoc.campusStatus,
@@ -337,11 +364,15 @@ const previewScan = async (req, res) => {
           exit = { allowed: true, reason: null, passType: 'Leave', pass: window };
         }
       } else {
-        // Outing: outTime is a deadline only — valid any time up to it.
-        if (isDeparturePassed(window.windowStart)) {
+        // Outing: exit is only valid inside the gender/type departure window.
+        // Mirror the live OUT enforcement so the guard's dialog shows the real
+        // verdict (and distinguishes not-yet-open from expired) before confirming.
+        if (isWithinDepartureWindow(studentDoc.gender, approvedPass.doc.outingType, new Date())) {
+          exit = { allowed: true, reason: null, passType: 'Outing', pass: window };
+        } else if (isDeparturePassed(window.windowStart)) {
           exit = { allowed: false, reason: 'expired', passType: 'Outing', pass: window };
         } else {
-          exit = { allowed: true, reason: null, passType: 'Outing', pass: window };
+          exit = { allowed: false, reason: 'not-yet-valid', passType: 'Outing', pass: window };
         }
       }
     }

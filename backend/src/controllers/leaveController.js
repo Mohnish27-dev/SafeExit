@@ -83,16 +83,17 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
-    // Departure curfew: a leave pass is only valid until 5:30 PM (campus time)
-    // on its departure day, so a leave departing after 5:30 PM could never be
-    // used at the gate. Reject it up front for EVERY student. The gate re-
-    // enforces the same 5:30 PM cap at scan time (see scanController's
+    // Departure window: a leave pass may only be used to depart between 6:00 AM
+    // and 5:30 PM (campus time) on its departure day, so a leave departing
+    // outside that window could never be used at the gate. Reject it up front
+    // for EVERY student (leave timing is gender-agnostic). The gate re-enforces
+    // the same 5:30 PM late cap at scan time (see scanController's
     // isAfterLeaveCurfew), so this early check is a friendly guard rail, not the
     // security boundary — an application that gets Approved is already compliant.
     if (!isBeforeEveningCurfew(leaveDateObj)) {
       return res.status(400).json({
         message:
-          'Leave departure must be on or before 5:30 PM (campus time) — a leave pass is only valid until 5:30 PM on the departure day. Please choose an earlier leave date & time.',
+          'Leave departure must be between 6:00 AM and 5:30 PM (campus time) on the departure day. Please choose a leave time in that window.',
       });
     }
 
