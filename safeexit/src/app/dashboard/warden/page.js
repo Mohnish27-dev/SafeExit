@@ -55,6 +55,7 @@ const mapPending = (o) => ({
   branch: [o.student?.year, o.student?.department].filter(Boolean).join(", ") || "—",
   roll: o.student?.studentId || "",
   destination: o.destination || "",
+  outingType: o.outingType || "",
   out: formatTime(o.outTime),
   return: formatTime(o.inTime),
   initials: initials(o.student?.name),

@@ -59,6 +59,33 @@ const nowMinutesInCampusTZ = () => {
   return hour * 60 + minute;
 };
 
+// Client-side mirror of the outing policy engine in backend/src/utils/outingRules.js.
+// The backend is the authority (it re-derives the same policy from the trusted
+// gender on the user doc); this copy exists only so the form can show the right
+// window, fix the return time, and validate before the round-trip. Keep the clock
+// values in sync with the backend constants. All values are minutes since midnight.
+const OUTING_POLICIES = {
+  femaleNearby: { departStart: 6 * 60, departEnd: 18 * 60 + 30, returnDeadline: 20 * 60, requiresWarden: false },
+  femaleMarket: { departStart: 6 * 60, departEnd: 14 * 60 + 30, returnDeadline: 17 * 60 + 30, requiresWarden: true },
+  general: { departStart: 6 * 60, departEnd: 20 * 60 - 1, returnDeadline: 20 * 60, requiresWarden: false },
+};
+
+// Females choose between Nearby / Market (different rules); every other gender
+// uses the single 'General' path. Mirrors normalizeOutingType on the backend.
+const resolveOutingPolicy = (gender, outingType) => {
+  if (gender === "Female") return outingType === "Market" ? OUTING_POLICIES.femaleMarket : OUTING_POLICIES.femaleNearby;
+  return OUTING_POLICIES.general;
+};
+
+// "1110" minutes -> "6:30 PM" for window/return labels.
+const clockLabel = (minutes) => {
+  const h24 = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const period = h24 < 12 ? "AM" : "PM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+};
+
 // The rest of this screen — validation (parseTimeToMinutes), the ISO body sent
 // to /outing, and the review/success displays — all speak the "hh:mm AM/PM"
 // string format. The native <input type="time"> element, however, works in a
@@ -113,6 +140,9 @@ export default function GenerateTicket() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     destination: "",
+    // 'Nearby' | 'Market' for female students; ignored (single 'General' path)
+    // for everyone else. Backend re-normalizes this against the trusted gender.
+    outingType: "Nearby",
     dateOut: "",
     timeOut: "",
     dateReturn: "",
@@ -145,6 +175,14 @@ export default function GenerateTicket() {
     }));
   }, [hydrated, display.mobile]);
 
+  // The student's gender decides which rule set applies. Females additionally
+  // pick Nearby/Market; everyone else has a single path. `display.gender` comes
+  // from the stored profile; the backend re-derives this from the trusted user
+  // doc, so this is UX-only.
+  const gender = display.gender;
+  const isFemale = gender === "Female";
+  const activePolicy = resolveOutingPolicy(gender, form.outingType);
+
   const set = (key) => (event) =>
     setForm((value) => ({ ...value, [key]: event.target.value }));
 
@@ -162,20 +200,21 @@ export default function GenerateTicket() {
     return hours * 60 + minutes;
   };
 
-  // Build the outing's absolute timestamp for a same-day trip.
-  const buildTodayISO = (timeStr) => {
-    const totalMinutes = parseTimeToMinutes(timeStr);
+  // Build an absolute same-day timestamp from a minutes-since-midnight value.
+  const buildTodayISOFromMinutes = (totalMinutes) => {
     const when = new Date(); // today, in the student's local timezone
     when.setHours(Math.floor(totalMinutes / 60), totalMinutes % 60, 0, 0);
     return when.toISOString();
   };
 
+  // Build the outing's absolute departure timestamp for a same-day trip.
+  const buildTodayISO = (timeStr) => buildTodayISOFromMinutes(parseTimeToMinutes(timeStr));
+
   const validate = () => {
     const nextErrors = {};
     if (!form.destination.trim()) nextErrors.destination = "Destination is required";
     if (!form.timeOut) nextErrors.timeOut = "Departure time is required";
-    if (!form.timeReturn) nextErrors.timeReturn = "Return time is required";
-    
+
     if (form.timeOut) {
       const outMins = parseTimeToMinutes(form.timeOut);
       // Judge "past" against the campus clock (IST), matching the backend rule,
@@ -185,15 +224,13 @@ export default function GenerateTicket() {
 
       if (outMins < currentMins) {
         nextErrors.timeOut = "Departure time cannot be in the past";
-      }
-      
-      if (form.timeReturn) {
-        const returnMins = parseTimeToMinutes(form.timeReturn);
-        if (outMins >= returnMins) {
-          nextErrors.timeReturn = "Return time must be after departure time";
-        }
+      } else if (outMins < activePolicy.departStart || outMins > activePolicy.departEnd) {
+        // Enforce the gender/type departure window (backend re-checks this).
+        nextErrors.timeOut = `Departure must be between ${clockLabel(activePolicy.departStart)} and ${clockLabel(activePolicy.departEnd)}`;
       }
     }
+
+    // Return time is fixed by policy, not chosen by the student — nothing to validate.
 
     if (!form.contact || form.contact.length < 10) nextErrors.contact = "Valid contact number required";
     setErrors(nextErrors);
@@ -221,7 +258,17 @@ export default function GenerateTicket() {
     // validate() replaces the whole errors object each call, so a stale
     // "submit" failure from a previous attempt is naturally dropped here —
     // nothing extra needed to clear it on re-entry to review.
-    if (validate()) setStep("review");
+    if (validate()) {
+      // Stamp the policy-fixed return time (same-day) so the review/success
+      // screens display the deadline the server will actually set. The student
+      // never picked it — it's mandated by the college rule.
+      setForm((value) => ({
+        ...value,
+        timeReturn: clockLabel(activePolicy.returnDeadline),
+        dateReturn: value.dateReturn || value.dateOut,
+      }));
+      setStep("review");
+    }
   };
 
   const handleSubmit = async () => {
@@ -237,8 +284,11 @@ export default function GenerateTicket() {
       const body = {
         destination: form.destination,
         purpose: form.note || "Outing",
+        // Females send their chosen type; everyone else sends 'General' (the
+        // backend normalizes anyway). Return time is NOT sent — the server
+        // fixes it from the college policy.
+        outingType: isFemale ? form.outingType : "General",
         outTime: buildTodayISO(form.timeOut),
-        inTime: buildTodayISO(form.timeReturn),
       };
 
       // apiFetch parses JSON and throws on non-2xx (message caught below).
@@ -366,12 +416,12 @@ export default function GenerateTicket() {
             {isAutoApproved ? (
               <>
                 <CheckCircle2 size={14} className="text-emerald-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-slate-600">Your ticket has been auto-approved as your return time is on or before 5:30 PM.</p>
+                <p className="text-xs text-slate-600">Your ticket is auto-approved — this outing type doesn&rsquo;t need warden approval. Show your pass at the gate to log your exit.</p>
               </>
             ) : (
               <>
                 <AlertCircle size={14} className="text-sky-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-slate-600">Warden will review your ticket. You will be notified once approved.</p>
+                <p className="text-xs text-slate-600">Local market outings need warden approval. You will be notified once approved.</p>
               </>
             )}
           </div>
@@ -588,6 +638,55 @@ export default function GenerateTicket() {
       <StudentFeaturePanel className="p-5 space-y-4" delay={80}>
         <p className="sf-section-label">Outing Details</p>
 
+        {isFemale && (
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+              <Ticket size={11} className="inline mr-1 text-sky-500" />
+              Outing Type *
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { key: "Nearby", title: "Nearby", desc: "Walk to a café / to eat" },
+                { key: "Market", title: "Local Market", desc: "Trip to the city market" },
+              ].map((opt) => {
+                const selected = form.outingType === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setForm((v) => ({ ...v, outingType: opt.key }))}
+                    className={`text-left rounded-2xl p-3.5 border transition-all ${
+                      selected
+                        ? "border-sky-400 bg-sky-50/70 shadow-xs ring-1 ring-sky-200"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <p className={`text-sm font-bold ${selected ? "text-sky-700" : "text-slate-700"}`}>{opt.title}</p>
+                    <p className="text-[11px] text-slate-400 font-medium mt-0.5 leading-normal">{opt.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="sf-notice sf-notice--warn mt-3">
+              <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                {form.outingType === "Market"
+                  ? "Local market outings need warden approval. Leave between 6:00 AM and 2:30 PM; you must return by 5:30 PM."
+                  : "Nearby outings are auto-approved. Leave between 6:00 AM and 6:30 PM; you must return by 8:00 PM."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!isFemale && (
+          <div className="sf-notice sf-notice--warn">
+            <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              No warden approval needed. Leave between 6:00 AM and 5:30 PM; you must return by 8:00 PM.
+            </p>
+          </div>
+        )}
+
         <div>
           <label className="text-xs font-semibold text-slate-600 block mb-1.5">
             <MapPin size={11} className="inline mr-1 text-sky-500" />
@@ -619,21 +718,24 @@ export default function GenerateTicket() {
               onChange={setTime("timeOut")}
               className={`sf-input ${errors.timeOut ? "sf-input--error" : ""}`}
             />
+            <p className="text-[11px] text-slate-400 font-medium mt-1">
+              Allowed: {clockLabel(activePolicy.departStart)} – {clockLabel(activePolicy.departEnd)}
+            </p>
             {errors.timeOut && <p className="text-xs text-rose-500 mt-1">{errors.timeOut}</p>}
           </div>
 
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1.5">
               <Clock size={11} className="inline mr-1 text-sky-500" />
-              Return Time *
+              Return By (fixed)
             </label>
-            <input
-              type="time"
-              value={to24Hour(form.timeReturn)}
-              onChange={setTime("timeReturn")}
-              className={`sf-input ${errors.timeReturn ? "sf-input--error" : ""}`}
-            />
-            {errors.timeReturn && <p className="text-xs text-rose-500 mt-1">{errors.timeReturn}</p>}
+            {/* Return time is set by the college rule, not chosen by the student. */}
+            <div className="sf-input flex items-center bg-slate-50 text-slate-700 font-semibold cursor-not-allowed">
+              {clockLabel(activePolicy.returnDeadline)}
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium mt-1">
+              Warden is alerted if you are not back by this time.
+            </p>
           </div>
         </div>
       </StudentFeaturePanel>

@@ -67,6 +67,11 @@ export default function RequestsView({
                   {req.destination && (
                     <p className="sd-micro mt-0.5 text-slate-500">{t("toDestination")} {req.destination}</p>
                   )}
+                  {req.outingType && (
+                    <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100">
+                      {req.outingType === "Market" ? "Local Market" : req.outingType}
+                    </span>
+                  )}
                 </div>
               </div>
 
