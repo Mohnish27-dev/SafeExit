@@ -1,6 +1,7 @@
 const LeaveApplication = require('../models/LeaveApplication');
 const sseHub = require('../utils/sseHub');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
+const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
@@ -137,7 +138,7 @@ const getMyLeaveApplications = async (req, res) => {
 // @access  Private (Warden)
 const getPendingLeaveApplications = async (req, res) => {
   try {
-    const applications = await LeaveApplication.find({ status: 'Pending' })
+    const applications = await LeaveApplication.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
       .populate('student', 'name studentId roomNumber hostelName')
       .sort({ leaveDate: 1 });
 
@@ -159,10 +160,17 @@ const updateLeaveStatus = async (req, res) => {
   const { status, remarks } = req.body;
 
   try {
-    const application = await LeaveApplication.findById(req.params.id);
+    const application = await LeaveApplication.findById(req.params.id).populate('student', 'gender');
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
+    }
+
+    // A warden may only act on applications from students in their own hostel.
+    if (!studentGenderInScope(req.user, application.student?.gender)) {
+      return res.status(403).json({
+        message: 'This application belongs to a student outside your hostel.',
+      });
     }
 
     // Guard against approving an application whose leave date has already

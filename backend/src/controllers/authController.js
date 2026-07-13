@@ -192,6 +192,7 @@ const authUser = async (req, res) => {
         email: user.email,
         role: user.role,
         studentId: user.studentId,
+        managedGender: user.managedGender,
         webAuthnRegistered: user.webAuthnRegistered,
         token
       });
@@ -222,6 +223,7 @@ const getUserProfile = async (req, res) => {
       year: user.year,
       phoneNumber: user.phoneNumber,
       gender: user.gender,
+      managedGender: user.managedGender,
       webAuthnRegistered: user.webAuthnRegistered
     });
   } else {

@@ -2,9 +2,13 @@
 
 import { useTranslation } from "@/app/lib/i18n";
 
+// A warden's managedGender maps to the hostel they oversee.
+const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
+
 export default function ProfileView({ user, displayName }) {
   const { t } = useTranslation("warden");
   const { t: tc } = useTranslation("common");
+  const hostelLabel = HOSTEL_LABEL[user?.managedGender];
 
   return (
     <section className="sd-luxe-panel sd-luxe-rise mt-6 rounded-4xl p-6 sm:p-7 shadow-xl">
@@ -13,6 +17,11 @@ export default function ProfileView({ user, displayName }) {
         <div>
           <h2 className="text-2xl font-bold">{displayName}</h2>
           <p className="text-sm text-slate-500">{(user && (user.roleLabel || user.role)) || t("chiefWarden")}</p>
+          {hostelLabel ? (
+            <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-700">Manages: {hostelLabel}</span>
+          ) : (
+            <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">No hostel assigned — contact admin</span>
+          )}
           <p className="mt-3 text-sm text-slate-700 max-w-xl">{t("profileDesc")}</p>
           <div className="mt-4 flex gap-3">
             <button className="px-4 py-2 rounded bg-indigo-600 text-white" onClick={() => alert('Edit profile (demo)')}>{tc("editProfile")}</button>

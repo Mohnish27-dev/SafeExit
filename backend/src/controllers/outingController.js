@@ -7,6 +7,7 @@ const {
   computeReturnDeadline,
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
+const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
 // Human-readable clock label for a minutes-since-midnight value, for messages.
 const clockLabel = (minutes) => {
@@ -152,7 +153,7 @@ const getMyOutingRequests = async (req, res) => {
 // @access  Private (Warden/Guard)
 const getPendingRequests = async (req, res) => {
   try {
-    const requests = await OutingRequest.find({ status: 'Pending' })
+    const requests = await OutingRequest.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
       .populate('student', 'name studentId roomNumber')
       .sort({ createdAt: 1 });
 
@@ -187,9 +188,18 @@ const updateRequestStatus = async (req, res) => {
   }
 
   try {
-    const request = await OutingRequest.findById(req.params.id);
+    const request = await OutingRequest.findById(req.params.id).populate('student', 'gender');
 
     if (request) {
+      // A warden may only act on requests from students in their own hostel.
+      // This re-checks scope server-side so a direct API call can't approve or
+      // reject a request outside the warden's gender scope.
+      if (!studentGenderInScope(req.user, request.student?.gender)) {
+        return res.status(403).json({
+          message: 'This request belongs to a student outside your hostel.',
+        });
+      }
+
       // A decision can only be made on a request that is still awaiting one.
       // Once a pass has left 'Pending' (approved, rejected, out on a trip,
       // returned, expired or cancelled) it is out of the warden's hands — this
