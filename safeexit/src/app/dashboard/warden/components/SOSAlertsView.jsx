@@ -105,15 +105,15 @@ export default function SOSAlertsView({ onCountChange }) {
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-rose-200 bg-rose-50/70 px-5 py-4">
+      <div className="sd-luxe-panel sd-glow-border sd-enter flex flex-wrap items-center justify-between gap-3 rounded-4xl px-5 py-4">
         <div className="flex items-center gap-3">
-          <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+          <span className="sd-luxe-float relative flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
             <BellRing className="h-6 w-6" />
             {activeCount > 0 && <span className="absolute -right-1 -top-1 h-3 w-3 animate-ping rounded-full bg-rose-500" />}
           </span>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Emergency SOS Feed</h2>
-            <p className="text-sm text-slate-600">{activeCount} active · live + auto-refreshing</p>
+            <h2 className="sd-title sd-title-sm">Emergency SOS Feed</h2>
+            <p className="sd-micro mt-0.5">{activeCount} active · live + auto-refreshing</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -122,7 +122,7 @@ export default function SOSAlertsView({ onCountChange }) {
               key={f}
               onClick={() => setFilter(f)}
               className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${
-                filter === f ? "bg-slate-900 text-white" : "bg-white text-slate-500 hover:bg-slate-100"
+                filter === f ? "bg-slate-900 text-white" : "sd-luxe-card text-slate-500 hover:bg-slate-50"
               }`}
             >
               {f}
@@ -138,21 +138,35 @@ export default function SOSAlertsView({ onCountChange }) {
           <Loader2 className="h-5 w-5 animate-spin" /> Loading alerts…
         </div>
       ) : visible.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-16 text-center">
-          <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-400" />
-          <p className="mt-3 font-semibold text-slate-700">No {filter !== "All" ? filter.toLowerCase() : ""} alerts</p>
-          <p className="text-sm text-slate-400">All clear on this filter.</p>
+        <div className="sd-luxe-panel sd-enter rounded-4xl py-16">
+          <div className="sd-empty">
+            <div className="relative mx-auto mb-4 flex h-14 w-14 items-center justify-center">
+              <span className="sd-ring" aria-hidden="true" />
+              <span className="sd-ring sd-ring--2" aria-hidden="true" />
+              <span className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-400 text-white">
+                <CheckCircle2 className="h-5 w-5" />
+              </span>
+            </div>
+            <p className="sd-card-title">No {filter !== "All" ? filter.toLowerCase() : ""} alerts</p>
+            <p className="sd-micro mt-1">All clear on this filter.</p>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4">
-          {visible.map((a) => {
+          {visible.map((a, i) => {
             const meta = TYPE_META[a.type] || TYPE_META.other;
             const student = a.student || {};
             return (
               <article
                 key={a._id}
-                className={`rounded-3xl border bg-white p-5 shadow-sm ${a.status === "Active" ? "border-rose-200 ring-1 ring-rose-100" : "border-slate-200"}`}
+                style={{ "--accent": a.status === "Active" ? "#f43f5e" : "#94a3b8", animationDelay: `${0.05 + Math.min(i, 10) * 0.05}s` }}
+                className={`sd-luxe-card sd-luxe-rise relative overflow-hidden rounded-3xl p-5 ${a.status === "Active" ? "ring-1 ring-rose-200" : ""}`}
               >
+                <span
+                  className="absolute inset-y-0 left-0 w-1"
+                  style={{ background: "var(--accent)" }}
+                  aria-hidden="true"
+                />
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
                     <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${meta.tone}`}>

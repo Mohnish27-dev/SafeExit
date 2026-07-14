@@ -4,15 +4,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Scanner } from '@yudiel/react-qr-scanner';
 import {
+  ArrowUpRight,
   Bell,
   CalendarDays,
   ChevronRight,
   Clock3,
+  Loader2,
   LogIn,
   LogOut,
+  MoonStar,
   ScanLine,
   Shield,
   ShieldCheck,
+  Sunrise,
+  SunMedium,
+  Sunset,
   UserCheck,
   UserRound,
   X,
@@ -24,6 +30,7 @@ import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
+import useCountUp from "@/app/hooks/useCountUp";
 
 const defaultProfile = {
   name: "Security Guard",
@@ -35,6 +42,24 @@ const formatClock = (value) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "N/A";
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+};
+
+// Pointer-tracked 3D tilt for the quick-scan hero tiles. Module scope so it
+// isn't recreated every render; mirrors the student dashboard's tile physics.
+const handleTilePointerMove = (e) => {
+  const el = e.currentTarget;
+  const rect = el.getBoundingClientRect();
+  const px = (e.clientX - rect.left) / rect.width;
+  const py = (e.clientY - rect.top) / rect.height;
+  el.style.setProperty("--mx", `${px * 100}%`);
+  el.style.setProperty("--my", `${py * 100}%`);
+  el.style.setProperty("--ry", `${(px - 0.5) * 7}deg`);
+  el.style.setProperty("--rx", `${(0.5 - py) * 7}deg`);
+};
+
+const handleTilePointerLeave = (e) => {
+  e.currentTarget.style.setProperty("--rx", "0deg");
+  e.currentTarget.style.setProperty("--ry", "0deg");
 };
 
 export default function SecurityDashboardPage() {
@@ -163,7 +188,7 @@ export default function SecurityDashboardPage() {
     if (result && result[0]) {
       try {
         const parsed = JSON.parse(result[0].rawValue);
-        
+
         // Fetch full profile from API if available
         try {
           const res = await fetch(`/api/profile?rollNo=${encodeURIComponent(parsed.id)}`);
@@ -231,27 +256,51 @@ export default function SecurityDashboardPage() {
     [now, dateLocale]
   );
 
+  // Contextual time-of-day icon/gradient for the greeting orb — purely
+  // decorative, doesn't touch any of the translated copy above.
+  const timeVisual = useMemo(() => {
+    const hour = now ? now.getHours() : 9;
+    if (hour < 12) return { Icon: Sunrise, orb: "from-amber-400 via-orange-400 to-rose-400", halo: "rgba(251,146,60,0.5)" };
+    if (hour < 17) return { Icon: SunMedium, orb: "from-sky-400 via-cyan-400 to-blue-400", halo: "rgba(56,189,248,0.5)" };
+    if (hour < 21) return { Icon: Sunset, orb: "from-orange-400 via-pink-500 to-violet-500", halo: "rgba(236,72,153,0.5)" };
+    return { Icon: MoonStar, orb: "from-indigo-500 via-violet-500 to-slate-700", halo: "rgba(99,102,241,0.5)" };
+  }, [now]);
+
+  const handleHeroMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.style.setProperty("--spot-x", `${e.clientX - rect.left}px`);
+    e.currentTarget.style.setProperty("--spot-y", `${e.clientY - rect.top}px`);
+  };
+
+  const totalTracked = counts.inside + counts.outside + counts.overdue;
+
   // Gate the guard console on a valid security session; redirects to
   // /login/security when the token is missing or belongs to another role.
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen dashboard-neo text-slate-900">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-10">
       <div className="relative overflow-hidden">
-        <div className="dash-orb dash-orb-one" />
-        <div className="dash-orb dash-orb-two" />
-        <div className="dash-orb dash-orb-three" />
+        <div className="sd-aura sd-aura--a" aria-hidden="true" />
+        <div className="sd-aura sd-aura--b" aria-hidden="true" />
+        <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
-        <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="dash-surface dash-animate-rise dash-stagger-1 flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4 shadow-xl">
+        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+          <header className="sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4">
             <div className="flex items-center gap-4">
-              <div className="dash-glow flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-700 to-cyan-500 text-white shadow-lg">
+              <span
+                className="flex h-14 w-14 items-center justify-center rounded-2xl text-white"
+                style={{
+                  background: "linear-gradient(145deg, #0f172a 0%, #0f766e 52%, #2dd4bf 100%)",
+                  boxShadow: "0 18px 40px -20px rgba(13,148,136,0.6)",
+                }}
+              >
                 <Shield className="h-7 w-7" />
-              </div>
+              </span>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">{t("liveCommand")}</p>
-                <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">{t("controlTitle")}</h1>
-                <p className="text-sm font-medium text-slate-500">{t("guardOps")}</p>
+                <span className="sd-kicker">{t("liveCommand")}</span>
+                <h1 className="sd-title sd-title-md mt-1">{t("controlTitle")}</h1>
+                <p className="sd-body mt-0.5 text-sm">{t("guardOps")}</p>
               </div>
             </div>
 
@@ -259,114 +308,191 @@ export default function SecurityDashboardPage() {
               <LanguageSwitcher />
               <Link
                 href="/dashboard/security/profile"
-                className="dash-card flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 transition hover:opacity-90"
+                className="sd-profile-chip flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3"
               >
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
-                  <ShieldCheck className="h-6 w-6" />
-                </div>
+                <span className="sd-profile-avatar">
+                  <ShieldCheck className="h-5 w-5" />
+                </span>
                 <div className="min-w-0">
-                  <p className="font-bold text-slate-900">{profile.name}</p>
-                  <p className="text-sm font-medium text-slate-500">{profile.roleLabel}</p>
+                  <p className="sd-card-title">{profile.name}</p>
+                  <p className="sd-micro">{profile.roleLabel}</p>
                 </div>
                 <ChevronRight className="h-5 w-5 rotate-90 text-slate-400" />
               </Link>
             </div>
           </header>
 
-          <section className="dash-surface dash-animate-rise dash-stagger-2 mt-6 rounded-[2.5rem] p-6 shadow-xl">
+          <section
+            onPointerMove={handleHeroMove}
+            style={{ animationDelay: "0.12s" }}
+            className="sd-luxe-panel grd-glow-border sd-spot-host sd-enter mt-6 rounded-[2.5rem] p-6"
+          >
+            <span className="sd-spotlight" aria-hidden="true" />
             <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
               <div className="flex flex-wrap items-center gap-5">
-                <div className="dash-animate-float flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-cyan-100 text-indigo-700 ring-8 ring-white/70">
-                  <Clock3 className="h-10 w-10" />
+                <div
+                  className="sd-orb-halo flex h-20 w-20 shrink-0 items-center justify-center rounded-full ring-8 ring-white/70"
+                  style={{ "--halo": timeVisual.halo }}
+                >
+                  <span className={`flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br text-white ${timeVisual.orb}`}>
+                    <timeVisual.Icon className="h-9 w-9" />
+                  </span>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">{t("shiftPulse")}</p>
-                  <h2 className="font-display text-3xl font-bold tracking-tight text-slate-900">
-                    {t("goodMorning")} {greetingName}.
+                  <span className="sd-kicker">{t("shiftPulse")}</span>
+                  <h2 className="sd-title sd-title-md mt-1">
+                    {t("goodMorning")} <span className="sd-name-live">{greetingName}</span>.
                   </h2>
-                  <p className="mt-2 text-lg font-normal text-slate-600">
-                    {t("gatesSynced")}
-                  </p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <p className="sd-body">{t("gatesSynced")}</p>
+                    <svg className="grd-pulse h-5 w-16 shrink-0" viewBox="0 0 120 24" aria-hidden="true">
+                      <path className="grd-pulse__track" d="M0 12 H30 L38 2 L46 22 L54 12 H70 L76 4 L82 20 L88 12 H120" />
+                      <path className="grd-pulse__beat" d="M0 12 H30 L38 2 L46 22 L54 12 H70 L76 4 L82 20 L88 12 H120" />
+                    </svg>
+                  </div>
                 </div>
               </div>
-              <div className="grid gap-3 text-sm font-semibold text-slate-600 sm:grid-cols-2 lg:grid-cols-1">
-                <span className="dash-pill inline-flex items-center gap-3 rounded-full px-4 py-2">
-                  <CalendarDays className="h-5 w-5 text-slate-500" />
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <span className="sd-tag grd-mono">
+                  <CalendarDays className="h-4 w-4" />
                   {formattedDate}
                 </span>
-                <span className="dash-pill inline-flex items-center gap-3 rounded-full px-4 py-2">
-                  <Clock3 className="h-5 w-5 text-slate-500" />
+                <span className="sd-tag grd-mono">
+                  <Clock3 className="h-4 w-4" />
                   {formattedTime}
-                  <span className="dash-chip ml-auto rounded-full px-3 py-1 text-xs font-semibold">{tc("live")}</span>
+                  <span className="ml-auto inline-flex items-center gap-1.5 text-emerald-600">
+                    <span className="grd-radar h-3 w-3" aria-hidden="true" />
+                    {tc("live")}
+                  </span>
                 </span>
               </div>
             </div>
           </section>
 
-          <section className="mt-6 grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-            <div className="dash-surface dash-animate-rise dash-stagger-3 rounded-[2.5rem] p-6 shadow-xl">
+          <section className="mt-6 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-start">
+            <div className="sd-luxe-panel sd-enter rounded-[2.5rem] p-6" style={{ animationDelay: "0.2s" }}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">{t("quickScan")}</p>
-                  <h2 className="font-display text-2xl font-bold tracking-tight">{t("scanGateway")}</h2>
+                  <span className="sd-kicker">{t("quickScan")}</span>
+                  <h2 className="sd-title sd-title-sm mt-1">{t("scanGateway")}</h2>
                 </div>
-                <span className="dash-chip rounded-full px-3 py-1 text-xs font-semibold">{t("realtime")}</span>
+                <span className="sd-tag">
+                  <span className="grd-radar h-3 w-3" aria-hidden="true" />
+                  {t("realtime")}
+                </span>
               </div>
-              <div className="mt-6 grid gap-6 md:grid-cols-2">
-                <div className="dash-card-strong dash-animate-shimmer rounded-[2.25rem] p-6 text-center">
-                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                    <LogOut className="h-12 w-12" />
+              <div className="mt-6 grid gap-5 md:grid-cols-2">
+                <div
+                  onPointerMove={handleTilePointerMove}
+                  onPointerLeave={handleTilePointerLeave}
+                  className="sd-tile sd-luxe-rise"
+                  style={{
+                    animationDelay: "0.24s",
+                    "--tint": "linear-gradient(160deg, rgba(14,165,233,0.13) 0%, rgba(99,102,241,0.09) 100%)",
+                    "--glow": "rgba(14,165,233,0.5)",
+                    "--tile-border": "rgba(56,189,248,0.5)",
+                  }}
+                >
+                  <div className="sd-tile__inner flex flex-col items-center p-7 text-center">
+                    <span className="sd-tile__glare" aria-hidden="true" />
+                    <span
+                      className="sd-lift-lg flex h-20 w-20 items-center justify-center rounded-full text-white"
+                      style={{
+                        background: "linear-gradient(145deg, #0369a1 0%, #38bdf8 55%, #6366f1 100%)",
+                        boxShadow: "0 20px 40px -18px rgba(14,165,233,0.55)",
+                      }}
+                    >
+                      <LogOut className="h-10 w-10" />
+                    </span>
+                    <h3 className="sd-lift-md sd-card-title mt-5 text-2xl">{t("scanExit")}</h3>
+                    <p className="sd-lift-md sd-body mt-2 max-w-sm text-[0.95rem]">{t("scanExitDesc")}</p>
+                    <button
+                      onClick={() => { setScanMode('exit'); setIsScanning(true); }}
+                      className="sd-magnetic mt-6 inline-flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
+                      style={{ background: "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)" }}
+                      onPointerMove={(e) => {
+                        const el = e.currentTarget;
+                        const rect = el.getBoundingClientRect();
+                        el.style.setProperty("--mag-x", `${(e.clientX - (rect.left + rect.width / 2)) * 0.2}px`);
+                        el.style.setProperty("--mag-y", `${(e.clientY - (rect.top + rect.height / 2)) * 0.2}px`);
+                      }}
+                      onPointerLeave={(e) => {
+                        e.currentTarget.style.setProperty("--mag-x", "0px");
+                        e.currentTarget.style.setProperty("--mag-y", "0px");
+                      }}
+                    >
+                      <ScanLine className="h-5 w-5" />
+                      {t("scanExit")}
+                    </button>
                   </div>
-                  <h3 className="mt-5 text-2xl font-bold text-sky-700">{t("scanExit")}</h3>
-                  <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
-                    {t("scanExitDesc")}
-                  </p>
-                  <button 
-                    onClick={() => { setScanMode('exit'); setIsScanning(true); }}
-                    className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5 cursor-pointer"
-                  >
-                    <ScanLine className="h-6 w-6" />
-                    {t("scanExit")}
-                  </button>
                 </div>
 
-                <div className="dash-card-strong dash-animate-shimmer rounded-[2.25rem] p-6 text-center">
-                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                    <LogIn className="h-12 w-12" />
+                <div
+                  onPointerMove={handleTilePointerMove}
+                  onPointerLeave={handleTilePointerLeave}
+                  className="sd-tile sd-luxe-rise"
+                  style={{
+                    animationDelay: "0.3s",
+                    "--tint": "linear-gradient(160deg, rgba(16,185,129,0.13) 0%, rgba(45,212,191,0.09) 100%)",
+                    "--glow": "rgba(16,185,129,0.5)",
+                    "--tile-border": "rgba(45,212,191,0.5)",
+                  }}
+                >
+                  <div className="sd-tile__inner flex flex-col items-center p-7 text-center">
+                    <span className="sd-tile__glare" aria-hidden="true" />
+                    <span
+                      className="sd-lift-lg flex h-20 w-20 items-center justify-center rounded-full text-white"
+                      style={{
+                        background: "linear-gradient(145deg, #047857 0%, #10b981 55%, #2dd4bf 100%)",
+                        boxShadow: "0 20px 40px -18px rgba(16,185,129,0.55)",
+                      }}
+                    >
+                      <LogIn className="h-10 w-10" />
+                    </span>
+                    <h3 className="sd-lift-md sd-card-title mt-5 text-2xl">{t("scanEntry")}</h3>
+                    <p className="sd-lift-md sd-body mt-2 max-w-sm text-[0.95rem]">{t("scanEntryDesc")}</p>
+                    <button
+                      onClick={() => { setScanMode('entry'); setIsScanning(true); }}
+                      className="sd-magnetic mt-6 inline-flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
+                      style={{ background: "linear-gradient(135deg, #10b981 0%, #0d9488 100%)" }}
+                      onPointerMove={(e) => {
+                        const el = e.currentTarget;
+                        const rect = el.getBoundingClientRect();
+                        el.style.setProperty("--mag-x", `${(e.clientX - (rect.left + rect.width / 2)) * 0.2}px`);
+                        el.style.setProperty("--mag-y", `${(e.clientY - (rect.top + rect.height / 2)) * 0.2}px`);
+                      }}
+                      onPointerLeave={(e) => {
+                        e.currentTarget.style.setProperty("--mag-x", "0px");
+                        e.currentTarget.style.setProperty("--mag-y", "0px");
+                      }}
+                    >
+                      <ScanLine className="h-5 w-5" />
+                      {t("scanEntry")}
+                    </button>
                   </div>
-                  <h3 className="mt-5 text-2xl font-bold text-emerald-700">{t("scanEntry")}</h3>
-                  <p className="mx-auto mt-3 max-w-sm text-base font-normal leading-relaxed text-slate-600">
-                    {t("scanEntryDesc")}
-                  </p>
-                  <button
-                    onClick={() => { setScanMode('entry'); setIsScanning(true); }}
-                    className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:-translate-y-0.5 cursor-pointer"
-                  >
-                    <ScanLine className="h-6 w-6" />
-                    {t("scanEntry")}
-                  </button>
                 </div>
               </div>
             </div>
 
-            <aside className="dash-card dash-animate-rise rounded-[2.5rem] p-6 shadow-xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">{t("shiftSignal")}</p>
-              <h3 className="font-display mt-3 text-2xl font-bold">{t("zoneReadiness")}</h3>
-              <p className="mt-2 text-sm text-slate-500">
-                {t("zoneReadinessDesc")}
-              </p>
+            <aside className="sd-luxe-panel sd-luxe-rise mt-0 rounded-[2.5rem] p-6" style={{ animationDelay: "0.34s" }}>
+              <span className="sd-kicker">{t("shiftSignal")}</span>
+              <h3 className="sd-title sd-title-sm mt-2">{t("zoneReadiness")}</h3>
+              <p className="sd-body mt-2 text-[0.9rem]">{t("zoneReadinessDesc")}</p>
               <div className="mt-5 space-y-3">
                 {[
-                  { label: t("mainGate"), status: tc("online"), tone: "bg-emerald-100 text-emerald-700" },
-                  { label: t("hostelBlockA"), status: tc("online"), tone: "bg-emerald-100 text-emerald-700" },
-                  { label: t("hostelBlockB"), status: tc("offline"), tone: "bg-rose-100 text-rose-700" },
+                  { label: t("mainGate"), status: tc("online"), online: true },
+                  { label: t("hostelBlockA"), status: tc("online"), online: true },
+                  { label: t("hostelBlockB"), status: tc("offline"), online: false },
                 ].map((item) => (
-                  <div
-                    key={item.label}
-                    className="dash-outline flex items-center justify-between rounded-2xl px-3 py-2"
-                  >
-                    <span className="text-xs font-semibold text-slate-600">{item.label}</span>
-                    <span className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase ${item.tone}`}>
+                  <div key={item.label} className="sd-row" style={{ "--accent": item.online ? "#10b981" : "#f43f5e" }}>
+                    <span className="sd-row__accent" aria-hidden="true" />
+                    <span className="sd-card-title text-[0.85rem]">{item.label}</span>
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                        item.online ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                      }`}
+                    >
+                      {item.online && <span className="sd-tag-dot" aria-hidden="true" />}
                       {item.status}
                     </span>
                   </div>
@@ -376,57 +502,70 @@ export default function SecurityDashboardPage() {
           </section>
 
           <section className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-            <div className="dash-card rounded-[2.5rem] p-6 shadow-xl">
+            <div className="sd-luxe-panel sd-enter rounded-[2.5rem] p-6" style={{ animationDelay: "0.38s" }}>
               <div className="flex items-center justify-between">
-                <h2 className="font-display text-2xl font-bold tracking-tight">{t("studentsStatus")}</h2>
-                <Link href="/dashboard/security/students" className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 hover:text-indigo-600 transition">{tc("viewAll")}</Link>
+                <div>
+                  <span className="sd-kicker">{t("shiftPulse")}</span>
+                  <h2 className="sd-title sd-title-sm mt-1">{t("studentsStatus")}</h2>
+                </div>
+                <Link href="/dashboard/security/students" className="sd-tag">
+                  {tc("viewAll")}
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Link>
               </div>
-              <div className="mt-5 space-y-4">
+              <div className="mt-5 space-y-3">
                 {statusCards.map((card) => (
-                  <div key={card.key} className={`rounded-3xl border p-5 ${card.tone}`}>
-                    <div className="flex items-center gap-4">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/80">
-                        <card.icon className="h-6 w-6" />
-                      </span>
-                      <div>
-                        <p className="text-3xl font-bold leading-none text-slate-900">{counts[card.key]}</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-800">{card.label}</p>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-sm font-medium text-slate-600">{card.note}</p>
-                  </div>
+                  <GuardStatCard key={card.key} card={card} value={counts[card.key]} total={totalTracked} />
                 ))}
               </div>
             </div>
 
-            <div className="dash-card rounded-[2.5rem] p-6 shadow-xl">
+            <div className="sd-luxe-panel sd-enter rounded-[2.5rem] p-6" style={{ animationDelay: "0.44s" }}>
               <div className="flex items-center justify-between">
-                <h2 className="font-display text-2xl font-bold tracking-tight">{t("recentScans")}</h2>
-                <Link href="/dashboard/security/history" className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 hover:text-indigo-600 transition">{tc("viewAll")}</Link>
+                <div>
+                  <span className="sd-kicker">{t("realtime")}</span>
+                  <h2 className="sd-title sd-title-sm mt-1">{t("recentScans")}</h2>
+                </div>
+                <Link href="/dashboard/security/history" className="sd-tag">
+                  {tc("viewAll")}
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Link>
               </div>
               <div className="mt-4 space-y-3">
                 {recentScans.length === 0 && (
-                  <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400">
-                    {t("noScansYet")}
-                  </p>
+                  <div className="sd-empty">
+                    <span className="relative mx-auto flex h-12 w-12 items-center justify-center">
+                      <span className="sd-ring" aria-hidden="true" />
+                      <span className="sd-ring sd-ring--2" aria-hidden="true" />
+                      <ScanLine className="h-5 w-5 text-slate-400" />
+                    </span>
+                    <p className="mt-3 text-sm text-slate-400">{t("noScansYet")}</p>
+                  </div>
                 )}
                 {recentScans.map((scan) => (
-                  <div key={scan.id} className="dash-outline flex flex-wrap items-center justify-between gap-4 rounded-2xl px-4 py-3">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 font-semibold text-slate-600">
-                        {scan.name.split(" ").map((part) => part[0]).join("")}
-                      </div>
+                  <div key={scan.id} className="sd-row" style={{ "--accent": scan.type === "in" ? "#10b981" : "#38bdf8" }}>
+                    <span className="sd-row__accent" aria-hidden="true" />
+                    <div className="flex items-center gap-3.5">
+                      <span
+                        className="sd-profile-avatar"
+                        style={{ height: "2.5rem", width: "2.5rem", fontSize: "0.78rem" }}
+                      >
+                        {scan.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
+                      </span>
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">{scan.name}</p>
-                        <p className="text-xs text-slate-500">{scan.meta}</p>
+                        <p className="sd-card-title text-[0.88rem]">{scan.name}</p>
+                        <p className="sd-micro text-[0.72rem]">{scan.meta}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${scan.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"}`}>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`rounded-full px-3 py-1 text-[0.68rem] font-bold uppercase tracking-wide ${
+                          scan.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
+                        }`}
+                      >
                         {scan.tag}
                       </span>
-                      <span className="text-xs font-semibold text-slate-500">{scan.time}</span>
-                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                      <span className="sd-micro grd-mono text-[0.72rem]">{scan.time}</span>
                     </div>
                   </div>
                 ))}
@@ -435,21 +574,34 @@ export default function SecurityDashboardPage() {
           </section>
 
           {counts.overdue > 0 && (
-          <section className="dash-animate-rise mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[2.5rem] border border-rose-200/70 bg-rose-50/80 p-6 shadow-lg">
-            <div className="flex items-center gap-4">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 text-rose-600">
-                <Bell className="h-7 w-7" />
-              </span>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-400">{t("alerts")}</p>
-                <h2 className="font-display text-xl font-bold">{counts.overdue} {counts.overdue === 1 ? t("studentOverdue") : t("studentsOverduePlural")}</h2>
-                <p className="text-sm text-slate-600">{t("overdueAttention")}</p>
+            <section
+              className="sd-luxe-panel sd-glow-border sd-enter mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[2.5rem] p-6"
+              style={{ "--tile-border": "rgba(244,63,94,0.5)" }}
+            >
+              <div className="flex items-center gap-4">
+                <span
+                  className="sd-orb-halo relative flex h-14 w-14 items-center justify-center rounded-full text-white"
+                  style={{ "--halo": "rgba(244,63,94,0.5)", background: "linear-gradient(145deg, #be123c 0%, #f43f5e 100%)" }}
+                >
+                  <span className="sd-ring" style={{ borderColor: "rgba(244,63,94,0.4)" }} aria-hidden="true" />
+                  <Bell className="h-7 w-7" />
+                </span>
+                <div>
+                  <span className="sd-kicker text-rose-400">{t("alerts")}</span>
+                  <h2 className="sd-title sd-title-sm mt-1">
+                    {counts.overdue} {counts.overdue === 1 ? t("studentOverdue") : t("studentsOverduePlural")}
+                  </h2>
+                  <p className="sd-body mt-1 text-[0.9rem]">{t("overdueAttention")}</p>
+                </div>
               </div>
-            </div>
-            <Link href="/dashboard/security/students?filter=overdue" className="dash-chip rounded-2xl bg-rose-500 px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-lg hover:bg-rose-600 transition">
-              {t("viewNow")}
-            </Link>
-          </section>
+              <Link
+                href="/dashboard/security/students?filter=overdue"
+                className="sd-btn-glow rounded-2xl px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-lg"
+                style={{ background: "linear-gradient(135deg, #f43f5e 0%, #be123c 100%)" }}
+              >
+                {t("viewNow")}
+              </Link>
+            </section>
           )}
 
           <SecurityBottomNav active="Home" />
@@ -458,15 +610,22 @@ export default function SecurityDashboardPage() {
 
       {isScanning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
-          <div className="relative w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-display text-lg font-bold">{t("scanStudentQR")}</h3>
-              <button onClick={() => setIsScanning(false)} className="p-2 rounded-full hover:bg-slate-100 transition cursor-pointer">
+          <div className="sd-enter relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 p-4">
+              <h3 className="sd-card-title flex items-center gap-2 text-lg">
+                {t("scanStudentQR")}
+                <span className="grd-radar h-3 w-3" aria-hidden="true" />
+              </h3>
+              <button onClick={() => setIsScanning(false)} className="cursor-pointer rounded-full p-2 transition hover:bg-slate-100">
                 <X className="h-5 w-5 text-slate-500" />
               </button>
             </div>
-            <div className="bg-black/5 relative w-full aspect-square">
-              <Scanner 
+            <div className="grd-frame grd-sweep relative aspect-square w-full bg-black/5">
+              <span className="grd-corner grd-corner--tl" style={{ "--grd-bracket": "rgba(45,212,191,0.85)" }} aria-hidden="true" />
+              <span className="grd-corner grd-corner--tr" style={{ "--grd-bracket": "rgba(45,212,191,0.85)" }} aria-hidden="true" />
+              <span className="grd-corner grd-corner--bl" style={{ "--grd-bracket": "rgba(45,212,191,0.85)" }} aria-hidden="true" />
+              <span className="grd-corner grd-corner--br" style={{ "--grd-bracket": "rgba(45,212,191,0.85)" }} aria-hidden="true" />
+              <Scanner
                 onScan={handleScan}
                 onError={(error) => console.error(error)}
                 components={{ audio: false, finder: true }}
@@ -477,27 +636,32 @@ export default function SecurityDashboardPage() {
       )}
 
       {scanResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in">
-          <div className="relative w-full max-w-sm bg-white rounded-[2rem] p-6 text-center shadow-2xl animate-scale-in">
-            <button 
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+          <div className="sd-enter relative w-full max-w-sm rounded-[2rem] bg-white p-6 text-center shadow-2xl">
+            <button
               onClick={() => { setScanResult(null); setScanPreview(null); }}
               className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 transition cursor-pointer text-slate-400"
             >
               <X className="h-5 w-5" />
             </button>
-            
+
             <div className="mt-4 flex flex-col items-center">
-              <div className="relative h-24 w-24 rounded-full border-4 border-white shadow-xl overflow-hidden mb-4 bg-slate-100 flex items-center justify-center">
-                {scanResult.photo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={scanResult.photo} alt={scanResult.name} className="h-full w-full object-cover" />
-                ) : (
-                  <UserRound className="h-12 w-12 text-slate-400" />
-                )}
+              <div
+                className="relative h-24 w-24 overflow-hidden rounded-full p-[3px] shadow-xl"
+                style={{ background: "linear-gradient(135deg, #4338ca 0%, #06b6d4 100%)" }}
+              >
+                <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full border-4 border-white bg-slate-100">
+                  {scanResult.photo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={scanResult.photo} alt={scanResult.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <UserRound className="h-12 w-12 text-slate-400" />
+                  )}
+                </div>
               </div>
-              
-              <h2 className="font-display text-2xl font-bold text-slate-900">{scanResult.name || t("unknownStudent")}</h2>
-              <p className="text-sm font-semibold text-slate-500 uppercase tracking-widest mt-1 mb-6">
+
+              <h2 className="sd-title sd-title-sm mt-4">{scanResult.name || t("unknownStudent")}</h2>
+              <p className="sd-micro grd-mono mt-1 mb-6 uppercase tracking-widest">
                 {scanResult.id}
               </p>
 
@@ -508,7 +672,8 @@ export default function SecurityDashboardPage() {
                     (() => {
                       if (previewLoading) {
                         return (
-                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500">
+                            <Loader2 className="h-3 w-3 animate-spin" />
                             {t("checking")}
                           </span>
                         );
@@ -649,5 +814,62 @@ export default function SecurityDashboardPage() {
       )}
 
     </main>
+  );
+}
+
+// Gradient stat card with a count-up numeral and a proportion bar, reused
+// from the student dashboard's Activity Stats pattern.
+function GuardStatCard({ card, value, total }) {
+  const [ref, animated] = useCountUp(value);
+  const display = Math.round(animated);
+  const palette = {
+    inside: {
+      chip: "linear-gradient(145deg, #047857 0%, #10b981 100%)",
+      fill: "linear-gradient(90deg, #10b981, #2dd4bf)",
+      glow: "rgba(16,185,129,0.45)",
+    },
+    outside: {
+      chip: "linear-gradient(145deg, #b45309 0%, #f59e0b 100%)",
+      fill: "linear-gradient(90deg, #f59e0b, #fbbf24)",
+      glow: "rgba(245,158,11,0.45)",
+    },
+    overdue: {
+      chip: "linear-gradient(145deg, #be123c 0%, #f43f5e 100%)",
+      fill: "linear-gradient(90deg, #f43f5e, #fb7185)",
+      glow: "rgba(244,63,94,0.45)",
+    },
+  }[card.key];
+  const width = total > 0 ? Math.min(100, Math.max(4, (value / total) * 100)) : 4;
+  const Icon = card.icon;
+
+  return (
+    <div ref={ref} className="sd-stat px-4 py-4" style={{ "--stat-glow": palette.glow }}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-md"
+            style={{ background: palette.chip, boxShadow: `0 10px 20px -10px ${palette.glow}` }}
+          >
+            <Icon className="h-[1.05rem] w-[1.05rem]" />
+          </span>
+          <div>
+            <p className="sd-micro text-[0.8rem]">{card.label}</p>
+            <p className="text-[0.7rem] font-medium text-slate-400">{card.note}</p>
+          </div>
+        </div>
+        <p
+          className="grd-mono text-2xl font-bold tracking-tight text-transparent bg-clip-text"
+          style={{ backgroundImage: palette.fill }}
+        >
+          {display}
+        </p>
+      </div>
+      <div className="sd-bar mt-3.5">
+        <div
+          className="sd-bar__fill"
+          style={{ width: `${width}%`, background: palette.fill, boxShadow: `0 0 12px ${palette.glow}` }}
+        />
+      </div>
+    </div>
   );
 }

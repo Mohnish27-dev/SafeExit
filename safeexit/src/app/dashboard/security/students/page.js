@@ -25,6 +25,24 @@ const CAMPUS_TONE = {
   Overdue: "bg-rose-100 text-rose-700",
 };
 
+// Pointer-tracked 3D tilt for the student roster tiles — module scope so it
+// isn't recreated every render; mirrors the guard home dashboard's tile physics.
+const handleTilePointerMove = (e) => {
+  const el = e.currentTarget;
+  const rect = el.getBoundingClientRect();
+  const px = (e.clientX - rect.left) / rect.width;
+  const py = (e.clientY - rect.top) / rect.height;
+  el.style.setProperty("--mx", `${px * 100}%`);
+  el.style.setProperty("--my", `${py * 100}%`);
+  el.style.setProperty("--ry", `${(px - 0.5) * 7}deg`);
+  el.style.setProperty("--rx", `${(0.5 - py) * 7}deg`);
+};
+
+const handleTilePointerLeave = (e) => {
+  e.currentTarget.style.setProperty("--rx", "0deg");
+  e.currentTarget.style.setProperty("--ry", "0deg");
+};
+
 export default function SecurityStudentsPage() {
   const { t } = useTranslation("security");
   const { t: tc } = useTranslation("common");
@@ -91,31 +109,35 @@ export default function SecurityStudentsPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen dashboard-neo text-slate-900">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-10">
       <div className="relative overflow-hidden">
-        <div className="dash-orb dash-orb-one" />
-        <div className="dash-orb dash-orb-two" />
-        <div className="dash-orb dash-orb-three" />
+        <div className="sd-aura sd-aura--a" aria-hidden="true" />
+        <div className="sd-aura sd-aura--b" aria-hidden="true" />
+        <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
-        <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="dash-surface dash-animate-rise flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4 shadow-xl">
+        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+          <header className="sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4">
             <div className="flex items-center gap-4">
               <Link
                 href="/dashboard/security"
-                className="dash-glow flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-700 to-cyan-500 text-white shadow-lg"
+                className="sd-lift-lg flex h-14 w-14 items-center justify-center rounded-2xl text-white"
+                style={{
+                  background: "linear-gradient(145deg, #0f172a 0%, #0f766e 52%, #2dd4bf 100%)",
+                  boxShadow: "0 18px 40px -20px rgba(13,148,136,0.6)",
+                }}
               >
                 <ArrowLeft className="h-7 w-7" />
               </Link>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">{t("liveRoster")}</p>
-                <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">{t("students")}</h1>
-                <p className="text-sm font-medium text-slate-500">{visible.length} {t("registered")}</p>
+                <span className="sd-kicker">{t("liveRoster")}</span>
+                <h1 className="sd-title sd-title-md mt-1">{t("students")}</h1>
+                <p className="sd-body mt-0.5 text-sm">{visible.length} {t("registered")}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
               <LanguageSwitcher />
-              <div className="dash-card flex items-center gap-3 rounded-2xl px-4 py-3">
+              <div className="sd-luxe-card flex items-center gap-3 rounded-2xl px-4 py-3">
                 <Search className="h-4 w-4 text-slate-400" />
                 <input
                   value={search}
@@ -140,7 +162,7 @@ export default function SecurityStudentsPage() {
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition cursor-pointer ${
                   statusFilter === f.key
                     ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white shadow"
-                    : "dash-card text-slate-500 hover:bg-slate-50"
+                    : "sd-luxe-card text-slate-500 hover:bg-slate-50"
                 }`}
               >
                 {f.label}
@@ -148,7 +170,7 @@ export default function SecurityStudentsPage() {
             ))}
           </div>
 
-          <section className="dash-surface dash-animate-rise mt-6 rounded-[2.5rem] p-6 shadow-xl">
+          <section className="sd-luxe-panel sd-enter mt-6 rounded-[2.5rem] p-6" style={{ animationDelay: "0.14s" }}>
             {error && (
               <p className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
                 {error}
@@ -159,41 +181,61 @@ export default function SecurityStudentsPage() {
                 <Loader2 className="h-5 w-5 animate-spin" /> {t("loadingStudents")}
               </div>
             ) : visible.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 py-16 text-center">
-                <UsersRound className="mx-auto h-10 w-10 text-slate-300" />
-                <p className="mt-3 font-semibold text-slate-700">{t("noStudentsFound")}</p>
-                <p className="text-sm text-slate-400">{t("studentsWillAppear")}</p>
+              <div className="sd-empty py-16">
+                <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center">
+                  <span className="sd-ring" aria-hidden="true" />
+                  <span className="sd-ring sd-ring--2" aria-hidden="true" />
+                  <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 text-white shadow-lg shadow-indigo-500/30">
+                    <UsersRound className="h-6 w-6" />
+                  </span>
+                </div>
+                <p className="sd-card-title text-slate-700 text-[0.95rem]">{t("noStudentsFound")}</p>
+                <p className="sd-micro mt-1 max-w-xs mx-auto">{t("studentsWillAppear")}</p>
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {visible.map((s) => (
-                  <article key={s._id} className="dash-card rounded-3xl p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 font-bold text-white">
-                        {s.photo ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={s.photo} alt={s.name} className="h-full w-full object-cover" />
-                        ) : (
-                          getInitials(s.name)
-                        )}
+                {visible.map((s, i) => (
+                  <div
+                    key={s._id}
+                    onPointerMove={handleTilePointerMove}
+                    onPointerLeave={handleTilePointerLeave}
+                    className="sd-tile sd-luxe-rise"
+                    style={{
+                      animationDelay: `${0.05 + i * 0.04}s`,
+                      "--tint": "linear-gradient(160deg, rgba(99,102,241,0.12) 0%, rgba(45,212,191,0.08) 100%)",
+                      "--glow": "rgba(99,102,241,0.45)",
+                      "--tile-border": "rgba(129,140,248,0.5)",
+                    }}
+                  >
+                    <div className="sd-tile__inner p-5">
+                      <span className="sd-tile__glare" aria-hidden="true" />
+                      <div className="flex items-center gap-3">
+                        <div className="sd-lift-lg relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 font-bold text-white">
+                          {s.photo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={s.photo} alt={s.name} className="h-full w-full object-cover" />
+                          ) : (
+                            getInitials(s.name)
+                          )}
+                        </div>
+                        <div className="sd-lift-md min-w-0 flex-1">
+                          <p className="sd-card-title truncate text-[0.95rem]">{s.name}</p>
+                          <p className="sd-micro truncate">{s.studentId || "—"}</p>
+                        </div>
+                        <span
+                          className={`sd-lift-md shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                            CAMPUS_TONE[s.campusStatus] || CAMPUS_TONE.Inside
+                          }`}
+                        >
+                          {campusLabel(s.campusStatus || "Inside")}
+                        </span>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-bold text-slate-900">{s.name}</p>
-                        <p className="truncate text-xs font-semibold text-slate-500">{s.studentId || "—"}</p>
-                      </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                          CAMPUS_TONE[s.campusStatus] || CAMPUS_TONE.Inside
-                        }`}
-                      >
-                        {campusLabel(s.campusStatus || "Inside")}
-                      </span>
-                    </div>
 
-                    <div className="mt-4 flex items-center gap-1 border-t border-slate-100 pt-3 text-[11px] font-medium text-slate-400">
-                      <Clock3 className="h-3.5 w-3.5" /> {t("lastSeen")} {formatWhen(s.lastSeenAt)}
+                      <div className="sd-lift-md mt-4 flex items-center gap-1 border-t border-slate-100 pt-3 text-[11px] font-medium text-slate-400">
+                        <Clock3 className="h-3.5 w-3.5" /> {t("lastSeen")} {formatWhen(s.lastSeenAt)}
+                      </div>
                     </div>
-                  </article>
+                  </div>
                 ))}
               </div>
             )}

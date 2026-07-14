@@ -59,31 +59,35 @@ export default function SecurityHistoryPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen dashboard-neo text-slate-900">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-10">
       <div className="relative overflow-hidden">
-        <div className="dash-orb dash-orb-one" />
-        <div className="dash-orb dash-orb-two" />
-        <div className="dash-orb dash-orb-three" />
+        <div className="sd-aura sd-aura--a" aria-hidden="true" />
+        <div className="sd-aura sd-aura--b" aria-hidden="true" />
+        <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
-        <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="dash-surface dash-animate-rise flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4 shadow-xl">
+        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+          <header className="sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4">
             <div className="flex items-center gap-4">
               <Link
                 href="/dashboard/security"
-                className="dash-glow flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-700 to-cyan-500 text-white shadow-lg"
+                className="sd-lift-lg flex h-14 w-14 items-center justify-center rounded-2xl text-white"
+                style={{
+                  background: "linear-gradient(145deg, #0f172a 0%, #0f766e 52%, #2dd4bf 100%)",
+                  boxShadow: "0 18px 40px -20px rgba(13,148,136,0.6)",
+                }}
               >
                 <ArrowLeft className="h-7 w-7" />
               </Link>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">{t("gateLog")}</p>
-                <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">{t("scanHistory")}</h1>
-                <p className="text-sm font-medium text-slate-500">{visible.length} {t("movements")}</p>
+                <span className="sd-kicker">{t("gateLog")}</span>
+                <h1 className="sd-title sd-title-md mt-1">{t("scanHistory")}</h1>
+                <p className="sd-body mt-0.5 text-sm">{visible.length} {t("movements")}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
               <LanguageSwitcher />
-              <div className="dash-card flex items-center gap-3 rounded-2xl px-4 py-3">
+              <div className="sd-luxe-card flex items-center gap-3 rounded-2xl px-4 py-3">
                 <Search className="h-4 w-4 text-slate-400" />
                 <input
                   value={search}
@@ -103,7 +107,7 @@ export default function SecurityHistoryPage() {
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition cursor-pointer ${
                   direction === d.key
                     ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white shadow"
-                    : "dash-card text-slate-500 hover:bg-slate-50"
+                    : "sd-luxe-card text-slate-500 hover:bg-slate-50"
                 }`}
               >
                 {d.label}
@@ -111,7 +115,7 @@ export default function SecurityHistoryPage() {
             ))}
           </div>
 
-          <section className="dash-surface dash-animate-rise mt-6 rounded-[2.5rem] p-6 shadow-xl">
+          <section className="sd-luxe-panel sd-enter mt-6 rounded-[2.5rem] p-6" style={{ animationDelay: "0.14s" }}>
             {error && (
               <p className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
                 {error}
@@ -122,20 +126,31 @@ export default function SecurityHistoryPage() {
                 <Loader2 className="h-5 w-5 animate-spin" /> {t("loadingScanHistory")}
               </div>
             ) : visible.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 py-16 text-center">
-                <HistoryIcon className="mx-auto h-10 w-10 text-slate-300" />
-                <p className="mt-3 font-semibold text-slate-700">{t("noScansFound")}</p>
-                <p className="text-sm text-slate-400">{t("scansWillAppear")}</p>
+              <div className="sd-empty py-16">
+                <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center">
+                  <span className="sd-ring" aria-hidden="true" />
+                  <span className="sd-ring sd-ring--2" aria-hidden="true" />
+                  <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-sky-500 to-cyan-400 text-white shadow-lg shadow-cyan-500/30">
+                    <HistoryIcon className="h-6 w-6" />
+                  </span>
+                </div>
+                <p className="sd-card-title text-slate-700 text-[0.95rem]">{t("noScansFound")}</p>
+                <p className="sd-micro mt-1 max-w-xs mx-auto">{t("scansWillAppear")}</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {visible.map((log) => {
+                {visible.map((log, i) => {
                   const st = log.student || {};
                   return (
                     <div
                       key={log._id}
-                      className="dash-outline flex flex-wrap items-center justify-between gap-4 rounded-2xl px-4 py-3"
+                      className="sd-row sd-luxe-rise flex-wrap"
+                      style={{
+                        "--accent": log.direction === "IN" ? "#10b981" : "#38bdf8",
+                        animationDelay: `${0.04 + Math.min(i, 12) * 0.03}s`,
+                      }}
                     >
+                      <span className="sd-row__accent" aria-hidden="true" />
                       <div className="flex items-center gap-4">
                         <span
                           className={`flex h-10 w-10 items-center justify-center rounded-full ${
@@ -145,8 +160,8 @@ export default function SecurityHistoryPage() {
                           {log.direction === "IN" ? <LogIn className="h-5 w-5" /> : <LogOut className="h-5 w-5" />}
                         </span>
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">{st.name || t("unknownStudent")}</p>
-                          <p className="text-xs text-slate-500">{st.studentId || "—"}</p>
+                          <p className="sd-card-title text-[0.88rem]">{st.name || t("unknownStudent")}</p>
+                          <p className="sd-micro">{st.studentId || "—"}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -161,7 +176,7 @@ export default function SecurityHistoryPage() {
                             {log.punctuality}
                           </span>
                         )}
-                        <span className="text-xs font-semibold text-slate-500">
+                        <span className="sd-micro grd-mono">
                           {new Date(log.createdAt).toLocaleString(dateLocale, {
                             day: "2-digit",
                             month: "short",

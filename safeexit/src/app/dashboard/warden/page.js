@@ -33,6 +33,7 @@ import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
+import useCountUp from "@/app/hooks/useCountUp";
 
 const initials = (name = "") =>
   name
@@ -114,6 +115,61 @@ const mapReport = (c) => {
     statusTone: statusToneFor(c.status),
   };
 };
+
+// Pointer-tracked 3D tilt for quick-action tiles — module scope so it isn't
+// recreated every render; mirrors the tile physics used across the Student and
+// Guard dashboards.
+const handleTilePointerMove = (e) => {
+  const el = e.currentTarget;
+  const rect = el.getBoundingClientRect();
+  const px = (e.clientX - rect.left) / rect.width;
+  const py = (e.clientY - rect.top) / rect.height;
+  el.style.setProperty("--mx", `${px * 100}%`);
+  el.style.setProperty("--my", `${py * 100}%`);
+  el.style.setProperty("--ry", `${(px - 0.5) * 9}deg`);
+  el.style.setProperty("--rx", `${(0.5 - py) * 9}deg`);
+};
+
+const handleTilePointerLeave = (e) => {
+  e.currentTarget.style.setProperty("--rx", "0deg");
+  e.currentTarget.style.setProperty("--ry", "0deg");
+};
+
+const handleMagneticMove = (e) => {
+  const el = e.currentTarget;
+  const rect = el.getBoundingClientRect();
+  const dx = e.clientX - (rect.left + rect.width / 2);
+  const dy = e.clientY - (rect.top + rect.height / 2);
+  el.style.setProperty("--mag-x", `${dx * 0.2}px`);
+  el.style.setProperty("--mag-y", `${dy * 0.2}px`);
+};
+
+const handleMagneticLeave = (e) => {
+  e.currentTarget.style.setProperty("--mag-x", "0px");
+  e.currentTarget.style.setProperty("--mag-y", "0px");
+};
+
+// Live-stat row with an animated count-up, mirroring the Student dashboard's
+// StatCard so Warden's activity numbers get the same tick-in-on-scroll polish.
+function WardenStat({ label, value, width, fill, glow }) {
+  const [ref, animated] = useCountUp(value);
+  return (
+    <div ref={ref} className="sd-stat px-4 py-4" style={{ "--stat-glow": glow }}>
+      <div className="flex items-center justify-between">
+        <p className="sd-micro">{label}</p>
+        <p
+          className="text-xl font-bold italic tracking-tight text-transparent bg-clip-text"
+          style={{ backgroundImage: fill }}
+        >
+          {Math.round(animated)}
+        </p>
+      </div>
+      <div className="sd-bar mt-3">
+        <div className="sd-bar__fill" style={{ width, background: fill, boxShadow: `0 0 12px ${glow}` }} />
+      </div>
+    </div>
+  );
+}
 
 export default function WardenDashboardPage() {
   const { t } = useTranslation("warden");
@@ -438,16 +494,14 @@ export default function WardenDashboardPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen student-dashboard-luxe text-slate-900 pb-28">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28">
       <div className="relative overflow-hidden">
-        <div className="sd-luxe-orb sd-luxe-orb-one" />
-        <div className="sd-luxe-orb sd-luxe-orb-two" />
-        <div className="sd-luxe-orb sd-luxe-orb-three" />
-        <div className="sd-luxe-wave" />
-        <div className="sd-luxe-streaks" />
+        <div className="sd-aura sd-aura--a" aria-hidden="true" />
+        <div className="sd-aura sd-aura--b" aria-hidden="true" />
+        <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
-        <div className="relative mx-auto flex w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="sd-luxe-panel sd-luxe-rise flex items-center justify-between gap-4 rounded-4xl px-5 py-4 shadow-xl">
+        <div className="relative z-[1] mx-auto flex w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+          <header className="sd-luxe-panel sd-glow-border sd-enter flex items-center justify-between gap-4 rounded-4xl px-5 py-4 shadow-xl">
             <div className="flex items-center gap-4">
               <div className="sd-luxe-badge sd-luxe-float flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-lg">
                 <ShieldAlert className="h-7 w-7" />
@@ -496,15 +550,24 @@ export default function WardenDashboardPage() {
 
           {view === 'home' && (
             <>
-              <section className="sd-luxe-panel sd-luxe-rise sd-stagger-2 mt-6 rounded-4xl p-6 sm:p-7 shadow-xl">
+              <section
+                onPointerMove={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  e.currentTarget.style.setProperty("--spot-x", `${e.clientX - r.left}px`);
+                  e.currentTarget.style.setProperty("--spot-y", `${e.clientY - r.top}px`);
+                }}
+                style={{ animationDelay: "0.12s" }}
+                className="sd-luxe-panel sd-glow-border sd-spot-host sd-enter mt-6 rounded-4xl p-6 sm:p-7 shadow-xl"
+              >
+            <span className="sd-spotlight" aria-hidden="true" />
             <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
               <div className="flex flex-wrap items-center gap-5">
-                <div className="sd-luxe-float flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-white to-sky-50 text-slate-900 ring-8 ring-white/80 shadow-lg">
+                <div className="sd-luxe-float sd-orb-halo flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-white to-sky-50 text-slate-900 ring-8 ring-white/80 shadow-lg" style={{ "--halo": "rgba(99,102,241,0.45)" }}>
                   <Clock className="h-10 w-10 text-indigo-600" />
                 </div>
                 <div>
-                  <p className="sd-eyebrow">{t("dailyPulse")}</p>
-                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2">{t("greeting")} <span className="text-gradient-secondary">{t("greetingName")}</span>.</h2>
+                  <p className="sd-kicker">{t("dailyPulse")}</p>
+                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-2">{t("greeting")} <span className="sd-name-live">{firstName}</span>.</h2>
                   <p className="sd-body mt-2 max-w-md">{isBoysWarden ? t("overviewTextBoys") : t("overviewText")}</p>
                 </div>
               </div>
@@ -522,28 +585,37 @@ export default function WardenDashboardPage() {
             </div>
               </section>
 
-              <section className="sd-luxe-panel sd-luxe-rise sd-stagger-3 mt-6 rounded-4xl p-6 sm:p-7 shadow-xl">
+              <section className="sd-luxe-panel sd-enter mt-6 rounded-4xl p-6 sm:p-7 shadow-xl" style={{ animationDelay: "0.2s" }}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="sd-eyebrow">{t("quickActions")}</p>
-                <h2 className="sd-title sd-title-sm">{t("respondFaster")}</h2>
+                <p className="sd-kicker">{t("quickActions")}</p>
+                <h2 className="sd-title sd-title-sm mt-2">{t("respondFaster")}</h2>
               </div>
-              <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-bold animate-pulse">{t("autoRulesOn")}</span>
+              <span className="sd-tag">
+                <span className="sd-tag-dot" />
+                {t("autoRulesOn")}
+              </span>
             </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4 sd-stagger">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {(() => {
                 const manageAction = {
                   title: t("manageRequests"),
                   desc: t("manageRequestsDesc"),
                   icon: Users,
-                  tone: 'from-indigo-600',
+                  badgeBg: "linear-gradient(145deg, #4338ca 0%, #6366f1 100%)",
+                  tint: "linear-gradient(160deg, rgba(99,102,241,0.14) 0%, rgba(56,189,248,0.08) 100%)",
+                  glow: "rgba(99,102,241,0.45)",
+                  border: "rgba(129,140,248,0.5)",
                   onClick: () => openPanel('manage'),
                 };
                 const safetyAction = {
                   title: t("safetyAlerts"),
                   desc: t("safetyAlertsDesc"),
                   icon: Siren,
-                  tone: 'from-rose-600',
+                  badgeBg: "linear-gradient(145deg, #9f1239 0%, #f43f5e 100%)",
+                  tint: "linear-gradient(160deg, rgba(244,63,94,0.14) 0%, rgba(251,113,133,0.08) 100%)",
+                  glow: "rgba(244,63,94,0.45)",
+                  border: "rgba(251,113,133,0.5)",
                   badge: sosCount,
                   onClick: () => setView('sos'),
                 };
@@ -551,7 +623,10 @@ export default function WardenDashboardPage() {
                   title: t("leaveApplications"),
                   desc: t("leaveApplicationsDesc"),
                   icon: CalendarDays,
-                  tone: 'from-violet-600',
+                  badgeBg: "linear-gradient(145deg, #6d28d9 0%, #d946ef 100%)",
+                  tint: "linear-gradient(160deg, rgba(139,92,246,0.14) 0%, rgba(217,70,239,0.08) 100%)",
+                  glow: "rgba(139,92,246,0.45)",
+                  border: "rgba(196,132,252,0.5)",
                   badge: leavePending.length,
                   onClick: () => setView('leave'),
                 };
@@ -559,7 +634,10 @@ export default function WardenDashboardPage() {
                   title: t("autoApprovals"),
                   desc: t("autoApprovalsDesc"),
                   icon: Sparkles,
-                  tone: 'from-sky-600',
+                  badgeBg: "linear-gradient(145deg, #0369a1 0%, #2dd4bf 100%)",
+                  tint: "linear-gradient(160deg, rgba(14,165,233,0.14) 0%, rgba(45,212,191,0.08) 100%)",
+                  glow: "rgba(14,165,233,0.45)",
+                  border: "rgba(56,189,248,0.5)",
                   onClick: () => openPanel('auto'),
                 };
                 // Boys' warden: no outing approvals — lead with Leave, drop the
@@ -568,16 +646,37 @@ export default function WardenDashboardPage() {
                   ? [leaveAction, safetyAction, autoAction]
                   : [manageAction, safetyAction, leaveAction, autoAction];
               })().map((a, idx) => (
-                <button key={idx} onClick={a.onClick} style={{ animationDelay: `${0.08 + idx * 0.06}s` }} className="sd-luxe-card sd-action-card sd-luxe-shimmer sd-card-hover sd-animate-pop group relative flex flex-col items-start gap-4 rounded-4xl p-6 text-left">
-                  <div className="relative rounded-full bg-white p-3 inline-flex items-center justify-center">
-                    <a.icon className="h-6 w-6 text-indigo-600" />
-                    {a.badge ? (
-                      <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
-                    ) : null}
-                  </div>
-                  <div>
-                    <div className="sd-card-title">{a.title}</div>
-                    <div className="sd-body mt-2">{a.desc}</div>
+                <button
+                  key={idx}
+                  onClick={a.onClick}
+                  onPointerMove={handleTilePointerMove}
+                  onPointerLeave={handleTilePointerLeave}
+                  style={{
+                    animationDelay: `${0.08 + idx * 0.08}s`,
+                    "--tint": a.tint,
+                    "--glow": a.glow,
+                    "--tile-border": a.border,
+                  }}
+                  className="sd-tile sd-luxe-rise group block h-full text-left"
+                >
+                  <div className="sd-tile__inner flex min-h-[13rem] flex-col p-5">
+                    <span className="sd-tile__glare" aria-hidden="true" />
+                    <div className="flex items-start justify-between">
+                      <span
+                        className="sd-act sd-lift-lg relative shadow-lg"
+                        style={{ background: a.badgeBg, boxShadow: `0 14px 26px -12px ${a.glow}` }}
+                      >
+                        <a.icon className="h-6 w-6" />
+                        {a.badge ? (
+                          <span className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
+                        ) : null}
+                      </span>
+                    </div>
+                    <div className="sd-lift-md mt-auto pt-6">
+                      <span className="sd-act-rule mb-3 block" aria-hidden="true" />
+                      <span className="sd-card-title block text-[1.05rem] leading-snug">{a.title}</span>
+                      <span className="sd-body mt-1.5 block text-[0.88rem] leading-relaxed">{a.desc}</span>
+                    </div>
                   </div>
                 </button>
               ))}
@@ -638,14 +737,15 @@ export default function WardenDashboardPage() {
               </section>
               ) : (
               <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-6 sm:p-7 shadow-xl">
+            <div className="sd-luxe-panel sd-enter rounded-4xl p-6 sm:p-7 shadow-xl" style={{ animationDelay: "0.26s" }}>
               <div className="flex items-center justify-between gap-3">
                 <h2 className="sd-title sd-title-sm">{t("pendingApproval")}</h2>
-                <span className="sd-luxe-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-indigo-800 bg-indigo-50 border border-indigo-200">{t("after530")}</span>
+                <span className="sd-tag">{t("after530")}</span>
               </div>
               <div className="mt-6 space-y-3">
                 {pending.map((req, i) => (
-                  <div key={req.id} className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5" style={{ animationDelay: `${0.12 + i * 0.06}s` }}>
+                  <div key={req.id} className="sd-row sd-luxe-rise flex-wrap" style={{ "--accent": "#6366f1", animationDelay: `${0.12 + i * 0.06}s` }}>
+                    <span className="sd-row__accent" aria-hidden="true" />
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 rounded-full bg-linear-to-br from-indigo-400 to-cyan-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
                       <div>
@@ -660,7 +760,12 @@ export default function WardenDashboardPage() {
                         <p className="font-semibold text-slate-900">{req.out}</p>
                       </div>
                       <div className="flex sm:flex-col gap-2">
-                        <button onClick={() => approveRequest(req.id)} className="flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-white font-bold shadow hover:-translate-y-0.5 transition-transform">
+                        <button
+                          onClick={() => approveRequest(req.id)}
+                          onPointerMove={handleMagneticMove}
+                          onPointerLeave={handleMagneticLeave}
+                          className="sd-magnetic flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-white font-bold shadow"
+                        >
                           <Check className="h-4 w-4" /> {tc("approve")}
                         </button>
                         <button onClick={() => rejectRequest(req.id)} className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-rose-300 text-rose-600 font-bold hover:bg-rose-50 transition-colors">
@@ -678,60 +783,68 @@ export default function WardenDashboardPage() {
               )}
 
               <section className="mt-6 grid gap-6 lg:grid-cols-[0.7fr_1.3fr]">
-            <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-6 shadow-xl">
+            <div className="sd-luxe-panel sd-enter rounded-4xl p-6 shadow-xl" style={{ animationDelay: "0.3s" }}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="sd-eyebrow">{t("activity")}</p>
-                  <h2 className="sd-title sd-title-sm">{t("liveStats")}</h2>
+                  <p className="sd-kicker">{t("activity")}</p>
+                  <h2 className="sd-title sd-title-sm mt-2">{t("liveStats")}</h2>
                 </div>
-                <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-semibold">{tc("autoSync")}</span>
+                <span className="sd-tag">{tc("autoSync")}</span>
               </div>
               <div className="mt-5 space-y-4">
-                <div className="sd-luxe-card sd-luxe-tilt rounded-2xl px-4 py-3.5">
-                  <div className="flex items-center justify-between">
-                    <p className="sd-micro">{isBoysWarden ? t("pendingLeave") : t("pendingRequests")}</p>
-                    <p className="text-xl font-bold text-slate-900">{isBoysWarden ? leavePending.length : pending.length}</p>
-                  </div>
-                  <div className="mt-3 h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="sd-luxe-progress h-full rounded-full bg-linear-to-r from-indigo-500 via-sky-400 to-transparent" style={{ width: '48%' }} />
-                  </div>
-                </div>
-                <div className="sd-luxe-card sd-luxe-tilt rounded-2xl px-4 py-3.5">
-                  <div className="flex items-center justify-between">
-                    <p className="sd-micro">{t("outNow")}</p>
-                    <p className="text-xl font-bold text-slate-900">21</p>
-                  </div>
-                  <div className="mt-3 h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="sd-luxe-progress h-full rounded-full bg-linear-to-r from-amber-400 via-orange-300 to-transparent" style={{ width: '62%' }} />
-                  </div>
-                </div>
+                <WardenStat
+                  label={isBoysWarden ? t("pendingLeave") : t("pendingRequests")}
+                  value={isBoysWarden ? leavePending.length : pending.length}
+                  width="48%"
+                  fill="linear-gradient(90deg, #6366f1, #38bdf8)"
+                  glow="rgba(99,102,241,0.45)"
+                />
+                <WardenStat
+                  label={t("outNow")}
+                  value={21}
+                  width="62%"
+                  fill="linear-gradient(90deg, #f59e0b, #fb923c)"
+                  glow="rgba(245,158,11,0.45)"
+                />
               </div>
             </div>
 
-            <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-6 shadow-xl">
+            <div className="sd-luxe-panel sd-enter rounded-4xl p-6 shadow-xl" style={{ animationDelay: "0.34s" }}>
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="sd-eyebrow">{t("complaints")}</p>
-                  <h2 className="sd-title sd-title-sm">{t("recentReports")}</h2>
+                  <p className="sd-kicker">{t("complaints")}</p>
+                  <h2 className="sd-title sd-title-sm mt-2">{t("recentReports")}</h2>
                 </div>
-                <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-semibold">{t("priority")}</span>
+                <span className="sd-tag">{t("priority")}</span>
               </div>
-              <div className="mt-5 space-y-4">
+              <div className="mt-5 space-y-3">
                 {loadingReports ? (
                   <p className="text-sm text-slate-500">{t("loadingComplaints")}</p>
                 ) : reportsError ? (
                   <p className="text-sm font-semibold text-rose-600">{reportsError}</p>
                 ) : reports.length === 0 ? (
-                  <p className="text-sm text-slate-500">{t("noOpenComplaints")}</p>
+                  <div className="sd-empty py-10">
+                    <div className="relative mx-auto mb-4 flex h-14 w-14 items-center justify-center">
+                      <span className="sd-ring" aria-hidden="true" />
+                      <span className="sd-ring sd-ring--2" aria-hidden="true" />
+                      <span className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 text-white">
+                        <MessageSquare className="h-5 w-5" />
+                      </span>
+                    </div>
+                    <p className="sd-micro">{t("noOpenComplaints")}</p>
+                  </div>
                 ) : (
                   reports.map((comp, i) => (
-                  <div key={comp.id} className="sd-luxe-card sd-timeline-item sd-luxe-rise sd-luxe-tilt flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5" style={{ animationDelay: `${0.08 + i * 0.06}s` }}>
-                    <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${comp.tone}`}>
-                      <comp.icon className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="sd-card-title text-slate-900">{comp.title}</p>
-                      <p className="sd-micro">{comp.by} • {comp.time}</p>
+                  <div key={comp.id} className="sd-row sd-luxe-rise" style={{ "--accent": "#f97316", animationDelay: `${0.08 + i * 0.06}s` }}>
+                    <span className="sd-row__accent" aria-hidden="true" />
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${comp.tone}`}>
+                        <comp.icon className="h-5 w-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="sd-card-title text-slate-900 truncate">{comp.title}</p>
+                        <p className="sd-micro">{comp.by} • {comp.time}</p>
+                      </div>
                     </div>
                     <div className="shrink-0">
                       <span className={`text-[10px] font-bold px-3 py-1 rounded-md ${comp.statusTone}`}>{comp.status}</span>
@@ -775,56 +888,57 @@ export default function WardenDashboardPage() {
           )}
 
           <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysWarden ? 'grid-cols-5' : 'grid-cols-6'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
-            <button onClick={() => setView('home')} className={`sd-nav-link ${view === 'home' ? 'sd-nav-link--active' : ''}`}><Home className="h-6 w-6" />{tc("home")}</button>
+            <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span>{tc("home")}</button>
             {!isBoysWarden && (
-              <button onClick={() => setView('requests')} className={`sd-nav-link ${view === 'requests' ? 'sd-nav-link--active' : ''}`}><ClipboardList className="h-6 w-6" />{t("requests")}</button>
+              <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span>{t("requests")}</button>
             )}
-            <button onClick={() => setView('leave')} className={`sd-nav-link ${view === 'leave' ? 'sd-nav-link--active' : ''}`}>
-              <span className="relative inline-flex">
-                <CalendarDays className="h-6 w-6" />
-                {leavePending.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
+            <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
+              <span className="sd-navx__icon relative">
+                <CalendarDays className="h-5 w-5" />
+                {leavePending.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
               </span>
               {t("leaveApplications")}
             </button>
-            <button onClick={() => setView('sos')} className={`sd-nav-link ${view === 'sos' ? 'sd-nav-link--active' : ''}`}>
-              <span className="relative inline-flex">
-                <Siren className="h-6 w-6" />
-                {sosCount > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
+            <button onClick={() => setView('sos')} className={`sd-navx ${view === 'sos' ? 'sd-navx--active' : ''}`}>
+              <span className="sd-navx__icon relative">
+                <Siren className="h-5 w-5" />
+                {sosCount > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
               </span>
               {t("safetyAlerts")}
             </button>
-            <button onClick={() => setView('complaints')} className={`sd-nav-link ${view === 'complaints' ? 'sd-nav-link--active' : ''}`}>
-              <span className="relative inline-flex">
-                <MessageSquare className="h-6 w-6" />
-                {reports.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
+            <button onClick={() => setView('complaints')} className={`sd-navx ${view === 'complaints' ? 'sd-navx--active' : ''}`}>
+              <span className="sd-navx__icon relative">
+                <MessageSquare className="h-5 w-5" />
+                {reports.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
               </span>
               {t("complaints")}
             </button>
-            <button onClick={() => setView('profile')} className={`sd-nav-link ${view === 'profile' ? 'sd-nav-link--active' : ''}`}><User className="h-6 w-6" />{tc("profile")}</button>
+            <button onClick={() => setView('profile')} className={`sd-navx ${view === 'profile' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><User className="h-5 w-5" /></span>{tc("profile")}</button>
           </nav>
         </div>
       </div>
 
       {activePanel && (
         <div className="fixed inset-0 z-60 flex">
-          <div onClick={closePanel} className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
-          <aside className="relative ml-auto w-full max-w-md h-full bg-white shadow-2xl p-6 overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">{activePanel === 'manage' ? t("manageRequests") : activePanel === 'alerts' ? t("safetyAlerts") : t("autoApprovals")}</h3>
-              <button onClick={closePanel} className="p-2 rounded-md text-slate-600 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+          <div onClick={closePanel} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <aside className="sd-luxe-panel sd-glow-border sd-enter relative ml-auto h-full w-full max-w-md overflow-y-auto rounded-l-[2.25rem] p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="sd-title sd-title-sm">{activePanel === 'manage' ? t("manageRequests") : activePanel === 'alerts' ? t("safetyAlerts") : t("autoApprovals")}</h3>
+              <button onClick={closePanel} className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors"><X className="h-5 w-5" /></button>
             </div>
 
             {activePanel === 'manage' && (
-              <div className="space-y-4">
-                {pending.length === 0 ? <p className="text-sm text-slate-500">{t("noPendingRequests")}</p> : pending.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border">
+              <div className="space-y-3">
+                {pending.length === 0 ? <p className="sd-micro">{t("noPendingRequests")}</p> : pending.map((r, i) => (
+                  <div key={r.id} className="sd-row sd-luxe-rise" style={{ "--accent": "#6366f1", animationDelay: `${0.05 + i * 0.05}s` }}>
+                    <span className="sd-row__accent" aria-hidden="true" />
                     <div>
-                      <p className="font-bold">{r.name}</p>
-                      <p className="text-xs text-slate-500">{r.branch} • {r.roll}</p>
+                      <p className="sd-card-title text-[0.9rem]">{r.name}</p>
+                      <p className="sd-micro">{r.branch} • {r.roll}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => approveRequest(r.id)} className="px-3 py-1 rounded bg-indigo-600 text-white">{tc("approve")}</button>
-                      <button onClick={() => rejectRequest(r.id)} className="px-3 py-1 rounded border text-rose-600">{tc("reject")}</button>
+                      <button onClick={() => approveRequest(r.id)} className="rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500">{tc("approve")}</button>
+                      <button onClick={() => rejectRequest(r.id)} className="rounded-xl border border-rose-300 px-3 py-1.5 text-sm font-bold text-rose-600 hover:bg-rose-50 transition-colors">{tc("reject")}</button>
                     </div>
                   </div>
                 ))}
@@ -832,15 +946,16 @@ export default function WardenDashboardPage() {
             )}
 
             {activePanel === 'alerts' && (
-              <div className="space-y-4">
-                {reports.length === 0 ? <p className="text-sm text-slate-500">{t("noReports")}</p> : reports.map((rep) => (
-                  <div key={rep.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border">
+              <div className="space-y-3">
+                {reports.length === 0 ? <p className="sd-micro">{t("noReports")}</p> : reports.map((rep, i) => (
+                  <div key={rep.id} className="sd-row sd-luxe-rise" style={{ "--accent": "#f97316", animationDelay: `${0.05 + i * 0.05}s` }}>
+                    <span className="sd-row__accent" aria-hidden="true" />
                     <div>
-                      <p className="font-bold">{rep.title}</p>
-                      <p className="text-xs text-slate-500">{rep.by} • {rep.time}</p>
+                      <p className="sd-card-title text-[0.9rem]">{rep.title}</p>
+                      <p className="sd-micro">{rep.by} • {rep.time}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => resolveReport(rep.id)} className="px-3 py-1 rounded bg-emerald-600 text-white">{tc("resolve")}</button>
+                      <button onClick={() => resolveReport(rep.id)} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 transition-colors">{tc("resolve")}</button>
                     </div>
                   </div>
                 ))}
@@ -849,19 +964,27 @@ export default function WardenDashboardPage() {
 
             {activePanel === 'auto' && (
               <div className="space-y-4">
-                <p className="text-sm text-slate-600">{t("autoApprovalRules")}</p>
+                <p className="sd-body text-sm">{t("autoApprovalRules")}</p>
                 <div className="flex items-center gap-3">
-                  <button onClick={toggleAutoRule} className="px-4 py-2 rounded bg-indigo-600 text-white">{t("toggleRule")}</button>
-                  <button onClick={() => setApproved((a) => [{ id: Date.now(), name: 'Demo Student', outSince: 'Now', initials: 'DS' }, ...a])} className="px-4 py-2 rounded border">{t("addDemoApproved")}</button>
+                  <button
+                    onClick={toggleAutoRule}
+                    onPointerMove={handleMagneticMove}
+                    onPointerLeave={handleMagneticLeave}
+                    className="sd-magnetic rounded-2xl px-4 py-2 text-sm font-bold text-white bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500"
+                  >
+                    {t("toggleRule")}
+                  </button>
+                  <button onClick={() => setApproved((a) => [{ id: Date.now(), name: 'Demo Student', outSince: 'Now', initials: 'DS' }, ...a])} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">{t("addDemoApproved")}</button>
                 </div>
                 <div className="mt-4">
-                  <h4 className="font-bold">{t("recentlyAutoApproved")}</h4>
-                  <div className="mt-2 space-y-2">
-                    {approved.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between p-2 border rounded">
+                  <h4 className="sd-card-title text-[0.9rem]">{t("recentlyAutoApproved")}</h4>
+                  <div className="mt-3 space-y-2">
+                    {approved.map((s, i) => (
+                      <div key={s.id} className="sd-row sd-luxe-rise" style={{ "--accent": "#10b981", animationDelay: `${0.05 + i * 0.05}s` }}>
+                        <span className="sd-row__accent" aria-hidden="true" />
                         <div>
-                          <p className="font-bold text-sm">{s.name}</p>
-                          <p className="text-xs text-slate-500">{s.outSince}</p>
+                          <p className="sd-card-title text-[0.85rem]">{s.name}</p>
+                          <p className="sd-micro">{s.outSince}</p>
                         </div>
                       </div>
                     ))}
@@ -873,35 +996,33 @@ export default function WardenDashboardPage() {
         </div>
       )}
 
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-t border-slate-100 px-6 py-3 pb-4 md:hidden">
-        <div className="mx-auto max-w-md flex items-center justify-between">
-          <button onClick={() => setView('home')} className="flex flex-col items-center gap-1 text-indigo-700"><Home className="h-6 w-6" /><span className="text-[10px] font-bold">{tc("home")}</span></button>
-          {!isBoysWarden && (
-            <button onClick={() => setView('requests')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors"><ClipboardList className="h-6 w-6" /><span className="text-[10px] font-semibold">{t("requests")}</span></button>
-          )}
-          <button onClick={() => setView('leave')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
-            <span className="relative inline-flex">
-              <CalendarDays className="h-6 w-6" />
-              {leavePending.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
-            </span>
-            <span className="text-[10px] font-semibold">{t("leaveApplications")}</span>
-          </button>
-          <button onClick={() => setView('sos')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
-            <span className="relative inline-flex">
-              <Siren className="h-6 w-6" />
-              {sosCount > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
-            </span>
-            <span className="text-[10px] font-semibold">{t("safetyAlerts")}</span>
-          </button>
-          <button onClick={() => setView('complaints')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
-            <span className="relative inline-flex">
-              <MessageSquare className="h-6 w-6" />
-              {reports.length > 0 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
-            </span>
-            <span className="text-[10px] font-semibold">{t("complaints")}</span>
-          </button>
-          <button onClick={() => setView('profile')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors"><User className="h-6 w-6" /><span className="text-[10px] font-semibold">{tc("profile")}</span></button>
-        </div>
+      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysWarden ? 'grid-cols-5' : 'grid-cols-6'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
+        <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="text-[9px]">{tc("home")}</span></button>
+        {!isBoysWarden && (
+          <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="text-[9px]">{t("requests")}</span></button>
+        )}
+        <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
+          <span className="sd-navx__icon relative">
+            <CalendarDays className="h-5 w-5" />
+            {leavePending.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
+          </span>
+          <span className="text-[9px]">{t("leaveApplications")}</span>
+        </button>
+        <button onClick={() => setView('sos')} className={`sd-navx ${view === 'sos' ? 'sd-navx--active' : ''}`}>
+          <span className="sd-navx__icon relative">
+            <Siren className="h-5 w-5" />
+            {sosCount > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
+          </span>
+          <span className="text-[9px]">{t("safetyAlerts")}</span>
+        </button>
+        <button onClick={() => setView('complaints')} className={`sd-navx ${view === 'complaints' ? 'sd-navx--active' : ''}`}>
+          <span className="sd-navx__icon relative">
+            <MessageSquare className="h-5 w-5" />
+            {reports.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
+          </span>
+          <span className="text-[9px]">{t("complaints")}</span>
+        </button>
+        <button onClick={() => setView('profile')} className={`sd-navx ${view === 'profile' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><User className="h-5 w-5" /></span><span className="text-[9px]">{tc("profile")}</span></button>
       </nav>
     </main>
   );

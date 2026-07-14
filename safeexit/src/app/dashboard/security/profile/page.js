@@ -55,28 +55,32 @@ export default function SecurityProfilePage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen dashboard-neo text-slate-900">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-10">
       <div className="relative overflow-hidden">
-        <div className="dash-orb dash-orb-one" />
-        <div className="dash-orb dash-orb-two" />
-        <div className="dash-orb dash-orb-three" />
+        <div className="sd-aura sd-aura--a" aria-hidden="true" />
+        <div className="sd-aura sd-aura--b" aria-hidden="true" />
+        <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
-        <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="dash-surface dash-animate-rise flex flex-wrap items-center gap-4 rounded-[2.25rem] px-5 py-4 shadow-xl">
+        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+          <header className="sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center gap-4 rounded-[2.25rem] px-5 py-4">
             <Link
               href="/dashboard/security"
-              className="dash-glow flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-700 to-cyan-500 text-white shadow-lg"
+              className="sd-lift-lg flex h-14 w-14 items-center justify-center rounded-2xl text-white"
+              style={{
+                background: "linear-gradient(145deg, #0f172a 0%, #0f766e 52%, #2dd4bf 100%)",
+                boxShadow: "0 18px 40px -20px rgba(13,148,136,0.6)",
+              }}
             >
               <ArrowLeft className="h-7 w-7" />
             </Link>
             <div className="flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">{t("account")}</p>
-              <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900">{tc("profile")}</h1>
+              <span className="sd-kicker">{t("account")}</span>
+              <h1 className="sd-title sd-title-md mt-1">{tc("profile")}</h1>
             </div>
             <LanguageSwitcher />
           </header>
 
-          <section className="dash-surface dash-animate-rise mt-6 rounded-[2.5rem] p-6 shadow-xl">
+          <section className="sd-luxe-panel sd-enter mt-6 rounded-[2.5rem] p-6" style={{ animationDelay: "0.12s" }}>
             {error && (
               <p className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
                 {error}
@@ -89,39 +93,61 @@ export default function SecurityProfilePage() {
             ) : me ? (
               <>
                 <div className="flex items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-400 text-xl font-bold text-white">
+                  <span className="sd-profile-avatar" style={{ height: "4rem", width: "4rem", fontSize: "1.15rem" }}>
                     {getInitials(me.name)}
-                  </div>
+                  </span>
                   <div className="min-w-0">
-                    <p className="text-xl font-bold text-slate-900">{me.name}</p>
-                    <p className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-600">
-                      <ShieldCheck className="h-4 w-4" /> {me.role}
+                    <p className="sd-card-title text-xl">{me.name}</p>
+                    <p className="sd-tag mt-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5" /> {me.role}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-6 space-y-3 text-sm text-slate-600">
+                <div className="mt-6 space-y-3">
                   {me.email && (
-                    <p className="dash-outline flex items-center gap-3 rounded-2xl px-4 py-3">
-                      <Mail className="h-4 w-4 text-slate-400" /> {me.email}
-                    </p>
+                    <div className="sd-row" style={{ "--accent": "#6366f1" }}>
+                      <span className="sd-row__accent" aria-hidden="true" />
+                      <div className="flex items-center gap-3">
+                        <Mail className="h-4 w-4 text-slate-400" />
+                        <span className="sd-card-title text-[0.88rem]">{me.email}</span>
+                      </div>
+                    </div>
                   )}
                   {me.phoneNumber && (
-                    <p className="dash-outline flex items-center gap-3 rounded-2xl px-4 py-3">
-                      <Phone className="h-4 w-4 text-slate-400" /> {me.phoneNumber}
-                    </p>
+                    <div className="sd-row" style={{ "--accent": "#0ea5e9" }}>
+                      <span className="sd-row__accent" aria-hidden="true" />
+                      <div className="flex items-center gap-3">
+                        <Phone className="h-4 w-4 text-slate-400" />
+                        <span className="sd-card-title text-[0.88rem]">{me.phoneNumber}</span>
+                      </div>
+                    </div>
                   )}
                   {me.studentId && (
-                    <p className="dash-outline flex items-center gap-3 rounded-2xl px-4 py-3">
-                      <Building2 className="h-4 w-4 text-slate-400" /> {t("guardId")} {me.studentId}
-                    </p>
+                    <div className="sd-row" style={{ "--accent": "#2dd4bf" }}>
+                      <span className="sd-row__accent" aria-hidden="true" />
+                      <div className="flex items-center gap-3">
+                        <Building2 className="h-4 w-4 text-slate-400" />
+                        <span className="sd-card-title text-[0.88rem]">{t("guardId")} {me.studentId}</span>
+                      </div>
+                    </div>
                   )}
                 </div>
 
                 <button
                   onClick={handleLogout}
                   disabled={loggingOut}
-                  className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-50 px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-rose-600 shadow-sm transition hover:bg-rose-100 disabled:opacity-60 cursor-pointer"
+                  className="sd-magnetic mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-50 px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-rose-600 shadow-sm transition hover:bg-rose-100 disabled:opacity-60 cursor-pointer"
+                  onPointerMove={(e) => {
+                    const el = e.currentTarget;
+                    const rect = el.getBoundingClientRect();
+                    el.style.setProperty("--mag-x", `${(e.clientX - (rect.left + rect.width / 2)) * 0.2}px`);
+                    el.style.setProperty("--mag-y", `${(e.clientY - (rect.top + rect.height / 2)) * 0.2}px`);
+                  }}
+                  onPointerLeave={(e) => {
+                    e.currentTarget.style.setProperty("--mag-x", "0px");
+                    e.currentTarget.style.setProperty("--mag-y", "0px");
+                  }}
                 >
                   <LogOut className="h-5 w-5" />
                   {loggingOut ? tc("loggingOut") : tc("logout")}
