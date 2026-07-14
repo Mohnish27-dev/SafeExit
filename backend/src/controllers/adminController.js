@@ -102,6 +102,20 @@ const getUsers = async (req, res) => {
 // trim, lowercase, strip all whitespace (matches the login pages' helper).
 const buildStaffLoginId = (id) => (id || '').trim().toLowerCase().replace(/\s+/g, '');
 
+// Human label for a hostel scope, used in "already has a warden" messages.
+const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
+
+// Each hostel has exactly ONE warden account, shared by all of that hostel's
+// wardens (they log in with the same ID; scoping is by managedGender, so they
+// all see the same hostel's requests). This finds the existing warden for a
+// hostel, if any. `exceptId` lets updateStaffScope ignore the warden being
+// edited so re-saving its own hostel isn't treated as a duplicate.
+const findWardenForHostel = (managedGender, exceptId) => {
+  const filter = { role: 'Warden', managedGender };
+  if (exceptId) filter._id = { $ne: exceptId };
+  return User.findOne(filter);
+};
+
 // @desc    Create a Warden or Guard account (admin-provisioned)
 // @route   POST /api/admin/staff
 // @access  Private (Admin)
@@ -133,6 +147,17 @@ const createStaff = async (req, res) => {
     // details private. 'Male' = boys' hostel, 'Female' = girls' hostel.
     if (role === 'Warden' && !['Male', 'Female'].includes(managedGender)) {
       return res.status(400).json({ message: "Select the warden's hostel (Boys' or Girls')." });
+    }
+    // One warden account per hostel: if this hostel already has one, don't mint a
+    // second. Additional wardens for the same hostel reuse that shared login (or
+    // the admin resets its PIN) rather than getting their own account.
+    if (role === 'Warden') {
+      const existing = await findWardenForHostel(managedGender);
+      if (existing) {
+        return res.status(409).json({
+          message: `The ${HOSTEL_LABEL[managedGender]} already has a warden account (${existing.loginId}). Share that ID with the new warden, or reset its PIN — don't create a second one.`,
+        });
+      }
     }
 
     const loginId = buildStaffLoginId(staffId);
@@ -218,6 +243,15 @@ const updateStaffScope = async (req, res) => {
     // Only wardens have a hostel scope — never students, guards, or admins.
     if (!user || user.role !== 'Warden') {
       return res.status(404).json({ message: 'Warden not found.' });
+    }
+    // Keep the one-warden-per-hostel invariant: reassigning this warden must not
+    // land on a hostel another warden already holds. (exceptId ignores this same
+    // warden so re-saving its current hostel is a no-op, not a conflict.)
+    const clash = await findWardenForHostel(managedGender, user._id);
+    if (clash) {
+      return res.status(409).json({
+        message: `The ${HOSTEL_LABEL[managedGender]} already has a warden account (${clash.loginId}). Remove or reassign that one first.`,
+      });
     }
 
     user.managedGender = managedGender;
