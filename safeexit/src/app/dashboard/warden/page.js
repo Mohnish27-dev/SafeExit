@@ -417,12 +417,19 @@ export default function WardenDashboardPage() {
   }
 
   const displayName = (user && (user.name || user.displayName)) || "Warden Priya";
-  const firstName = displayName.split(" ")[0] || displayName;
 
   // The hostel this warden oversees. When unset, the backend returns no students,
   // so we surface a "not configured" banner rather than a silently empty queue.
   const managedGender = user?.managedGender;
   const hostelLabel = HOSTEL_LABEL[managedGender];
+
+  // Boys' outings are always auto-approved at creation (see backend
+  // outingRules.js — male requests carry requiresWarden: false), so a boys'
+  // warden never has an outing queue to action. Their only approval workload is
+  // leave applications. We therefore drop every outing-approval surface for them
+  // and promote pending leave onto the home dashboard instead. A girls' warden
+  // keeps both (female "Market" outings require warden approval) — unchanged.
+  const isBoysWarden = managedGender === "Male";
 
   const handleLogout = () => logout(router, { role: "warden" });
 
@@ -497,8 +504,8 @@ export default function WardenDashboardPage() {
                 </div>
                 <div>
                   <p className="sd-eyebrow">{t("dailyPulse")}</p>
-                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2">{t("greeting")} <span className="text-gradient-secondary">{firstName}</span>.</h2>
-                  <p className="sd-body mt-2 max-w-md">{t("overviewText")}</p>
+                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2">{t("greeting")} <span className="text-gradient-secondary">{t("greetingName")}</span>.</h2>
+                  <p className="sd-body mt-2 max-w-md">{isBoysWarden ? t("overviewTextBoys") : t("overviewText")}</p>
                 </div>
               </div>
               <div className="grid gap-3 text-sm font-semibold text-slate-600 sm:grid-cols-2 lg:grid-cols-1">
@@ -524,33 +531,43 @@ export default function WardenDashboardPage() {
               <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-bold animate-pulse">{t("autoRulesOn")}</span>
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4 sd-stagger">
-              {[{
-                title: t("manageRequests"),
-                desc: t("manageRequestsDesc"),
-                icon: Users,
-                tone: 'from-indigo-600',
-                onClick: () => openPanel('manage'),
-              },{
-                title: t("safetyAlerts"),
-                desc: t("safetyAlertsDesc"),
-                icon: Siren,
-                tone: 'from-rose-600',
-                badge: sosCount,
-                onClick: () => setView('sos'),
-              },{
-                title: t("leaveApplications"),
-                desc: t("leaveApplicationsDesc"),
-                icon: CalendarDays,
-                tone: 'from-violet-600',
-                badge: leavePending.length,
-                onClick: () => setView('leave'),
-              },{
-                title: t("autoApprovals"),
-                desc: t("autoApprovalsDesc"),
-                icon: Sparkles,
-                tone: 'from-sky-600',
-                onClick: () => openPanel('auto'),
-              }].map((a, idx) => (
+              {(() => {
+                const manageAction = {
+                  title: t("manageRequests"),
+                  desc: t("manageRequestsDesc"),
+                  icon: Users,
+                  tone: 'from-indigo-600',
+                  onClick: () => openPanel('manage'),
+                };
+                const safetyAction = {
+                  title: t("safetyAlerts"),
+                  desc: t("safetyAlertsDesc"),
+                  icon: Siren,
+                  tone: 'from-rose-600',
+                  badge: sosCount,
+                  onClick: () => setView('sos'),
+                };
+                const leaveAction = {
+                  title: t("leaveApplications"),
+                  desc: t("leaveApplicationsDesc"),
+                  icon: CalendarDays,
+                  tone: 'from-violet-600',
+                  badge: leavePending.length,
+                  onClick: () => setView('leave'),
+                };
+                const autoAction = {
+                  title: t("autoApprovals"),
+                  desc: t("autoApprovalsDesc"),
+                  icon: Sparkles,
+                  tone: 'from-sky-600',
+                  onClick: () => openPanel('auto'),
+                };
+                // Boys' warden: no outing approvals — lead with Leave, drop the
+                // outing "Manage Requests" tile. Girls' warden: keep all four.
+                return isBoysWarden
+                  ? [leaveAction, safetyAction, autoAction]
+                  : [manageAction, safetyAction, leaveAction, autoAction];
+              })().map((a, idx) => (
                 <button key={idx} onClick={a.onClick} style={{ animationDelay: `${0.08 + idx * 0.06}s` }} className="sd-luxe-card sd-action-card sd-luxe-shimmer sd-card-hover sd-animate-pop group relative flex flex-col items-start gap-4 rounded-4xl p-6 text-left">
                   <div className="relative rounded-full bg-white p-3 inline-flex items-center justify-center">
                     <a.icon className="h-6 w-6 text-indigo-600" />
@@ -567,6 +584,59 @@ export default function WardenDashboardPage() {
             </div>
               </section>
 
+              {isBoysWarden ? (
+              <section className="mt-6">
+            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-6 sm:p-7 shadow-xl">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="sd-eyebrow">{t("leaveApplications")}</p>
+                  <h2 className="sd-title sd-title-sm">{t("pendingLeaveApprovals")}</h2>
+                </div>
+                <span className="sd-luxe-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-violet-800 bg-violet-50 border border-violet-200">
+                  <CalendarDays className="h-4 w-4" /> {leavePending.length}
+                </span>
+              </div>
+              <p className="sd-micro mt-1 text-slate-500">{t("leaveOnlyNote")}</p>
+              <div className="mt-6 space-y-3">
+                {loadingLeave ? (
+                  <p className="text-sm text-slate-500">{t("loadingLeave")}</p>
+                ) : leaveError ? (
+                  <p className="text-sm font-semibold text-rose-600">{leaveError}</p>
+                ) : leavePending.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-slate-500">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+                      <CalendarDays className="h-6 w-6 text-slate-400" />
+                    </div>
+                    <p className="font-semibold text-slate-700">{t("noPendingLeave")}</p>
+                    <p className="text-sm text-slate-500">{t("noLeaveYet")}</p>
+                  </div>
+                ) : (
+                  leavePending.map((req, i) => (
+                  <div key={req.id} className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3.5" style={{ animationDelay: `${0.12 + i * 0.06}s` }}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-fuchsia-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
+                      <div className="min-w-0">
+                        <p className="sd-card-title text-slate-900 text-base">{req.name}</p>
+                        <p className="sd-micro mt-0.5">{req.room}{req.roll ? <> • <span className="font-mono">{req.roll}</span></> : null}</p>
+                        <p className="sd-micro mt-0.5 text-slate-500">{t("destination")} {req.destination}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => approveLeave(req.id)} className="flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-white font-bold shadow hover:-translate-y-0.5 transition-transform">
+                        <Check className="h-4 w-4" /> {tc("approve")}
+                      </button>
+                      <button onClick={() => setView('leave')} className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 transition-colors">
+                        <ArrowRight className="h-4 w-4" /> {t("reviewInLeave")}
+                      </button>
+                    </div>
+                  </div>
+                  ))
+                )}
+              </div>
+            </div>
+              </section>
+              ) : (
               <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-6 sm:p-7 shadow-xl">
               <div className="flex items-center justify-between gap-3">
@@ -605,6 +675,7 @@ export default function WardenDashboardPage() {
 
             <AutoApprovedView approved={approved} compact={true} onViewAll={() => setView('approved')} onClear={() => setApproved([])} />
               </section>
+              )}
 
               <section className="mt-6 grid gap-6 lg:grid-cols-[0.7fr_1.3fr]">
             <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-6 shadow-xl">
@@ -618,8 +689,8 @@ export default function WardenDashboardPage() {
               <div className="mt-5 space-y-4">
                 <div className="sd-luxe-card sd-luxe-tilt rounded-2xl px-4 py-3.5">
                   <div className="flex items-center justify-between">
-                    <p className="sd-micro">{t("pendingRequests")}</p>
-                    <p className="text-xl font-bold text-slate-900">{pending.length}</p>
+                    <p className="sd-micro">{isBoysWarden ? t("pendingLeave") : t("pendingRequests")}</p>
+                    <p className="text-xl font-bold text-slate-900">{isBoysWarden ? leavePending.length : pending.length}</p>
                   </div>
                   <div className="mt-3 h-2.5 rounded-full bg-slate-100 overflow-hidden">
                     <div className="sd-luxe-progress h-full rounded-full bg-linear-to-r from-indigo-500 via-sky-400 to-transparent" style={{ width: '48%' }} />
@@ -703,9 +774,11 @@ export default function WardenDashboardPage() {
             />
           )}
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-6 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysWarden ? 'grid-cols-5' : 'grid-cols-6'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
             <button onClick={() => setView('home')} className={`sd-nav-link ${view === 'home' ? 'sd-nav-link--active' : ''}`}><Home className="h-6 w-6" />{tc("home")}</button>
-            <button onClick={() => setView('requests')} className={`sd-nav-link ${view === 'requests' ? 'sd-nav-link--active' : ''}`}><ClipboardList className="h-6 w-6" />{t("requests")}</button>
+            {!isBoysWarden && (
+              <button onClick={() => setView('requests')} className={`sd-nav-link ${view === 'requests' ? 'sd-nav-link--active' : ''}`}><ClipboardList className="h-6 w-6" />{t("requests")}</button>
+            )}
             <button onClick={() => setView('leave')} className={`sd-nav-link ${view === 'leave' ? 'sd-nav-link--active' : ''}`}>
               <span className="relative inline-flex">
                 <CalendarDays className="h-6 w-6" />
@@ -803,7 +876,9 @@ export default function WardenDashboardPage() {
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-t border-slate-100 px-6 py-3 pb-4 md:hidden">
         <div className="mx-auto max-w-md flex items-center justify-between">
           <button onClick={() => setView('home')} className="flex flex-col items-center gap-1 text-indigo-700"><Home className="h-6 w-6" /><span className="text-[10px] font-bold">{tc("home")}</span></button>
-          <button onClick={() => setView('requests')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors"><ClipboardList className="h-6 w-6" /><span className="text-[10px] font-semibold">{t("requests")}</span></button>
+          {!isBoysWarden && (
+            <button onClick={() => setView('requests')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors"><ClipboardList className="h-6 w-6" /><span className="text-[10px] font-semibold">{t("requests")}</span></button>
+          )}
           <button onClick={() => setView('leave')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors">
             <span className="relative inline-flex">
               <CalendarDays className="h-6 w-6" />
