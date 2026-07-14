@@ -3555,3 +3555,189 @@ body {
   width: 3.25rem;
   opacity: 1;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Guard console layer (grd-*) — a distinct tactical/surveillance identity
+   for the security dashboard: targeting-reticle corner brackets, a radar
+   sweep, a scanning light beam, and a live pulse waveform. Kept in its own
+   namespace so the student dashboard's sd-* system is untouched. All motion
+   is slow and single-source per component (never stacked) to stay calm.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Camera/targeting-reticle corners — four small L-brackets framing a panel,
+   like a viewfinder locking onto a subject. */
+.grd-frame {
+  position: relative;
+}
+
+.grd-corner {
+  position: absolute;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-color: var(--grd-bracket, rgba(45, 212, 191, 0.7));
+  border-style: solid;
+  border-width: 0;
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 3;
+  transition: opacity 0.3s ease, width 0.3s ease, height 0.3s ease;
+}
+
+.grd-corner--tl { top: 0.85rem; left: 0.85rem; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 6px; }
+.grd-corner--tr { top: 0.85rem; right: 0.85rem; border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 6px; }
+.grd-corner--bl { bottom: 0.85rem; left: 0.85rem; border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 6px; }
+.grd-corner--br { bottom: 0.85rem; right: 0.85rem; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 6px; }
+
+.grd-frame:hover .grd-corner {
+  width: 1.4rem;
+  height: 1.4rem;
+  opacity: 1;
+}
+
+/* Small circular radar-sweep badge — a rotating bright wedge clipped to a
+   circle, used as a "live surveillance" indicator next to realtime tags. */
+.grd-radar {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(15, 23, 42, 0.92);
+}
+
+.grd-radar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from 0deg,
+    rgba(45, 212, 191, 0) 0deg,
+    rgba(45, 212, 191, 0) 250deg,
+    rgba(45, 212, 191, 0.95) 300deg,
+    rgba(94, 234, 212, 0.4) 330deg,
+    rgba(45, 212, 191, 0) 360deg
+  );
+  animation: grd-radar-spin 3.2s linear infinite;
+}
+
+.grd-radar::after {
+  content: "";
+  position: absolute;
+  inset: 30%;
+  border-radius: 9999px;
+  background: rgba(45, 212, 191, 0.95);
+  box-shadow: 0 0 6px rgba(45, 212, 191, 0.9);
+}
+
+@keyframes grd-radar-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Teal/emerald conic glow border — the guard dashboard's own signature hue,
+   distinct from the student dashboard's indigo/cyan sd-glow-border. Reuses
+   the shared --angle @property + sd-angle-spin keyframe registered above. */
+.grd-glow-border {
+  position: relative;
+  isolation: isolate;
+}
+
+.grd-glow-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--angle, 0deg),
+    rgba(45, 212, 191, 0) 0%,
+    rgba(45, 212, 191, 0.95) 12%,
+    rgba(16, 185, 129, 0.9) 24%,
+    rgba(45, 212, 191, 0) 40%,
+    rgba(45, 212, 191, 0) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.6;
+  z-index: 2;
+  pointer-events: none;
+  animation: sd-angle-spin 6s linear infinite;
+}
+
+/* Scanning light beam — a soft horizontal band sweeping down across a flat
+   surface, evoking a security scanner reading its subject. */
+.grd-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.grd-sweep::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -45%;
+  height: 45%;
+  background: linear-gradient(180deg, transparent 0%, rgba(45, 212, 191, 0.22) 45%, rgba(94, 234, 212, 0.08) 70%, transparent 100%);
+  animation: grd-sweep-move 4.5s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes grd-sweep-move {
+  0% { top: -45%; }
+  55% { top: 100%; }
+  100% { top: 100%; }
+}
+
+/* Live pulse waveform — a traveling highlight along an ECG-style path,
+   visualizing the "Shift Pulse" copy as an actual heartbeat line. */
+.grd-pulse {
+  overflow: visible;
+}
+
+.grd-pulse__track {
+  fill: none;
+  stroke: rgba(100, 116, 139, 0.22);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.grd-pulse__beat {
+  fill: none;
+  stroke: #2dd4bf;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 34 300;
+  animation: grd-pulse-travel 2.6s linear infinite;
+  filter: drop-shadow(0 0 4px rgba(45, 212, 191, 0.7));
+}
+
+@keyframes grd-pulse-travel {
+  to { stroke-dashoffset: -334; }
+}
+
+/* Monospace tabular data readout — for clocks, counts, and IDs, giving the
+   guard console a terminal-like numeric identity distinct from the student
+   dashboard's italic display numerals. */
+.grd-mono {
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grd-radar::before,
+  .grd-glow-border::before,
+  .grd-sweep::after,
+  .grd-pulse__beat {
+    animation: none !important;
+  }
+  .grd-sweep::after {
+    display: none;
+  }
+  .grd-pulse__beat {
+    stroke-dasharray: none;
+  }
+}
