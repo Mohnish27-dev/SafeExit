@@ -111,6 +111,8 @@ const hi = {
     returnLabel: "वापसी का समय",
     duration: "अवधि:",
     actingSoon: "जल्द एक्शन ज़रूरी",
+    viewFullApplication: "पूरी एप्लीकेशन देखें",
+    fullApplication: "पूरी लीव एप्लीकेशन",
   },
 
   // ─── Security Dashboard ───

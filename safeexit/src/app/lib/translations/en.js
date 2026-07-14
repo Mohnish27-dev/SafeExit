@@ -111,6 +111,8 @@ const en = {
     returnLabel: "Returns",
     duration: "Duration:",
     actingSoon: "Acting soon",
+    viewFullApplication: "View full application",
+    fullApplication: "Full Leave Application",
   },
 
   // ─── Security Dashboard ───

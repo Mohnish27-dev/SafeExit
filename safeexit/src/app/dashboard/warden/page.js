@@ -92,10 +92,13 @@ const mapLeavePending = (l) => ({
   name: l.student?.name || "Unknown Student",
   roll: l.student?.studentId || "",
   room: [l.student?.hostelName, l.student?.roomNumber].filter(Boolean).join(", ") || "—",
+  hostelName: l.student?.hostelName || "",
+  roomNumber: l.student?.roomNumber || "",
   destination: l.destination || "",
   reason: l.reason || "",
   leaveDate: l.leaveDate,
   returnDate: l.returnDate,
+  submittedAt: l.createdAt,
   initials: initials(l.student?.name),
 });
 
@@ -919,7 +922,7 @@ export default function WardenDashboardPage() {
       </div>
 
       {activePanel && (
-        <div className="fixed inset-0 z-60 flex">
+        <div className="fixed inset-0 z-[60] flex">
           <div onClick={closePanel} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <aside className="sd-luxe-panel sd-glow-border sd-enter relative ml-auto h-full w-full max-w-md overflow-y-auto rounded-l-[2.25rem] p-6">
             <div className="flex items-center justify-between mb-5">
