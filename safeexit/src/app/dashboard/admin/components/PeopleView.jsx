@@ -37,6 +37,13 @@ const formatWhen = (iso) =>
 
 // A warden's managedGender maps to the hostel they oversee.
 const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
+// The full set of hostels. Each has exactly one warden account, shared by that
+// hostel's wardens, so once a hostel is taken it drops out of the Add/Assign
+// pickers below.
+const HOSTEL_OPTIONS = [
+  { value: "Male", label: "Boys' Hostel" },
+  { value: "Female", label: "Girls' Hostel" },
+];
 
 export default function PeopleView() {
   const [role, setRole] = useState("Student");
@@ -76,6 +83,16 @@ export default function PeopleView() {
   // Staff (Guard/Warden) are provisioned here by admins — students self-register
   // and are never created/removed from this screen.
   const isStaffTab = role === "Guard" || role === "Warden";
+
+  // Hostels that already have a warden account. Derived from the loaded roster
+  // while the Warden tab is active (that's when `people` holds wardens). Used to
+  // hide taken hostels from the Add/Assign pickers and to disable "Add Warden"
+  // once both hostels are covered — one warden account per hostel.
+  const takenHostels = useMemo(() => {
+    if (role !== "Warden") return new Set();
+    return new Set(people.map((p) => p.managedGender).filter(Boolean));
+  }, [role, people]);
+  const allHostelsTaken = role === "Warden" && takenHostels.size >= HOSTEL_OPTIONS.length;
 
   // --- Add staff modal ---
   const emptyAddForm = { name: "", staffId: "", pin: "", phoneNumber: "", managedGender: "" };
@@ -205,7 +222,9 @@ export default function PeopleView() {
           {isStaffTab && (
             <button
               onClick={openAdd}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110"
+              disabled={allHostelsTaken}
+              title={allHostelsTaken ? "Both hostels already have a warden account." : undefined}
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus className="h-4 w-4" /> Add {role}
             </button>
@@ -385,10 +404,14 @@ export default function PeopleView() {
                     required
                   >
                     <option value="" disabled>Select hostel…</option>
-                    <option value="Male">Boys&apos; Hostel</option>
-                    <option value="Female">Girls&apos; Hostel</option>
+                    {/* Only hostels without a warden yet — the other is already taken. */}
+                    {HOSTEL_OPTIONS.filter((h) => !takenHostels.has(h.value)).map((h) => (
+                      <option key={h.value} value={h.value}>{h.label}</option>
+                    ))}
                   </select>
-                  <p className="mt-1 text-[11px] text-slate-400">This warden will only see and manage students of this hostel.</p>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Each hostel has one warden login, shared by that hostel&apos;s wardens. This account will only see and manage students of the selected hostel.
+                  </p>
                 </div>
               )}
 
@@ -512,8 +535,13 @@ export default function PeopleView() {
                 required
               >
                 <option value="" disabled>Select hostel…</option>
-                <option value="Male">Boys&apos; Hostel</option>
-                <option value="Female">Girls&apos; Hostel</option>
+                {/* Free hostels plus this warden's own current one — a hostel held
+                    by ANOTHER warden is excluded to keep one account per hostel. */}
+                {HOSTEL_OPTIONS.filter(
+                  (h) => !takenHostels.has(h.value) || h.value === scopeTarget.managedGender
+                ).map((h) => (
+                  <option key={h.value} value={h.value}>{h.label}</option>
+                ))}
               </select>
               <div className="flex gap-2 pt-1">
                 <button
