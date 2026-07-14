@@ -35,6 +35,16 @@ const CAMPUS_TONE = {
 const formatWhen = (iso) =>
   iso ? new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
+// A warden's managedGender maps to the hostel they oversee.
+const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
+// The full set of hostels. Each has exactly one warden account, shared by that
+// hostel's wardens, so once a hostel is taken it drops out of the Add/Assign
+// pickers below.
+const HOSTEL_OPTIONS = [
+  { value: "Male", label: "Boys' Hostel" },
+  { value: "Female", label: "Girls' Hostel" },
+];
+
 export default function PeopleView() {
   const [role, setRole] = useState("Student");
   const [people, setPeople] = useState([]);
@@ -74,8 +84,18 @@ export default function PeopleView() {
   // and are never created/removed from this screen.
   const isStaffTab = role === "Guard" || role === "Warden";
 
+  // Hostels that already have a warden account. Derived from the loaded roster
+  // while the Warden tab is active (that's when `people` holds wardens). Used to
+  // hide taken hostels from the Add/Assign pickers and to disable "Add Warden"
+  // once both hostels are covered — one warden account per hostel.
+  const takenHostels = useMemo(() => {
+    if (role !== "Warden") return new Set();
+    return new Set(people.map((p) => p.managedGender).filter(Boolean));
+  }, [role, people]);
+  const allHostelsTaken = role === "Warden" && takenHostels.size >= HOSTEL_OPTIONS.length;
+
   // --- Add staff modal ---
-  const emptyAddForm = { name: "", staffId: "", pin: "", phoneNumber: "" };
+  const emptyAddForm = { name: "", staffId: "", pin: "", phoneNumber: "", managedGender: "" };
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(emptyAddForm);
   const [busy, setBusy] = useState(false);
@@ -84,6 +104,10 @@ export default function PeopleView() {
   // --- Reset PIN modal ---
   const [resetTarget, setResetTarget] = useState(null); // the staff member, or null
   const [resetPin, setResetPin] = useState("");
+
+  // --- Assign hostel modal (warden gender scope) ---
+  const [scopeTarget, setScopeTarget] = useState(null); // the warden, or null
+  const [scopeValue, setScopeValue] = useState("");
 
   const openAdd = () => {
     setAddForm(emptyAddForm);
@@ -104,6 +128,8 @@ export default function PeopleView() {
           role, // the currently selected tab: "Guard" or "Warden"
           pin: addForm.pin,
           phoneNumber: addForm.phoneNumber,
+          // Only wardens carry a hostel scope; the backend ignores it for guards.
+          ...(role === "Warden" ? { managedGender: addForm.managedGender } : {}),
         }),
       });
       setShowAdd(false);
@@ -130,6 +156,26 @@ export default function PeopleView() {
       await load();
     } catch (err) {
       setActionMsg(err.message || "Could not reset the PIN.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitScope = async (e) => {
+    e.preventDefault();
+    if (!scopeTarget) return;
+    setBusy(true);
+    setActionMsg("");
+    try {
+      await apiFetch(`/admin/staff/${scopeTarget._id}/scope`, {
+        method: "PATCH",
+        body: JSON.stringify({ managedGender: scopeValue }),
+      });
+      setScopeTarget(null);
+      setScopeValue("");
+      await load();
+    } catch (err) {
+      setActionMsg(err.message || "Could not assign the hostel.");
     } finally {
       setBusy(false);
     }
@@ -176,7 +222,9 @@ export default function PeopleView() {
           {isStaffTab && (
             <button
               onClick={openAdd}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110"
+              disabled={allHostelsTaken}
+              title={allHostelsTaken ? "Both hostels already have a warden account." : undefined}
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus className="h-4 w-4" /> Add {role}
             </button>
@@ -232,6 +280,11 @@ export default function PeopleView() {
                     <CircleDot className="h-3 w-3" /> {p.onDuty ? "On Duty" : "Off Duty"}
                   </span>
                 )}
+                {role === "Warden" && (
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${p.managedGender ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>
+                    {p.managedGender ? HOSTEL_LABEL[p.managedGender] : "No hostel"}
+                  </span>
+                )}
               </div>
 
               <div className="mt-4 space-y-2 text-sm text-slate-600">
@@ -266,6 +319,16 @@ export default function PeopleView() {
                   : `Last active ${formatWhen(p.lastActiveAt)}`}
                 {p.webAuthnRegistered && <span className="ml-2 text-emerald-500">· Passkey ✓</span>}
               </div>
+
+              {role === "Warden" && (
+                <button
+                  onClick={() => { setScopeTarget(p); setScopeValue(p.managedGender || ""); setActionMsg(""); }}
+                  disabled={busy}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 transition hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  <UserCog className="h-3.5 w-3.5" /> {p.managedGender ? "Change hostel" : "Assign hostel"}
+                </button>
+              )}
 
               {isStaffTab && (
                 <div className="mt-3 flex gap-2">
@@ -331,6 +394,27 @@ export default function PeopleView() {
                   required
                 />
               </div>
+              {role === "Warden" && (
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Hostel</label>
+                  <select
+                    value={addForm.managedGender}
+                    onChange={(e) => setAddForm((f) => ({ ...f, managedGender: e.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:bg-white focus:outline-none"
+                    required
+                  >
+                    <option value="" disabled>Select hostel…</option>
+                    {/* Only hostels without a warden yet — the other is already taken. */}
+                    {HOSTEL_OPTIONS.filter((h) => !takenHostels.has(h.value)).map((h) => (
+                      <option key={h.value} value={h.value}>{h.label}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Each hostel has one warden login, shared by that hostel&apos;s wardens. This account will only see and manage students of the selected hostel.
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Initial PIN</label>
@@ -416,6 +500,63 @@ export default function PeopleView() {
                   className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2.5 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:opacity-60"
                 >
                   {busy ? "Resetting…" : "Reset PIN"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Assign hostel modal (warden gender scope) */}
+      {scopeTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                <UserCog className="h-5 w-5 text-indigo-600" /> Assign Hostel
+              </h3>
+              <button onClick={() => setScopeTarget(null)} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              Choose which hostel <span className="font-semibold text-slate-700">{scopeTarget.name}</span> oversees. They will only see and manage students of that hostel.
+            </p>
+
+            {actionMsg && (
+              <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{actionMsg}</p>
+            )}
+
+            <form onSubmit={submitScope} className="mt-4 space-y-3">
+              <select
+                value={scopeValue}
+                onChange={(e) => setScopeValue(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:bg-white focus:outline-none"
+                required
+              >
+                <option value="" disabled>Select hostel…</option>
+                {/* Free hostels plus this warden's own current one — a hostel held
+                    by ANOTHER warden is excluded to keep one account per hostel. */}
+                {HOSTEL_OPTIONS.filter(
+                  (h) => !takenHostels.has(h.value) || h.value === scopeTarget.managedGender
+                ).map((h) => (
+                  <option key={h.value} value={h.value}>{h.label}</option>
+                ))}
+              </select>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setScopeTarget(null)}
+                  className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2.5 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:opacity-60"
+                >
+                  {busy ? "Saving…" : "Save hostel"}
                 </button>
               </div>
             </form>

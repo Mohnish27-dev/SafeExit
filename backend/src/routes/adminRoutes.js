@@ -5,6 +5,7 @@ const {
   getUsers,
   createStaff,
   resetStaffPin,
+  updateStaffScope,
   removeStaff,
 } = require('../controllers/adminController');
 const { protect } = require('../middlewares/authMiddleware');
@@ -19,6 +20,7 @@ router.get('/users', protect, authorizeRoles('Admin', 'Guard'), getUsers);
 // and remove them. This replaces self-registration for privileged roles.
 router.post('/staff', protect, authorizeRoles('Admin'), createStaff);
 router.patch('/staff/:id/pin', protect, authorizeRoles('Admin'), resetStaffPin);
+router.patch('/staff/:id/scope', protect, authorizeRoles('Admin'), updateStaffScope);
 router.delete('/staff/:id', protect, authorizeRoles('Admin'), removeStaff);
 
 module.exports = router;

@@ -1,6 +1,22 @@
 const OutingRequest = require('../models/OutingRequest');
-const { qualifiesForAutoApproval, isDeparturePassed } = require('../utils/outingRules');
+const {
+  isDeparturePassed,
+  resolveOutingPolicy,
+  normalizeOutingType,
+  isWithinDepartureWindow,
+  computeReturnDeadline,
+} = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
+const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
+
+// Human-readable clock label for a minutes-since-midnight value, for messages.
+const clockLabel = (minutes) => {
+  const h24 = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const period = h24 < 12 ? 'AM' : 'PM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+};
 
 // Lazily expire stale requests at read time. Two categories qualify:
 //
@@ -40,7 +56,7 @@ const expireStaleRequests = async (requests) => {
 // @route   POST /api/outing
 // @access  Private (Student)
 const createOutingRequest = async (req, res) => {
-  const { destination, purpose, outTime, inTime } = req.body;
+  const { destination, purpose, outTime, outingType } = req.body;
 
   try {
     // A student who is currently outside (or overdue) must log an entry at the
@@ -55,14 +71,51 @@ const createOutingRequest = async (req, res) => {
       });
     }
 
-    // Low-risk trips returning by the campus cutoff skip warden review.
-    const autoApproved = qualifiesForAutoApproval(inTime);
+    // The governing rule set is decided by the student's gender (trusted, from
+    // the authenticated user doc — never the request body) and the requested
+    // outing type. `normalizeOutingType` collapses any male request to the
+    // single 'General' path and pins a female request to 'Nearby'/'Market'.
+    const gender = req.user.gender;
+    const resolvedType = normalizeOutingType(gender, outingType);
+    const policy = resolveOutingPolicy(gender, resolvedType);
+
+    const departure = new Date(outTime);
+    if (Number.isNaN(departure.getTime())) {
+      return res.status(400).json({ message: 'A valid departure time is required.' });
+    }
+
+    // Hard-block departures outside the policy window (both too early and too
+    // late). This is the authoritative check — the client shows the same window
+    // for UX, but a direct API call is stopped here.
+    if (!isWithinDepartureWindow(gender, resolvedType, departure)) {
+      return res.status(400).json({
+        message: `Departure for this outing must be between ${clockLabel(
+          policy.departStartMinutes
+        )} and ${clockLabel(policy.departEndMinutes)} (campus time). Please choose a time in that window.`,
+        window: {
+          start: clockLabel(policy.departStartMinutes),
+          end: clockLabel(policy.departEndMinutes),
+        },
+      });
+    }
+
+    // The return time is NOT student-chosen: the college rule fixes it (8:00 PM,
+    // or 5:30 PM for a market trip). Pinning it as `inTime` is what drives the
+    // existing overdue/punctuality machinery so the warden is alerted if the
+    // student isn't back by the deadline.
+    const inTime = computeReturnDeadline(gender, resolvedType, departure);
+
+    // Only outings that require warden approval start 'Pending'. Everyone else
+    // (male general, female nearby) is auto-approved with no warden step — the
+    // gate scan still logs their exit/entry (the digital "register").
+    const autoApproved = !policy.requiresWarden;
 
     const outingRequest = await OutingRequest.create({
       student: req.user._id,
       destination,
       purpose,
-      outTime,
+      outingType: resolvedType,
+      outTime: departure,
       inTime,
       status: autoApproved ? 'Approved' : 'Pending',
       autoApproved
@@ -100,7 +153,7 @@ const getMyOutingRequests = async (req, res) => {
 // @access  Private (Warden/Guard)
 const getPendingRequests = async (req, res) => {
   try {
-    const requests = await OutingRequest.find({ status: 'Pending' })
+    const requests = await OutingRequest.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
       .populate('student', 'name studentId roomNumber')
       .sort({ createdAt: 1 });
 
@@ -135,9 +188,18 @@ const updateRequestStatus = async (req, res) => {
   }
 
   try {
-    const request = await OutingRequest.findById(req.params.id);
+    const request = await OutingRequest.findById(req.params.id).populate('student', 'gender');
 
     if (request) {
+      // A warden may only act on requests from students in their own hostel.
+      // This re-checks scope server-side so a direct API call can't approve or
+      // reject a request outside the warden's gender scope.
+      if (!studentGenderInScope(req.user, request.student?.gender)) {
+        return res.status(403).json({
+          message: 'This request belongs to a student outside your hostel.',
+        });
+      }
+
       // A decision can only be made on a request that is still awaiting one.
       // Once a pass has left 'Pending' (approved, rejected, out on a trip,
       // returned, expired or cancelled) it is out of the warden's hands — this

@@ -1,5 +1,6 @@
 const SOSAlert = require('../models/SOSAlert');
 const sseHub = require('../utils/sseHub');
+const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
 // @desc    Raise a new SOS alert
 // @route   POST /api/sos
@@ -19,13 +20,14 @@ const createSOSAlert = async (req, res) => {
 
     // Push the emergency to every open warden / guard / admin dashboard the
     // instant it's raised, instead of waiting for their next poll. Clients
-    // listening on /api/sos/stream refetch on this event; the payload carries
-    // enough for a toast/badge without a round-trip.
+    // listening on /api/sos/stream refetch the (gender-scoped) list on this
+    // event. The payload deliberately carries NO student PII — since the SSE
+    // hub broadcasts to every connected dashboard, including out-of-hostel
+    // wardens, a name here would leak past the per-hostel visibility boundary.
     sseHub.broadcast('sos:created', {
       id: populated._id,
       type: populated.type,
       status: populated.status,
-      studentName: populated.student?.name,
     });
 
     res.status(201).json(populated);
@@ -54,6 +56,8 @@ const getSOSAlerts = async (req, res) => {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
 
+    Object.assign(filter, await scopedStudentFilter(req.user));
+
     const alerts = await SOSAlert.find(filter)
       .populate('student', 'name studentId roomNumber hostelName phoneNumber department year')
       .populate('handledBy', 'name role')
@@ -71,9 +75,16 @@ const updateSOSStatus = async (req, res) => {
   const { status, resolutionNote } = req.body;
 
   try {
-    const alert = await SOSAlert.findById(req.params.id);
+    const alert = await SOSAlert.findById(req.params.id).populate('student', 'gender');
     if (!alert) {
       return res.status(404).json({ message: 'SOS alert not found' });
+    }
+
+    // A warden may only act on alerts from students in their own hostel.
+    if (!studentGenderInScope(req.user, alert.student?.gender)) {
+      return res.status(403).json({
+        message: 'This alert belongs to a student outside your hostel.',
+      });
     }
 
     if (status) alert.status = status;

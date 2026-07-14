@@ -1,6 +1,7 @@
 const LeaveApplication = require('../models/LeaveApplication');
 const sseHub = require('../utils/sseHub');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
+const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
@@ -83,16 +84,17 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
-    // Departure curfew: a leave pass is only valid until 5:30 PM (campus time)
-    // on its departure day, so a leave departing after 5:30 PM could never be
-    // used at the gate. Reject it up front for EVERY student. The gate re-
-    // enforces the same 5:30 PM cap at scan time (see scanController's
+    // Departure window: a leave pass may only be used to depart between 6:00 AM
+    // and 5:30 PM (campus time) on its departure day, so a leave departing
+    // outside that window could never be used at the gate. Reject it up front
+    // for EVERY student (leave timing is gender-agnostic). The gate re-enforces
+    // the same 5:30 PM late cap at scan time (see scanController's
     // isAfterLeaveCurfew), so this early check is a friendly guard rail, not the
     // security boundary — an application that gets Approved is already compliant.
     if (!isBeforeEveningCurfew(leaveDateObj)) {
       return res.status(400).json({
         message:
-          'Leave departure must be on or before 5:30 PM (campus time) — a leave pass is only valid until 5:30 PM on the departure day. Please choose an earlier leave date & time.',
+          'Leave departure must be between 6:00 AM and 5:30 PM (campus time) on the departure day. Please choose a leave time in that window.',
       });
     }
 
@@ -136,7 +138,7 @@ const getMyLeaveApplications = async (req, res) => {
 // @access  Private (Warden)
 const getPendingLeaveApplications = async (req, res) => {
   try {
-    const applications = await LeaveApplication.find({ status: 'Pending' })
+    const applications = await LeaveApplication.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
       .populate('student', 'name studentId roomNumber hostelName')
       .sort({ leaveDate: 1 });
 
@@ -158,10 +160,17 @@ const updateLeaveStatus = async (req, res) => {
   const { status, remarks } = req.body;
 
   try {
-    const application = await LeaveApplication.findById(req.params.id);
+    const application = await LeaveApplication.findById(req.params.id).populate('student', 'gender');
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
+    }
+
+    // A warden may only act on applications from students in their own hostel.
+    if (!studentGenderInScope(req.user, application.student?.gender)) {
+      return res.status(403).json({
+        message: 'This application belongs to a student outside your hostel.',
+      });
     }
 
     // Guard against approving an application whose leave date has already

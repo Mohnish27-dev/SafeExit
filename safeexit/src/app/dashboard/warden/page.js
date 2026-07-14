@@ -49,6 +49,9 @@ const formatTime = (value) =>
     ? new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
     : "—";
 
+// A warden's managedGender maps to the hostel they oversee.
+const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
+
 // Map a backend OutingRequest (with populated student) to the pending-card shape.
 const mapPending = (o) => ({
   id: o._id,
@@ -56,6 +59,7 @@ const mapPending = (o) => ({
   branch: [o.student?.year, o.student?.department].filter(Boolean).join(", ") || "—",
   roll: o.student?.studentId || "",
   destination: o.destination || "",
+  outingType: o.outingType || "",
   out: formatTime(o.outTime),
   return: formatTime(o.inTime),
   initials: initials(o.student?.name),
@@ -193,6 +197,22 @@ export default function WardenDashboardPage() {
     } catch (e) {
       // ignore
     }
+  }, []);
+
+  // Refresh the profile from the server so the warden's hostel scope
+  // (managedGender) is always current — even for sessions that logged in before
+  // the field existed, or whose hostel was assigned/changed by an admin since.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await apiFetch("/auth/profile");
+        if (!cancelled) setUser((u) => ({ ...(u || {}), ...profile }));
+      } catch {
+        /* best-effort; the badge/banner just fall back to the stored user */
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const formattedDate = now ? now.toLocaleDateString(dateLocale, { weekday: "short", day: "2-digit", month: "short" }) : tc("loading");
@@ -455,6 +475,11 @@ export default function WardenDashboardPage() {
   const displayName = (user && (user.name || user.displayName)) || "Warden Priya";
   const firstName = displayName.split(" ")[0] || displayName;
 
+  // The hostel this warden oversees. When unset, the backend returns no students,
+  // so we surface a "not configured" banner rather than a silently empty queue.
+  const managedGender = user?.managedGender;
+  const hostelLabel = HOSTEL_LABEL[managedGender];
+
   const handleLogout = () => logout(router, { role: "warden" });
 
   // Gate the dashboard on a valid warden session; the hook redirects to
@@ -487,7 +512,11 @@ export default function WardenDashboardPage() {
                 <div className="sd-profile-avatar bg-linear-to-br from-indigo-600 to-cyan-400 text-white flex h-12 w-12 items-center justify-center rounded-xl font-bold">{(user && ((user.name && user.name.split(' ').map(n=>n[0]).slice(0,2).join('')) || user.initials)) || 'WP'}</div>
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-slate-900 text-base">{displayName}</p>
-                  <p className="text-sm text-slate-500">{(user && (user.roleLabel || user.role)) || t("chiefWarden")}</p>
+                  {hostelLabel ? (
+                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-bold text-indigo-700">{hostelLabel}</span>
+                  ) : (
+                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">No hostel assigned</span>
+                  )}
                 </div>
               </div>
               <button
@@ -501,6 +530,16 @@ export default function WardenDashboardPage() {
               </button>
             </div>
           </header>
+
+          {user && !managedGender && (
+            <div className="mt-6 flex items-start gap-3 rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-800 shadow-sm">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <div>
+                <p className="font-bold">Your hostel isn&apos;t configured yet</p>
+                <p className="text-sm">Until an admin assigns you to the boys&apos; or girls&apos; hostel, you won&apos;t see any student requests, leave applications, complaints, or alerts. Please contact the admin.</p>
+              </div>
+            </div>
+          )}
 
           {view === 'home' && (
             <>

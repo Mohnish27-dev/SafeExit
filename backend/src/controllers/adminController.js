@@ -2,6 +2,7 @@ const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
 const Complaint = require('../models/Complaint');
 const SOSAlert = require('../models/SOSAlert');
+const { getOverdueStudentIds } = require('../utils/overdue');
 
 // @desc    Aggregate counts for the admin overview dashboard
 // @route   GET /api/admin/overview
@@ -12,7 +13,7 @@ const getOverview = async (req, res) => {
       totalStudents,
       studentsInside,
       studentsOutside,
-      studentsOverdue,
+      overdueIds,
       totalGuards,
       guardsOnDuty,
       totalWardens,
@@ -24,7 +25,10 @@ const getOverview = async (req, res) => {
       User.countDocuments({ role: 'Student' }),
       User.countDocuments({ role: 'Student', campusStatus: 'Inside' }),
       User.countDocuments({ role: 'Student', campusStatus: 'Outside' }),
-      User.countDocuments({ role: 'Student', campusStatus: 'Overdue' }),
+      // 'Overdue' is a live time-based condition, never a stored campusStatus
+      // (the scan machine only ever writes Inside/Outside). Derive it at read
+      // time from passes still 'Out' past their return window.
+      getOverdueStudentIds(),
       User.countDocuments({ role: 'Guard' }),
       User.countDocuments({ role: 'Guard', onDuty: true }),
       User.countDocuments({ role: 'Warden' }),
@@ -34,11 +38,18 @@ const getOverview = async (req, res) => {
       Complaint.countDocuments({ status: { $in: ['Open', 'In Progress'] } })
     ]);
 
+    // An overdue student's campusStatus is still 'Outside' (it's never flipped to
+    // 'Overdue'), so they're included in the Outside count above. Subtract them so
+    // the Outside and Overdue tiles are disjoint buckets — Outside = out but still
+    // on time, Overdue = out past the return window.
+    const studentsOverdue = overdueIds.size;
+    const onTimeOutside = Math.max(0, studentsOutside - studentsOverdue);
+
     res.json({
       students: {
         total: totalStudents,
         inside: studentsInside,
-        outside: studentsOutside,
+        outside: onTimeOutside,
         overdue: studentsOverdue
       },
       guards: { total: totalGuards, onDuty: guardsOnDuty },
@@ -65,11 +76,22 @@ const getUsers = async (req, res) => {
 
     // Guards only see non-confidential fields (photo, name, roll number, status).
     const guardFields = 'name studentId campusStatus lastSeenAt photo';
-    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
+    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
 
     const users = await User.find(filter)
       .select(req.user.role === 'Guard' ? guardFields : allFields)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Overlay the live 'Overdue' status onto students who are out past their
+    // return window. campusStatus is only ever stored as Inside/Outside, so this
+    // derived value (not persisted) is what lets the roster views and their
+    // ?filter=overdue query surface late students without a background job.
+    const overdueIds = await getOverdueStudentIds();
+    for (const u of users) {
+      if (overdueIds.has(String(u._id))) u.campusStatus = 'Overdue';
+    }
+
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -79,6 +101,20 @@ const getUsers = async (req, res) => {
 // Normalize a staff ID into the canonical loginId the account is keyed on:
 // trim, lowercase, strip all whitespace (matches the login pages' helper).
 const buildStaffLoginId = (id) => (id || '').trim().toLowerCase().replace(/\s+/g, '');
+
+// Human label for a hostel scope, used in "already has a warden" messages.
+const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
+
+// Each hostel has exactly ONE warden account, shared by all of that hostel's
+// wardens (they log in with the same ID; scoping is by managedGender, so they
+// all see the same hostel's requests). This finds the existing warden for a
+// hostel, if any. `exceptId` lets updateStaffScope ignore the warden being
+// edited so re-saving its own hostel isn't treated as a duplicate.
+const findWardenForHostel = (managedGender, exceptId) => {
+  const filter = { role: 'Warden', managedGender };
+  if (exceptId) filter._id = { $ne: exceptId };
+  return User.findOne(filter);
+};
 
 // @desc    Create a Warden or Guard account (admin-provisioned)
 // @route   POST /api/admin/staff
@@ -90,7 +126,7 @@ const buildStaffLoginId = (id) => (id || '').trim().toLowerCase().replace(/\s+/g
 // device passkey. No .env edit or redeploy per staff member.
 const createStaff = async (req, res) => {
   try {
-    const { name, staffId, role, pin, phoneNumber } = req.body;
+    const { name, staffId, role, pin, phoneNumber, managedGender } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Name is required.' });
@@ -106,6 +142,23 @@ const createStaff = async (req, res) => {
     if (!pin || String(pin).trim().length < 4) {
       return res.status(400).json({ message: 'An initial PIN of at least 4 characters is required.' });
     }
+    // A Warden must be tied to exactly one hostel so the system can route each
+    // student's requests to the right warden and keep the other hostel's student
+    // details private. 'Male' = boys' hostel, 'Female' = girls' hostel.
+    if (role === 'Warden' && !['Male', 'Female'].includes(managedGender)) {
+      return res.status(400).json({ message: "Select the warden's hostel (Boys' or Girls')." });
+    }
+    // One warden account per hostel: if this hostel already has one, don't mint a
+    // second. Additional wardens for the same hostel reuse that shared login (or
+    // the admin resets its PIN) rather than getting their own account.
+    if (role === 'Warden') {
+      const existing = await findWardenForHostel(managedGender);
+      if (existing) {
+        return res.status(409).json({
+          message: `The ${HOSTEL_LABEL[managedGender]} already has a warden account (${existing.loginId}). Share that ID with the new warden, or reset its PIN — don't create a second one.`,
+        });
+      }
+    }
 
     const loginId = buildStaffLoginId(staffId);
     const exists = await User.findOne({ $or: [{ loginId }, { email: loginId }] });
@@ -120,6 +173,8 @@ const createStaff = async (req, res) => {
       role,
       studentId: staffId.trim(),
       phoneNumber,
+      // Only meaningful for wardens; left unset for guards.
+      managedGender: role === 'Warden' ? managedGender : undefined,
     });
 
     res.status(201).json({
@@ -129,6 +184,7 @@ const createStaff = async (req, res) => {
       role: user.role,
       studentId: user.studentId,
       phoneNumber: user.phoneNumber,
+      managedGender: user.managedGender,
       createdAt: user.createdAt,
     });
   } catch (error) {
@@ -169,6 +225,50 @@ const resetStaffPin = async (req, res) => {
   }
 };
 
+// @desc    Assign / change the hostel a Warden oversees
+// @route   PATCH /api/admin/staff/:id/scope
+// @access  Private (Admin)
+//
+// This is how wardens created before the per-hostel split (or any warden without
+// a hostel yet) get scoped. An unassigned warden sees no students until this is
+// set, so this endpoint is what turns them "on" for their hostel.
+const updateStaffScope = async (req, res) => {
+  try {
+    const { managedGender } = req.body;
+    if (!['Male', 'Female'].includes(managedGender)) {
+      return res.status(400).json({ message: "Hostel must be 'Male' (boys') or 'Female' (girls')." });
+    }
+
+    const user = await User.findById(req.params.id);
+    // Only wardens have a hostel scope — never students, guards, or admins.
+    if (!user || user.role !== 'Warden') {
+      return res.status(404).json({ message: 'Warden not found.' });
+    }
+    // Keep the one-warden-per-hostel invariant: reassigning this warden must not
+    // land on a hostel another warden already holds. (exceptId ignores this same
+    // warden so re-saving its current hostel is a no-op, not a conflict.)
+    const clash = await findWardenForHostel(managedGender, user._id);
+    if (clash) {
+      return res.status(409).json({
+        message: `The ${HOSTEL_LABEL[managedGender]} already has a warden account (${clash.loginId}). Remove or reassign that one first.`,
+      });
+    }
+
+    user.managedGender = managedGender;
+    await user.save();
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      loginId: user.loginId,
+      role: user.role,
+      managedGender: user.managedGender,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Remove a Warden or Guard account
 // @route   DELETE /api/admin/staff/:id
 // @access  Private (Admin)
@@ -192,5 +292,6 @@ module.exports = {
   getUsers,
   createStaff,
   resetStaffPin,
+  updateStaffScope,
   removeStaff
 };
