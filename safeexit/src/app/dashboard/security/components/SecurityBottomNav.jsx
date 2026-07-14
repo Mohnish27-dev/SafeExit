@@ -16,16 +16,16 @@ export default function SecurityBottomNav({ active }) {
   ];
 
   return (
-    <nav className="dash-card mt-6 hidden md:grid grid-cols-4 rounded-[2rem] p-3 shadow-xl backdrop-blur">
+    <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-[2rem] p-3">
       {NAV_ITEMS.map((item) => (
         <Link
           key={item.matchKey}
           href={item.href}
-          className={`flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-3 text-xs font-semibold uppercase tracking-[0.18em] transition ${
-            item.matchKey === active ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-50"
-          }`}
+          className={`sd-navx ${item.matchKey === active ? "sd-navx--active" : ""}`}
         >
-          <item.icon className="h-6 w-6" />
+          <span className="sd-navx__icon">
+            <item.icon className="h-5 w-5" />
+          </span>
           {item.label}
         </Link>
       ))}
