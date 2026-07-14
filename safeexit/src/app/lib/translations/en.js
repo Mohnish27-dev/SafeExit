@@ -10,6 +10,8 @@ const en = {
     loading: "Loading...",
     approve: "Approve",
     reject: "Reject",
+    approved: "Approved",
+    rejected: "Rejected",
     resolve: "Resolve",
     cancel: "Cancel",
     back: "Back",
@@ -113,6 +115,11 @@ const en = {
     actingSoon: "Acting soon",
     viewFullApplication: "View full application",
     fullApplication: "Full Leave Application",
+    pendingTab: "Pending",
+    approvedTab: "Approved",
+    rejectedTab: "Rejected",
+    noHistoryYet: "No applications here yet.",
+    rejectionReason: "Reason:",
   },
 
   // ─── Security Dashboard ───

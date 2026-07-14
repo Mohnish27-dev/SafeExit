@@ -153,6 +153,28 @@ const getPendingLeaveApplications = async (req, res) => {
   }
 };
 
+// @desc    Get leave applications this warden has already acted on
+//          (Approved / Rejected), so the pending queue isn't the only record.
+// @route   GET /api/leave/history
+// @access  Private (Warden)
+const getLeaveHistory = async (req, res) => {
+  try {
+    // Only warden-actioned outcomes — Pending stays in the live queue, and
+    // system states (Cancelled/Expired/Out/Returned) aren't warden decisions.
+    // Scoped to the warden's own hostel, newest action first.
+    const applications = await LeaveApplication.find({
+      status: { $in: ['Approved', 'Rejected'] },
+      ...(await scopedStudentFilter(req.user)),
+    })
+      .populate('student', 'name studentId roomNumber hostelName')
+      .sort({ updatedAt: -1 });
+
+    res.json(applications);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Approve/reject a leave application
 // @route   PATCH /api/leave/:id/status
 // @access  Private (Warden)
@@ -286,6 +308,7 @@ module.exports = {
   createLeaveApplication,
   getMyLeaveApplications,
   getPendingLeaveApplications,
+  getLeaveHistory,
   updateLeaveStatus,
   cancelLeaveApplication,
   streamLeaveEvents,
