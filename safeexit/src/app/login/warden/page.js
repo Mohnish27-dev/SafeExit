@@ -333,7 +333,7 @@ export default function WardenLoginPage() {
                   <User className="w-10 h-10" />
                </div>
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back, {storedProfile?.fullName?.split(" ")[0]} 👋</h1>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back, Warden 👋</h1>
             <p className="text-sm text-slate-500 mb-6">
               Enter your 4-digit login PIN{quickLabel ? <> for <span className="font-semibold text-slate-700">{quickLabel}</span></> : null}.
             </p>

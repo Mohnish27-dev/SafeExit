@@ -4,6 +4,7 @@ const {
   createLeaveApplication,
   getMyLeaveApplications,
   getPendingLeaveApplications,
+  getLeaveHistory,
   updateLeaveStatus,
   cancelLeaveApplication,
   streamLeaveEvents
@@ -17,6 +18,8 @@ router.route('/')
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyLeaveApplications);
 
 router.get('/pending', protect, authorizeRoles('Warden'), getPendingLeaveApplications);
+
+router.get('/history', protect, authorizeRoles('Warden'), getLeaveHistory);
 
 router.get('/stream', protect, authorizeRoles('Warden'), streamLeaveEvents);
 

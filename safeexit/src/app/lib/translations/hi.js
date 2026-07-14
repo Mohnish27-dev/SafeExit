@@ -10,6 +10,8 @@ const hi = {
     loading: "लोड हो रहा है...",
     approve: "मंज़ूर",
     reject: "रिजेक्ट",
+    approved: "मंज़ूर",
+    rejected: "रिजेक्ट",
     resolve: "हल करें",
     cancel: "रद्द करें",
     back: "वापस",
@@ -113,6 +115,11 @@ const hi = {
     actingSoon: "जल्द एक्शन ज़रूरी",
     viewFullApplication: "पूरी एप्लीकेशन देखें",
     fullApplication: "पूरी लीव एप्लीकेशन",
+    pendingTab: "लंबित",
+    approvedTab: "मंज़ूर",
+    rejectedTab: "रिजेक्ट",
+    noHistoryYet: "यहाँ अभी कोई एप्लीकेशन नहीं है।",
+    rejectionReason: "कारण:",
   },
 
   // ─── Security Dashboard ───

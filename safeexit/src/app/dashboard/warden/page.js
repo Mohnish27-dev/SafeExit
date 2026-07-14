@@ -102,6 +102,15 @@ const mapLeavePending = (l) => ({
   initials: initials(l.student?.name),
 });
 
+// A history row extends the pending shape with the warden's decision (status)
+// and any rejection remarks, plus when the decision was recorded.
+const mapLeaveHistory = (l) => ({
+  ...mapLeavePending(l),
+  status: l.status || "",
+  remarks: l.remarks || "",
+  decidedAt: l.updatedAt,
+});
+
 // Map a backend Complaint (with populated student) to the report-card shape.
 const mapReport = (c) => {
   const { tone, icon } = complaintTone(c.category);
@@ -237,6 +246,12 @@ export default function WardenDashboardPage() {
   const [loadingLeave, setLoadingLeave] = useState(true);
   const [leaveError, setLeaveError] = useState("");
 
+  // Leave applications this warden has already acted on (Approved/Rejected),
+  // kept so the pending queue isn't the only record — the warden can review a
+  // full history of decisions instead of them vanishing on approval.
+  const [leaveHistory, setLeaveHistory] = useState([]);
+  const [loadingLeaveHistory, setLoadingLeaveHistory] = useState(true);
+
   // Count of unresolved SOS alerts, surfaced as a badge on the nav + quick
   // action. Kept live independently of the SOS view so the badge shows even
   // when the warden is on another tab. The SOS view reports its own count back
@@ -310,11 +325,27 @@ export default function WardenDashboardPage() {
     }
   }, [t]);
 
+  // Acted-on leave applications (Approved/Rejected) — the warden's history so
+  // decisions don't vanish once they leave the pending queue.
+  const loadLeaveHistory = useCallback(async () => {
+    setLoadingLeaveHistory(true);
+    try {
+      const data = await apiFetch("/leave/history");
+      setLeaveHistory(data.map(mapLeaveHistory));
+    } catch {
+      // Best-effort; the pending queue is the primary view and the history
+      // tab simply shows its empty state if this fails.
+    } finally {
+      setLoadingLeaveHistory(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadRequests();
     loadReports();
     loadLeaveApplications();
-  }, [loadRequests, loadReports, loadLeaveApplications]);
+    loadLeaveHistory();
+  }, [loadRequests, loadReports, loadLeaveApplications, loadLeaveHistory]);
 
   // Live updates: a new outing request (or an approval/rejection from another
   // warden/guard) pushes an event over SSE so the pending list refetches
@@ -355,15 +386,21 @@ export default function WardenDashboardPage() {
   // instantly instead of requiring a manual refresh while this tab is open.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/leave/stream`, { withCredentials: true });
-    source.addEventListener("leave:changed", () => loadLeaveApplications());
+    source.addEventListener("leave:changed", () => {
+      loadLeaveApplications();
+      loadLeaveHistory();
+    });
     return () => source.close();
-  }, [loadLeaveApplications]);
+  }, [loadLeaveApplications, loadLeaveHistory]);
 
   // Safety net in case the SSE connection is silently dropped.
   useEffect(() => {
-    const interval = setInterval(loadLeaveApplications, 30000);
+    const interval = setInterval(() => {
+      loadLeaveApplications();
+      loadLeaveHistory();
+    }, 30000);
     return () => clearInterval(interval);
-  }, [loadLeaveApplications]);
+  }, [loadLeaveApplications, loadLeaveHistory]);
 
   function openPanel(key) {
     setActivePanel(key);
@@ -476,6 +513,7 @@ export default function WardenDashboardPage() {
   }
 
   const displayName = (user && (user.name || user.displayName)) || "Warden Priya";
+  const firstName = "Warden";
 
   // The hostel this warden oversees. When unset, the backend returns no students,
   // so we surface a "not configured" banner rather than a silently empty queue.
@@ -882,11 +920,13 @@ export default function WardenDashboardPage() {
           {view === 'leave' && (
             <LeaveApplicationsView
               pending={leavePending}
+              history={leaveHistory}
               approveLeave={approveLeave}
               rejectLeave={rejectLeave}
               loading={loadingLeave}
+              loadingHistory={loadingLeaveHistory}
               error={leaveError}
-              onRefresh={loadLeaveApplications}
+              onRefresh={() => { loadLeaveApplications(); loadLeaveHistory(); }}
             />
           )}
 
