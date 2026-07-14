@@ -473,12 +473,19 @@ export default function WardenDashboardPage() {
   }
 
   const displayName = (user && (user.name || user.displayName)) || "Warden Priya";
-  const firstName = displayName.split(" ")[0] || displayName;
 
   // The hostel this warden oversees. When unset, the backend returns no students,
   // so we surface a "not configured" banner rather than a silently empty queue.
   const managedGender = user?.managedGender;
   const hostelLabel = HOSTEL_LABEL[managedGender];
+
+  // Boys' outings are always auto-approved at creation (see backend
+  // outingRules.js — male requests carry requiresWarden: false), so a boys'
+  // warden never has an outing queue to action. Their only approval workload is
+  // leave applications. We therefore drop every outing-approval surface for them
+  // and promote pending leave onto the home dashboard instead. A girls' warden
+  // keeps both (female "Market" outings require warden approval) — unchanged.
+  const isBoysWarden = managedGender === "Male";
 
   const handleLogout = () => logout(router, { role: "warden" });
 
@@ -561,7 +568,7 @@ export default function WardenDashboardPage() {
                 <div>
                   <p className="sd-kicker">{t("dailyPulse")}</p>
                   <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-2">{t("greeting")} <span className="sd-name-live">{firstName}</span>.</h2>
-                  <p className="sd-body mt-2 max-w-md">{t("overviewText")}</p>
+                  <p className="sd-body mt-2 max-w-md">{isBoysWarden ? t("overviewTextBoys") : t("overviewText")}</p>
                 </div>
               </div>
               <div className="grid gap-3 text-sm font-semibold text-slate-600 sm:grid-cols-2 lg:grid-cols-1">
@@ -590,45 +597,55 @@ export default function WardenDashboardPage() {
               </span>
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {[{
-                title: t("manageRequests"),
-                desc: t("manageRequestsDesc"),
-                icon: Users,
-                badgeBg: "linear-gradient(145deg, #4338ca 0%, #6366f1 100%)",
-                tint: "linear-gradient(160deg, rgba(99,102,241,0.14) 0%, rgba(56,189,248,0.08) 100%)",
-                glow: "rgba(99,102,241,0.45)",
-                border: "rgba(129,140,248,0.5)",
-                onClick: () => openPanel('manage'),
-              },{
-                title: t("safetyAlerts"),
-                desc: t("safetyAlertsDesc"),
-                icon: Siren,
-                badgeBg: "linear-gradient(145deg, #9f1239 0%, #f43f5e 100%)",
-                tint: "linear-gradient(160deg, rgba(244,63,94,0.14) 0%, rgba(251,113,133,0.08) 100%)",
-                glow: "rgba(244,63,94,0.45)",
-                border: "rgba(251,113,133,0.5)",
-                badge: sosCount,
-                onClick: () => setView('sos'),
-              },{
-                title: t("leaveApplications"),
-                desc: t("leaveApplicationsDesc"),
-                icon: CalendarDays,
-                badgeBg: "linear-gradient(145deg, #6d28d9 0%, #d946ef 100%)",
-                tint: "linear-gradient(160deg, rgba(139,92,246,0.14) 0%, rgba(217,70,239,0.08) 100%)",
-                glow: "rgba(139,92,246,0.45)",
-                border: "rgba(196,132,252,0.5)",
-                badge: leavePending.length,
-                onClick: () => setView('leave'),
-              },{
-                title: t("autoApprovals"),
-                desc: t("autoApprovalsDesc"),
-                icon: Sparkles,
-                badgeBg: "linear-gradient(145deg, #0369a1 0%, #2dd4bf 100%)",
-                tint: "linear-gradient(160deg, rgba(14,165,233,0.14) 0%, rgba(45,212,191,0.08) 100%)",
-                glow: "rgba(14,165,233,0.45)",
-                border: "rgba(56,189,248,0.5)",
-                onClick: () => openPanel('auto'),
-              }].map((a, idx) => (
+              {(() => {
+                const manageAction = {
+                  title: t("manageRequests"),
+                  desc: t("manageRequestsDesc"),
+                  icon: Users,
+                  badgeBg: "linear-gradient(145deg, #4338ca 0%, #6366f1 100%)",
+                  tint: "linear-gradient(160deg, rgba(99,102,241,0.14) 0%, rgba(56,189,248,0.08) 100%)",
+                  glow: "rgba(99,102,241,0.45)",
+                  border: "rgba(129,140,248,0.5)",
+                  onClick: () => openPanel('manage'),
+                };
+                const safetyAction = {
+                  title: t("safetyAlerts"),
+                  desc: t("safetyAlertsDesc"),
+                  icon: Siren,
+                  badgeBg: "linear-gradient(145deg, #9f1239 0%, #f43f5e 100%)",
+                  tint: "linear-gradient(160deg, rgba(244,63,94,0.14) 0%, rgba(251,113,133,0.08) 100%)",
+                  glow: "rgba(244,63,94,0.45)",
+                  border: "rgba(251,113,133,0.5)",
+                  badge: sosCount,
+                  onClick: () => setView('sos'),
+                };
+                const leaveAction = {
+                  title: t("leaveApplications"),
+                  desc: t("leaveApplicationsDesc"),
+                  icon: CalendarDays,
+                  badgeBg: "linear-gradient(145deg, #6d28d9 0%, #d946ef 100%)",
+                  tint: "linear-gradient(160deg, rgba(139,92,246,0.14) 0%, rgba(217,70,239,0.08) 100%)",
+                  glow: "rgba(139,92,246,0.45)",
+                  border: "rgba(196,132,252,0.5)",
+                  badge: leavePending.length,
+                  onClick: () => setView('leave'),
+                };
+                const autoAction = {
+                  title: t("autoApprovals"),
+                  desc: t("autoApprovalsDesc"),
+                  icon: Sparkles,
+                  badgeBg: "linear-gradient(145deg, #0369a1 0%, #2dd4bf 100%)",
+                  tint: "linear-gradient(160deg, rgba(14,165,233,0.14) 0%, rgba(45,212,191,0.08) 100%)",
+                  glow: "rgba(14,165,233,0.45)",
+                  border: "rgba(56,189,248,0.5)",
+                  onClick: () => openPanel('auto'),
+                };
+                // Boys' warden: no outing approvals — lead with Leave, drop the
+                // outing "Manage Requests" tile. Girls' warden: keep all four.
+                return isBoysWarden
+                  ? [leaveAction, safetyAction, autoAction]
+                  : [manageAction, safetyAction, leaveAction, autoAction];
+              })().map((a, idx) => (
                 <button
                   key={idx}
                   onClick={a.onClick}
@@ -666,6 +683,59 @@ export default function WardenDashboardPage() {
             </div>
               </section>
 
+              {isBoysWarden ? (
+              <section className="mt-6">
+            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-6 sm:p-7 shadow-xl">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="sd-eyebrow">{t("leaveApplications")}</p>
+                  <h2 className="sd-title sd-title-sm">{t("pendingLeaveApprovals")}</h2>
+                </div>
+                <span className="sd-luxe-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-violet-800 bg-violet-50 border border-violet-200">
+                  <CalendarDays className="h-4 w-4" /> {leavePending.length}
+                </span>
+              </div>
+              <p className="sd-micro mt-1 text-slate-500">{t("leaveOnlyNote")}</p>
+              <div className="mt-6 space-y-3">
+                {loadingLeave ? (
+                  <p className="text-sm text-slate-500">{t("loadingLeave")}</p>
+                ) : leaveError ? (
+                  <p className="text-sm font-semibold text-rose-600">{leaveError}</p>
+                ) : leavePending.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-slate-500">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+                      <CalendarDays className="h-6 w-6 text-slate-400" />
+                    </div>
+                    <p className="font-semibold text-slate-700">{t("noPendingLeave")}</p>
+                    <p className="text-sm text-slate-500">{t("noLeaveYet")}</p>
+                  </div>
+                ) : (
+                  leavePending.map((req, i) => (
+                  <div key={req.id} className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3.5" style={{ animationDelay: `${0.12 + i * 0.06}s` }}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-fuchsia-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
+                      <div className="min-w-0">
+                        <p className="sd-card-title text-slate-900 text-base">{req.name}</p>
+                        <p className="sd-micro mt-0.5">{req.room}{req.roll ? <> • <span className="font-mono">{req.roll}</span></> : null}</p>
+                        <p className="sd-micro mt-0.5 text-slate-500">{t("destination")} {req.destination}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => approveLeave(req.id)} className="flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-white font-bold shadow hover:-translate-y-0.5 transition-transform">
+                        <Check className="h-4 w-4" /> {tc("approve")}
+                      </button>
+                      <button onClick={() => setView('leave')} className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 transition-colors">
+                        <ArrowRight className="h-4 w-4" /> {t("reviewInLeave")}
+                      </button>
+                    </div>
+                  </div>
+                  ))
+                )}
+              </div>
+            </div>
+              </section>
+              ) : (
               <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="sd-luxe-panel sd-enter rounded-4xl p-6 sm:p-7 shadow-xl" style={{ animationDelay: "0.26s" }}>
               <div className="flex items-center justify-between gap-3">
@@ -710,6 +780,7 @@ export default function WardenDashboardPage() {
 
             <AutoApprovedView approved={approved} compact={true} onViewAll={() => setView('approved')} onClear={() => setApproved([])} />
               </section>
+              )}
 
               <section className="mt-6 grid gap-6 lg:grid-cols-[0.7fr_1.3fr]">
             <div className="sd-luxe-panel sd-enter rounded-4xl p-6 shadow-xl" style={{ animationDelay: "0.3s" }}>
@@ -722,8 +793,8 @@ export default function WardenDashboardPage() {
               </div>
               <div className="mt-5 space-y-4">
                 <WardenStat
-                  label={t("pendingRequests")}
-                  value={pending.length}
+                  label={isBoysWarden ? t("pendingLeave") : t("pendingRequests")}
+                  value={isBoysWarden ? leavePending.length : pending.length}
                   width="48%"
                   fill="linear-gradient(90deg, #6366f1, #38bdf8)"
                   glow="rgba(99,102,241,0.45)"
@@ -816,9 +887,11 @@ export default function WardenDashboardPage() {
             />
           )}
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-6 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysWarden ? 'grid-cols-5' : 'grid-cols-6'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
             <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span>{tc("home")}</button>
-            <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span>{t("requests")}</button>
+            {!isBoysWarden && (
+              <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span>{t("requests")}</button>
+            )}
             <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
               <span className="sd-navx__icon relative">
                 <CalendarDays className="h-5 w-5" />
@@ -923,9 +996,11 @@ export default function WardenDashboardPage() {
         </div>
       )}
 
-      <nav className="sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid grid-cols-6 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
+      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysWarden ? 'grid-cols-5' : 'grid-cols-6'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
         <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="text-[9px]">{tc("home")}</span></button>
-        <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="text-[9px]">{t("requests")}</span></button>
+        {!isBoysWarden && (
+          <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="text-[9px]">{t("requests")}</span></button>
+        )}
         <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
           <span className="sd-navx__icon relative">
             <CalendarDays className="h-5 w-5" />
