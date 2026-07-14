@@ -3,28 +3,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "react-qr-code";
 import {
-  Bell,
+  Activity,
+  ArrowUpRight,
   Camera,
   CalendarDays,
   CheckCircle2,
-  ChevronRight,
   ClipboardList,
   Clock3,
+  Fingerprint,
   Home,
-  House,
-  IdCard,
   ImageIcon,
   Loader2,
   MessageSquareWarning,
+  MoonStar,
   QrCode,
+  ScanLine,
   Shield,
   ShieldCheck,
   Siren,
   Sparkles,
+  SunMedium,
+  Sunrise,
+  Sunset,
   Ticket,
+  TrendingUp,
   UserRound,
-  Mail,
-  Phone,
   X,
   ZoomIn,
   ZoomOut,
@@ -45,6 +48,7 @@ import { getTimeGreeting } from "@/app/lib/greeting";
 import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
+import useCountUp from "@/app/hooks/useCountUp";
 
 // Format a stored Date/ISO string as e.g. "05:30 PM". Used by the pass/timeline
 // cards below. (The QR itself no longer carries any formatted window — it's
@@ -114,46 +118,75 @@ const outingBadge = (outing) => {
   }
 };
 
+// The thin colour rail on each list row — a quiet status cue that reads at a
+// glance without adding another loud badge. Mirrors the outingBadge tones.
+const outingAccent = (outing) => {
+  const status = String(outing?.status || "").toLowerCase();
+  if (status === "returned" && outing?.returnPunctuality === "Overdue") return "#f43f5e";
+  switch (status) {
+    case "approved":
+    case "out":
+      return "#10b981";
+    case "returned":
+      return "#94a3b8";
+    case "rejected":
+    case "expired":
+      return "#f43f5e";
+    default:
+      return "#f59e0b";
+  }
+};
+
 const actions = [
   {
-    title: "Generate Outing Ticket",
+    title: "Generate Ticket",
     description: "Create a new request and get your digital pass.",
     icon: Ticket,
-    iconClass: "sd-action-icon sd-action-icon--ticket",
-    arrow: "text-indigo-400",
     href: "/dashboard/student/generate-ticket",
+    badge: "linear-gradient(145deg, #0f172a 0%, #4338ca 52%, #06b6d4 100%)",
+    tint: "linear-gradient(160deg, rgba(67,56,202,0.13) 0%, rgba(6,182,212,0.09) 100%)",
+    glow: "rgba(67,56,202,0.5)",
+    border: "rgba(56,189,248,0.5)",
   },
   {
     title: "My Outings",
     description: "View upcoming and past outing history.",
     icon: ClipboardList,
-    iconClass: "sd-action-icon sd-action-icon--outings",
-    arrow: "text-sky-400",
     href: "/dashboard/student/my-outings",
+    badge: "linear-gradient(145deg, #1e40af 0%, #38bdf8 100%)",
+    tint: "linear-gradient(160deg, rgba(30,64,175,0.12) 0%, rgba(56,189,248,0.10) 100%)",
+    glow: "rgba(37,99,235,0.5)",
+    border: "rgba(56,189,248,0.5)",
   },
   {
     title: "SOS Alert",
     description: "Instant emergency alert to warden & security.",
     icon: Siren,
-    iconClass: "sd-action-icon sd-action-icon--sos",
-    arrow: "text-rose-500",
     href: "/dashboard/student/sos",
+    badge: "linear-gradient(145deg, #fb7185 0%, #f43f5e 48%, #e11d48 100%)",
+    tint: "linear-gradient(160deg, rgba(244,63,94,0.13) 0%, rgba(225,29,72,0.08) 100%)",
+    glow: "rgba(225,29,72,0.5)",
+    border: "rgba(251,113,133,0.55)",
   },
   {
     title: "Register Complaint",
-    description: "Report a maintenance, safety, or hostel issue.",
+    description: "Report a maintenance or safety issue.",
     icon: MessageSquareWarning,
-    iconClass: "sd-action-icon sd-action-icon--complaint",
-    arrow: "text-orange-400",
     href: "/dashboard/student/complaint",
+    badge: "linear-gradient(145deg, #b45309 0%, #f97316 55%, #fbbf24 100%)",
+    tint: "linear-gradient(160deg, rgba(249,115,22,0.13) 0%, rgba(251,191,36,0.09) 100%)",
+    glow: "rgba(234,88,12,0.5)",
+    border: "rgba(251,146,60,0.55)",
   },
   {
     title: "Leave Application",
     description: "Apply for festival or multi-day home leave.",
     icon: CalendarDays,
-    iconClass: "sd-action-icon sd-action-icon--leave",
-    arrow: "text-violet-400",
     href: "/dashboard/student/leave-application",
+    badge: "linear-gradient(145deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%)",
+    tint: "linear-gradient(160deg, rgba(168,85,247,0.13) 0%, rgba(217,70,239,0.09) 100%)",
+    glow: "rgba(147,51,234,0.5)",
+    border: "rgba(192,132,252,0.55)",
   },
 ];
 
@@ -165,6 +198,139 @@ const navItems = [
   { label: "Complaints", icon: MessageSquareWarning, href: "/dashboard/student/complaint" },
   { label: "Leave", icon: CalendarDays, href: "/dashboard/student/leave-application" },
 ];
+
+// A button that leans toward the cursor. The pull is a fraction of the pointer
+// offset from centre, written to CSS vars so the eased transform springs back
+// on leave. Falls back to a normal button under reduced-motion (CSS neutralises
+// the transform). `strength` tunes how far it travels.
+function MagneticButton({ strength = 0.35, className = "", children, ...props }) {
+  const handleMove = (e) => {
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const dx = e.clientX - (rect.left + rect.width / 2);
+    const dy = e.clientY - (rect.top + rect.height / 2);
+    el.style.setProperty("--mag-x", `${dx * strength}px`);
+    el.style.setProperty("--mag-y", `${dy * strength}px`);
+  };
+  const reset = (e) => {
+    e.currentTarget.style.setProperty("--mag-x", "0px");
+    e.currentTarget.style.setProperty("--mag-y", "0px");
+  };
+  return (
+    <button
+      onPointerMove={handleMove}
+      onPointerLeave={reset}
+      className={`sd-magnetic ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+// 3D quick-action tile. Pointer position is written to CSS custom props: the
+// inner card tilts toward the cursor (--rx/--ry), a glare tracks it (--mx/--my),
+// and the icon/text ride translateZ layers for real parallax depth — all in
+// pure CSS, so no re-render fires per frame.
+function ActionCard({ action, index }) {
+  const handlePointerMove = (e) => {
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width; // 0 → 1
+    const py = (e.clientY - rect.top) / rect.height; // 0 → 1
+    el.style.setProperty("--mx", `${px * 100}%`);
+    el.style.setProperty("--my", `${py * 100}%`);
+    el.style.setProperty("--ry", `${(px - 0.5) * 9}deg`);
+    el.style.setProperty("--rx", `${(0.5 - py) * 9}deg`);
+  };
+
+  const resetTilt = (e) => {
+    e.currentTarget.style.setProperty("--rx", "0deg");
+    e.currentTarget.style.setProperty("--ry", "0deg");
+  };
+
+  return (
+    <Link
+      href={action.href}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={resetTilt}
+      className="sd-tile sd-luxe-rise group block h-full"
+      style={{
+        animationDelay: `${0.08 + index * 0.08}s`,
+        "--tint": action.tint,
+        "--glow": action.glow,
+        "--tile-border": action.border,
+      }}
+    >
+      <div className="sd-tile__inner flex min-h-[15rem] flex-col p-5">
+        <span className="sd-tile__glare" aria-hidden="true" />
+
+        {/* Top row: gradient badge left, reveal arrow right */}
+        <div className="flex items-start justify-between">
+          <span
+            className="sd-act sd-lift-lg shadow-lg"
+            style={{ background: action.badge, boxShadow: `0 14px 26px -12px ${action.glow}` }}
+          >
+            <action.icon className="h-6 w-6" />
+          </span>
+          <span className="sd-act-arrow sd-lift-sm">
+            <ArrowUpRight className="h-4 w-4" />
+          </span>
+        </div>
+
+        {/* Copy anchored to the base with breathing room above */}
+        <div className="sd-lift-md mt-auto pt-6">
+          <span className="sd-act-rule mb-3 block" aria-hidden="true" />
+          <span className="sd-card-title block text-[1.05rem] leading-snug">{action.title}</span>
+          <span className="sd-body mt-1.5 block text-[0.88rem] leading-relaxed">
+            {action.description}
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// Activity stat with an animated count-up. Numeric values ("12", "80%") tick
+// from zero on scroll-in; non-numeric values ("—", "05:30 PM") render as-is so
+// the "Next return by" clock isn't mangled into a meaningless number.
+function StatCard({ stat }) {
+  const match = String(stat.value).match(/^(\d+)(\D*)$/);
+  const numeric = Boolean(match);
+  const target = numeric ? Number(match[1]) : 0;
+  const suffix = numeric ? match[2] : "";
+  const [ref, value] = useCountUp(target);
+  const display = numeric ? `${Math.round(value)}${suffix}` : stat.value;
+  const Icon = stat.icon;
+
+  return (
+    <div ref={ref} className="sd-stat px-4 py-4" style={{ "--stat-glow": stat.glow }}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-md"
+            style={{ background: stat.chip, boxShadow: `0 10px 20px -10px ${stat.glow}` }}
+          >
+            <Icon className="h-[1.05rem] w-[1.05rem]" />
+          </span>
+          <p className="sd-micro text-[0.8rem]">{stat.label}</p>
+        </div>
+        <p
+          className="text-2xl font-bold italic tracking-tight text-transparent bg-clip-text"
+          style={{ backgroundImage: stat.fill, fontFamily: "var(--font-display), 'Space Grotesk', sans-serif" }}
+        >
+          {display}
+        </p>
+      </div>
+      <div className="sd-bar mt-3.5">
+        <div
+          className="sd-bar__fill"
+          style={{ width: stat.width, background: stat.fill, boxShadow: `0 0 12px ${stat.glow}` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function StudentDashboardPage() {
   const router = useRouter();
@@ -309,6 +475,20 @@ export default function StudentDashboardPage() {
 
   const timeGreeting = useMemo(() => getTimeGreeting(now), [now]);
 
+  // Match the greeting to a time-of-day visual: icon, orb gradient, and halo
+  // colour all shift from sunrise → day → dusk → night, so the hero feels
+  // aware of the moment rather than static.
+  const timeVisual = useMemo(() => {
+    const hour = now.getHours();
+    if (hour < 12)
+      return { Icon: Sunrise, orb: "from-amber-400 via-orange-400 to-rose-400", halo: "rgba(251,146,60,0.5)" };
+    if (hour < 17)
+      return { Icon: SunMedium, orb: "from-sky-400 via-cyan-400 to-blue-400", halo: "rgba(56,189,248,0.5)" };
+    if (hour < 21)
+      return { Icon: Sunset, orb: "from-orange-400 via-pink-500 to-violet-500", halo: "rgba(236,72,153,0.5)" };
+    return { Icon: MoonStar, orb: "from-indigo-500 via-violet-500 to-slate-700", halo: "rgba(99,102,241,0.5)" };
+  }, [now]);
+
   // The pass represents the student's currently active, warden-approved outing.
   // `myrequests` is returned newest-first, so the first Approved/Out request wins.
   const latestApproved = useMemo(
@@ -359,22 +539,34 @@ export default function StudentDashboardPage() {
     const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : "0%");
     return [
       {
+        key: "total",
         label: "Total outings",
         value: String(outings.length),
-        width: outings.length ? "100%" : "6%",
-        tone: "from-cyan-500 via-sky-400/30 to-transparent",
+        width: outings.length ? "100%" : "8%",
+        icon: ClipboardList,
+        fill: "linear-gradient(90deg, #0891b2, #06b6d4, #38bdf8)",
+        chip: "linear-gradient(135deg, #0e7490, #06b6d4)",
+        glow: "rgba(6,182,212,0.45)",
       },
       {
+        key: "approved",
         label: "Approved",
         value: String(approvedCount),
         width: pct(approvedCount, outings.length || 1),
-        tone: "from-emerald-500 via-emerald-400/30 to-transparent",
+        icon: CheckCircle2,
+        fill: "linear-gradient(90deg, #059669, #10b981, #34d399)",
+        chip: "linear-gradient(135deg, #047857, #10b981)",
+        glow: "rgba(16,185,129,0.45)",
       },
       {
+        key: "return",
         label: "Next return by",
         value: latestApproved ? formatClock(latestApproved.inTime) : "—",
-        width: latestApproved ? "80%" : "6%",
-        tone: "from-indigo-500 via-violet-400/30 to-transparent",
+        width: latestApproved ? "80%" : "8%",
+        icon: Clock3,
+        fill: "linear-gradient(90deg, #4338ca, #6366f1, #a855f7)",
+        chip: "linear-gradient(135deg, #4338ca, #7c3aed)",
+        glow: "rgba(99,102,241,0.45)",
       },
     ];
   }, [outings, latestApproved]);
@@ -560,16 +752,14 @@ export default function StudentDashboardPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen student-dashboard-luxe text-slate-900 pb-28">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28">
       <div className="relative overflow-hidden">
-        <div className="sd-luxe-orb sd-luxe-orb-one" />
-        <div className="sd-luxe-orb sd-luxe-orb-two" />
-        <div className="sd-luxe-orb sd-luxe-orb-three" />
-        <div className="sd-luxe-wave" />
-        <div className="sd-luxe-streaks" />
+        <div className="sd-aura sd-aura--a" aria-hidden="true" />
+        <div className="sd-aura sd-aura--b" aria-hidden="true" />
+        <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
-        <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="sd-luxe-panel sd-luxe-rise flex flex-wrap items-center justify-between gap-4 rounded-4xl px-5 py-4 sm:px-6 shadow-xl">
+        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+          <header className="sd-luxe-panel sd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-4xl px-5 py-4 sm:px-6 shadow-xl">
             <div className="flex items-center gap-4">
               <div className="sd-luxe-badge sd-luxe-float flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-lg">
                 <Shield className="h-7 w-7" />
@@ -677,21 +867,55 @@ export default function StudentDashboardPage() {
             </section>
           )}
 
-          <section className="sd-luxe-panel sd-luxe-rise sd-stagger-2 mt-6 rounded-4xl p-6 sm:p-7 shadow-xl">
+          <section
+            onPointerMove={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              e.currentTarget.style.setProperty("--spot-x", `${e.clientX - r.left}px`);
+              e.currentTarget.style.setProperty("--spot-y", `${e.clientY - r.top}px`);
+            }}
+            style={{ animationDelay: "0.12s" }}
+            className="sd-luxe-panel sd-glow-border sd-spot-host sd-enter mt-6 rounded-4xl p-6 sm:p-7 shadow-xl"
+          >
+            <span className="sd-spotlight" aria-hidden="true" />
             <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
               <div className="flex flex-wrap items-center gap-5">
-                <div className="sd-luxe-float flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-white to-sky-50 text-slate-900 ring-8 ring-white/80 shadow-lg">
-                  <Clock3 className="h-10 w-10 text-indigo-600" />
+                <div
+                  className={`sd-luxe-float sd-orb-halo flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-gradient-to-br ${timeVisual.orb} text-white ring-8 ring-white/70 shadow-xl`}
+                  style={{ "--halo": timeVisual.halo }}
+                >
+                  <timeVisual.Icon className="h-10 w-10" />
                 </div>
                 <div>
-                  <p className="sd-eyebrow">Daily Pulse</p>
-                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2">
+                  <p className="sd-kicker">Daily Pulse</p>
+                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-2">
                     {timeGreeting},{" "}
-                    <span className="sd-gradient-text">{greetingName}</span>.
+                    <span className="sd-name-live">{greetingName}</span>.
                   </h2>
                   <p className="sd-body mt-2 max-w-md">
-                    Your SafeExit pass is active. Tap a quick action below to manage outings or send an alert.
+                    {latestApproved
+                      ? `You're cleared to be out until ${formatClock(latestApproved.inTime)}. Stay safe and check in on time.`
+                      : "No active pass right now. Generate an outing ticket or send an alert from the quick actions below."}
                   </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold ${
+                        latestApproved
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-amber-200 bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-1.5 w-1.5 rounded-full animate-pulse ${
+                          latestApproved ? "bg-emerald-500" : "bg-amber-500"
+                        }`}
+                      />
+                      {latestApproved ? "Pass active" : "On campus"}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-600">
+                      <TrendingUp className="h-3.5 w-3.5 text-indigo-500" />
+                      {outings.length} total {outings.length === 1 ? "outing" : "outings"}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="grid gap-3 text-sm font-semibold text-slate-600 sm:grid-cols-2 lg:grid-cols-1">
@@ -699,168 +923,208 @@ export default function StudentDashboardPage() {
                   <CalendarDays className="h-5 w-5 text-indigo-500" />
                   {mounted ? formattedDate : "Loading..."}
                 </span>
-                <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex items-center gap-3 rounded-full px-4 py-2.5">
+                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-3 rounded-full px-4 py-2.5">
                   <Clock3 className="h-5 w-5 text-sky-500" />
-                  {mounted ? formattedTime : "Loading..."}
-                  <span className="sd-luxe-chip ml-auto rounded-full px-3 py-1 text-xs font-bold">Live</span>
+                  <span className="tabular-nums">{mounted ? formattedTime : "Loading..."}</span>
+                  <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+                    <span className="sd-tag-dot" />
+                    Live
+                  </span>
                 </span>
               </div>
             </div>
           </section>
 
-          <section className="sd-luxe-panel sd-luxe-rise sd-stagger-3 mt-6 rounded-4xl p-6 sm:p-7 shadow-xl">
+          <section className="sd-luxe-panel sd-enter mt-6 rounded-4xl p-6 sm:p-7 shadow-xl" style={{ animationDelay: "0.2s" }}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="sd-eyebrow">Quick Actions</p>
-                <h2 className="sd-title sd-title-sm">Everything at a glance</h2>
+                <p className="sd-kicker">Quick Actions</p>
+                <h2 className="sd-title sd-title-sm mt-2">Everything at a glance</h2>
               </div>
-              <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-bold animate-pulse">Updated</span>
+              <span className="sd-tag">
+                <span className="sd-tag-dot" />
+                Ready
+              </span>
             </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               {actions.map((action, index) => (
-                <Link
-                  key={action.title}
-                  href={action.href}
-                  className="sd-luxe-card sd-action-card sd-luxe-shimmer sd-luxe-rise group flex min-h-[17rem] flex-col items-center justify-between rounded-4xl p-6 text-center"
-                  style={{ animationDelay: `${0.08 + index * 0.08}s` }}
-                >
-                  <span className={action.iconClass}>
-                    <action.icon className="h-11 w-11 transition-transform duration-300 group-hover:scale-110" />
-                  </span>
-                  <span>
-                    <span className="sd-card-title block text-lg">{action.title}</span>
-                    <span className="sd-body mt-3 block text-[0.95rem] leading-relaxed">
-                      {action.description}
-                    </span>
-                  </span>
-                  <ChevronRight
-                    className={`h-9 w-9 transition-all duration-300 group-hover:translate-x-2 ${action.arrow}`}
-                  />
-                </Link>
+                <ActionCard key={action.title} action={action} index={index} />
               ))}
             </div>
           </section>
 
           <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-6 sm:p-7 shadow-xl">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="sd-title sd-title-sm">Your SafeExit Pass</h2>
-                <span className="sd-luxe-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-emerald-800 bg-emerald-50 border border-emerald-200">
-                  <ShieldCheck className="h-5 w-5 text-emerald-600" />
-                  Valid
-                </span>
-              </div>
-              <div className="mt-6 grid gap-6 md:grid-cols-[260px_1fr]">
-                <div 
-                  onClick={() => setShowQrModal(true)}
-                  className="sd-luxe-card sd-qr-glow sd-luxe-tilt flex items-center justify-center rounded-3xl p-5 bg-white cursor-pointer group/qr"
-                >
-                  <QRCode value={qrValue} className="h-full w-full max-w-[220px] transition-transform duration-300 group-hover/qr:scale-102" />
+            <div className="sd-passport sd-enter flex flex-col lg:flex-row" style={{ animationDelay: "0.28s" }}>
+              <div className="sd-passport-grid" aria-hidden="true" />
+              <div className="sd-passport-sheen" aria-hidden="true" />
+
+              {/* Boarding-pass body: identity + travel-style data fields */}
+              <div className="relative z-[1] flex-1 p-6 sm:p-8">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15 backdrop-blur">
+                      <Fingerprint className="h-6 w-6 text-cyan-300" />
+                    </span>
+                    <div>
+                      <p className="sd-passport-eyebrow">SafeExit · Digital Passport</p>
+                      <p className="mt-1 text-[0.72rem] font-semibold tracking-wide text-slate-400">
+                        Campus gate authorization
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`sd-passport-chip ${latestApproved ? "" : "sd-passport-chip--idle"}`}>
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {latestApproved ? "Pass Active" : "Standby"}
+                  </span>
                 </div>
-                <div className="flex flex-col justify-center">
-                  <h3 className="sd-title sd-title-md">
-                    <span className="sd-gradient-text">{profile.name}</span>
-                  </h3>
-                  <div className="sd-body mt-4 space-y-3 text-[0.95rem]">
-                    <p className="flex items-center gap-3 font-semibold text-slate-700">
-                      <IdCard className="h-5 w-5 text-indigo-500 shrink-0" /> 
-                      <span>Roll No: <strong className="text-slate-900">{profile.rollNo}</strong></span>
-                    </p>
-                    <p className="flex items-center gap-3 font-semibold text-slate-700">
-                      <Mail className="h-5 w-5 text-sky-500 shrink-0" /> 
-                      <span>Email: <strong className="text-slate-900">{profile.email || (profile.id && profile.id.includes("@") ? profile.id : "student@nitp.ac.in")}</strong></span>
-                    </p>
-                    <p className="flex items-center gap-3 font-semibold text-slate-700">
-                      <Phone className="h-5 w-5 text-emerald-500 shrink-0" /> 
-                      <span>Mobile: <strong className="text-slate-900">{profile.mobile || "+91 98765 43210"}</strong></span>
-                    </p>
-                    <p className="flex items-center gap-3 font-semibold text-slate-700">
-                      <House className="h-5 w-5 text-slate-400 shrink-0" /> 
-                      <span>Room / Hostel: <strong className="text-slate-900">{profile.hostel}</strong></span>
+
+                <h3 className="sd-passport-name mt-7">{profile.name}</h3>
+                <p className="mt-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  {profile.subtitle}
+                </p>
+
+                <div className="mt-7 grid grid-cols-2 gap-x-6 gap-y-4">
+                  <div>
+                    <p className="sd-passport-label">Roll No</p>
+                    <p className="sd-passport-value">{profile.rollNo}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="sd-passport-label">Room / Hostel</p>
+                    <p className="sd-passport-value truncate">{profile.hostel}</p>
+                  </div>
+                  <div>
+                    <p className="sd-passport-label">Next return by</p>
+                    <p className="sd-passport-value">
+                      {latestApproved ? formatClock(latestApproved.inTime) : "—"}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowQrModal(true)}
-                    className="sd-btn-glow mt-6 inline-flex w-fit items-center gap-3 rounded-2xl bg-linear-to-r from-slate-900 via-indigo-700 to-cyan-500 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.18em] text-white shadow-lg cursor-pointer"
-                  >
-                    <QrCode className="h-6 w-6" />
-                    Show QR Code
-                  </button>
+                  <div className="min-w-0">
+                    <p className="sd-passport-label">Mobile</p>
+                    <p className="sd-passport-value truncate">{profile.mobile || "—"}</p>
+                  </div>
                 </div>
+
+                <MagneticButton
+                  type="button"
+                  onClick={() => setShowQrModal(true)}
+                  className="sd-btn-glow mt-8 inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-cyan-500/25 cursor-pointer"
+                >
+                  <QrCode className="h-5 w-5" />
+                  Show QR Code
+                </MagneticButton>
+              </div>
+
+              {/* Torn perforation between body and QR stub */}
+              <div className="sd-seam-h lg:hidden" aria-hidden="true" />
+              <div className="hidden lg:block sd-seam-v" aria-hidden="true" />
+
+              {/* Detachable stub carrying the scannable QR */}
+              <div className="relative z-[1] flex flex-col items-center justify-center gap-4 p-6 sm:p-8 lg:w-[250px]">
+                <p className="sd-passport-eyebrow flex items-center gap-1.5">
+                  <ScanLine className="h-3.5 w-3.5 text-cyan-300" />
+                  Scan at gate
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(true)}
+                  title="Enlarge QR pass"
+                  className="sd-stub-qr sd-luxe-tilt cursor-pointer"
+                >
+                  <QRCode value={qrValue} size={148} className="h-[148px] w-[148px]" />
+                </button>
+                <div className="sd-barcode w-full max-w-[190px]" aria-hidden="true" />
+                <p className="font-mono text-[0.62rem] tracking-[0.35em] text-slate-400">
+                  {qrRollNo || "SAFEEXIT"}
+                </p>
               </div>
             </div>
 
             <div className="sd-luxe-panel sd-luxe-rise sd-stagger-5 rounded-4xl p-6 shadow-xl">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="sd-title sd-title-sm">Recent Outings</h2>
+                <div>
+                  <p className="sd-kicker">Recent</p>
+                  <h2 className="sd-title sd-title-sm mt-2">Your Outings</h2>
+                </div>
                 <Link
                   href="/dashboard/student/my-outings"
-                  className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600 hover:text-indigo-800 transition-colors"
+                  className="group inline-flex items-center gap-1 text-xs font-bold uppercase tracking-[0.16em] text-indigo-600 hover:text-indigo-800 transition-colors"
                 >
-                  View All →
+                  View all
+                  <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                 </Link>
               </div>
               <div className="mt-5 space-y-3">
                 {outingsLoading ? (
-                  <p className="sd-micro rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center">
-                    Loading your outings…
-                  </p>
-                ) : outings.length === 0 ? (
-                  <p className="sd-micro rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center">
-                    No outings yet. Generate an outing ticket to get started.
-                  </p>
-                ) : (
-                  outings.slice(0, 3).map((outing, i) => (
-                    <div
-                      key={outing.id}
-                      className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5"
-                      style={{ animationDelay: `${0.15 + i * 0.06}s` }}
-                    >
-                      <div>
-                        <p className="sd-card-title text-slate-900 text-base">{outing.place}</p>
-                        <p className="sd-micro mt-0.5">
-                          {outing.date} at {outing.time}
-                        </p>
+                  <div className="space-y-3">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="sd-row animate-pulse" style={{ opacity: 1 - i * 0.22 }}>
+                        <div className="space-y-2">
+                          <div className="h-3.5 w-32 rounded-full bg-slate-200" />
+                          <div className="h-2.5 w-24 rounded-full bg-slate-100" />
+                        </div>
+                        <div className="h-6 w-16 rounded-full bg-slate-100" />
                       </div>
-                      {(() => {
-                        const badge = outingBadge(outing);
-                        return (
-                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${badge.className}`}>
-                            {badge.label}
-                          </span>
-                        );
-                      })()}
+                    ))}
+                  </div>
+                ) : outings.length === 0 ? (
+                  <div className="sd-empty py-8">
+                    <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center">
+                      <span className="sd-ring" aria-hidden="true" />
+                      <span className="sd-ring sd-ring--2" aria-hidden="true" />
+                      <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 text-white shadow-lg shadow-indigo-500/30">
+                        <ClipboardList className="h-6 w-6" />
+                      </span>
                     </div>
-                  ))
+                    <p className="sd-card-title text-slate-700 text-[0.95rem]">No outings yet</p>
+                    <p className="sd-micro mt-1 max-w-xs mx-auto">Generate an outing ticket to get started.</p>
+                  </div>
+                ) : (
+                  outings.slice(0, 3).map((outing, i) => {
+                    const badge = outingBadge(outing);
+                    return (
+                      <div
+                        key={outing.id}
+                        className="sd-row sd-luxe-rise"
+                        style={{ animationDelay: `${0.15 + i * 0.06}s` }}
+                      >
+                        <span
+                          className="sd-row__accent"
+                          style={{ "--accent": outingAccent(outing) }}
+                          aria-hidden="true"
+                        />
+                        <div className="min-w-0">
+                          <p className="sd-card-title text-slate-900 text-[0.95rem] truncate">{outing.place}</p>
+                          <p className="sd-micro mt-0.5 flex items-center gap-1.5">
+                            <Clock3 className="h-3.5 w-3.5 text-slate-400" />
+                            {outing.date} · {outing.time}
+                          </p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${badge.className}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
           </section>
 
-          <section className="mt-6 grid gap-6 lg:grid-cols-[0.7fr_1.3fr]">
+          <section className="mt-6 grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
             <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-6 shadow-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="sd-eyebrow">Weekly Pulse</p>
-                  <h2 className="sd-title sd-title-sm">Activity Stats</h2>
+                  <p className="sd-kicker">Overview</p>
+                  <h2 className="sd-title sd-title-sm mt-2">Activity Stats</h2>
                 </div>
-                <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-semibold">Live</span>
+                <span className="sd-tag">
+                  <Activity className="h-3.5 w-3.5 text-indigo-500" />
+                  Live
+                </span>
               </div>
               <div className="mt-5 space-y-4">
                 {stats.map((stat) => (
-                  <div key={stat.label} className="sd-luxe-card sd-luxe-tilt rounded-2xl px-4 py-3.5">
-                    <div className="flex items-center justify-between">
-                      <p className="sd-micro text-[0.8rem]">{stat.label}</p>
-                      <p className="text-xl font-bold text-slate-900 font-sora italic">{stat.value}</p>
-                    </div>
-                    <div className="mt-3 h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                      <div
-                        className={`sd-luxe-progress h-full rounded-full bg-linear-to-r ${stat.tone} transition-all duration-1000`}
-                        style={{ width: stat.width }}
-                      />
-                    </div>
-                  </div>
+                  <StatCard key={stat.label} stat={stat} />
                 ))}
               </div>
             </div>
@@ -868,28 +1132,41 @@ export default function StudentDashboardPage() {
             <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-6 shadow-xl">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="sd-eyebrow">Timeline</p>
-                  <h2 className="sd-title sd-title-sm">Today’s Movement</h2>
+                  <p className="sd-kicker">Timeline</p>
+                  <h2 className="sd-title sd-title-sm mt-2">Today’s Movement</h2>
                 </div>
-                <span className="sd-luxe-chip rounded-full px-3 py-1 text-xs font-semibold">Auto sync</span>
+                <span className="sd-tag">
+                  <span className="sd-tag-dot" />
+                  Auto sync
+                </span>
               </div>
               <div className="mt-5 space-y-4">
                 {timeline.length === 0 ? (
-                  <p className="sd-micro rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center">
-                    No active outing. Your movement updates appear here once a pass is approved.
-                  </p>
+                  <div className="sd-empty py-10">
+                    <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center">
+                      <span className="sd-ring" aria-hidden="true" />
+                      <span className="sd-ring sd-ring--2" aria-hidden="true" />
+                      <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-sky-500 to-cyan-400 text-white shadow-lg shadow-cyan-500/30">
+                        <Clock3 className="h-6 w-6" />
+                      </span>
+                    </div>
+                    <p className="sd-card-title text-slate-700 text-[0.95rem]">Nothing in motion</p>
+                    <p className="sd-micro mt-1 max-w-xs mx-auto">
+                      Your movement updates appear here once a pass is approved.
+                    </p>
+                  </div>
                 ) : (
                   timeline.map((event, i) => (
                     <div
                       key={event.title}
-                      className="sd-luxe-card sd-timeline-item sd-luxe-rise sd-luxe-tilt flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3.5"
+                      className="sd-row sd-timeline-item sd-luxe-rise"
                       style={{ animationDelay: `${0.1 + i * 0.07}s` }}
                     >
                       <div>
-                        <p className="sd-card-title text-slate-900">{event.title}</p>
-                        <p className="sd-micro">{event.meta}</p>
+                        <p className="sd-card-title text-slate-900 text-[0.95rem]">{event.title}</p>
+                        <p className="sd-micro mt-0.5">{event.meta}</p>
                       </div>
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${event.tone}`}>Active</span>
+                      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${event.tone}`}>Active</span>
                     </div>
                   ))
                 )}
@@ -897,14 +1174,16 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-6 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-6 gap-1 rounded-4xl p-2.5 sm:p-3 backdrop-blur">
             {navItems.map((item) => (
               <Link
                 key={item.label}
                 href={item.href}
-                className={`sd-nav-link ${item.active ? "sd-nav-link--active" : ""}`}
+                className={`sd-navx ${item.active ? "sd-navx--active" : ""}`}
               >
-                <item.icon className="h-6 w-6" />
+                <span className="sd-navx__icon">
+                  <item.icon className="h-5 w-5" />
+                </span>
                 {item.label}
               </Link>
             ))}
