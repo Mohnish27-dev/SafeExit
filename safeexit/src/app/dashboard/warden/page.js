@@ -512,8 +512,8 @@ export default function WardenDashboardPage() {
     alert('Toggled auto-approval rule (demo)');
   }
 
-  const displayName = (user && (user.name || user.displayName)) || "Warden Priya";
-  const firstName = "Warden";
+  const displayName = (user && (user.name || user.displayName)) || t("chiefWarden");
+  const firstName = displayName.split(" ")[0] || displayName;
 
   // The hostel this warden oversees. When unset, the backend returns no students,
   // so we surface a "not configured" banner rather than a silently empty queue.
@@ -915,7 +915,7 @@ export default function WardenDashboardPage() {
           )}
 
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
-          {view === 'profile' && <ProfileView user={user} displayName={displayName} />}
+          {view === 'profile' && <ProfileView user={user} displayName={displayName} onLogout={handleLogout} />}
           {view === 'complaints' && <ComplaintsView reports={reports} resolveReport={resolveReport} setReports={setReports} />}
           {view === 'leave' && (
             <LeaveApplicationsView
