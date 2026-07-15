@@ -1017,7 +1017,6 @@ export default function WardenDashboardPage() {
                   >
                     {t("toggleRule")}
                   </button>
-                  <button onClick={() => setApproved((a) => [{ id: Date.now(), name: 'Demo Student', outSince: 'Now', initials: 'DS' }, ...a])} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">{t("addDemoApproved")}</button>
                 </div>
                 <div className="mt-4">
                   <h4 className="sd-card-title text-[0.9rem]">{t("recentlyAutoApproved")}</h4>
