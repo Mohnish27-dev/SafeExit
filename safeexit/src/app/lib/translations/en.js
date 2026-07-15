@@ -81,7 +81,6 @@ const en = {
     noRequestsYet: "New outing requests will appear here.",
     autoApprovalRules: "Auto-approval rules allow low-risk passes to be approved automatically.",
     toggleRule: "Toggle Rule",
-    addDemoApproved: "Add Demo Approved",
     recentlyAutoApproved: "Recently Auto-Approved",
     allReports: "All Reports",
     noReports: "No reports",

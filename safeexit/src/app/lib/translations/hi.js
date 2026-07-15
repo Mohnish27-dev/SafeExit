@@ -81,7 +81,6 @@ const hi = {
     noRequestsYet: "नई आउटिंग रिक्वेस्ट यहाँ दिखेंगी।",
     autoApprovalRules: "ऑटो-अप्रूवल रूल कम रिस्क वाले पास को अपने आप मंज़ूर कर देते हैं।",
     toggleRule: "रूल बदलें",
-    addDemoApproved: "डेमो अप्रूव्ड जोड़ें",
     recentlyAutoApproved: "हाल में ऑटो-अप्रूव्ड",
     allReports: "सभी रिपोर्ट",
     noReports: "कोई रिपोर्ट नहीं",
