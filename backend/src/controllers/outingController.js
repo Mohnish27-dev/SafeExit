@@ -1,4 +1,5 @@
 const OutingRequest = require('../models/OutingRequest');
+const { notifyWardens } = require('../utils/pushService');
 const {
   isDeparturePassed,
   resolveOutingPolicy,
@@ -128,6 +129,16 @@ const createOutingRequest = async (req, res) => {
       id: outingRequest._id,
       status: outingRequest.status,
     });
+
+    // Send a push notification to the warden managing this student's hostel
+    // so they see the request even with the dashboard closed / phone locked.
+    if (!autoApproved) {
+      notifyWardens(gender, {
+        title: '🔔 New Outing Request',
+        body: `${req.user.name} has requested a ${resolvedType} outing to ${destination}.`,
+        url: '/dashboard/warden',
+      });
+    }
 
     res.status(201).json(outingRequest);
   } catch (error) {

@@ -17,6 +17,7 @@ const leaveRoutes = require('./routes/leaveRoutes');
 const sosRoutes = require('./routes/sosRoutes');
 const scanRoutes = require('./routes/scanRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const pushRoutes = require('./routes/pushRoutes');
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/leave', leaveRoutes);
 app.use('/api/sos', sosRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/push', pushRoutes);
 
 // Basic health check
 app.get('/health', (req, res) => {

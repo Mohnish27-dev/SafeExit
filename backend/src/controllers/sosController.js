@@ -1,5 +1,6 @@
 const SOSAlert = require('../models/SOSAlert');
 const sseHub = require('../utils/sseHub');
+const { notifyWardensAndAdmins } = require('../utils/pushService');
 const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
 // @desc    Raise a new SOS alert
@@ -28,6 +29,16 @@ const createSOSAlert = async (req, res) => {
       id: populated._id,
       type: populated.type,
       status: populated.status,
+    });
+
+    // Urgent push notification to wardens + admins — SOS alerts are
+    // time-critical and need immediate attention even if no dashboard is open.
+    const gender = req.user.gender;
+    notifyWardensAndAdmins(gender, {
+      title: '🚨 SOS ALERT',
+      body: `${req.user.name} has raised an emergency${type ? ` (${type})` : ''}!`,
+      url: '/dashboard/warden',
+      urgency: 'high',
     });
 
     res.status(201).json(populated);

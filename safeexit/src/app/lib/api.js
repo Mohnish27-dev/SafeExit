@@ -13,8 +13,17 @@ export const getApiBase = () => {
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
   if (typeof window !== "undefined") {
     const { protocol, hostname, port } = window.location;
-    const apiPort = port === "3000" ? "5000" : port;
-    return `${protocol}//${hostname}:${apiPort}/api`;
+    // On localhost (direct dev), talk to the Express backend on :5000.
+    // Everywhere else (devtunnels, production, any deployment) only the
+    // Next.js port is reachable, so route through the Next.js rewrite at
+    // /api/backend/:path* → http://127.0.0.1:5000/api/:path*
+    const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+    if (isLocalhost) {
+      const apiPort = port === "3000" ? "5000" : port;
+      return `${protocol}//${hostname}:${apiPort}/api`;
+    }
+    // Non-localhost: use the rewrite proxy path (relative URL, same origin)
+    return "/api/backend";
   }
   return "http://localhost:5000/api";
 };

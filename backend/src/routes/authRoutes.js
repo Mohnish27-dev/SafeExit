@@ -6,6 +6,7 @@ const {
   getUserProfile,
   updateUserProfile,
   logoutUser,
+  refreshSession,
   getRegistrationOptions,
   verifyRegistration,
   getAuthenticationOptions,
@@ -36,6 +37,10 @@ router.post('/password/reset', authLimiter, resetPassword);
 router.post('/register', registerLimiter, registerUser);
 router.post('/login', authLimiter, authUser);
 router.post('/logout', logoutUser);
+// Silent session restore from the httpOnly cookie (see refreshSession). Behind
+// `protect` — an invalid/expired cookie simply 401s and the client falls back
+// to the normal login flow.
+router.post('/refresh', protect, refreshSession);
 router.get('/profile', protect, getUserProfile);
 router.patch('/profile', protect, updateUserProfile);
 

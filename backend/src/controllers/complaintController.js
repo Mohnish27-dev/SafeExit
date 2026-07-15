@@ -1,5 +1,6 @@
 const Complaint = require('../models/Complaint');
 const sseHub = require('../utils/sseHub');
+const { notifyWardens } = require('../utils/pushService');
 const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
 // @desc    Create new complaint
@@ -25,6 +26,14 @@ const createComplaint = async (req, res) => {
       id: complaint._id,
       category: complaint.category,
       status: complaint.status,
+    });
+
+    // Push notification to the warden managing this student's hostel.
+    const gender = req.user.gender;
+    notifyWardens(gender, {
+      title: '📝 New Complaint',
+      body: `A ${category || 'general'} complaint has been filed${req.user.roomNumber ? ` (Room ${req.user.roomNumber})` : ''}.`,
+      url: '/dashboard/warden',
     });
 
     res.status(201).json(complaint);

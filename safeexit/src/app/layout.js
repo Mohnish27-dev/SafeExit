@@ -33,6 +33,11 @@ export default function RootLayout({ children }) {
       suppressHydrationWarning
     >
       <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#6366f1" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <link rel="apple-touch-icon" href="/images/icon-192.png" />
         <Script id="theme-init" strategy="beforeInteractive">
           {`
             (function() {
@@ -45,6 +50,15 @@ export default function RootLayout({ children }) {
                 }
               } catch (e) {}
             })();
+          `}
+        </Script>
+        <Script id="sw-register" strategy="afterInteractive">
+          {`
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.register('/sw.js').catch(function(err) {
+                console.log('SW registration failed:', err);
+              });
+            }
           `}
         </Script>
       </head>

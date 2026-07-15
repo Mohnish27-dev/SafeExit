@@ -281,6 +281,54 @@ const logoutUser = (req, res) => {
   res.status(200).json({ message: 'Logged out successfully' });
 };
 
+// @desc    Restore a session from the httpOnly `jwt` cookie.
+//          The mobile OS kills backgrounded tabs, wiping the tab-scoped
+//          sessionStorage token — but the 30-day cookie survives. `protect`
+//          falls back to that cookie when no Bearer header is sent, so this
+//          endpoint lets a reopened app silently re-mint its Bearer token and
+//          profile without forcing Quick Login again.
+// @route   POST /api/auth/refresh
+// @access  Private (cookie or Bearer)
+const refreshSession = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(401).json({ message: 'Not authorized' });
+    }
+
+    // Re-issue the token (also re-extends the cookie's 30-day window).
+    const token = generateToken(res, user._id);
+
+    // Same activity stamping as a fresh login, so the admin overview stays honest.
+    if (['Guard', 'Warden', 'Admin'].includes(user.role)) {
+      user.lastActiveAt = new Date();
+      if (user.role === 'Guard') user.onDuty = true;
+      await user.save();
+    }
+
+    // Superset of the login + profile payloads so the client can rebuild both
+    // its Bearer token and its stored profile blob in one round-trip.
+    res.json({
+      _id: user._id,
+      name: user.name,
+      loginId: user.loginId,
+      email: user.email,
+      role: user.role,
+      studentId: user.studentId,
+      roomNumber: user.roomNumber,
+      department: user.department,
+      year: user.year,
+      phoneNumber: user.phoneNumber,
+      gender: user.gender,
+      managedGender: user.managedGender,
+      webAuthnRegistered: user.webAuthnRegistered,
+      token,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // --- WebAuthn / FIDO2 (real verification via @simplewebauthn/server) ---
 //
 // A WebAuthn ceremony is two round-trips:
@@ -489,6 +537,7 @@ module.exports = {
   getUserProfile,
   updateUserProfile,
   logoutUser,
+  refreshSession,
   getRegistrationOptions,
   verifyRegistration,
   getAuthenticationOptions,
