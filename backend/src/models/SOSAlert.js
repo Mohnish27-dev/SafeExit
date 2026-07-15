@@ -22,6 +22,13 @@ const sosAlertSchema = new mongoose.Schema({
   location: {
     type: String
   },
+  // GPS snapshot captured on the student's device when the alert was raised,
+  // so responders can open the exact spot in a maps app.
+  coords: {
+    lat: Number,
+    lng: Number,
+    accuracy: Number // metres, as reported by the browser Geolocation API
+  },
   status: {
     type: String,
     enum: ['Active', 'Acknowledged', 'Resolved'],

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Siren,
@@ -13,6 +13,7 @@ import {
   Lock,
   Eye,
   X,
+  MapPin,
 } from "lucide-react";
 import StudentFeatureShell, {
   StudentFeaturePanel,
@@ -79,14 +80,57 @@ export default function SOSAlert() {
 
   const [sendError, setSendError] = useState("");
 
+  // GPS snapshot shared with the warden so they can find the student fast.
+  // "idle" → "locating" → "captured" | "unavailable". The alert is NEVER
+  // blocked on location — an unavailable fix just sends without coords.
+  const [locStatus, setLocStatus] = useState("idle");
+  const coordsRef = useRef(null); // ref (not state) so handleSend reads the latest fix without re-render races
+  const locPromiseRef = useRef(null);
+
+  const captureLocation = () => {
+    if (locPromiseRef.current) return; // already locating / done
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocStatus("unavailable");
+      locPromiseRef.current = Promise.resolve(null);
+      return;
+    }
+    setLocStatus("locating");
+    locPromiseRef.current = new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          coordsRef.current = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          };
+          setLocStatus("captured");
+          resolve(coordsRef.current);
+        },
+        () => {
+          setLocStatus("unavailable");
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+      );
+    });
+  };
+
   const handleSend = async () => {
     setStage("sending");
     setSendError("");
+    // Give an in-flight GPS fix a short grace window, but never delay the
+    // emergency for more than ~3s waiting on location.
+    if (locPromiseRef.current && !coordsRef.current) {
+      await Promise.race([
+        locPromiseRef.current,
+        new Promise((r) => setTimeout(r, 3000)),
+      ]);
+    }
     try {
       // Persist the alert so wardens / admins see it live in their console.
       const alert = await apiFetch("/sos", {
         method: "POST",
-        body: JSON.stringify({ type: selected, note }),
+        body: JSON.stringify({ type: selected, note, coords: coordsRef.current || undefined }),
       });
       setAlertId("SOS-" + String(alert._id).slice(-6).toUpperCase());
       setStage("sent");
@@ -120,6 +164,7 @@ export default function SOSAlert() {
               { label: "Alert ID", value: alertId, highlight: true },
               { label: "Type", value: alertTypes.find((a) => a.type === selected)?.label },
               { label: "Time", value: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) },
+              { label: "Location", value: locStatus === "captured" ? "Shared" : "Not available", success: locStatus === "captured" },
               { label: "Notified", value: "Warden + Security", success: true },
             ].map(({ label, value, highlight, success }) => (
               <div key={label} className="flex justify-between">
@@ -168,11 +213,33 @@ export default function SOSAlert() {
           </div>
           <h2 className="font-sora text-xl font-bold text-slate-800 mb-2">Confirm SOS Alert</h2>
           <p className="text-sm text-slate-500 mb-4">This will immediately notify your warden and campus security.</p>
-          <div className="rounded-xl p-3 mb-6 border border-rose-200 bg-linear-to-br from-rose-50 to-pink-50">
+          <div className="rounded-xl p-3 mb-4 border border-rose-200 bg-linear-to-br from-rose-50 to-pink-50">
             <p className="text-sm font-semibold text-rose-700">
               {alertTypes.find((a) => a.type === selected)?.label}
             </p>
             {note && <p className="text-xs text-slate-500 mt-1 italic">&ldquo;{note}&rdquo;</p>}
+          </div>
+          {/* Location capture status — resolves in the background while the
+              student reads the confirmation; sending is never blocked on it. */}
+          <div className="flex items-center justify-center gap-2 mb-6 text-xs font-medium">
+            {locStatus === "locating" && (
+              <>
+                <Loader2 size={14} className="animate-spin text-slate-400 shrink-0" />
+                <span className="text-slate-500">Attaching your location…</span>
+              </>
+            )}
+            {locStatus === "captured" && (
+              <>
+                <MapPin size={14} className="text-emerald-600 shrink-0" />
+                <span className="text-emerald-700">Your current location will be shared with the warden</span>
+              </>
+            )}
+            {locStatus === "unavailable" && (
+              <>
+                <MapPin size={14} className="text-slate-400 shrink-0" />
+                <span className="text-slate-400">Location unavailable — alert will still be sent</span>
+              </>
+            )}
           </div>
           <div className="flex gap-3">
             <button type="button" onClick={() => setStage("idle")} className="sf-btn-secondary flex-1">
@@ -270,14 +337,19 @@ export default function SOSAlert() {
       <div className="sf-notice sf-rise sf-stagger-3 p-4.5 border-sky-200/80 bg-linear-to-br from-sky-50 to-indigo-50/50">
         <Lock size={15} className="text-sky-600 shrink-0 mt-0.5" />
         <p className="text-xs sm:text-sm text-slate-650 leading-relaxed">
-          SOS alerts include your name, room number, and timestamp. No personal contact details are exposed to guards.
+          SOS alerts include your name, room number, timestamp, and your current device location (if you allow it) so the warden can reach you fast. No personal contact details are exposed to guards.
         </p>
       </div>
 
       <button
         type="button"
         disabled={!selected}
-        onClick={() => setStage("confirm")}
+        onClick={() => {
+          // Start the GPS fix now so it resolves (and the permission prompt is
+          // handled) while the student reads the confirmation screen.
+          captureLocation();
+          setStage("confirm");
+        }}
         className={`sf-btn-danger w-full py-4 text-base sm:text-lg uppercase tracking-wider font-extrabold shadow-lg shadow-rose-200/50 border border-rose-350 transition-all duration-300 ${selected ? "sf-btn-danger--pulse" : ""}`}
       >
         <Siren size={22} className={selected ? "animate-bounce-soft" : ""} />
