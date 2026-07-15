@@ -15,7 +15,8 @@
 
 import { useEffect, useState } from "react";
 import { getApiBase } from "./api";
-import { getStoredUser } from "./userProfile";
+import { getStoredUser, setStoredUser } from "./userProfile";
+import { unsubscribePush, autoSubscribeIfGranted } from "./pushManager";
 
 // Where each role signs in. Logout only ends the tab SESSION — it deliberately
 // leaves each role's device-local Quick Login (encrypted PIN blob + passkey
@@ -34,6 +35,71 @@ const ROLE_CONFIG = {
 };
 
 const loginPathFor = (role) => ROLE_CONFIG[role]?.loginPath || "/login";
+
+// Backend role enum → the frontend role slugs used by ROLE_CONFIG / dashboards.
+const BACKEND_ROLE_TO_SLUG = {
+  Student: "student",
+  Warden: "warden",
+  Guard: "security",
+  Admin: "admin",
+};
+
+const ROLE_LABELS = {
+  student: "Student",
+  warden: "Warden",
+  security: "Security Guard",
+  admin: "Administrator",
+};
+
+// Silent session restore. Mobile OSes kill backgrounded tabs, wiping the
+// tab-scoped sessionStorage token — but the 30-day httpOnly `jwt` cookie
+// survives. POST /auth/refresh authenticates via that cookie (we deliberately
+// send NO Bearer header) and returns a fresh token + profile, so a warden who
+// reopens the app lands straight on their dashboard instead of Quick Login.
+//
+// Returns the restored profile's role slug on success, or null when there is
+// no valid cookie (user actually logged out / expired) — callers then fall
+// back to the normal login redirect.
+const tryRestoreSession = async () => {
+  try {
+    const res = await fetch(`${getApiBase()}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const slug = BACKEND_ROLE_TO_SLUG[data.role];
+    if (!data.token || !slug) return null;
+
+    sessionStorage.setItem("safeexit_token", data.token);
+    // Rebuild the profile blob the way each role's login page does — staff are
+    // identified by loginId, students by roll number + email.
+    setStoredUser({
+      name: data.name,
+      role: slug,
+      roleLabel: ROLE_LABELS[slug],
+      id: slug === "student" ? (data.studentId || data.email) : data.loginId,
+      ...(slug === "student"
+        ? {
+            rollNo: data.studentId,
+            email: data.email,
+            room: data.roomNumber,
+            mobile: data.phoneNumber,
+          }
+        : {}),
+      ...(data.managedGender ? { managedGender: data.managedGender } : {}),
+    });
+
+    // The device's push subscription may have been upserted under a stale
+    // session — re-sync it now that we hold a fresh token. Best-effort.
+    autoSubscribeIfGranted().catch(() => {});
+
+    return slug;
+  } catch {
+    return null; // network error → treat as "no session"
+  }
+};
 
 export const getToken = () => {
   if (typeof window === "undefined") return null;
@@ -68,10 +134,25 @@ export const useRequireAuth = (expectedRole) => {
       setState({ checked: true, authorized: true });
       return;
     }
-    setState({ checked: true, authorized: false });
-    // Replace (not push) so the unauthorized URL doesn't stay in history for the
-    // Back button to return to.
-    window.location.replace(loginPathFor(expectedRole));
+
+    // No tab session — before bouncing to login, try restoring one from the
+    // httpOnly cookie (the tab was likely killed by the mobile OS, not logged
+    // out). Only authorize if the restored session matches this page's role;
+    // a mismatched cookie (other role logged in elsewhere) still redirects.
+    let cancelled = false;
+    (async () => {
+      const restoredRole = await tryRestoreSession();
+      if (cancelled) return;
+      if (restoredRole && (!expectedRole || restoredRole === expectedRole)) {
+        setState({ checked: true, authorized: true });
+        return;
+      }
+      setState({ checked: true, authorized: false });
+      // Replace (not push) so the unauthorized URL doesn't stay in history for
+      // the Back button to return to.
+      window.location.replace(loginPathFor(expectedRole));
+    })();
+    return () => { cancelled = true; };
   }, [expectedRole]);
 
   return state;
@@ -90,6 +171,10 @@ export const logout = async (router, { role } = {}) => {
   } catch {
     /* ignore network errors on logout */
   }
+
+  // Unsubscribe from push notifications so the old session stops receiving
+  // alerts. Best-effort — network errors here are non-critical.
+  try { await unsubscribePush(); } catch { /* ignore */ }
 
   if (typeof window !== "undefined") {
     // Session-only: clears the Bearer token and the active-tab profile. The

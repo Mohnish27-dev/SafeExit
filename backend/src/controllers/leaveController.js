@@ -1,5 +1,6 @@
 const LeaveApplication = require('../models/LeaveApplication');
 const sseHub = require('../utils/sseHub');
+const { notifyWardens } = require('../utils/pushService');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
 const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
@@ -112,6 +113,15 @@ const createLeaveApplication = async (req, res) => {
       reason: 'created',
       id: application._id,
       status: application.status,
+    });
+
+    // Push notification to the warden managing this student's hostel so they
+    // see the application even with the dashboard closed.
+    const gender = req.user.gender;
+    notifyWardens(gender, {
+      title: '📋 New Leave Application',
+      body: `${req.user.name} has applied for leave from ${leaveDateObj.toLocaleDateString()} to ${returnDateObj.toLocaleDateString()}.`,
+      url: '/dashboard/warden',
     });
 
     res.status(201).json(application);

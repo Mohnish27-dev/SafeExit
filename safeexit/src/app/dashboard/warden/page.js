@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Bell,
+  BellOff,
   CalendarDays,
   Check,
   ChevronDown,
@@ -34,6 +35,12 @@ import { LogOut } from "lucide-react";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import useCountUp from "@/app/hooks/useCountUp";
+import {
+  isPushSupported,
+  getNotificationPermission,
+  subscribePush,
+  autoSubscribeIfGranted,
+} from "@/app/lib/pushManager";
 
 const initials = (name = "") =>
   name
@@ -530,6 +537,40 @@ export default function WardenDashboardPage() {
 
   const handleLogout = () => logout(router, { role: "warden" });
 
+  // ── Push notification prompt ──────────────────────────────────────────────
+  // Tracks whether to show the "Enable notifications" banner. Starts null so
+  // we don't flash it on SSR / before the permission API is checked.
+  const [pushPermission, setPushPermission] = useState(null);
+  const [pushBannerDismissed, setPushBannerDismissed] = useState(false);
+  const [pushEnabling, setPushEnabling] = useState(false);
+
+  useEffect(() => {
+    if (!isPushSupported()) {
+      setPushPermission('unsupported');
+      return;
+    }
+    const perm = getNotificationPermission();
+    setPushPermission(perm);
+
+    // If already granted (returning user), silently re-subscribe in case the
+    // subscription expired or the browser cleared it.
+    if (perm === 'granted') {
+      autoSubscribeIfGranted();
+    }
+  }, []);
+
+  const handleEnablePush = async () => {
+    setPushEnabling(true);
+    const result = await subscribePush();
+    setPushEnabling(false);
+    if (result.success) {
+      setPushPermission('granted');
+    } else {
+      // If the user denied, update state so we show the "blocked" message
+      setPushPermission(getNotificationPermission());
+    }
+  };
+
   // Gate the dashboard on a valid warden session; the hook redirects to
   // /login/warden when the token is missing or belongs to another role.
   if (!checked || !authorized) return <AuthLoading />;
@@ -586,6 +627,48 @@ export default function WardenDashboardPage() {
                 <p className="font-bold">Your hostel isn&apos;t configured yet</p>
                 <p className="text-sm">Until an admin assigns you to the boys&apos; or girls&apos; hostel, you won&apos;t see any student requests, leave applications, complaints, or alerts. Please contact the admin.</p>
               </div>
+            </div>
+          )}
+
+          {/* Push notification permission banner */}
+          {pushPermission === 'default' && !pushBannerDismissed && (
+            <div className="mt-4 flex items-center gap-3 rounded-3xl border border-indigo-200 bg-indigo-50/80 px-5 py-4 text-indigo-800 shadow-sm backdrop-blur-sm sd-enter" style={{ animationDelay: '0.15s' }}>
+              <Bell className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500 animate-bounce" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">Enable push notifications</p>
+                <p className="text-sm text-indigo-700">Get instant alerts when students submit outing requests, leave applications, or emergencies — even when this app is closed.</p>
+              </div>
+              <button
+                onClick={handleEnablePush}
+                disabled={pushEnabling}
+                className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
+              >
+                {pushEnabling ? 'Enabling…' : 'Enable'}
+              </button>
+              <button
+                onClick={() => setPushBannerDismissed(true)}
+                className="shrink-0 rounded-xl p-2 text-indigo-400 transition hover:bg-indigo-100"
+                title="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {pushPermission === 'denied' && !pushBannerDismissed && (
+            <div className="mt-4 flex items-center gap-3 rounded-3xl border border-rose-200 bg-rose-50/80 px-5 py-4 text-rose-800 shadow-sm backdrop-blur-sm sd-enter" style={{ animationDelay: '0.15s' }}>
+              <BellOff className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">Notifications blocked</p>
+                <p className="text-sm text-rose-700">You won&apos;t receive alerts for new student requests. To enable them, open your browser settings and allow notifications for this site.</p>
+              </div>
+              <button
+                onClick={() => setPushBannerDismissed(true)}
+                className="shrink-0 rounded-xl p-2 text-rose-400 transition hover:bg-rose-100"
+                title="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           )}
 
