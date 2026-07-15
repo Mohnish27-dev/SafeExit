@@ -136,7 +136,7 @@ const createOutingRequest = async (req, res) => {
       notifyWardens(gender, {
         title: '🔔 New Outing Request',
         body: `${req.user.name} has requested a ${resolvedType} outing to ${destination}.`,
-        url: '/dashboard/warden',
+        url: '/dashboard/warden?view=requests',
       });
     }
 

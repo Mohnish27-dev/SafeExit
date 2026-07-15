@@ -121,7 +121,7 @@ const createLeaveApplication = async (req, res) => {
     notifyWardens(gender, {
       title: '📋 New Leave Application',
       body: `${req.user.name} has applied for leave from ${leaveDateObj.toLocaleDateString()} to ${returnDateObj.toLocaleDateString()}.`,
-      url: '/dashboard/warden',
+      url: '/dashboard/warden?view=leave',
     });
 
     res.status(201).json(application);

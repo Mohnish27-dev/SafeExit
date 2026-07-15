@@ -421,6 +421,20 @@ export default function WardenDashboardPage() {
   const [activePanel, setActivePanel] = useState(null);
   const [view, setView] = useState("home");
 
+  // Deep-link from push notifications: the service worker opens
+  // /dashboard/warden?view=sos (or leave/complaints/requests), so the warden
+  // lands directly on the section that needs action instead of scrolling the
+  // home view. The param is consumed once and stripped from the URL so
+  // in-page navigation afterwards isn't overridden by a stale query.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("view");
+    if (target && ["sos", "complaints", "leave", "requests", "approved", "profile"].includes(target)) {
+      setView(target);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   function closePanel() {
     setActivePanel(null);
   }
@@ -594,21 +608,21 @@ export default function WardenDashboardPage() {
         <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
         <div className="relative z-[1] mx-auto flex w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="sd-luxe-panel sd-glow-border sd-enter flex items-center justify-between gap-4 rounded-4xl px-5 py-4 shadow-xl">
-            <div className="flex items-center gap-4">
-              <div className="sd-luxe-badge sd-luxe-float flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-lg">
-                <ShieldAlert className="h-7 w-7" />
+          <header className="sd-luxe-panel sd-glow-border sd-enter flex items-center justify-between gap-3 rounded-4xl px-4 py-3.5 shadow-xl sm:gap-4 sm:px-5 sm:py-4">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+              <div className="sd-luxe-badge sd-luxe-float flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg sm:h-14 sm:w-14">
+                <ShieldAlert className="h-6 w-6 sm:h-7 sm:w-7" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="sd-eyebrow flex items-center gap-2"><Sparkles className="h-3.5 w-3.5 text-indigo-400" /> {t("hub")}</p>
-                <h1 className="sd-title sd-reveal sd-stagger-1"><span className="sd-gradient-text text-gradient-primary">{t("dashboardTitle")}</span></h1>
-                <p className="sd-subtitle">{t("dashboardSubtitle")}</p>
+                <h1 className="sd-title sd-reveal sd-stagger-1 truncate"><span className="sd-gradient-text text-gradient-primary">{t("dashboardTitle")}</span></h1>
+                <p className="sd-subtitle hidden sm:block">{t("dashboardSubtitle")}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <LanguageSwitcher />
-              <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt flex items-center gap-3 rounded-2xl px-4 py-3 min-w-55">
+              <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt hidden items-center gap-3 rounded-2xl px-4 py-3 min-w-55 lg:flex">
                 <div className="sd-profile-avatar bg-linear-to-br from-indigo-600 to-cyan-400 text-white flex h-12 w-12 items-center justify-center rounded-xl font-bold">{(user && ((user.name && user.name.split(' ').map(n=>n[0]).slice(0,2).join('')) || user.initials)) || 'WP'}</div>
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-slate-900 text-base">{displayName}</p>
@@ -619,11 +633,20 @@ export default function WardenDashboardPage() {
                   )}
                 </div>
               </div>
+              {/* Compact avatar on small screens — full profile lives in the Profile tab. */}
+              <button
+                type="button"
+                onClick={() => setView('profile')}
+                className="sd-profile-avatar flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-indigo-600 to-cyan-400 text-sm font-bold text-white lg:hidden"
+                title={tc("profile")}
+              >
+                {(user && ((user.name && user.name.split(' ').map(n=>n[0]).slice(0,2).join('')) || user.initials)) || 'WP'}
+              </button>
               <button
                 type="button"
                 onClick={handleLogout}
                 title={tc("logout")}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50 sm:h-12 sm:w-12"
               >
                 <LogOut className="h-5 w-5" />
                 <span className="sr-only">{tc("logout")}</span>
@@ -685,6 +708,79 @@ export default function WardenDashboardPage() {
 
           {view === 'home' && (
             <>
+              {/* Needs-attention strip: pinned to the very top of the home view so a
+                  warden arriving from a push notification (or just opening the app)
+                  sees every pending queue at a glance and can jump straight to it —
+                  no scrolling. Rendered only when something actually needs action. */}
+              {(() => {
+                const attention = [
+                  sosCount > 0 && {
+                    key: 'sos',
+                    label: t("safetyAlerts"),
+                    count: sosCount,
+                    icon: Siren,
+                    className: 'wd-attn--sos',
+                    onClick: () => setView('sos'),
+                  },
+                  !isBoysWarden && pending.length > 0 && {
+                    key: 'requests',
+                    label: t("requests"),
+                    count: pending.length,
+                    icon: ClipboardList,
+                    className: 'wd-attn--requests',
+                    onClick: () => setView('requests'),
+                  },
+                  leavePending.length > 0 && {
+                    key: 'leave',
+                    label: t("leaveApplications"),
+                    count: leavePending.length,
+                    icon: CalendarDays,
+                    className: 'wd-attn--leave',
+                    onClick: () => setView('leave'),
+                  },
+                  reports.length > 0 && {
+                    key: 'complaints',
+                    label: t("complaints"),
+                    count: reports.length,
+                    icon: MessageSquare,
+                    className: 'wd-attn--complaints',
+                    onClick: () => setView('complaints'),
+                  },
+                ].filter(Boolean);
+
+                if (attention.length === 0) return null;
+
+                return (
+                  <section className="sd-enter mt-4" style={{ animationDelay: '0.08s' }}>
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
+                      </span>
+                      <p className="sd-eyebrow">{t("needsAttention")}</p>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:gap-2.5 lg:grid-cols-4">
+                      {attention.map((a) => (
+                        <button
+                          key={a.key}
+                          onClick={a.onClick}
+                          className={`wd-attn ${a.className} flex items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left shadow-md transition hover:-translate-y-0.5 active:scale-95 sm:gap-3 sm:px-4 sm:py-3`}
+                        >
+                          <span className="wd-attn__icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white sm:h-10 sm:w-10">
+                            <a.icon className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-bold sm:text-sm">{a.label}</span>
+                            <span className="wd-attn__count block text-[11px] font-semibold sm:text-xs">{a.count} {t("pendingShort")}</span>
+                          </span>
+                          <ArrowRight className="hidden h-4 w-4 shrink-0 opacity-60 sm:block" />
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })()}
+
               <section
                 onPointerMove={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
@@ -692,7 +788,7 @@ export default function WardenDashboardPage() {
                   e.currentTarget.style.setProperty("--spot-y", `${e.clientY - r.top}px`);
                 }}
                 style={{ animationDelay: "0.12s" }}
-                className="sd-luxe-panel sd-glow-border sd-spot-host sd-enter mt-6 rounded-4xl p-6 sm:p-7 shadow-xl"
+                className="sd-luxe-panel sd-glow-border sd-spot-host sd-enter mt-6 rounded-4xl p-5 sm:p-7 shadow-xl"
               >
             <span className="sd-spotlight" aria-hidden="true" />
             <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
@@ -720,7 +816,7 @@ export default function WardenDashboardPage() {
             </div>
               </section>
 
-              <section className="sd-luxe-panel sd-enter mt-6 rounded-4xl p-6 sm:p-7 shadow-xl" style={{ animationDelay: "0.2s" }}>
+              <section className="sd-luxe-panel sd-enter mt-6 rounded-4xl p-5 sm:p-7 shadow-xl" style={{ animationDelay: "0.2s" }}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="sd-kicker">{t("quickActions")}</p>
@@ -731,7 +827,7 @@ export default function WardenDashboardPage() {
                 {t("autoRulesOn")}
               </span>
             </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-4">
               {(() => {
                 const manageAction = {
                   title: t("manageRequests"),
@@ -794,7 +890,7 @@ export default function WardenDashboardPage() {
                   }}
                   className="sd-tile sd-luxe-rise group block h-full text-left"
                 >
-                  <div className="sd-tile__inner flex min-h-[13rem] flex-col p-5">
+                  <div className="sd-tile__inner flex min-h-38 flex-col p-4 sm:min-h-52 sm:p-5">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <div className="flex items-start justify-between">
                       <span
@@ -807,10 +903,10 @@ export default function WardenDashboardPage() {
                         ) : null}
                       </span>
                     </div>
-                    <div className="sd-lift-md mt-auto pt-6">
-                      <span className="sd-act-rule mb-3 block" aria-hidden="true" />
-                      <span className="sd-card-title block text-[1.05rem] leading-snug">{a.title}</span>
-                      <span className="sd-body mt-1.5 block text-[0.88rem] leading-relaxed">{a.desc}</span>
+                    <div className="sd-lift-md mt-auto pt-4 sm:pt-6">
+                      <span className="sd-act-rule mb-2 block sm:mb-3" aria-hidden="true" />
+                      <span className="sd-card-title block text-[0.95rem] leading-snug sm:text-[1.05rem]">{a.title}</span>
+                      <span className="sd-body mt-1 hidden text-[0.88rem] leading-relaxed sm:mt-1.5 sm:block">{a.desc}</span>
                     </div>
                   </div>
                 </button>
@@ -820,7 +916,7 @@ export default function WardenDashboardPage() {
 
               {isBoysWarden ? (
               <section className="mt-6">
-            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-6 sm:p-7 shadow-xl">
+            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-5 sm:p-7 shadow-xl">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="sd-eyebrow">{t("leaveApplications")}</p>
@@ -918,7 +1014,7 @@ export default function WardenDashboardPage() {
               )}
 
               <section className="mt-6 grid gap-6 lg:grid-cols-[0.7fr_1.3fr]">
-            <div className="sd-luxe-panel sd-enter rounded-4xl p-6 shadow-xl" style={{ animationDelay: "0.3s" }}>
+            <div className="sd-luxe-panel sd-enter rounded-4xl p-5 sm:p-6 shadow-xl" style={{ animationDelay: "0.3s" }}>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="sd-kicker">{t("activity")}</p>
@@ -944,7 +1040,7 @@ export default function WardenDashboardPage() {
               </div>
             </div>
 
-            <div className="sd-luxe-panel sd-enter rounded-4xl p-6 shadow-xl" style={{ animationDelay: "0.34s" }}>
+            <div className="sd-luxe-panel sd-enter rounded-4xl p-5 sm:p-6 shadow-xl" style={{ animationDelay: "0.34s" }}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="sd-kicker">{t("complaints")}</p>
@@ -970,7 +1066,14 @@ export default function WardenDashboardPage() {
                   </div>
                 ) : (
                   reports.map((comp, i) => (
-                  <div key={comp.id} className="sd-row sd-luxe-rise" style={{ "--accent": "#f97316", animationDelay: `${0.08 + i * 0.06}s` }}>
+                  // Whole row is tappable — jumps to the Complaints view where the
+                  // warden can act (resolve). The pill only displays status.
+                  <button
+                    key={comp.id}
+                    onClick={() => setView('complaints')}
+                    className="sd-row sd-luxe-rise w-full text-left cursor-pointer"
+                    style={{ "--accent": "#f97316", animationDelay: `${0.08 + i * 0.06}s` }}
+                  >
                     <span className="sd-row__accent" aria-hidden="true" />
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${comp.tone}`}>
@@ -981,10 +1084,11 @@ export default function WardenDashboardPage() {
                         <p className="sd-micro">{comp.by} • {comp.time}</p>
                       </div>
                     </div>
-                    <div className="shrink-0">
+                    <div className="flex shrink-0 items-center gap-2">
                       <span className={`text-[10px] font-bold px-3 py-1 rounded-md ${comp.statusTone}`}>{comp.status}</span>
+                      <ArrowRight className="h-4 w-4 text-slate-400" />
                     </div>
-                  </div>
+                  </button>
                   ))
                 )}
               </div>

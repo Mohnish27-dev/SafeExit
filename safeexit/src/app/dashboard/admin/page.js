@@ -67,6 +67,18 @@ export default function AdminDashboardPage() {
     if (stored?.name) setProfile((p) => ({ ...p, ...stored }));
   }, []);
 
+  // Deep-link from push notifications: /dashboard/admin?view=sos lands the
+  // admin directly on the SOS tab. The param is consumed once and stripped
+  // so later in-page navigation isn't overridden by a stale query.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("view");
+    if (target && NAV.some((n) => n.key === target)) {
+      setView(target);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);

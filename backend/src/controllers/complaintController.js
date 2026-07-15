@@ -33,7 +33,7 @@ const createComplaint = async (req, res) => {
     notifyWardens(gender, {
       title: '📝 New Complaint',
       body: `A ${category || 'general'} complaint has been filed${req.user.roomNumber ? ` (Room ${req.user.roomNumber})` : ''}.`,
-      url: '/dashboard/warden',
+      url: '/dashboard/warden?view=complaints',
     });
 
     res.status(201).json(complaint);

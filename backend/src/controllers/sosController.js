@@ -53,7 +53,8 @@ const createSOSAlert = async (req, res) => {
     notifyWardensAndAdmins(gender, {
       title: '🚨 SOS ALERT',
       body: `${req.user.name} has raised an emergency${type ? ` (${type})` : ''}!${safeCoords ? ' 📍 Location attached' : ''}`,
-      url: '/dashboard/warden',
+      url: '/dashboard/warden?view=sos',
+      adminUrl: '/dashboard/admin?view=sos',
       urgency: 'high',
     });
 

@@ -39,6 +39,8 @@ const en = {
     dashboardTitle: "Warden Dashboard",
     dashboardSubtitle: "Manage passes, complaints & hostel safety",
     dailyPulse: "Daily Pulse",
+    needsAttention: "Needs your attention",
+    pendingShort: "pending",
     greeting: "Good day,",
     greetingName: "Warden",
     overviewText: "Overview of active passes, pending approvals and hotspot alerts. Use quick actions to respond swiftly.",
