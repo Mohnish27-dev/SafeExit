@@ -229,6 +229,21 @@ export default function SOSAlertsView({ onCountChange }) {
                       <MapPin className="h-4 w-4 text-slate-400" /> {a.location}
                     </span>
                   )}
+                  {/* GPS snapshot from the student's device at raise time —
+                      opens the maps app pinned at their exact position. */}
+                  {a.coords?.lat != null && a.coords?.lng != null && (
+                    <a
+                      href={`https://www.google.com/maps?q=${a.coords.lat},${a.coords.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
+                    >
+                      <MapPin className="h-4 w-4" /> Open in Maps
+                      {Number.isFinite(a.coords.accuracy) && (
+                        <span className="text-xs font-medium text-rose-400">±{Math.round(a.coords.accuracy)}m</span>
+                      )}
+                    </a>
+                  )}
                   {student.phoneNumber && (
                     <a href={`tel:${student.phoneNumber}`} className="flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:underline">
                       <Phone className="h-4 w-4" /> {student.phoneNumber}

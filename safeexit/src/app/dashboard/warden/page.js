@@ -242,6 +242,7 @@ export default function WardenDashboardPage() {
   const [pending, setPending] = useState([]);
   const [approved, setApproved] = useState([]);
   const [reports, setReports] = useState([]);
+  const [resolvedReports, setResolvedReports] = useState([]);
 
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [loadingReports, setLoadingReports] = useState(true);
@@ -303,7 +304,10 @@ export default function WardenDashboardPage() {
     }
   }, [t]);
 
-  // All complaints for the recent-reports and complaints views.
+  // All complaints for the recent-reports and complaints views. Open ones are
+  // the actionable queue (drives the badge); resolved ones are kept separately
+  // so the warden retains a history of past complaints instead of them
+  // vanishing once actioned.
   const loadReports = useCallback(async () => {
     setLoadingReports(true);
     setReportsError("");
@@ -311,6 +315,7 @@ export default function WardenDashboardPage() {
       const data = await apiFetch("/complaint");
       const open = data.filter((c) => c.status !== "Resolved");
       setReports(open.map(mapReport));
+      setResolvedReports(data.filter((c) => c.status === "Resolved").map(mapReport));
     } catch (err) {
       setReportsError(err.message || t("couldNotLoadComplaints"));
     } finally {
@@ -502,13 +507,19 @@ export default function WardenDashboardPage() {
   async function resolveReport(id) {
     const rep = reports.find((r) => r.id === id);
     if (!rep) return;
+    // Optimistically move the card from the open queue into the resolved
+    // history so past complaints stay listed instead of disappearing.
+    const resolved = { ...rep, status: "Resolved", statusTone: statusToneFor("Resolved") };
     setReports((r) => r.filter((item) => item.id !== id));
+    setResolvedReports((r) => [resolved, ...r]);
     try {
       await apiFetch(`/complaint/${id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status: "Resolved" }),
       });
     } catch (err) {
+      // Roll back: return the card to the open queue.
+      setResolvedReports((r) => r.filter((item) => item.id !== id));
       setReports((r) => [rep, ...r]);
       setReportsError(err.message || t("couldNotResolve"));
     }
@@ -999,7 +1010,16 @@ export default function WardenDashboardPage() {
 
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
           {view === 'profile' && <ProfileView user={user} displayName={displayName} onLogout={handleLogout} />}
-          {view === 'complaints' && <ComplaintsView reports={reports} resolveReport={resolveReport} setReports={setReports} />}
+          {view === 'complaints' && (
+            <ComplaintsView
+              reports={reports}
+              resolvedReports={resolvedReports}
+              resolveReport={resolveReport}
+              loading={loadingReports}
+              error={reportsError}
+              onRefresh={loadReports}
+            />
+          )}
           {view === 'leave' && (
             <LeaveApplicationsView
               pending={leavePending}

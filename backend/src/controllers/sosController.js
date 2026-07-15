@@ -7,14 +7,30 @@ const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenSc
 // @route   POST /api/sos
 // @access  Private (Student)
 const createSOSAlert = async (req, res) => {
-  const { type, note, location } = req.body;
+  const { type, note, location, coords } = req.body;
 
   try {
+    // Only persist coordinates that are actually plottable. Anything malformed
+    // is silently dropped — an SOS must never fail because of bad GPS data.
+    let safeCoords;
+    if (
+      coords &&
+      Number.isFinite(coords.lat) && Math.abs(coords.lat) <= 90 &&
+      Number.isFinite(coords.lng) && Math.abs(coords.lng) <= 180
+    ) {
+      safeCoords = {
+        lat: coords.lat,
+        lng: coords.lng,
+        accuracy: Number.isFinite(coords.accuracy) ? coords.accuracy : undefined
+      };
+    }
+
     const alert = await SOSAlert.create({
       student: req.user._id,
       type,
       note,
-      location
+      location,
+      coords: safeCoords
     });
 
     const populated = await alert.populate('student', 'name studentId roomNumber hostelName phoneNumber department year');
@@ -36,7 +52,7 @@ const createSOSAlert = async (req, res) => {
     const gender = req.user.gender;
     notifyWardensAndAdmins(gender, {
       title: '🚨 SOS ALERT',
-      body: `${req.user.name} has raised an emergency${type ? ` (${type})` : ''}!`,
+      body: `${req.user.name} has raised an emergency${type ? ` (${type})` : ''}!${safeCoords ? ' 📍 Location attached' : ''}`,
       url: '/dashboard/warden',
       urgency: 'high',
     });
