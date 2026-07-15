@@ -39,6 +39,8 @@ const hi = {
     dashboardTitle: "वार्डन डैशबोर्ड",
     dashboardSubtitle: "पास, शिकायतें और छात्रावास सुरक्षा मैनेज करें",
     dailyPulse: "आज का अपडेट",
+    needsAttention: "आपके ध्यान की ज़रूरत",
+    pendingShort: "पेंडिंग",
     greeting: "नमस्ते,",
     greetingName: "वार्डन",
     overviewText: "एक्टिव पास, पेंडिंग अप्रूवल और अलर्ट की पूरी जानकारी। क्विक एक्शन से तुरंत जवाब दें।",

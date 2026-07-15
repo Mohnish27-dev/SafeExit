@@ -3741,3 +3741,58 @@ body {
     stroke-dasharray: none;
   }
 }
+
+/* ─── Warden: needs-attention strip ──────────────────────────────────────────
+   Pinned action chips at the top of the warden home view. Each chip is a
+   one-tap jump to a pending queue (SOS / requests / leave / complaints), so a
+   warden arriving from a push notification never has to scroll to act. The
+   chips wrap in a 2-col grid on mobile (4-col from lg:) so all of them are
+   visible at once — no horizontal scrolling. */
+.wd-attn {
+  min-width: 0;
+  border: 1px solid var(--attn-border, rgba(148, 163, 184, 0.4));
+  background: var(--attn-bg, rgba(255, 255, 255, 0.85));
+  color: var(--attn-fg, #0f172a);
+  backdrop-filter: blur(8px);
+}
+
+.wd-attn__icon {
+  background: var(--attn-icon-bg, #64748b);
+  box-shadow: 0 10px 20px -10px var(--attn-glow, rgba(100, 116, 139, 0.5));
+}
+
+.wd-attn__count {
+  color: var(--attn-count, #64748b);
+}
+
+.wd-attn--sos {
+  --attn-border: rgba(251, 113, 133, 0.55);
+  --attn-bg: linear-gradient(150deg, rgba(255, 241, 242, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  --attn-icon-bg: linear-gradient(145deg, #9f1239 0%, #f43f5e 100%);
+  --attn-glow: rgba(244, 63, 94, 0.55);
+  --attn-count: #e11d48;
+}
+
+.wd-attn--requests {
+  --attn-border: rgba(129, 140, 248, 0.55);
+  --attn-bg: linear-gradient(150deg, rgba(238, 242, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  --attn-icon-bg: linear-gradient(145deg, #4338ca 0%, #6366f1 100%);
+  --attn-glow: rgba(99, 102, 241, 0.55);
+  --attn-count: #4f46e5;
+}
+
+.wd-attn--leave {
+  --attn-border: rgba(196, 132, 252, 0.55);
+  --attn-bg: linear-gradient(150deg, rgba(250, 245, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  --attn-icon-bg: linear-gradient(145deg, #6d28d9 0%, #d946ef 100%);
+  --attn-glow: rgba(139, 92, 246, 0.55);
+  --attn-count: #7c3aed;
+}
+
+.wd-attn--complaints {
+  --attn-border: rgba(251, 146, 60, 0.55);
+  --attn-bg: linear-gradient(150deg, rgba(255, 247, 237, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  --attn-icon-bg: linear-gradient(145deg, #c2410c 0%, #fb923c 100%);
+  --attn-glow: rgba(249, 115, 22, 0.55);
+  --attn-count: #ea580c;
+}

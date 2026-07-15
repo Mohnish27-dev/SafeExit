@@ -103,11 +103,13 @@ const notifyWardens = (managedGender, payload) =>
 const notifyAdmins = (payload) =>
   notifyUsers({ role: 'Admin' }, payload);
 
-// Convenience: notify wardens + admins together (SOS).
+// Convenience: notify wardens + admins together (SOS). Each role gets a URL
+// deep-linking to its own dashboard's SOS section, so tapping the
+// notification lands the user directly on the actionable list.
 const notifyWardensAndAdmins = async (managedGender, payload) => {
   await Promise.allSettled([
     notifyWardens(managedGender, payload),
-    notifyAdmins(payload),
+    notifyAdmins({ ...payload, url: payload.adminUrl || payload.url }),
   ]);
 };
 
