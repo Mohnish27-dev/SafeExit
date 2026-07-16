@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Siren,
@@ -80,9 +80,7 @@ export default function SOSAlert() {
 
   const [sendError, setSendError] = useState("");
 
-  // GPS snapshot shared with the warden so they can find the student fast.
-  // "idle" → "locating" → "captured" | "unavailable". The alert is NEVER
-  // blocked on location — an unavailable fix just sends without coords.
+  // GPS snapshot for the warden; the alert is NEVER blocked on location.
   const [locStatus, setLocStatus] = useState("idle");
   const coordsRef = useRef(null); // ref (not state) so handleSend reads the latest fix without re-render races
   const locPromiseRef = useRef(null);
@@ -118,8 +116,7 @@ export default function SOSAlert() {
   const handleSend = async () => {
     setStage("sending");
     setSendError("");
-    // Give an in-flight GPS fix a short grace window, but never delay the
-    // emergency for more than ~3s waiting on location.
+    // Grace window for an in-flight GPS fix — never delay the emergency past ~3s.
     if (locPromiseRef.current && !coordsRef.current) {
       await Promise.race([
         locPromiseRef.current,
@@ -135,8 +132,7 @@ export default function SOSAlert() {
       setAlertId("SOS-" + String(alert._id).slice(-6).toUpperCase());
       setStage("sent");
     } catch (err) {
-      // Don't trap the student on the spinner if the network blips — still confirm
-      // locally, but record that the dispatch could not be saved.
+      // On network blip: still confirm locally, but record the failed dispatch.
       setSendError(err.message || "Could not reach the server");
       setAlertId("SOS-" + Math.random().toString(36).substring(2, 8).toUpperCase());
       setStage("sent");
@@ -345,8 +341,7 @@ export default function SOSAlert() {
         type="button"
         disabled={!selected}
         onClick={() => {
-          // Start the GPS fix now so it resolves (and the permission prompt is
-          // handled) while the student reads the confirmation screen.
+          // Start the GPS fix early — it resolves while the student reads the confirmation.
           captureLocation();
           setStage("confirm");
         }}

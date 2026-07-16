@@ -540,8 +540,7 @@ body {
   line-height: 1.25;
 }
 
-/* Compact headings on phones — smaller titles mean shorter sections and far
-   less thumb-scrolling on the student dashboard. */
+/* Compact titles on phones */
 @media (max-width: 639px) {
   .sd-title-md {
     font-size: 1.5rem;
@@ -773,7 +772,7 @@ body {
   background: #38bdf8;
 }
 
-/* Custom CSS animations and delay utilities */
+/* Delay utilities */
 .animation-delay-100 {
   animation-delay: 100ms;
 }
@@ -787,7 +786,7 @@ body {
   animation-delay: 500ms;
 }
 
-/* ─── Student feature pages (Generate / My Outings / SOS) ─── */
+/* Student feature pages */
 .font-sora {
   font-family: var(--font-display), "Outfit", sans-serif;
 }
@@ -1546,9 +1545,7 @@ body {
   to { opacity: 1; }
 }
 
-/* Restrained attention cue for a freshly-surfaced submit error — enough
-   motion to catch the eye on a screen the user is already looking at,
-   never enough to feel alarming. */
+/* Gentle entrance for newly-shown notices */
 @keyframes sf-notice-in {
   0% { opacity: 0; transform: translateY(-6px) scale(0.98); }
   60% { opacity: 1; transform: translateY(0.5px) scale(1.005); }
@@ -1647,7 +1644,7 @@ body {
   background: linear-gradient(145deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%);
 }
 
-/* ─── Student dashboard enhancements ─── */
+/* Student dashboard enhancements */
 .sd-gradient-text {
   background: linear-gradient(135deg, #0f172a 0%, #4338ca 42%, #06b6d4 100%);
   -webkit-background-clip: text;
@@ -1839,7 +1836,7 @@ body {
 .sd-stagger-5 { animation-delay: 0.36s; }
 .sd-stagger-6 { animation-delay: 0.44s; }
 
-/* ─── Feature page polish ─── */
+/* Feature page polish */
 .sf-header-animate {
   animation: sf-header-slide 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -2028,8 +2025,7 @@ body {
     transform: none;
   }
 
-  /* Elements that start at opacity:0 and rely on an entrance animation must
-     stay visible when motion (and thus the animation) is disabled. */
+  /* Entrance-animated elements must stay visible when motion is disabled */
   .sd-stagger > *,
   .sd-animate-pop,
   .sd-animate-fade-up {
@@ -2038,7 +2034,7 @@ body {
   }
 }
 
-/* Additional micro-animations for warden dashboard */
+/* Warden micro-animations */
 @keyframes sd-fade-up {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -2068,20 +2064,14 @@ body {
 
 .sd-action-card.sd-card-hover { transform-origin: center; }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   3D / Motion toolkit for the landing hero + section polish
-   Pure CSS 3D (perspective + preserve-3d) driven by React pointer tracking.
-   No external libraries; fully dark-mode aware; reduced-motion safe.
-   ═══════════════════════════════════════════════════════════════════════ */
+/* 3D / Motion toolkit for landing hero */
 
-/* Perspective scene: children with translateZ gain real depth/parallax. */
 .scene-3d {
   perspective: 1400px;
   perspective-origin: 50% 40%;
 }
 
-/* The tiltable card. --rx / --ry are set inline from JS pointer movement;
-   they default to 0 so the card sits flat until the cursor enters. */
+/* --rx/--ry set inline from JS pointer tracking; default 0 = flat */
 .tilt-3d {
   transform-style: preserve-3d;
   transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
@@ -2089,14 +2079,13 @@ body {
   will-change: transform;
 }
 
-/* Depth layers — lift elements toward the viewer for parallax separation. */
+/* Depth layers */
 .depth-1 { transform: translateZ(28px); }
 .depth-2 { transform: translateZ(55px); }
 .depth-3 { transform: translateZ(85px); }
 .depth-4 { transform: translateZ(120px); }
 
-/* Moving glare that follows the pointer across the glass surface.
-   --mx / --my are pointer coords (%) written from JS. */
+/* --mx/--my are pointer coords (%) written from JS */
 .tilt-glare {
   position: absolute;
   inset: 0;
@@ -2115,7 +2104,7 @@ body {
 
 .scene-3d:hover .tilt-glare { opacity: 1; }
 
-/* Holographic verification core (shield / QR) with a sweeping sheen. */
+/* Holographic core */
 .holo-core {
   position: relative;
   overflow: hidden;
@@ -2139,7 +2128,7 @@ body {
   50% { transform: translateX(120%); }
 }
 
-/* Gentle 3D-aware float for parallax badges (kept in preserve-3d context). */
+/* 3D float */
 .float-3d { animation: float-3d 6s ease-in-out infinite; }
 .float-3d-slow { animation: float-3d 8.5s ease-in-out infinite; }
 .float-3d-delay { animation-delay: 1.6s; }
@@ -2149,7 +2138,7 @@ body {
   50% { transform: translateY(-10px) translateZ(var(--tz, 0)); }
 }
 
-/* Concentric scan rings behind the core. */
+/* Scan rings */
 .scan-ring {
   position: absolute;
   border-radius: 9999px;
@@ -2162,9 +2151,7 @@ body {
   100% { transform: scale(1.35); opacity: 0; }
 }
 
-/* Scroll reveal: elements fade + rise as they enter the viewport.
-   .reveal starts hidden; .reveal.in-view (added by IntersectionObserver)
-   animates in. Staggering via inline transition-delay. */
+/* Scroll reveal: .in-view added by IntersectionObserver */
 .reveal {
   opacity: 0;
   transform: translateY(28px);
@@ -2177,7 +2164,7 @@ body {
   transform: translateY(0);
 }
 
-/* Subtle lift + tilt on hover for section cards. */
+/* Card hover tilt */
 .card-3d-hover {
   transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease;
   transform-style: preserve-3d;
@@ -2188,7 +2175,7 @@ body {
   box-shadow: 0 34px 70px -34px rgba(67, 56, 202, 0.5);
 }
 
-/* Slow-drifting conic aurora for the hero backdrop. */
+/* Hero aurora */
 .hero-aurora-3d {
   position: absolute;
   inset: -30%;
@@ -2202,9 +2189,9 @@ body {
   pointer-events: none;
 }
 
-/* ── Bento feature grid: live mini-visuals ─────────────────────────────── */
+/* Bento feature grid */
 
-/* Card wrapper: gradient hairline border that lights up on hover + lift. */
+/* Bento card */
 .bento-card {
   position: relative;
   overflow: hidden;
@@ -2236,7 +2223,7 @@ body {
 
 .bento-card:hover::before { opacity: 1; }
 
-/* Radial spotlight that blooms on hover behind card content. */
+/* Hover spotlight */
 .bento-spot {
   position: absolute;
   inset: 0;
@@ -2248,7 +2235,7 @@ body {
 
 .bento-card:hover .bento-spot { opacity: 1; }
 
-/* Horizontal scan line sweeping down a QR/box visual. */
+/* QR scan line */
 .feature-scanline {
   position: absolute;
   left: 0;
@@ -2264,7 +2251,7 @@ body {
   50% { top: 88%; opacity: 1; }
 }
 
-/* Vertical auto-scrolling ticker (audit log). Track is duplicated; -50% loops. */
+/* Ticker: track duplicated, -50% loops seamlessly */
 .ticker-mask {
   position: relative;
   overflow: hidden;
@@ -2286,7 +2273,7 @@ body {
   to { transform: translateY(-50%); }
 }
 
-/* Masking shimmer for the redacted phone digits. */
+/* Redacted-digit shimmer */
 .mask-shimmer {
   background: linear-gradient(100deg, #6366f1 0%, #22d3ee 50%, #6366f1 100%);
   background-size: 200% 100%;
@@ -2301,7 +2288,7 @@ body {
   100% { background-position: 200% 0; }
 }
 
-/* Expanding SOS radar rings. */
+/* SOS radar rings */
 .sos-radar {
   position: absolute;
   border-radius: 9999px;
@@ -2314,7 +2301,7 @@ body {
   100% { transform: scale(1.6); opacity: 0; }
 }
 
-/* Animated approval progress bar. */
+/* Approval progress bar */
 .approve-bar {
   position: relative;
   overflow: hidden;
@@ -2338,9 +2325,9 @@ body {
   55%, 100% { transform: scaleX(1); }
 }
 
-/* ── "Journey of a Safe Exit": interactive step flow ───────────────────── */
+/* Journey step flow */
 
-/* Connecting rail + energy fill that tracks journey progress (--progress 0–1). */
+/* Rail fill tracks --progress 0–1 */
 .journey-rail {
   position: absolute;
   background: rgba(148, 163, 184, 0.25);
@@ -2359,7 +2346,7 @@ body {
   transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* A comet that rides along the filled portion of the rail. */
+/* Comet on the rail */
 .journey-comet {
   position: absolute;
   top: 50%;
@@ -2372,7 +2359,7 @@ body {
   transition: left 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Step node states. */
+/* Step nodes */
 .journey-node {
   position: relative;
   transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
@@ -2406,7 +2393,7 @@ body {
   100% { transform: scale(1.9); opacity: 0; }
 }
 
-/* The morphing "pass" preview panel. */
+/* Pass preview panel */
 .journey-stage {
   animation: journey-stage-in 0.55s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -2427,7 +2414,7 @@ body {
   transition: height 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── Global scroll progress bar (top of viewport) ──────────────────────── */
+/* Scroll progress bar */
 .scroll-progress {
   position: fixed;
   top: 0;
@@ -2442,7 +2429,7 @@ body {
   will-change: transform;
 }
 
-/* ── Interactive encryption vault (Security section) ───────────────────── */
+/* Encryption vault */
 .vault {
   position: relative;
   overflow: hidden;
@@ -2455,7 +2442,7 @@ body {
   box-shadow: 0 40px 90px -50px rgba(2, 6, 23, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-/* Falling code-rain columns behind the vault content. */
+/* Code rain */
 .vault-rain {
   position: absolute;
   inset: 0;
@@ -2481,7 +2468,7 @@ body {
   to { transform: translateY(260%); }
 }
 
-/* The digits that flip between ciphertext and plaintext. */
+/* Cipher digits */
 .cipher-char {
   display: inline-block;
   transition: color 0.25s ease, text-shadow 0.25s ease;
@@ -2490,7 +2477,7 @@ body {
 .cipher-char--locked { color: #f43f5e; text-shadow: 0 0 12px rgba(244, 63, 94, 0.35); }
 .cipher-char--open { color: #34d399; text-shadow: 0 0 12px rgba(52, 211, 153, 0.35); }
 
-/* Sweep that runs across the plate the moment it decrypts. */
+/* Decrypt sweep */
 .decrypt-sweep {
   position: absolute;
   inset: 0;
@@ -2504,7 +2491,7 @@ body {
   to { transform: translateX(120%); }
 }
 
-/* Rotating key-halo ring. */
+/* Key halo */
 .key-halo {
   position: absolute;
   border-radius: 9999px;
@@ -2518,7 +2505,7 @@ body {
 
 .count-glow { text-shadow: 0 0 24px rgba(56, 189, 248, 0.18); }
 
-/* ── Animated gradient headline (hero) ─────────────────────────────────── */
+/* Hero headline gradient */
 .text-shimmer-gradient {
   background: linear-gradient(100deg, #0ea5a4 0%, #4338ca 25%, #06b6d4 50%, #4338ca 75%, #0ea5a4 100%);
   background-size: 250% 100%;
@@ -2533,7 +2520,7 @@ body {
   100% { background-position: 250% 0; }
 }
 
-/* ── Navbar polish ─────────────────────────────────────────────────────── */
+/* Navbar polish */
 .nav-logo-glow {
   position: relative;
   transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -2553,7 +2540,7 @@ body {
 .group:hover .nav-logo-glow { transform: rotate(-6deg) scale(1.06); }
 .group:hover .nav-logo-glow::after { opacity: 1; }
 
-/* Animated underline for nav links. */
+/* Nav link underline */
 .nav-link {
   position: relative;
 }
@@ -2577,7 +2564,7 @@ body {
   transform-origin: left center;
 }
 
-/* Shine sweep on the login CTA. */
+/* Login CTA shine */
 .cta-shine {
   position: relative;
   overflow: hidden;
@@ -2598,7 +2585,7 @@ body {
   45%, 55% { transform: translateX(130%); }
 }
 
-/* ── Footer polish ─────────────────────────────────────────────────────── */
+/* Footer polish */
 .footer-beam {
   position: absolute;
   top: 0;
@@ -2683,13 +2670,9 @@ body {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Award-tier student dashboard: the "SafeExit Passport" boarding pass,
-   count-up metrics, cursor-spotlight cards and live status cues.
-   Additive only — every class below is new and namespaced (sd-*).
-   ═══════════════════════════════════════════════════════════════════════ */
+/* Student passport dashboard */
 
-/* ── The centerpiece: a deep-navy digital passport / boarding pass ─────── */
+/* Boarding-pass panel */
 .sd-passport {
   position: relative;
   overflow: hidden;
@@ -2703,7 +2686,7 @@ body {
   box-shadow: 0 44px 100px -52px rgba(2, 6, 23, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* Faint engineering grid, faded toward the edges for depth. */
+/* Grid backdrop */
 .sd-passport-grid {
   position: absolute;
   inset: 0;
@@ -2716,7 +2699,7 @@ body {
   mask-image: radial-gradient(120% 110% at 50% 0%, #000 38%, transparent 82%);
 }
 
-/* Holographic sheen sweeping diagonally across the whole pass. */
+/* Sheen */
 .sd-passport-sheen {
   position: absolute;
   inset: 0;
@@ -2797,8 +2780,7 @@ body {
   50% { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
 }
 
-/* Perforated seams — the punched notches read as a torn ticket edge.
-   Notch fill matches the light dashboard backdrop so it looks cut through. */
+/* Perforated seams; notch fill matches light backdrop to look punched through */
 .sd-seam-v {
   position: relative;
   align-self: stretch;
@@ -2850,7 +2832,7 @@ body {
 .sd-seam-h::before { left: -1.75rem; }
 .sd-seam-h::after { left: calc(100% + 1.75rem); }
 
-/* The QR stub: a bright white panel that pops out of the dark ticket. */
+/* QR stub */
 .sd-stub-qr {
   position: relative;
   border-radius: 1.25rem;
@@ -2876,7 +2858,7 @@ body {
   50% { top: 84%; opacity: 1; }
 }
 
-/* Faux barcode strip on the stub — pure CSS bars. */
+/* CSS barcode */
 .sd-barcode {
   height: 2.25rem;
   border-radius: 0.5rem;
@@ -2889,7 +2871,7 @@ body {
   );
 }
 
-/* ── Count-up metric numerals ──────────────────────────────────────────── */
+/* Metric numerals */
 .sd-metric {
   font-family: var(--font-display), "Space Grotesk", sans-serif;
   font-style: italic;
@@ -2902,7 +2884,7 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
-/* ── Cursor-follow spotlight for the quick-action cards ────────────────── */
+/* Cursor spotlight on action cards */
 .sd-card-spot {
   position: absolute;
   inset: 0;
@@ -2931,14 +2913,9 @@ body {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Calm refinement layer — the whole student dashboard reads as one serene
-   system: a soft breathing backdrop, quiet status tags, and consistent
-   list rows. Fewer things move, and they move slowly. (sd- namespaced.)
-   ═══════════════════════════════════════════════════════════════════════ */
+/* Calm refinement layer */
 
-/* Serene page field: a soft, near-white gradient with the faintest cool tint.
-   Replaces the four-layer drifting-orb backdrop with something restful. */
+/* Page backdrop */
 .sd-canvas {
   background:
     radial-gradient(85% 65% at 50% -8%, rgba(99, 102, 241, 0.1) 0%, transparent 58%),
@@ -2947,8 +2924,7 @@ body {
     linear-gradient(180deg, #f8fafc 0%, #f4f7fb 55%, #f7f9ff 100%);
 }
 
-/* Two large, slow, low-opacity auras. 26–32s cycles feel like breathing,
-   not drifting — the difference between calm and restless. */
+/* Slow auras: 26–32s cycles read as breathing, not drifting */
 .sd-aura {
   position: absolute;
   border-radius: 9999px;
@@ -2996,8 +2972,7 @@ body {
   50% { transform: translate(-26px, 22px) scale(1.05); }
 }
 
-/* One quiet tag style to replace the assorted pulsing "Live/Updated/Sync"
-   chips. Optional dot conveys "live" without animation shouting for it. */
+/* Quiet status tag */
 .sd-tag {
   display: inline-flex;
   align-items: center;
@@ -3035,8 +3010,7 @@ body {
   70%, 100% { transform: scale(2.6); opacity: 0; }
 }
 
-/* Refined section heading — a small gradient rule + label + title, used
-   verbatim across every panel so the whole page shares one rhythm. */
+/* Section kicker */
 .sd-kicker {
   display: inline-flex;
   align-items: center;
@@ -3056,8 +3030,7 @@ body {
   background: linear-gradient(90deg, #4338ca, #06b6d4);
 }
 
-/* Calm, consistent list row (recent outings + timeline). Gentle sideways
-   nudge on hover instead of a lift-and-scale that jitters the whole list. */
+/* List row */
 .sd-row {
   position: relative;
   display: flex;
@@ -3096,7 +3069,7 @@ body {
   text-align: center;
 }
 
-/* Gradient stat card with a gentle lift — quieter cousin of the 3D tile. */
+/* Stat card */
 .sd-stat {
   position: relative;
   border-radius: 1.15rem;
@@ -3112,11 +3085,7 @@ body {
   border-color: rgba(56, 189, 248, 0.42);
 }
 
-/* ── Interactive 3D gradient tiles (Quick Actions grid) ─────────────────
-   Each tile is a perspective scene; the inner card rotates toward the cursor
-   (--rx/--ry written from JS), the icon/text lift on the Z axis for real
-   parallax, a glare follows the pointer, and a per-action gradient wash +
-   colored glow give the grid its premium, eye-catching depth. */
+/* 3D quick-action tiles; --rx/--ry/--mx/--my written from JS */
 .sd-tile {
   perspective: 900px;
 }
@@ -3134,7 +3103,7 @@ body {
   will-change: transform;
 }
 
-/* Soft per-action gradient wash, tucked under the content. */
+/* Per-action gradient wash */
 .sd-tile__inner::before {
   content: "";
   position: absolute;
@@ -3150,7 +3119,7 @@ body {
   border-color: var(--tile-border, rgba(56, 189, 248, 0.45));
 }
 
-/* Pointer-tracked glare floating just above the surface. */
+/* Pointer glare */
 .sd-tile__glare {
   position: absolute;
   inset: 0;
@@ -3172,8 +3141,7 @@ body {
   opacity: 1;
 }
 
-/* Depth layers — pure translateZ wrappers so children keep their own hover
-   transforms without clobbering the parallax lift. */
+/* translateZ wrappers keep children's own hover transforms intact */
 .sd-lift-lg {
   transform: translateZ(46px);
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -3191,8 +3159,6 @@ body {
   transform: translateZ(64px);
 }
 
-/* Softer entrance-only motion: the action tiles keep their spotlight + lift
-   but lose the perpetual shimmer that made the grid feel restless. */
 @media (prefers-reduced-motion: reduce) {
   .sd-aura {
     animation: none !important;
@@ -3212,13 +3178,9 @@ body {
 }
 
 
-/* ═══════════════════════════════════════════════════════════════════════
-   "Wow" polish pass — richer stat meters, a live radar empty state, and a
-   gradient bottom-nav. Keeps the calm base, adds depth + colour where the
-   eye lands. (sd- namespaced, reduced-motion safe.)
-   ═══════════════════════════════════════════════════════════════════════ */
+/* Stat meters, radar empty state, gradient bottom-nav */
 
-/* Glowing gradient meter used inside the stat cards. */
+/* Stat meter */
 .sd-bar {
   position: relative;
   height: 0.6rem;
@@ -3237,7 +3199,7 @@ body {
   transition: width 1.1s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Travelling sheen along the fill. */
+/* Fill sheen */
 .sd-bar__fill::after {
   content: "";
   position: absolute;
@@ -3252,7 +3214,7 @@ body {
   60%, 100% { transform: translateX(120%); }
 }
 
-/* Concentric radar rings for the "nothing yet" states. */
+/* Empty-state radar rings */
 .sd-ring {
   position: absolute;
   inset: 0;
@@ -3268,7 +3230,7 @@ body {
   100% { transform: scale(1.9); opacity: 0; }
 }
 
-/* ── Gradient bottom-nav ────────────────────────────────────────────────*/
+/* Gradient bottom-nav */
 .sd-navx {
   display: flex;
   flex-direction: column;
@@ -3320,8 +3282,7 @@ body {
   box-shadow: 0 18px 32px -12px rgba(67, 56, 202, 0.6);
 }
 
-/* Phone-size bottom bar: the nav is fixed to the viewport bottom, so shrink
-   labels/icons enough that all six tabs fit one thumb-friendly row. */
+/* Nav is fixed to viewport bottom; shrink so all six tabs fit one row */
 @media (max-width: 767px) {
   .sd-navx {
     gap: 0.3rem;
@@ -3346,15 +3307,9 @@ body {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Signature "expensive" layer — the details recruiters read as world-class:
-   a fine grain texture over the whole page, an animated conic glow border on
-   hero panels, and a living gradient on the greeting name. (sd- namespaced.)
-   ═══════════════════════════════════════════════════════════════════════ */
+/* Signature polish: grain, glow border, living headline */
 
-/* Ultra-fine film grain via an inline SVG turbulence — sits above the canvas
-   gradient, below content. This is the Apple/Stripe "why does it look so
-   premium" trick: it kills banding and adds tactile depth. */
+/* Film grain via inline SVG turbulence; kills gradient banding */
 .sd-grain::before {
   content: "";
   position: fixed;
@@ -3366,9 +3321,7 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Animated conic gradient glow border. Wrap a panel in .sd-glow-border and it
-   gets a slowly-rotating rainbow-ish hairline that lights up — the Linear /
-   Vercel signature. The inner mask keeps only the 1px ring visible. */
+/* Rotating conic hairline; inner mask keeps only the 1px ring */
 .sd-glow-border {
   position: relative;
   isolation: isolate;
@@ -3398,8 +3351,7 @@ body {
   animation: sd-angle-spin 6s linear infinite;
 }
 
-/* Register --angle as an animatable custom property so the conic sweep runs on
-   the GPU. Falls back gracefully (static ring) where @property is unsupported. */
+/* Register --angle so the conic sweep animates on GPU; static ring without @property support */
 @property --angle {
   syntax: "<angle>";
   inherits: false;
@@ -3410,8 +3362,7 @@ body {
   to { --angle: 360deg; }
 }
 
-/* Living headline gradient for the greeting name — a slow shimmer that makes
-   the focal word feel alive without motion sickness. */
+/* Greeting-name gradient */
 .sd-name-live {
   background: linear-gradient(100deg, #4338ca 0%, #06b6d4 28%, #6366f1 52%, #06b6d4 76%, #4338ca 100%);
   background-size: 220% 100%;
@@ -3426,7 +3377,7 @@ body {
   50% { background-position: 100% 50%; }
 }
 
-/* Soft breathing halo behind the time-of-day icon orb. */
+/* Halo behind time-of-day orb */
 .sd-orb-halo {
   position: relative;
 }
@@ -3455,14 +3406,9 @@ body {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Intent layer — the dashboard responds to the cursor. A hero spotlight that
-   tracks the pointer, magnetic controls that lean toward it, and a cinematic
-   blur-in entrance. This is what tips "polished" into "award-winning".
-   ═══════════════════════════════════════════════════════════════════════ */
+/* Cursor-intent layer: spotlight, magnetic controls, blur-in entrance */
 
-/* Pointer-tracked spotlight for the hero panel. --spot-x/--spot-y are written
-   from JS; the glow blooms only while the cursor is over the panel. */
+/* --spot-x/--spot-y written from JS */
 .sd-spotlight {
   position: absolute;
   inset: 0;
@@ -3481,19 +3427,17 @@ body {
 
 .sd-spot-host:hover .sd-spotlight { opacity: 1; }
 
-/* Keep hero content above the spotlight wash. */
+/* Keep hero content above the spotlight wash */
 .sd-spot-host > *:not(.sd-spotlight) { position: relative; z-index: 1; }
 
-/* Magnetic control: translate is written from JS (--mag-x/--mag-y); the eased
-   transition makes it glide toward the cursor and spring back on leave. */
+/* --mag-x/--mag-y written from JS */
 .sd-magnetic {
   transform: translate(var(--mag-x, 0px), var(--mag-y, 0px));
   transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
   will-change: transform;
 }
 
-/* Cinematic entrance: content resolves out of a soft blur as it rises. Applied
-   with a stagger via inline animation-delay for a choreographed reveal. */
+/* Blur-in entrance; staggered via inline animation-delay */
 .sd-enter {
   animation: sd-enter 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -3525,13 +3469,9 @@ body {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Quick-action tiles v2 — left-aligned, uncongested. Rounded-square gradient
-   badge top-left, a reveal arrow top-right, copy anchored at the base. Reads
-   like a premium app launcher rather than a stack of centred cards.
-   ═══════════════════════════════════════════════════════════════════════ */
+/* Quick-action tiles v2 */
 
-/* Rounded-square gradient icon badge (replaces the big circle). */
+/* Icon badge */
 .sd-act {
   display: flex;
   height: 3.35rem;
@@ -3547,7 +3487,7 @@ body {
   transform: scale(1.08) rotate(-4deg);
 }
 
-/* Ghost arrow chip, top-right. Fills with the action's accent on hover. */
+/* Arrow chip */
 .sd-act-arrow {
   display: flex;
   height: 2.1rem;
@@ -3569,8 +3509,7 @@ body {
   box-shadow: 0 10px 20px -12px var(--glow, rgba(67, 56, 202, 0.5));
 }
 
-/* Hairline divider that grows in from the left on hover — a quiet timeline-
-   style accent tying the copy to the card. */
+/* Hover rule */
 .sd-act-rule {
   height: 2px;
   width: 2rem;
@@ -3586,16 +3525,9 @@ body {
   opacity: 1;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Guard console layer (grd-*) — a distinct tactical/surveillance identity
-   for the security dashboard: targeting-reticle corner brackets, a radar
-   sweep, a scanning light beam, and a live pulse waveform. Kept in its own
-   namespace so the student dashboard's sd-* system is untouched. All motion
-   is slow and single-source per component (never stacked) to stay calm.
-   ═══════════════════════════════════════════════════════════════════════ */
+/* Guard console layer (grd-*) for the security dashboard */
 
-/* Camera/targeting-reticle corners — four small L-brackets framing a panel,
-   like a viewfinder locking onto a subject. */
+/* Reticle corner brackets */
 .grd-frame {
   position: relative;
 }
@@ -3624,8 +3556,7 @@ body {
   opacity: 1;
 }
 
-/* Small circular radar-sweep badge — a rotating bright wedge clipped to a
-   circle, used as a "live surveillance" indicator next to realtime tags. */
+/* Radar-sweep badge */
 .grd-radar {
   position: relative;
   overflow: hidden;
@@ -3661,9 +3592,7 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* Teal/emerald conic glow border — the guard dashboard's own signature hue,
-   distinct from the student dashboard's indigo/cyan sd-glow-border. Reuses
-   the shared --angle @property + sd-angle-spin keyframe registered above. */
+/* Teal glow border; reuses shared --angle @property + sd-angle-spin */
 .grd-glow-border {
   position: relative;
   isolation: isolate;
@@ -3693,8 +3622,7 @@ body {
   animation: sd-angle-spin 6s linear infinite;
 }
 
-/* Scanning light beam — a soft horizontal band sweeping down across a flat
-   surface, evoking a security scanner reading its subject. */
+/* Scanning beam */
 .grd-sweep {
   position: relative;
   overflow: hidden;
@@ -3719,8 +3647,7 @@ body {
   100% { top: 100%; }
 }
 
-/* Live pulse waveform — a traveling highlight along an ECG-style path,
-   visualizing the "Shift Pulse" copy as an actual heartbeat line. */
+/* ECG pulse line */
 .grd-pulse {
   overflow: visible;
 }
@@ -3748,9 +3675,7 @@ body {
   to { stroke-dashoffset: -334; }
 }
 
-/* Monospace tabular data readout — for clocks, counts, and IDs, giving the
-   guard console a terminal-like numeric identity distinct from the student
-   dashboard's italic display numerals. */
+/* Monospace tabular readout for clocks/counts/IDs */
 .grd-mono {
   font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
   font-variant-numeric: tabular-nums;
@@ -3772,12 +3697,7 @@ body {
   }
 }
 
-/* ─── Warden: needs-attention strip ──────────────────────────────────────────
-   Pinned action chips at the top of the warden home view. Each chip is a
-   one-tap jump to a pending queue (SOS / requests / leave / complaints), so a
-   warden arriving from a push notification never has to scroll to act. The
-   chips wrap in a 2-col grid on mobile (4-col from lg:) so all of them are
-   visible at once — no horizontal scrolling. */
+/* Warden needs-attention chips */
 .wd-attn {
   min-width: 0;
   border: 1px solid var(--attn-border, rgba(148, 163, 184, 0.4));

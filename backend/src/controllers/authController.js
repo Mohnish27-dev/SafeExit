@@ -1,32 +1,19 @@
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
-const { isValidStudentEmail, normalizeEmail } = require('../config/emailPolicy');
+const { isValidStudentEmail } = require('../config/emailPolicy');
 const { isEmailVerificationValid } = require('./otpController');
 
-// Every account is keyed on a single canonical identifier: `loginId`.
-//   - Students: their real @nitp.ac.in email.
-//   - Staff (Warden/Guard/Admin): their normalized staff ID (e.g. "wdn001").
-// Staff therefore no longer need a fabricated "*.safeexit.local" email just to
-// have a unique handle. Callers may still send the old `email` field; we accept
-// it as a legacy alias. Returns a normalized (trimmed, lowercased) key.
+// loginId is the canonical key: student email or normalized staff ID; `email` accepted as legacy alias.
 const resolveLoginId = (body = {}) =>
   (body.loginId || body.email || '').trim().toLowerCase();
 
-// Look a user up by their canonical loginId, falling back to a legacy `email`
-// match so accounts created before this field existed still resolve.
 const findByLoginId = (key) =>
   User.findOne({ $or: [{ loginId: key }, { email: key }] });
 
-// Escape a user-supplied string so it can be embedded in a RegExp literal without
-// being interpreted as regex metacharacters (ReDoS / injection safety).
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// Password-login lookup. Beyond loginId/email, students may also sign in with
-// their ROLL NUMBER, which is stored in `studentId` (as entered, so match it
-// case-insensitively). This lets a student type the roll number they know instead
-// of their full college email. Only used by authUser — the WebAuthn/staff paths
-// keep the stricter findByLoginId.
+// Password login only: also accepts the roll number (case-insensitive studentId match).
 const findByIdentifier = async (rawKey) => {
   const key = String(rawKey || '').trim().toLowerCase();
   if (!key) return null;
@@ -42,32 +29,17 @@ const {
   verifyAuthenticationResponse,
 } = require('@simplewebauthn/server');
 
-// Relying Party config. In dev these default to localhost:3000 (the frontend origin).
-// In production set RP_ID / RP_ORIGIN to your real domain (e.g. RP_ID=safeexit.app,
-// RP_ORIGIN=https://safeexit.app). RP_ORIGIN must be where navigator.credentials runs.
+// In production set RP_ID / RP_ORIGIN to the real frontend domain.
 const rpName = process.env.RP_NAME || 'SafeExit';
 const rpID = process.env.RP_ID || 'localhost';
 const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
 
-// @desc    Register a new user
-// @route   POST /api/auth/register
-// @access  Public
+// POST /api/auth/register — public
 const registerUser = async (req, res) => {
   const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber, gender, emailVerificationToken } = req.body;
 
   try {
-    // Resolve the account role SERVER-SIDE. `role` from the body is untrusted and
-    // OPTIONAL — an attacker could omit it to slip past checks that were gated on
-    // `role === 'Student'`, then have Mongoose's schema default silently create a
-    // Student anyway (the exact bypass this guards against). So we never branch on
-    // the raw body value: this public endpoint self-registers Students ONLY.
-    //   - Admins are pre-provisioned from the ADMIN_*_ allowlist in the (gitignored)
-    //     .env via `npm run seed:admins` / ensureAdmins on boot.
-    //   - Wardens and Guards are provisioned at runtime by an admin from the
-    //     dashboard (POST /api/admin/staff).
-    // Any explicitly-requested non-Student role (Warden/Guard/Admin, or anything
-    // unrecognised) is rejected outright; a missing/blank role resolves to Student
-    // so the verification gate below ALWAYS runs and can never be skipped.
+    // Role is resolved server-side; body `role` is untrusted. Self-registration mints Students ONLY — a missing role must still hit the verification gate.
     const requestedRole = (role || '').trim();
     if (requestedRole && requestedRole !== 'Student') {
       return res.status(403).json({
@@ -76,36 +48,21 @@ const registerUser = async (req, res) => {
     }
     const resolvedRole = 'Student';
 
-    // Students may only register with a real, VERIFIED @nitp.ac.in email. These
-    // checks run server-side and UNCONDITIONALLY — the browser form can be bypassed
-    // with a direct API call, which is exactly how the "make a second account from a
-    // personal Gmail" bypass would work.
-    //   1. Domain check: the address must be a college email.
-    //   2. Verification check: they must present the short-lived token minted by
-    //      /otp/verify for THIS email, proving they actually control the inbox.
-    // Together these guarantee one real student = one account (the DB's unique
-    // email index is the final backstop).
+    // Server-side, unconditional: college domain + verified-inbox token (browser form can be bypassed).
     if (!isValidStudentEmail(email)) {
       return res.status(400).json({ message: 'Please use your college email ending in @nitp.ac.in.' });
     }
     if (!isEmailVerificationValid(emailVerificationToken, email)) {
       return res.status(403).json({ message: 'Please verify your college email with the code we sent before continuing.' });
     }
-    // The password is the student's login secret and must be a REAL secret they
-    // choose — never the (public) roll number. Enforce a minimum length here so
-    // the browser check can't be bypassed with a direct API call.
+    // Password must be a real secret, never the public roll number.
     if (!password || String(password).length < 6) {
       return res.status(400).json({ message: 'Please choose a password with at least 6 characters.' });
     }
-    // Gender is required for students so departure rules and warden views can rely
-    // on it; enforce server-side since the browser form can be bypassed.
     if (!['Male', 'Female', 'Other'].includes(gender)) {
       return res.status(400).json({ message: 'Please select your gender.' });
     }
 
-    // Canonical account key. Students identify with their real email; staff
-    // (Warden/Guard) identify with their staff ID (sent as studentId). Either
-    // way we settle on one normalized loginId — no synthetic email required.
     const loginId = resolveLoginId(req.body) || (studentId || '').trim().toLowerCase();
     if (!loginId) {
       return res.status(400).json({ message: 'A login identifier (email or ID) is required.' });
@@ -117,9 +74,7 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Only students carry a real email. For staff we leave it unset so the DB
-    // never stores a fabricated "*.safeexit.local" address. (resolvedRole is always
-    // 'Student' here — self-registration mints Students only.)
+    // Only students carry a real email; staff email stays unset (no synthetic addresses).
     const realEmail = resolvedRole === 'Student' ? (email || '').trim().toLowerCase() : undefined;
 
     const user = await User.create({
@@ -146,28 +101,20 @@ const registerUser = async (req, res) => {
   }
 };
 
-// @desc    Auth user & get token
-// @route   POST /api/auth/login
-// @access  Public
+// POST /api/auth/login — public
 const authUser = async (req, res) => {
   const { password } = req.body;
 
   try {
-    // Students may authenticate with either their college email or their roll
-    // number; staff with their loginId. The secret is a real, user-chosen
-    // password (roll number is public and is NOT a valid secret).
     const user = await findByIdentifier(req.body.loginId || req.body.email);
 
     if (user && (await user.matchPassword(password))) {
-      // Even with valid credentials, only allowlisted admins may use an Admin account.
+      // Valid credentials are not enough — Admin accounts must be allowlisted.
       if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
         return res.status(403).json({ message: 'This account is not authorized for admin access.' });
       }
 
-      // PIN login for an admin is a ONE-TIME bootstrap to attach the first
-      // passkey to a device. Once a passkey exists, the PIN is no longer a valid
-      // way in — the registered hardware authenticator becomes the required
-      // factor, so a leaked/guessed PIN alone cannot sign in.
+      // Admin PIN is a one-time bootstrap; once a passkey exists, PIN login is dead.
       if (user.role === 'Admin' && user.webAuthnRegistered) {
         return res.status(403).json({
           message:
@@ -177,8 +124,6 @@ const authUser = async (req, res) => {
 
       const token = generateToken(res, user._id);
 
-      // Mark guards as on duty the moment they sign in, and stamp activity for
-      // staff so the admin overview reflects who is currently active.
       if (['Guard', 'Warden', 'Admin'].includes(user.role)) {
         user.lastActiveAt = new Date();
         if (user.role === 'Guard') user.onDuty = true;
@@ -204,9 +149,7 @@ const authUser = async (req, res) => {
   }
 };
 
-// @desc    Get user profile
-// @route   GET /api/auth/profile
-// @access  Private
+// GET /api/auth/profile — private
 const getUserProfile = async (req, res) => {
   const user = await User.findById(req.user._id);
 
@@ -231,10 +174,7 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// @desc    Update the logged-in student's own profile (currently: gender only,
-//          to backfill accounts created before the field existed)
-// @route   PATCH /api/auth/profile
-// @access  Private
+// PATCH /api/auth/profile — private (gender backfill only)
 const updateUserProfile = async (req, res) => {
   const { gender } = req.body;
 
@@ -270,9 +210,7 @@ const updateUserProfile = async (req, res) => {
   }
 };
 
-// @desc    Logout user / clear cookie
-// @route   POST /api/auth/logout
-// @access  Public
+// POST /api/auth/logout — public
 const logoutUser = (req, res) => {
   res.cookie('jwt', '', {
     httpOnly: true,
@@ -281,14 +219,7 @@ const logoutUser = (req, res) => {
   res.status(200).json({ message: 'Logged out successfully' });
 };
 
-// @desc    Restore a session from the httpOnly `jwt` cookie.
-//          The mobile OS kills backgrounded tabs, wiping the tab-scoped
-//          sessionStorage token — but the 30-day cookie survives. `protect`
-//          falls back to that cookie when no Bearer header is sent, so this
-//          endpoint lets a reopened app silently re-mint its Bearer token and
-//          profile without forcing Quick Login again.
-// @route   POST /api/auth/refresh
-// @access  Private (cookie or Bearer)
+// POST /api/auth/refresh — private; re-mints Bearer token from the 30-day cookie after mobile OS wipes sessionStorage.
 const refreshSession = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -296,18 +227,14 @@ const refreshSession = async (req, res) => {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
-    // Re-issue the token (also re-extends the cookie's 30-day window).
     const token = generateToken(res, user._id);
 
-    // Same activity stamping as a fresh login, so the admin overview stays honest.
     if (['Guard', 'Warden', 'Admin'].includes(user.role)) {
       user.lastActiveAt = new Date();
       if (user.role === 'Guard') user.onDuty = true;
       await user.save();
     }
 
-    // Superset of the login + profile payloads so the client can rebuild both
-    // its Bearer token and its stored profile blob in one round-trip.
     res.json({
       _id: user._id,
       name: user.name,
@@ -329,17 +256,9 @@ const refreshSession = async (req, res) => {
   }
 };
 
-// --- WebAuthn / FIDO2 (real verification via @simplewebauthn/server) ---
-//
-// A WebAuthn ceremony is two round-trips:
-//   1. /options  — server issues a random challenge the authenticator must sign
-//   2. /verify   — server cryptographically verifies the signed response
-// The challenge is stashed on the user document between the two calls and cleared
-// immediately after verification, so it can be used exactly once.
+// WebAuthn: challenge is stashed on the user doc between /options and /verify, cleared after use.
 
-// @desc    Begin passkey registration: issue challenge + creation options
-// @route   POST /api/auth/webauthn/register/options
-// @access  Private (must be logged in via password/JWT first)
+// POST /api/auth/webauthn/register/options — private
 const getRegistrationOptions = async (req, res) => {
   try {
     console.log('WebAuthn register called, user ID:', req.user?._id);
@@ -349,14 +268,11 @@ const getRegistrationOptions = async (req, res) => {
     const options = await generateRegistrationOptions({
       rpName,
       rpID,
-      // Label shown in the OS/browser passkey manager. Use the canonical loginId
-      // (email for students, staff ID for staff) — never a fabricated address.
       userName: user.loginId || user.email || user.studentId,
       userDisplayName: user.name,
       // Stable per-user handle so re-registration maps to the same account.
       userID: new TextEncoder().encode(user._id.toString()),
       attestationType: 'none',
-      // Stop the user re-registering a credential they already have.
       excludeCredentials: user.webAuthnCredentials.map((c) => ({
         id: c.credentialID,
         transports: c.transports,
@@ -375,9 +291,7 @@ const getRegistrationOptions = async (req, res) => {
   }
 };
 
-// @desc    Finish passkey registration: verify attestation, store the credential
-// @route   POST /api/auth/webauthn/register/verify
-// @access  Private
+// POST /api/auth/webauthn/register/verify — private
 const verifyRegistration = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -405,7 +319,6 @@ const verifyRegistration = async (req, res) => {
     }
 
     const { credential } = registrationInfo;
-    // Guard against storing the same credential twice.
     const exists = user.webAuthnCredentials.some((c) => c.credentialID === credential.id);
     if (!exists) {
       user.webAuthnCredentials.push({
@@ -426,9 +339,7 @@ const verifyRegistration = async (req, res) => {
   }
 };
 
-// @desc    Begin passkey login: issue challenge scoped to the user's credentials
-// @route   POST /api/auth/webauthn/login/options
-// @access  Public
+// POST /api/auth/webauthn/login/options — public
 const getAuthenticationOptions = async (req, res) => {
   const loginId = resolveLoginId(req.body);
   try {
@@ -436,7 +347,6 @@ const getAuthenticationOptions = async (req, res) => {
     if (!user || !user.webAuthnRegistered || user.webAuthnCredentials.length === 0) {
       return res.status(404).json({ message: 'No passkey registered for this account' });
     }
-    // Block passkey login for any Admin account outside the allowlist.
     if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
       return res.status(403).json({ message: 'This account is not authorized for admin access.' });
     }
@@ -458,9 +368,7 @@ const getAuthenticationOptions = async (req, res) => {
   }
 };
 
-// @desc    Finish passkey login: verify the signed assertion, then issue a JWT
-// @route   POST /api/auth/webauthn/login/verify
-// @access  Public
+// POST /api/auth/webauthn/login/verify — public
 const verifyAuthentication = async (req, res) => {
   const { response } = req.body;
   const loginId = resolveLoginId(req.body);
@@ -469,12 +377,10 @@ const verifyAuthentication = async (req, res) => {
     if (!user || !user.currentChallenge) {
       return res.status(400).json({ message: 'No login in progress for this account' });
     }
-    // Block passkey login for any Admin account outside the allowlist.
     if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
       return res.status(403).json({ message: 'This account is not authorized for admin access.' });
     }
 
-    // The assertion names which stored credential signed it.
     const cred = user.webAuthnCredentials.find((c) => c.credentialID === response?.id);
     if (!cred) {
       return res.status(400).json({ message: 'Credential not recognized' });
@@ -504,10 +410,9 @@ const verifyAuthentication = async (req, res) => {
       return res.status(401).json({ message: 'Biometric verification failed' });
     }
 
-    // Replay protection: persist the authenticator's monotonically increasing counter.
+    // Replay protection: persist the authenticator's monotonic counter.
     cred.counter = authenticationInfo.newCounter;
     user.currentChallenge = undefined;
-    // Reflect live duty/activity for staff signing in via passkey.
     if (['Guard', 'Warden', 'Admin'].includes(user.role)) {
       user.lastActiveAt = new Date();
       if (user.role === 'Guard') user.onDuty = true;

@@ -2,9 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 
-// Counts from 0 → target with an ease-out curve, but only once the element
-// scrolls into view. Returns [ref, value]. Respects prefers-reduced-motion by
-// snapping straight to the target.
+// Ease-out count-up on scroll-in. Returns [ref, value]; reduced-motion snaps to target.
 export default function useCountUp(target, { duration = 1600 } = {}) {
   const ref = useRef(null);
   const [value, setValue] = useState(0);

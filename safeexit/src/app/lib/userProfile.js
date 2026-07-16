@@ -13,11 +13,7 @@ export const defaultStudentProfile = {
   mobile: "",
 };
 
-// Tab-scoped: sessionStorage, not localStorage. This holds whichever role is
-// actively logged in on THIS tab. If it lived in localStorage, logging into a
-// different role in another tab of the same browser would overwrite it for
-// every open tab — showing one role's name while requests authenticate as
-// another (see safeexit_token in api.js for the matching auth-side fix).
+// Tab-scoped (sessionStorage) so another tab's role can't overwrite this one.
 export const getStoredUser = () => {
   if (typeof window === "undefined") return null;
 
@@ -52,16 +48,6 @@ export const getFirstName = (name) => {
   return name.split(" ").filter(Boolean)[0] || "";
 };
 
-export const buildSlug = (name) => {
-  if (!name) return "UNKNOWN";
-  return name
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z\s]/g, "")
-    .replace(/\s+/g, "-")
-    .slice(0, 40);
-};
-
 export const getRoomFromProfile = (profile) => {
   if (profile?.room) return profile.room;
   const hostel = profile?.hostel || "";
@@ -87,11 +73,7 @@ export const normalizeStudentProfile = (stored) => {
       : stored.subtitle || defaultStudentProfile.subtitle;
 
   const isEmailId = stored.id && String(stored.id).includes("@");
-  // Never fabricate a roll number: the QR encodes this exact value as the student's
-  // `studentId`, and the gate scanner looks it up in the DB. A made-up fallback like
-  // "STU2024CSE102" is guaranteed not to exist → every scan returns "Student not found".
-  // Use the real registered roll number, then the non-email id, else the neutral
-  // "unknown" marker from the default profile.
+  // Never fabricate a roll number — the QR encodes it and the gate scanner looks it up in the DB
   const rollNo = stored.rollNo || (isEmailId ? "" : stored.id) || defaultStudentProfile.rollNo;
   const email = stored.email || (isEmailId ? stored.id : `${stored.name.toLowerCase().replace(/\s+/g, ".")}@nitp.ac.in`);
 

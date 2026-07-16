@@ -14,8 +14,6 @@ export default function ComplaintsView({
 }) {
   const { t } = useTranslation("warden");
   const { t: tc } = useTranslation("common");
-  // 'open' shows the actionable queue; 'resolved' keeps the history of past
-  // complaints so they stay listed after the warden actions them.
   const [tab, setTab] = useState("open");
 
   const tabs = [

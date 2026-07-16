@@ -44,8 +44,7 @@ const formatClock = (value) => {
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 };
 
-// Pointer-tracked 3D tilt for the quick-scan hero tiles. Module scope so it
-// isn't recreated every render; mirrors the student dashboard's tile physics.
+// 3D tilt for hero tiles; module scope so handlers aren't recreated per render.
 const handleTilePointerMove = (e) => {
   const el = e.currentTarget;
   const rect = el.getBoundingClientRect();
@@ -93,8 +92,7 @@ export default function SecurityDashboardPage() {
   ], [t]);
 
   const [profile, setProfile] = useState(defaultProfile);
-  // Start null so the server render and the first client render agree (no
-  // Date on the server). The mount effect below fills it in and starts ticking.
+  // null so server and first client render agree; mount effect starts ticking.
   const [now, setNow] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
@@ -107,12 +105,7 @@ export default function SecurityDashboardPage() {
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
 
-  // Pull the latest gate movements for the Recent Scans list, and derive the
-  // Inside/Outside/Overdue counts from the student roster. campusStatus is the
-  // authoritative per-student location (written on every scan), and the backend
-  // overlays a live 'Overdue' status onto students out past their return window —
-  // so the counts (and the overdue alert) update on their own each poll cycle,
-  // without waiting for a return scan.
+  // Recent scans + Inside/Outside/Overdue counts; backend overlays live 'Overdue'.
   const loadScans = useCallback(async () => {
     try {
       const [logs, students] = await Promise.all([
@@ -256,8 +249,7 @@ export default function SecurityDashboardPage() {
     [now, dateLocale]
   );
 
-  // Contextual time-of-day icon/gradient for the greeting orb — purely
-  // decorative, doesn't touch any of the translated copy above.
+  // Decorative time-of-day visual for the greeting orb.
   const timeVisual = useMemo(() => {
     const hour = now ? now.getHours() : 9;
     if (hour < 12) return { Icon: Sunrise, orb: "from-amber-400 via-orange-400 to-rose-400", halo: "rgba(251,146,60,0.5)" };
@@ -274,8 +266,7 @@ export default function SecurityDashboardPage() {
 
   const totalTracked = counts.inside + counts.outside + counts.overdue;
 
-  // Gate the guard console on a valid security session; redirects to
-  // /login/security when the token is missing or belongs to another role.
+  // Gate on a valid security session; hook redirects to /login/security otherwise.
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
@@ -817,8 +808,7 @@ export default function SecurityDashboardPage() {
   );
 }
 
-// Gradient stat card with a count-up numeral and a proportion bar, reused
-// from the student dashboard's Activity Stats pattern.
+// Gradient stat card with count-up numeral and proportion bar.
 function GuardStatCard({ card, value, total }) {
   const [ref, animated] = useCountUp(value);
   const display = Math.round(animated);

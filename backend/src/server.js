@@ -5,8 +5,7 @@ const { ensureAdmins } = require('./utils/ensureAdmins');
 const PORT = process.env.PORT || 5000;
 
 connectDB().then(async () => {
-  // Idempotently provision the admin accounts from the .env allowlist on every
-  // boot, so there's no separate seed step to remember. Unchanged .env = no writes.
+  // Idempotent; unchanged .env = no writes.
   try {
     const { created, updated } = await ensureAdmins();
     if (created || updated) {

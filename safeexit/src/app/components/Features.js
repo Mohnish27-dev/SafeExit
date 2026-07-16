@@ -3,9 +3,7 @@
 import { EyeOff, QrCode, FileCheck, ShieldAlert, ClipboardList, Flame, PhoneCall, CheckCircle2, ArrowUpRight } from "lucide-react";
 import useScrollReveal from "../hooks/useScrollReveal";
 
-// ── Live mini-visuals ─────────────────────────────────────────────────────
-// Each feature card carries a small animated demo instead of a static icon,
-// so the maintainer sees the product "breathing" rather than a plain box.
+// Live mini-visuals: each feature card carries a small animated demo.
 
 function MaskingVisual() {
   return (

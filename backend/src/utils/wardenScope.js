@@ -26,4 +26,4 @@ function studentGenderInScope(user, studentGender) {
   return scopeGenders(user.managedGender).includes(studentGender);
 }
 
-module.exports = { scopedStudentFilter, studentGenderInScope, scopeGenders };
+module.exports = { scopedStudentFilter, studentGenderInScope };

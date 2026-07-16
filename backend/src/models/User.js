@@ -3,22 +3,14 @@ const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  // Canonical login identifier — the ONE field every account is keyed and looked
-  // up on (password login + passkey ceremonies). For students this is their real
-  // college email; for staff (Warden/Guard/Admin) it is their normalized staff ID
-  // (e.g. "wdn001", "adm-mohnish"). This is why staff no longer need a fabricated
-  // "*.safeexit.local" email just to have a unique handle.
+  // Canonical login key: student college email, or normalized staff ID (e.g. "wdn001").
   loginId: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
-  // Real email address. Kept for students (who genuinely have an @nitp.ac.in
-  // address); left empty for staff, who are identified by loginId instead.
-  // Sparse+unique so many staff can share "no email" without collisions.
+  // Students only; sparse+unique so many staff can share "no email".
   email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
   password: { type: String }, // optional for webauthn-only, but usually required for first login
   role: { type: String, enum: ['Student', 'Warden', 'Guard', 'Admin'], default: 'Student' },
   gender: { type: String, enum: ['Male', 'Female', 'Other'] },
-  // Which hostel this Warden oversees: 'Male' = boys' hostel, 'Female' = girls'
-  // hostel. Only meaningful for role 'Warden'. Unset = not yet assigned by admin,
-  // which means the warden sees no students until configured.
+  // Warden's hostel scope; unset = sees no students until assigned by admin.
   managedGender: { type: String, enum: ['Male', 'Female'] },
   studentId: { type: String }, // e.g., register number
   department: { type: String },
@@ -27,25 +19,20 @@ const userSchema = new mongoose.Schema({
   hostelName: { type: String },
   phoneNumber: { type: String },
 
-  // --- Live status (maintained by gate scans / duty toggles) ---
-  // Where a student currently is, derived from their most recent ScanLog.
+  // Live status, maintained by gate scans / duty toggles.
   campusStatus: { type: String, enum: ['Inside', 'Outside', 'Overdue'], default: 'Inside' },
-  // Timestamp of the last gate scan involving this student.
   lastSeenAt: { type: Date },
-  // For Guards: whether they are currently on duty. Flipped on login / scan activity.
   onDuty: { type: Boolean, default: false },
-  // Last time this user (guard/warden) was active in the system.
   lastActiveAt: { type: Date },
 
-  // WebAuthn / FIDO2 fields. webAuthnRegistered is a convenience flag; the real source of truth
-  // is webAuthnCredentials, which holds the actual public keys verified via @simplewebauthn/server.
+  // webAuthnRegistered is a convenience flag; webAuthnCredentials is the source of truth.
   webAuthnRegistered: { type: Boolean, default: false },
   // Transient challenge issued during a WebAuthn ceremony; verified on the next request.
   currentChallenge: { type: String },
   webAuthnCredentials: [{
-    credentialID: { type: String },          // base64url-encoded credential id (WebAuthnCredential.id)
-    publicKey: { type: Buffer },             // COSE public key bytes (WebAuthnCredential.publicKey)
-    counter: { type: Number, default: 0 },   // signature counter, bumped on each auth to block replay
+    credentialID: { type: String },          // base64url-encoded credential id
+    publicKey: { type: Buffer },             // COSE public key bytes
+    counter: { type: Number, default: 0 },   // bumped on each auth to block replay
     transports: { type: [String], default: [] }
   }]
 }, {

@@ -32,9 +32,7 @@ import { apiFetch } from "@/app/lib/api";
 
 const MIN_LEAD_HOURS = 24;
 
-// Mirrors the server-side rule in backend/src/utils/outingRules.js
-// (isBeforeEveningCurfew) — this is a UX convenience only; the server is the
-// authority and rejects non-compliant submissions regardless of this check.
+// UX-only mirror of the backend's isBeforeEveningCurfew rule.
 const EVENING_CURFEW_HOUR = 17;
 const EVENING_CURFEW_MINUTE = 30;
 const isBeforeEveningCurfew = (date) =>
@@ -62,11 +60,7 @@ const filters = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
-// Mirrors datetime-local's own timezone convention: the value is a local
-// wall-clock string with no timezone info, so `new Date(value)` and this
-// inverse both need to work in local time rather than UTC — otherwise the
-// min/value shown in the picker would silently drift from what the student
-// actually typed.
+// datetime-local values are local wall-clock strings — convert in local time, not UTC.
 const toLocalInputValue = (date) => {
   const offset = date.getTimezoneOffset();
   const local = new Date(date.getTime() - offset * 60000);

@@ -23,6 +23,14 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "SafeExit | Privacy-First Smart Hostel Access",
   description: "SafeExit replaces unsafe physical hostel registers with a secure digital outing system that protects student privacy and tracks audit trails.",
+  icons: {
+    icon: [
+      { url: "/images/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/images/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/images/icon-192.png",
+    shortcut: "/images/icon-192.png",
+  },
 };
 
 export default function RootLayout({ children }) {

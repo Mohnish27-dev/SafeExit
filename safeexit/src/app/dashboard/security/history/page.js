@@ -12,7 +12,6 @@ import AuthLoading from "@/app/components/AuthGate";
 
 export default function SecurityHistoryPage() {
   const { t } = useTranslation("security");
-  const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
   const { checked, authorized } = useRequireAuth("security");
 

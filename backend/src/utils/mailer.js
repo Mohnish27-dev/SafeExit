@@ -1,9 +1,6 @@
 const nodemailer = require('nodemailer');
 
-// Lazily-built SMTP transport. We only construct it once (nodemailer pools the
-// connection) and only if SMTP is actually configured. In development you can
-// leave the SMTP_* vars unset — sendMail then falls back to logging the message
-// to the server console, so the full OTP flow is testable without real email.
+// Built once; with SMTP_* unset, sendMail logs to console so the OTP flow is testable without real email.
 let transporter = null;
 let resolved = false;
 
@@ -24,15 +21,10 @@ function getTransporter() {
   return transporter;
 }
 
-// Whether real email delivery is wired up. Used by callers to decide if it is
-// safe to surface the OTP in an API response for local testing.
+// Callers use this to decide if surfacing the OTP in a response is safe (local testing).
 const isMailConfigured = () => Boolean(getTransporter());
 
-/**
- * Send an email. Returns { delivered: boolean }.
- * When SMTP is not configured, logs to the console and returns delivered:false
- * instead of throwing, so a missing dev config never blocks the flow.
- */
+// Returns { delivered: boolean }; logs instead of throwing when SMTP is unconfigured.
 async function sendMail({ to, subject, text, html }) {
   const t = getTransporter();
   if (!t) {

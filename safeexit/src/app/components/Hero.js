@@ -7,9 +7,7 @@ export default function Hero() {
   const sceneRef = useRef(null);
   const cardRef = useRef(null);
 
-  // Translate pointer position over the scene into a real 3D tilt on the card
-  // plus a glare hotspot. We write CSS custom properties directly (no React
-  // re-render) so the motion stays buttery at 60fps.
+  // Pointer → 3D tilt + glare via CSS vars (no React re-render).
   const handlePointerMove = useCallback((e) => {
     const scene = sceneRef.current;
     const card = cardRef.current;

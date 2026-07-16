@@ -7,8 +7,7 @@ import {
 } from "lucide-react";
 import useScrollReveal from "../hooks/useScrollReveal";
 
-// Each step owns its icon, copy, and a bespoke "stage" preview that renders in
-// the right-hand panel — so the journey visibly morphs from request → logged.
+// Each step owns its icon, copy, and a "stage" preview for the right panel.
 const STEPS = [
   {
     num: "01",

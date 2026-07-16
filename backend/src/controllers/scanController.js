@@ -12,7 +12,6 @@ const {
   isWithinDepartureWindow,
 } = require('../utils/outingRules');
 
-// Human-readable clock label for a minutes-since-midnight value, for messages.
 const clockLabel = (minutes) => {
   const h24 = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -21,13 +20,9 @@ const clockLabel = (minutes) => {
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 };
 
-// Escape a user-supplied string for safe use inside a RegExp.
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// Resolve a student from a scanned QR payload. Prefer the immutable Mongo _id
-// when present; otherwise fall back to the roll number with a trimmed, case-
-// insensitive match so a stray space/case in the QR doesn't wrongly 404. Shared
-// by the live scan and the pre-confirm preview so both resolve identically.
+// Prefer _id; fall back to trimmed case-insensitive roll match so QR whitespace/case can't 404.
 const resolveStudent = async ({ student, studentId }) => {
   let studentDoc = null;
   if (student && mongoose.isValidObjectId(student)) {
@@ -45,37 +40,18 @@ const resolveStudent = async ({ student, studentId }) => {
   return studentDoc;
 };
 
-// The QR a student carries is identity-only (no per-trip data), by design —
-// so the gate always resolves whichever pass is actually current in the DB,
-// never anything baked into the scanned code. That's what lets us support two
-// pass types here with zero changes to QR generation or the scanning UI.
-//
-// A pass window is described generically as { windowStart, windowEnd } so the
-// rest of this file (and the frontend preview consumer) never needs to branch
-// on field names: Outing uses outTime/inTime, Leave uses leaveDate/returnDate.
+// QR is identity-only; the current pass is always resolved from the DB, never from the QR.
 const passWindow = (passType, doc) =>
   passType === 'Outing'
     ? { windowStart: doc.outTime, windowEnd: doc.inTime }
     : { windowStart: doc.leaveDate, windowEnd: doc.returnDate };
 
-// Is a pass usable for an exit at this exact moment?
-//   Outing — `outTime` is a DEADLINE only: valid any time up to it (leaving
-//            early is fine). This is the original single-day outing behavior.
-//   Leave  — valid from its approved `leaveDate` until 5:30 PM (campus time)
-//            that same day; not before, and dead after the 5:30 PM curfew.
+// Outing outTime is a deadline only (early exit OK); Leave is valid leaveDate → 5:30 PM same day.
 const isOutingExitOpen = (doc) => !isDeparturePassed(doc.outTime);
 const isLeaveExitOpen = (doc) =>
   !isBeforeDeparture(doc.leaveDate) && !isAfterLeaveCurfew(doc.leaveDate);
 
-// Resolve the Approved pass an OUT scan would consume. We prefer whichever
-// approved pass is actually usable RIGHT NOW so a stale or not-yet-open pass
-// can never shadow a currently-valid one — e.g. an approved future Leave (valid
-// only on its own date) must not intercept and block a same-day Outing, and an
-// approved-but-lapsed Outing must not block a Leave that is valid today. Outing
-// keeps priority when both are usable, preserving the original behavior. If
-// nothing is usable we still return an approved pass (Outing first) so the
-// caller can surface a precise reason (not-yet-valid / expired) rather than a
-// generic "no pass".
+// Prefer the pass usable right now (Outing first) so a stale/future pass can't shadow a valid one; else return any approved pass so the caller can give a precise denial reason.
 const resolveApprovedPass = async (studentId) => {
   const outing = await OutingRequest.findOne({ student: studentId, status: 'Approved' }).sort({
     createdAt: -1,
@@ -93,8 +69,6 @@ const resolveApprovedPass = async (studentId) => {
   return null;
 };
 
-// Resolve the pass an IN scan would close (the one the student is currently
-// "Out" against). Same Outing-first priority as resolveApprovedPass.
 const resolveOutPass = async (studentId) => {
   const outing = await OutingRequest.findOne({ student: studentId, status: 'Out' }).sort({
     createdAt: -1,
@@ -109,21 +83,9 @@ const resolveOutPass = async (studentId) => {
   return null;
 };
 
-// @desc    Record a gate scan (entry/exit) for a student
-// @route   POST /api/scan
-// @access  Private (Guard / Admin)
-// Body: { studentId (roll number) OR student (_id), direction: 'IN'|'OUT',
-//         outing?, gate? }
-// (A body `punctuality` is ignored — punctuality is always decided server-side.)
-//
-// Gate enforcement: an OUT (exit) scan is only allowed against a pass whose
-// `status` is actually 'Approved' in the DB — an Outing (whether warden- or
-// auto-approved) or, as a fallback, a warden-approved Leave Application. We
-// never trust a client-supplied status for this; it's always re-checked here
-// against the database.
+// POST /api/scan — private (Guard/Admin)
 const createScanLog = async (req, res) => {
-  // Note: `punctuality` is intentionally NOT read from the body — it's decided
-  // server-side below (both the campus status flip and the ScanLog stamp).
+  // punctuality is decided server-side; never read from the body.
   const { studentId, student, direction, outing, gate } = req.body;
 
   if (!direction || !['IN', 'OUT'].includes(direction)) {
@@ -131,18 +93,13 @@ const createScanLog = async (req, res) => {
   }
 
   try {
-    // Resolve the student from the scanned QR (by _id, then roll number).
     const studentDoc = await resolveStudent({ student, studentId });
 
     if (!studentDoc) {
       return res.status(404).json({ message: 'Student not found for this QR code' });
     }
 
-    // Gate rule for exits: a student may only be marked OUT against a warden-
-    // Approved pass (Outing first, Leave as fallback — see resolveApprovedPass).
-    // Resolved here so the decision is made server-side and can't be bypassed
-    // by a tampered/absent QR status. IN scans stay permissive — never trap a
-    // student outside for a missing record.
+    // OUT requires a DB-verified Approved pass (QR status is never trusted); IN stays permissive.
     let linkedPass = null;
     if (direction === 'OUT') {
       linkedPass = await resolveApprovedPass(studentDoc._id);
@@ -158,13 +115,7 @@ const createScanLog = async (req, res) => {
       const { windowStart, windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
 
       if (linkedPass.passType === 'Leave') {
-        // Leave pass window: valid from the approved leaveDate until 5:30 PM
-        // (campus time) that same day.
-
-        // Not open yet — the approved leaveDate is still in the future (a leave
-        // approved for the 13th cannot be used to exit on the 12th). The pass
-        // is legitimately pending its window, so it's left untouched (not
-        // 'Expired') — the student can still use it on the right day.
+        // Not open yet — leave the pass untouched so it's still usable on its day.
         if (isBeforeDeparture(windowStart)) {
           return res.status(403).json({
             message: `This leave pass is not valid yet — the approved departure is ${new Date(windowStart).toLocaleString()}. Exit denied until then.`,
@@ -174,9 +125,7 @@ const createScanLog = async (req, res) => {
           });
         }
 
-        // Past the 5:30 PM curfew on the departure day — the pass is dead. We
-        // persist the terminal 'Expired' status so every dashboard stops
-        // showing it as active, matching what the gate just enforced.
+        // Past curfew: persist 'Expired' so dashboards match what the gate enforced.
         if (isAfterLeaveCurfew(windowStart)) {
           linkedPass.doc.status = 'Expired';
           await linkedPass.doc.save();
@@ -189,21 +138,13 @@ const createScanLog = async (req, res) => {
           });
         }
       } else {
-        // Outing pass: exit is only allowed inside the gender/type policy
-        // departure window (e.g. a female 'Nearby' pass may only be used to
-        // leave between 6:00 PM and 6:30 PM). We judge the CURRENT moment
-        // against that window, not the student's exact chosen `outTime`, so the
-        // college's "no one leaves before/after X" rule is what the gate
-        // enforces. `studentDoc.gender` is trusted (from the DB), never the QR.
+        // Judge the current moment against the gender/type departure window; gender comes from the DB, never the QR.
         const policy = resolveOutingPolicy(studentDoc.gender, linkedPass.doc.outingType);
         if (!isWithinDepartureWindow(studentDoc.gender, linkedPass.doc.outingType, new Date())) {
           const windowText = `${clockLabel(policy.departStartMinutes)}-${clockLabel(
             policy.departEndMinutes
           )}`;
-          // Past the window's end -> the pass is dead for today; persist the
-          // terminal 'Expired' status so every dashboard reflects it. Before the
-          // window opens -> leave the pass untouched (the student can return and
-          // use it once the window opens), mirroring the leave not-yet-valid path.
+          // Past window end: persist 'Expired'; before it opens: leave the pass untouched.
           if (isDeparturePassed(windowStart)) {
             linkedPass.doc.status = 'Expired';
             await linkedPass.doc.save();
@@ -224,20 +165,7 @@ const createScanLog = async (req, res) => {
       }
     }
 
-    // Enforce the entry/exit state machine: a scan must actually change the
-    // student's location. You can only be logged OUT if you're currently Inside,
-    // and only logged IN if you're currently Outside/Overdue. Without this, a
-    // guard could scan the same direction repeatedly and stack duplicate logs.
-    //
-    // We flip the status with an atomic conditional update (gated on the allowed
-    // "from" states) so it doubles as a lock — two near-simultaneous scans can't
-    // both pass, since only the first one matches the filter and mutates the row.
-    // An exit always lands the student 'Outside'. 'Overdue' is never an exit
-    // result — it's the state of a student already outside past their return
-    // window (it's an allowed "from" state for an IN scan below, not a "to"
-    // state here). We deliberately ignore the request body's `punctuality`:
-    // like the rest of this file, that verdict is decided server-side, never
-    // trusted from the untrusted scan payload.
+    // Atomic conditional flip doubles as a lock — two near-simultaneous scans can't both match.
     const newStatus = direction === 'OUT' ? 'Outside' : 'Inside';
     const allowedFrom = direction === 'OUT' ? ['Inside'] : ['Outside', 'Overdue'];
 
@@ -248,7 +176,6 @@ const createScanLog = async (req, res) => {
     );
 
     if (!updatedStudent) {
-      // The student is already in the state this scan would produce.
       return res.status(409).json({
         message:
           direction === 'OUT'
@@ -258,18 +185,7 @@ const createScanLog = async (req, res) => {
       });
     }
 
-    // Advance the pass lifecycle now that the location flip has committed.
-    // OUT consumes the Approved pass (-> Out); IN closes the active trip
-    // (-> Returned, for both Outing and Leave). Doing this only after the
-    // atomic flip succeeds means a lost race (409 above) never wrongly
-    // mutates the pass.
-    //
-    // Punctuality is decided HERE, server-side, never from the request body: a
-    // guard's client can send a stale or missing value (its check reads the QR's
-    // return window, which may be absent), which is how a late entry could be
-    // logged "On-Time". For an entry we judge the scan's real arrival instant
-    // against the resolved pass's expected return time; anything after it is
-    // 'Overdue'. With no pass to judge against, there's no window -> 'N/A'.
+    // Mutate the pass only after the atomic flip wins the race; punctuality is judged server-side against the pass's return time.
     let resolvedPunctuality = 'N/A';
     if (direction === 'OUT' && linkedPass) {
       linkedPass.doc.status = 'Out';
@@ -280,11 +196,7 @@ const createScanLog = async (req, res) => {
         const { windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
         resolvedPunctuality = isReturnLate(windowEnd) ? 'Overdue' : 'On-Time';
         linkedPass.doc.status = 'Returned';
-        // Stamp the punctuality onto the pass too (not just the ScanLog) so the
-        // student's dashboards, which read the pass and never the scan logs, can
-        // show a late return as 'Overdue' instead of a plain 'Returned'.
-        // (Only OutingRequest carries this field; on a Leave pass the unknown
-        // path is dropped by Mongoose strict mode, which is harmless.)
+        // Stamp punctuality on the pass too — student dashboards read the pass, not scan logs.
         linkedPass.doc.returnPunctuality = resolvedPunctuality;
         await linkedPass.doc.save();
       }
@@ -294,8 +206,7 @@ const createScanLog = async (req, res) => {
       student: studentDoc._id,
       guard: req.user._id,
       direction,
-      // Prefer the server-resolved pass so the movement is tied to the real trip;
-      // fall back to any id the caller supplied for backward compatibility.
+      // Prefer the server-resolved pass; caller-supplied id kept for backward compat.
       outing: linkedPass?.passType === 'Outing' ? linkedPass.doc._id : outing || undefined,
       leave: linkedPass?.passType === 'Leave' ? linkedPass.doc._id : undefined,
       passType: linkedPass?.passType,
@@ -303,7 +214,6 @@ const createScanLog = async (req, res) => {
       gate: gate || 'Main Gate'
     });
 
-    // Any scan implies the scanning guard is active / on duty.
     await User.findByIdAndUpdate(req.user._id, { onDuty: true, lastActiveAt: new Date() });
 
     const populated = await log.populate('student', 'name studentId');
@@ -313,17 +223,7 @@ const createScanLog = async (req, res) => {
   }
 };
 
-// @desc    Preview what a scan will record, before the guard confirms it.
-// @route   GET /api/scan/preview?studentId=<roll>&sid=<_id>
-// @access  Private (Guard / Admin)
-//
-// The guard's confirm dialog must NOT judge punctuality from the QR image: that
-// snapshot can be stale or carry no return window, which made a late entry
-// preview as "On-Time". This returns the authoritative punctuality the live
-// scan would stamp — computed server-side against the student's active pass's
-// expected return time — so the preview and the persisted log always agree.
-// Performs no writes — unlike the live scan it never persists an 'Expired'
-// transition; it only reports what a scan would decide against the DB right now.
+// GET /api/scan/preview — private (Guard/Admin); read-only mirror of the live scan verdict, never trusts the QR.
 const previewScan = async (req, res) => {
   const { studentId, sid } = req.query;
 
@@ -333,7 +233,6 @@ const previewScan = async (req, res) => {
       return res.status(404).json({ message: 'Student not found for this QR code' });
     }
 
-    // The pass an entry would close: the newest pass the student actually left on.
     const activePass = await resolveOutPass(studentDoc._id);
     const punctuality = activePass
       ? isReturnLate(passWindow(activePass.passType, activePass.doc).windowEnd)
@@ -341,21 +240,14 @@ const previewScan = async (req, res) => {
         : 'On-Time'
       : 'N/A';
 
-    // Exit eligibility: a READ-ONLY mirror of the OUT enforcement in
-    // createScanLog, so the guard's exit dialog shows the real verdict BEFORE
-    // confirming instead of trusting the QR (which carries no status at all).
-    // The newest 'Approved' pass is the one the live OUT scan would consume.
     const approvedPass = await resolveApprovedPass(studentDoc._id);
 
     let exit;
     if (!approvedPass) {
-      // No warden-approved pass -> the live scan would 403. This is exactly the
-      // replayed-QR case: a screenshot from a finished trip resolves to nothing.
       exit = { allowed: false, reason: 'no-approved', passType: null, pass: null };
     } else {
       const window = passWindow(approvedPass.passType, approvedPass.doc);
       if (approvedPass.passType === 'Leave') {
-        // Leave: valid from leaveDate until 5:30 PM (campus time) that same day.
         if (isBeforeDeparture(window.windowStart)) {
           exit = { allowed: false, reason: 'not-yet-valid', passType: 'Leave', pass: window };
         } else if (isAfterLeaveCurfew(window.windowStart)) {
@@ -364,9 +256,6 @@ const previewScan = async (req, res) => {
           exit = { allowed: true, reason: null, passType: 'Leave', pass: window };
         }
       } else {
-        // Outing: exit is only valid inside the gender/type departure window.
-        // Mirror the live OUT enforcement so the guard's dialog shows the real
-        // verdict (and distinguishes not-yet-open from expired) before confirming.
         if (isWithinDepartureWindow(studentDoc.gender, approvedPass.doc.outingType, new Date())) {
           exit = { allowed: true, reason: null, passType: 'Outing', pass: window };
         } else if (isDeparturePassed(window.windowStart)) {
@@ -399,10 +288,7 @@ const previewScan = async (req, res) => {
   }
 };
 
-// @desc    Get gate scan logs (most recent first)
-// @route   GET /api/scan
-// @access  Private (Admin / Warden / Guard)
-// Query: direction, limit
+// GET /api/scan — private (Admin/Warden/Guard)
 const getScanLogs = async (req, res) => {
   try {
     const filter = {};

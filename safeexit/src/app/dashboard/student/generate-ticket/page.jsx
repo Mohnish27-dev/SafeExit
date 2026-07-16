@@ -11,16 +11,10 @@ import {
   Ticket,
   MapPin,
   Clock,
-  Calendar,
-  FileText,
   Phone,
   User,
   Hash,
-  Building2,
   Mail,
-  Train,
-  Plane,
-  Car,
   ChevronRight,
   CheckCircle2,
   Shield,
@@ -35,18 +29,10 @@ import { apiFetch } from "@/app/lib/api";
 
 const STEPS = ["form", "review", "success"];
 
-// The campus (and the backend's auto-approval rule in utils/outingRules.js) lives
-// in a single fixed timezone. The "departure can't be in the past" check must be
-// judged against THAT clock, not the browser's: a student on a device set to a
-// different timezone — or with a skewed clock — would otherwise be told a valid
-// departure is "in the past" (or be allowed to pick one that already passed),
-// disagreeing with what the server enforces. Pinning it here keeps the form's
-// verdict identical for every student regardless of their device settings.
+// Time checks use the campus clock, not the browser's, matching the backend.
 const CAMPUS_TIMEZONE = "Asia/Kolkata";
 
-// Current minute-of-day (0..1439) in the campus timezone. Mirrors the backend's
-// minutesOfDayInTimeZone so the client's past-time check and the server's rule
-// read the same wall clock.
+// Minute-of-day (0..1439) in campus TZ; mirrors backend minutesOfDayInTimeZone.
 const nowMinutesInCampusTZ = () => {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: CAMPUS_TIMEZONE,
@@ -59,19 +45,14 @@ const nowMinutesInCampusTZ = () => {
   return hour * 60 + minute;
 };
 
-// Client-side mirror of the outing policy engine in backend/src/utils/outingRules.js.
-// The backend is the authority (it re-derives the same policy from the trusted
-// gender on the user doc); this copy exists only so the form can show the right
-// window, fix the return time, and validate before the round-trip. Keep the clock
-// values in sync with the backend constants. All values are minutes since midnight.
+// UX-only mirror of backend outingRules policies — keep values in sync. Minutes since midnight.
 const OUTING_POLICIES = {
   femaleNearby: { departStart: 6 * 60, departEnd: 18 * 60 + 30, returnDeadline: 20 * 60, requiresWarden: false },
   femaleMarket: { departStart: 6 * 60, departEnd: 14 * 60 + 30, returnDeadline: 17 * 60 + 30, requiresWarden: true },
   general: { departStart: 6 * 60, departEnd: 20 * 60 - 1, returnDeadline: 20 * 60, requiresWarden: false },
 };
 
-// Females choose between Nearby / Market (different rules); every other gender
-// uses the single 'General' path. Mirrors normalizeOutingType on the backend.
+// Females: Nearby/Market; everyone else: 'General'. Mirrors backend normalizeOutingType.
 const resolveOutingPolicy = (gender, outingType) => {
   if (gender === "Female") return outingType === "Market" ? OUTING_POLICIES.femaleMarket : OUTING_POLICIES.femaleNearby;
   return OUTING_POLICIES.general;
@@ -86,13 +67,6 @@ const clockLabel = (minutes) => {
   return `${h12}:${String(m).padStart(2, "0")} ${period}`;
 };
 
-// The rest of this screen — validation (parseTimeToMinutes), the ISO body sent
-// to /outing, and the review/success displays — all speak the "hh:mm AM/PM"
-// string format. The native <input type="time"> element, however, works in a
-// 24-hour "HH:MM" value. These two helpers bridge that gap so students can pick
-// ANY minute of the day while everything downstream keeps receiving the exact
-// same format it always has.
-
 // "14:30" (input value, 24h) -> "02:30 PM" (stored form value)
 const from24Hour = (hhmm) => {
   if (!hhmm) return "";
@@ -104,8 +78,7 @@ const from24Hour = (hhmm) => {
   return `${String(hour12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
 };
 
-// "02:30 PM" (stored form value) -> "14:30" (input value, 24h) so the picker
-// shows the currently-selected time when the student re-opens it.
+// "02:30 PM" (stored form value) -> "14:30" (input value, 24h)
 const to24Hour = (timeStr) => {
   if (!timeStr) return "";
   const [time, period] = timeStr.split(" ");
@@ -140,9 +113,7 @@ export default function GenerateTicket() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     destination: "",
-    // 'Nearby' | 'Market' for female students; ignored (single 'General' path)
-    // for everyone else. Backend re-normalizes this against the trusted gender.
-    outingType: "Nearby",
+    outingType: "Nearby", // females: 'Nearby' | 'Market'; ignored otherwise
     dateOut: "",
     timeOut: "",
     dateReturn: "",
@@ -175,10 +146,7 @@ export default function GenerateTicket() {
     }));
   }, [hydrated, display.mobile]);
 
-  // The student's gender decides which rule set applies. Females additionally
-  // pick Nearby/Market; everyone else has a single path. `display.gender` comes
-  // from the stored profile; the backend re-derives this from the trusted user
-  // doc, so this is UX-only.
+  // Gender picks the rule set; UX-only — the backend re-derives from the trusted user doc.
   const gender = display.gender;
   const isFemale = gender === "Female";
   const activePolicy = resolveOutingPolicy(gender, form.outingType);
@@ -186,8 +154,7 @@ export default function GenerateTicket() {
   const set = (key) => (event) =>
     setForm((value) => ({ ...value, [key]: event.target.value }));
 
-  // <input type="time"> hands back a 24-hour "HH:MM" string; store it in the
-  // "hh:mm AM/PM" format every downstream consumer already expects.
+  // Store <input type="time"> values as "hh:mm AM/PM".
   const setTime = (key) => (event) =>
     setForm((value) => ({ ...value, [key]: from24Hour(event.target.value) }));
 
@@ -200,14 +167,12 @@ export default function GenerateTicket() {
     return hours * 60 + minutes;
   };
 
-  // Build an absolute same-day timestamp from a minutes-since-midnight value.
   const buildTodayISOFromMinutes = (totalMinutes) => {
-    const when = new Date(); // today, in the student's local timezone
+    const when = new Date();
     when.setHours(Math.floor(totalMinutes / 60), totalMinutes % 60, 0, 0);
     return when.toISOString();
   };
 
-  // Build the outing's absolute departure timestamp for a same-day trip.
   const buildTodayISO = (timeStr) => buildTodayISOFromMinutes(parseTimeToMinutes(timeStr));
 
   const validate = () => {
@@ -217,20 +182,15 @@ export default function GenerateTicket() {
 
     if (form.timeOut) {
       const outMins = parseTimeToMinutes(form.timeOut);
-      // Judge "past" against the campus clock (IST), matching the backend rule,
-      // so the verdict is the same for every student regardless of their device
-      // timezone or a skewed local clock.
+      // "Past" is judged on the campus clock (IST), matching the backend.
       const currentMins = nowMinutesInCampusTZ();
 
       if (outMins < currentMins) {
         nextErrors.timeOut = "Departure time cannot be in the past";
       } else if (outMins < activePolicy.departStart || outMins > activePolicy.departEnd) {
-        // Enforce the gender/type departure window (backend re-checks this).
         nextErrors.timeOut = `Departure must be between ${clockLabel(activePolicy.departStart)} and ${clockLabel(activePolicy.departEnd)}`;
       }
     }
-
-    // Return time is fixed by policy, not chosen by the student — nothing to validate.
 
     if (!form.contact || form.contact.length < 10) nextErrors.contact = "Valid contact number required";
     setErrors(nextErrors);
@@ -238,30 +198,22 @@ export default function GenerateTicket() {
   };
   const describeSubmitError = (error) => {
     if (error instanceof TypeError) {
-      // The only way fetch() itself rejects: offline, DNS failure, CORS
-      // block, or the server/API host being unreachable. There's no server
-      // response to read a message from either way.
+      // fetch() itself rejected: offline / DNS / CORS / host unreachable.
       return "We couldn't reach the server. Check your internet connection and try again.";
     }
     if (error.name === "AbortError") {
       return "The request took too long to respond. Please try again.";
     }
     if (error instanceof SyntaxError) {
-      // res.json() failed to parse — the server responded with something
-      // that wasn't valid JSON (an HTML error page from a proxy, etc.).
+      // Response wasn't valid JSON (e.g. proxy HTML error page).
       return "The server sent back an unexpected response. Please try again.";
     }
     return error.message || "Something went wrong while submitting your request. Please try again.";
   };
 
   const handleReview = () => {
-    // validate() replaces the whole errors object each call, so a stale
-    // "submit" failure from a previous attempt is naturally dropped here —
-    // nothing extra needed to clear it on re-entry to review.
     if (validate()) {
-      // Stamp the policy-fixed return time (same-day) so the review/success
-      // screens display the deadline the server will actually set. The student
-      // never picked it — it's mandated by the college rule.
+      // Stamp the policy-fixed return time so review/success show the server's deadline.
       setForm((value) => ({
         ...value,
         timeReturn: clockLabel(activePolicy.returnDeadline),
@@ -273,8 +225,7 @@ export default function GenerateTicket() {
 
   const handleSubmit = async () => {
     setLoading(true);
-    // Clear any stale failure from a previous attempt before retrying, so a
-    // second click that succeeds doesn't leave a dead error node behind.
+    // Clear stale submit failure before retrying.
     setErrors((prev) => {
       if (!prev.submit) return prev;
       const { submit, ...rest } = prev;
@@ -284,14 +235,11 @@ export default function GenerateTicket() {
       const body = {
         destination: form.destination,
         purpose: form.note || "Outing",
-        // Females send their chosen type; everyone else sends 'General' (the
-        // backend normalizes anyway). Return time is NOT sent — the server
-        // fixes it from the college policy.
+        // Return time is NOT sent — the server fixes it from policy.
         outingType: isFemale ? form.outingType : "General",
         outTime: buildTodayISO(form.timeOut),
       };
 
-      // apiFetch parses JSON and throws on non-2xx (message caught below).
       const data = await apiFetch("/outing", {
         method: "POST",
         body: JSON.stringify(body),
@@ -559,36 +507,6 @@ export default function GenerateTicket() {
     );
   }
 
-  const now = new Date();
-  const isPastCutoff = now.getHours() > 19 || (now.getHours() === 19 && now.getMinutes() > 30);
-
-  // if (isPastCutoff && step === "form") {
-  //   return (
-  //     <StudentFeatureShell
-  //       eyebrow="New Request"
-  //       title="Generate Outing Ticket"
-  //       icon={Ticket}
-  //       iconTone="ticket"
-  //       onBack={() => router.push("/dashboard/student")}
-  //       contentClassName="space-y-5"
-  //     >
-  //       <StudentFeaturePanel className="p-8 text-center animate-scale-in">
-  //         <div className="w-20 h-20 mx-auto bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-6 shadow-lg">
-  //           <AlertCircle size={40} />
-  //         </div>
-  //         <h2 className="font-sora text-2xl font-bold text-slate-800 mb-2">Outing Generation Closed</h2>
-  //         <p className="text-slate-600 text-sm mb-8 leading-relaxed max-w-sm mx-auto">
-  //           Outing requests for today can only be generated before 7:30 PM. 
-  //           Please try again tomorrow.
-  //         </p>
-  //         <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full max-w-sm mx-auto">
-  //           Back to Dashboard
-  //         </button>
-  //       </StudentFeaturePanel>
-  //     </StudentFeatureShell>
-  //   );
-  // }
-
   return (
     <StudentFeatureShell
       eyebrow="New Request"
@@ -600,8 +518,7 @@ export default function GenerateTicket() {
     >
       <StepBar current="form" />
 
-      {/* Decorative intro — desktop only. On phones the form itself should be
-          the first thing under the header: generating a pass is a daily task. */}
+      {/* Decorative intro — desktop only */}
       <div className="hidden sm:block">
         <FeatureHeroStrip
           variant="ticket"
@@ -613,9 +530,7 @@ export default function GenerateTicket() {
 
       {hydrated && <StudentProfileBanner display={display} compact />}
 
-      {/* Full credentials panel is desktop-only: on phones the compact banner
-          above already identifies the student, and this read-only block was
-          costing two screens of scroll on every (daily) ticket request. */}
+      {/* Full credentials panel — desktop only */}
       <StudentFeaturePanel className="hidden md:block p-6 sm:p-7 shadow-lg" delay={40}>
         <p className="sf-section-label mb-4">Student Information & Credentials</p>
         <div className="grid grid-cols-2 gap-4">

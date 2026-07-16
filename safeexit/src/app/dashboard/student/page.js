@@ -36,7 +36,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import {
-  buildSlug,
   defaultStudentProfile,
   getFirstName,
   getInitials,
@@ -50,15 +49,10 @@ import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import useCountUp from "@/app/hooks/useCountUp";
 
-// Format a stored Date/ISO string as e.g. "05:30 PM". Used by the pass/timeline
-// cards below. (The QR itself no longer carries any formatted window — it's
-// identity-only; the gate reads the live window from the backend at scan time.)
 const formatClock = (value) =>
   new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
-// Downscale + re-encode a photo before it touches storage/network — the same
-// treatment the registration flow gives the very first photo, so a re-upload
-// years later doesn't suddenly blow past the localStorage quota.
+// Downscale photos before storage so re-uploads don't blow the localStorage quota.
 const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) =>
   new Promise((resolve) => {
     if (!dataUrl) return resolve(null);
@@ -77,10 +71,7 @@ const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) =>
     img.src = dataUrl;
   });
 
-// The crop tool always displays the source image at "cover" scale for the
-// current zoom, centered in a square viewport of this size — so the pan-offset
-// math below only ever has to account for one degree of freedom (zoom * pan),
-// never the fit-to-frame scale.
+// Crop viewport size; image shown at "cover" scale so pan math ignores fit-to-frame.
 const CROP_FRAME = 260;
 
 const cropCoverScale = (natural, zoom) =>
@@ -96,9 +87,7 @@ const clampCropOffset = (offset, natural, zoom) => {
   };
 };
 
-// Resolve the badge (label + tone) for an outing. A trip that closed late is
-// stored as status 'Returned' with returnPunctuality 'Overdue' — surface that
-// as a distinct "Returned late" badge rather than a plain, on-time "Returned".
+// 'Returned' + returnPunctuality 'Overdue' surfaces as a distinct "Returned late" badge.
 const outingBadge = (outing) => {
   const status = String(outing?.status || "").toLowerCase();
   if (status === "returned" && outing?.returnPunctuality === "Overdue") {
@@ -118,8 +107,7 @@ const outingBadge = (outing) => {
   }
 };
 
-// The thin colour rail on each list row — a quiet status cue that reads at a
-// glance without adding another loud badge. Mirrors the outingBadge tones.
+// Row accent color, mirroring outingBadge tones.
 const outingAccent = (outing) => {
   const status = String(outing?.status || "").toLowerCase();
   if (status === "returned" && outing?.returnPunctuality === "Overdue") return "#f43f5e";
@@ -199,10 +187,7 @@ const navItems = [
   { label: "Leave", icon: CalendarDays, href: "/dashboard/student/leave-application" },
 ];
 
-// A button that leans toward the cursor. The pull is a fraction of the pointer
-// offset from centre, written to CSS vars so the eased transform springs back
-// on leave. Falls back to a normal button under reduced-motion (CSS neutralises
-// the transform). `strength` tunes how far it travels.
+// Cursor-following button via CSS vars; reduced-motion neutralises the transform.
 function MagneticButton({ strength = 0.35, className = "", children, ...props }) {
   const handleMove = (e) => {
     const el = e.currentTarget;
@@ -228,10 +213,7 @@ function MagneticButton({ strength = 0.35, className = "", children, ...props })
   );
 }
 
-// 3D quick-action tile. Pointer position is written to CSS custom props: the
-// inner card tilts toward the cursor (--rx/--ry), a glare tracks it (--mx/--my),
-// and the icon/text ride translateZ layers for real parallax depth — all in
-// pure CSS, so no re-render fires per frame.
+// 3D tilt tile — pointer written to CSS vars, no per-frame re-render.
 function ActionCard({ action, index }) {
   const handlePointerMove = (e) => {
     const el = e.currentTarget;
@@ -278,8 +260,7 @@ function ActionCard({ action, index }) {
           </span>
         </div>
 
-        {/* Copy anchored to the base. On phones the tile is a compact launcher:
-            the description is hidden so five actions fit two screens-worth less scroll. */}
+        {/* Description hidden on phones — tile acts as a compact launcher */}
         <div className="sd-lift-md mt-auto pt-3 sm:pt-6">
           <span className="sd-act-rule mb-2 hidden sm:mb-3 sm:block" aria-hidden="true" />
           <span className="sd-card-title block text-[0.9rem] leading-snug sm:text-[1.05rem]">{action.title}</span>
@@ -292,9 +273,7 @@ function ActionCard({ action, index }) {
   );
 }
 
-// Activity stat with an animated count-up. Numeric values ("12", "80%") tick
-// from zero on scroll-in; non-numeric values ("—", "05:30 PM") render as-is so
-// the "Next return by" clock isn't mangled into a meaningless number.
+// Count-up stat; non-numeric values ("—", "05:30 PM") render as-is.
 function StatCard({ stat }) {
   const match = String(stat.value).match(/^(\d+)(\D*)$/);
   const numeric = Boolean(match);
@@ -349,17 +328,13 @@ export default function StudentDashboardPage() {
   const [photoError, setPhotoError] = useState("");
   const photoInputRef = useRef(null);
 
-  // One-time backfill prompt for accounts created before `gender` existed —
-  // needed so the Leave Application's 5:30 PM girls' curfew has something to
-  // check. Dismissing only hides it for this tab session; it reappears next
-  // login until the student actually sets a gender.
+  // Gender backfill prompt for pre-`gender` accounts (curfew rules need it).
   const [genderDismissed, setGenderDismissed] = useState(false);
   const [genderDraft, setGenderDraft] = useState("");
   const [savingGender, setSavingGender] = useState(false);
   const [genderError, setGenderError] = useState("");
 
-  // Crop step: the raw just-picked image awaits cropping before it ever
-  // becomes `photoDraft`. Pan/zoom are plain pixel offsets in frame-space.
+  // Crop step before an image becomes `photoDraft`; pan/zoom in frame-space pixels.
   const [cropSrc, setCropSrc] = useState(null);
   const [cropNatural, setCropNatural] = useState(null);
   const [cropZoom, setCropZoom] = useState(1);
@@ -375,10 +350,7 @@ export default function StudentDashboardPage() {
       }
       setProfile(normalized);
 
-      // Publish this student's photo (keyed by roll number) so the guard's QR
-      // scanner can show it. Done on every dashboard visit so it stays available
-      // even after the server-side store is reset. The QR encodes the same
-      // roll number as `id`, which is what the scanner looks up.
+      // Republish photo (keyed by roll number) so the gate scanner can show it.
       if (normalized.photo && normalized.rollNo) {
         fetch("/api/profile", {
           method: "POST",
@@ -399,19 +371,16 @@ export default function StudentDashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Pull the real registered studentId from the backend so the QR always carries
-  // the exact roll number the gate scanner looks up (localStorage can be stale).
+  // Sync rollNo + Mongo _id from the backend (localStorage can be stale; scanner resolves by _id first).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const me = await apiFetch("/auth/profile");
         if (cancelled || !me?.studentId) return;
-        // Carry both the roll number and the immutable Mongo _id: the gate scanner
-        // resolves by _id first, so a stale/whitespace roll number can't 404.
         setProfile((prev) => ({ ...prev, rollNo: me.studentId, sid: me._id }));
       } catch {
-        /* Not authenticated on the server yet — keep the locally stored profile. */
+        /* not authenticated — keep local profile */
       }
     })();
     return () => {
@@ -419,13 +388,10 @@ export default function StudentDashboardPage() {
     };
   }, []);
 
-  // Load this student's real outing requests. The latest approved one drives the
-  // QR pass; the full list drives the Recent Outings, stats and timeline cards.
   useEffect(() => {
     let cancelled = false;
 
-    // background=true suppresses the loading state so the poll / focus refetch
-    // updates statuses silently without flickering the "Loading…" placeholders.
+    // background=true skips the loading state so polls update silently.
     const loadOutings = async (background = false) => {
       if (!background) setOutingsLoading(true);
       try {
@@ -452,8 +418,7 @@ export default function StudentDashboardPage() {
 
     loadOutings();
 
-    // The guard's gate entry scan flips the active pass to "Returned" server-side.
-    // Poll and refetch on tab focus so the dashboard reflects it without a reload.
+    // Poll + focus refetch so gate scans reflect without a reload.
     const interval = setInterval(() => loadOutings(true), 15000);
     const onVisible = () => {
       if (document.visibilityState === "visible") loadOutings(true);
@@ -476,9 +441,7 @@ export default function StudentDashboardPage() {
 
   const timeGreeting = useMemo(() => getTimeGreeting(now), [now]);
 
-  // Match the greeting to a time-of-day visual: icon, orb gradient, and halo
-  // colour all shift from sunrise → day → dusk → night, so the hero feels
-  // aware of the moment rather than static.
+  // Time-of-day hero visual (sunrise → day → dusk → night).
   const timeVisual = useMemo(() => {
     const hour = now.getHours();
     if (hour < 12)
@@ -490,8 +453,7 @@ export default function StudentDashboardPage() {
     return { Icon: MoonStar, orb: "from-indigo-500 via-violet-500 to-slate-700", halo: "rgba(99,102,241,0.5)" };
   }, [now]);
 
-  // The pass represents the student's currently active, warden-approved outing.
-  // `myrequests` is returned newest-first, so the first Approved/Out request wins.
+  // `myrequests` is newest-first, so the first Approved/Out request wins.
   const latestApproved = useMemo(
     () => outings.find((o) => ["Approved", "Out"].includes(o.status)) || null,
     [outings]
@@ -500,24 +462,17 @@ export default function StudentDashboardPage() {
   const qrRollNo = useMemo(() => {
     const roll = profile.rollNo && profile.rollNo !== defaultStudentProfile.rollNo ? profile.rollNo : "";
     if (roll) return roll;
-    // Last resort: a non-email id is the roll number too; never a fabricated value
-    // and never the "—" placeholder (which the scanner can't resolve → 404).
+    // Fallback: a non-email id is the roll number; never fabricate or use "—".
     const id = profile.id;
     if (!id || id === defaultStudentProfile.id || String(id).includes("@")) return "";
     return id;
   }, [profile]);
 
-  // Identity-only QR: it carries WHO the student is, never any outing status.
-  // Because it holds no per-trip data, its value never changes between outings —
-  // the student can screenshot it once and reuse it forever. The gate resolves
-  // the student's *current* approved pass live at scan time (see /scan/preview
-  // and POST /scan on the backend), so a replayed screenshot can't smuggle a
-  // stale "Approved" status past the guard — there is nothing to replay.
+  // Identity-only QR — no outing status, so a replayed screenshot can't smuggle a stale "Approved".
   const qrValue = useMemo(() => {
     const data = {
       id: qrRollNo,
-      // Immutable Mongo _id; the gate scanner resolves by this first when present.
-      sid: profile.sid || undefined,
+      sid: profile.sid || undefined, // Mongo _id; scanner resolves by this first
       name: profile.name,
     };
     return JSON.stringify(data);
@@ -694,8 +649,7 @@ export default function StudentDashboardPage() {
       setProfile(updatedProfile);
       setStoredUser(updatedProfile);
 
-      // Keep the on-device onboarding blob in sync too, so quick-login re-auth
-      // and any local fallback carry the latest photo forward.
+      // Sync the on-device onboarding blob so quick-login keeps the latest photo.
       try {
         const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null") || {};
         localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...existing, photo: nextPhoto }));
@@ -703,8 +657,7 @@ export default function StudentDashboardPage() {
         /* best-effort — device storage may be full or unavailable */
       }
 
-      // Republish to the same store the guard's QR scanner reads from, keyed
-      // by roll number, so the new photo shows up at the gate immediately.
+      // Republish so the new photo shows at the gate immediately.
       if (updatedProfile.rollNo && updatedProfile.rollNo !== defaultStudentProfile.rollNo) {
         fetch("/api/profile", {
           method: "POST",
@@ -748,8 +701,7 @@ export default function StudentDashboardPage() {
     }
   };
 
-  // Don't render the protected dashboard until the session check passes; the
-  // hook redirects to /login/student when there's no valid student session.
+  // Gate render on the session check; hook redirects to /login/student otherwise.
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
@@ -1175,8 +1127,7 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          {/* Floating bottom bar on phones (one-tap jumps, no scrolling back up);
-              inline panel at the end of the page on desktop. */}
+          {/* Bottom bar: floating on phones, inline panel on desktop */}
           <nav className="sd-luxe-panel sd-luxe-rise fixed inset-x-3 bottom-3 z-40 grid grid-cols-6 gap-0.5 rounded-3xl p-1.5 backdrop-blur md:static md:inset-x-auto md:mt-6 md:gap-1 md:rounded-4xl md:p-3">
             {navItems.map((item) => (
               <Link

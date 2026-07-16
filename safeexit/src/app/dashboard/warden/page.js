@@ -6,7 +6,6 @@ import {
   BellOff,
   CalendarDays,
   Check,
-  ChevronDown,
   ClipboardList,
   Clock,
   Home,
@@ -56,10 +55,9 @@ const formatTime = (value) =>
     ? new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
     : "—";
 
-// A warden's managedGender maps to the hostel they oversee.
+// managedGender maps to the hostel the warden oversees.
 const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
 
-// Map a backend OutingRequest (with populated student) to the pending-card shape.
 const mapPending = (o) => ({
   id: o._id,
   name: o.student?.name || "Unknown Student",
@@ -72,7 +70,6 @@ const mapPending = (o) => ({
   initials: initials(o.student?.name),
 });
 
-// Complaint category → icon/tone styling used by the complaint cards.
 const complaintTone = (category) => {
   switch (category) {
     case "Electrical":
@@ -93,7 +90,6 @@ const statusToneFor = (status) =>
     ? "bg-amber-100 text-amber-600"
     : "bg-rose-100 text-rose-600";
 
-// Map a backend LeaveApplication (with populated student) to the pending-card shape.
 const mapLeavePending = (l) => ({
   id: l._id,
   name: l.student?.name || "Unknown Student",
@@ -109,8 +105,6 @@ const mapLeavePending = (l) => ({
   initials: initials(l.student?.name),
 });
 
-// A history row extends the pending shape with the warden's decision (status)
-// and any rejection remarks, plus when the decision was recorded.
 const mapLeaveHistory = (l) => ({
   ...mapLeavePending(l),
   status: l.status || "",
@@ -118,7 +112,6 @@ const mapLeaveHistory = (l) => ({
   decidedAt: l.updatedAt,
 });
 
-// Map a backend Complaint (with populated student) to the report-card shape.
 const mapReport = (c) => {
   const { tone, icon } = complaintTone(c.category);
   return {
@@ -135,9 +128,7 @@ const mapReport = (c) => {
   };
 };
 
-// Pointer-tracked 3D tilt for quick-action tiles — module scope so it isn't
-// recreated every render; mirrors the tile physics used across the Student and
-// Guard dashboards.
+// Module scope so these aren't recreated every render.
 const handleTilePointerMove = (e) => {
   const el = e.currentTarget;
   const rect = el.getBoundingClientRect();
@@ -168,8 +159,6 @@ const handleMagneticLeave = (e) => {
   e.currentTarget.style.setProperty("--mag-y", "0px");
 };
 
-// Live-stat row with an animated count-up, mirroring the Student dashboard's
-// StatCard so Warden's activity numbers get the same tick-in-on-scroll polish.
 function WardenStat({ label, value, width, fill, glow }) {
   const [ref, animated] = useCountUp(value);
   return (
@@ -206,7 +195,6 @@ export default function WardenDashboardPage() {
   }, []);
 
   useEffect(() => {
-    // load stored profile from localStorage if available
     try {
       const raw = typeof window !== "undefined" && sessionStorage.getItem("safeexit:user");
       if (raw) {
@@ -218,9 +206,7 @@ export default function WardenDashboardPage() {
     }
   }, []);
 
-  // Refresh the profile from the server so the warden's hostel scope
-  // (managedGender) is always current — even for sessions that logged in before
-  // the field existed, or whose hostel was assigned/changed by an admin since.
+  // Refresh from server so managedGender is current even for older sessions.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -228,7 +214,7 @@ export default function WardenDashboardPage() {
         const profile = await apiFetch("/auth/profile");
         if (!cancelled) setUser((u) => ({ ...(u || {}), ...profile }));
       } catch {
-        /* best-effort; the badge/banner just fall back to the stored user */
+        /* best-effort */
       }
     })();
     return () => { cancelled = true; };
@@ -237,8 +223,6 @@ export default function WardenDashboardPage() {
   const formattedDate = now ? now.toLocaleDateString(dateLocale, { weekday: "short", day: "2-digit", month: "short" }) : tc("loading");
   const formattedTime = now ? now.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : tc("loading");
 
-  // Lists are loaded from the backend; approve/reject/resolve mutate the server
-  // and then update these so the UI reflects changes immediately.
   const [pending, setPending] = useState([]);
   const [approved, setApproved] = useState([]);
   const [reports, setReports] = useState([]);
@@ -249,21 +233,14 @@ export default function WardenDashboardPage() {
   const [requestsError, setRequestsError] = useState("");
   const [reportsError, setReportsError] = useState("");
 
-  // Pending leave applications (multi-day, warden-approved) awaiting action.
   const [leavePending, setLeavePending] = useState([]);
   const [loadingLeave, setLoadingLeave] = useState(true);
   const [leaveError, setLeaveError] = useState("");
 
-  // Leave applications this warden has already acted on (Approved/Rejected),
-  // kept so the pending queue isn't the only record — the warden can review a
-  // full history of decisions instead of them vanishing on approval.
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [loadingLeaveHistory, setLoadingLeaveHistory] = useState(true);
 
-  // Count of unresolved SOS alerts, surfaced as a badge on the nav + quick
-  // action. Kept live independently of the SOS view so the badge shows even
-  // when the warden is on another tab. The SOS view reports its own count back
-  // via onCountChange; this listener catches new alerts while it's unmounted.
+  // Kept live independently of the SOS view so the badge shows on every tab.
   const [sosCount, setSosCount] = useState(0);
 
   const loadSosCount = useCallback(async () => {
@@ -271,7 +248,7 @@ export default function WardenDashboardPage() {
       const data = await apiFetch("/sos?status=Active");
       setSosCount(data.length);
     } catch {
-      /* badge is best-effort; ignore transient errors */
+      /* best-effort */
     }
   }, []);
 
@@ -281,8 +258,6 @@ export default function WardenDashboardPage() {
     return () => clearInterval(interval);
   }, [loadSosCount]);
 
-  // Live SOS push: a new student alert (or a status change) refreshes the badge
-  // instantly, so a warden idling on the home tab still sees the count climb.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
     source.addEventListener("sos:created", () => loadSosCount());
@@ -290,7 +265,6 @@ export default function WardenDashboardPage() {
     return () => source.close();
   }, [loadSosCount]);
 
-  // Pending outing requests awaiting warden action.
   const loadRequests = useCallback(async () => {
     setLoadingRequests(true);
     setRequestsError("");
@@ -304,10 +278,6 @@ export default function WardenDashboardPage() {
     }
   }, [t]);
 
-  // All complaints for the recent-reports and complaints views. Open ones are
-  // the actionable queue (drives the badge); resolved ones are kept separately
-  // so the warden retains a history of past complaints instead of them
-  // vanishing once actioned.
   const loadReports = useCallback(async () => {
     setLoadingReports(true);
     setReportsError("");
@@ -323,7 +293,6 @@ export default function WardenDashboardPage() {
     }
   }, [t]);
 
-  // Pending leave applications awaiting warden action.
   const loadLeaveApplications = useCallback(async () => {
     setLoadingLeave(true);
     setLeaveError("");
@@ -337,16 +306,13 @@ export default function WardenDashboardPage() {
     }
   }, [t]);
 
-  // Acted-on leave applications (Approved/Rejected) — the warden's history so
-  // decisions don't vanish once they leave the pending queue.
   const loadLeaveHistory = useCallback(async () => {
     setLoadingLeaveHistory(true);
     try {
       const data = await apiFetch("/leave/history");
       setLeaveHistory(data.map(mapLeaveHistory));
     } catch {
-      // Best-effort; the pending queue is the primary view and the history
-      // tab simply shows its empty state if this fails.
+      // Best-effort; the history tab just shows its empty state.
     } finally {
       setLoadingLeaveHistory(false);
     }
@@ -359,9 +325,6 @@ export default function WardenDashboardPage() {
     loadLeaveHistory();
   }, [loadRequests, loadReports, loadLeaveApplications, loadLeaveHistory]);
 
-  // Live updates: a new outing request (or an approval/rejection from another
-  // warden/guard) pushes an event over SSE so the pending list refetches
-  // instantly instead of requiring a manual refresh while this tab is open.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/outing/stream`, { withCredentials: true });
     source.addEventListener("outing:changed", () => {
@@ -370,16 +333,12 @@ export default function WardenDashboardPage() {
     return () => source.close();
   }, [loadRequests]);
 
-  // Safety net in case the SSE connection is silently dropped (proxies,
-  // flaky networks) — a low-frequency background poll keeps data fresh.
+  // Poll as safety net in case the SSE connection is silently dropped.
   useEffect(() => {
     const interval = setInterval(loadRequests, 30000);
     return () => clearInterval(interval);
   }, [loadRequests]);
 
-  // Live updates: a new student complaint (or a status change from another
-  // warden) pushes an event over SSE so the complaints list + badge refresh
-  // instantly instead of requiring a manual refresh while this tab is open.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/complaint/stream`, { withCredentials: true });
     source.addEventListener("complaint:created", () => loadReports());
@@ -387,15 +346,11 @@ export default function WardenDashboardPage() {
     return () => source.close();
   }, [loadReports]);
 
-  // Safety net in case the SSE connection is silently dropped.
   useEffect(() => {
     const interval = setInterval(loadReports, 30000);
     return () => clearInterval(interval);
   }, [loadReports]);
 
-  // Live updates: a new leave application (or a status change from another
-  // warden) pushes an event over SSE so the pending list + badge refresh
-  // instantly instead of requiring a manual refresh while this tab is open.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/leave/stream`, { withCredentials: true });
     source.addEventListener("leave:changed", () => {
@@ -405,7 +360,6 @@ export default function WardenDashboardPage() {
     return () => source.close();
   }, [loadLeaveApplications, loadLeaveHistory]);
 
-  // Safety net in case the SSE connection is silently dropped.
   useEffect(() => {
     const interval = setInterval(() => {
       loadLeaveApplications();
@@ -421,11 +375,7 @@ export default function WardenDashboardPage() {
   const [activePanel, setActivePanel] = useState(null);
   const [view, setView] = useState("home");
 
-  // Deep-link from push notifications: the service worker opens
-  // /dashboard/warden?view=sos (or leave/complaints/requests), so the warden
-  // lands directly on the section that needs action instead of scrolling the
-  // home view. The param is consumed once and stripped from the URL so
-  // in-page navigation afterwards isn't overridden by a stale query.
+  // Push-notification deep link (?view=sos etc.); param consumed once and stripped.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
@@ -442,7 +392,7 @@ export default function WardenDashboardPage() {
   async function approveRequest(id) {
     const req = pending.find((p) => p.id === id);
     if (!req) return;
-    // Optimistically move the card, then persist to the backend.
+    // Optimistic update; persist to backend after.
     setPending((p) => p.filter((r) => r.id !== id));
     setApproved((a) => [{ id: req.id, name: req.name, outSince: req.out, initials: req.initials }, ...a]);
     try {
@@ -451,14 +401,12 @@ export default function WardenDashboardPage() {
         body: JSON.stringify({ status: "Approved" }),
       });
     } catch (err) {
-      // If the request expired before the warden could approve it, don't roll
-      // back — the card should simply vanish from both pending and approved.
+      // 409 = request expired: don't roll back, just drop the card.
       if (err?.status === 409) {
         setApproved((a) => a.filter((r) => r.id !== id));
         setRequestsError(t("requestExpired"));
         return;
       }
-      // Roll back on other failures.
       setApproved((a) => a.filter((r) =>r.id !== id));
       setPending((p) => [req, ...p]);
       setRequestsError(err.message || t("couldNotApprove"));
@@ -521,8 +469,6 @@ export default function WardenDashboardPage() {
   async function resolveReport(id) {
     const rep = reports.find((r) => r.id === id);
     if (!rep) return;
-    // Optimistically move the card from the open queue into the resolved
-    // history so past complaints stay listed instead of disappearing.
     const resolved = { ...rep, status: "Resolved", statusTone: statusToneFor("Resolved") };
     setReports((r) => r.filter((item) => item.id !== id));
     setResolvedReports((r) => [resolved, ...r]);
@@ -532,7 +478,6 @@ export default function WardenDashboardPage() {
         body: JSON.stringify({ status: "Resolved" }),
       });
     } catch (err) {
-      // Roll back: return the card to the open queue.
       setResolvedReports((r) => r.filter((item) => item.id !== id));
       setReports((r) => [rep, ...r]);
       setReportsError(err.message || t("couldNotResolve"));
@@ -545,26 +490,17 @@ export default function WardenDashboardPage() {
   }
 
   const displayName = (user && (user.name || user.displayName)) || t("chiefWarden");
-  const firstName = displayName.split(" ")[0] || displayName;
 
-  // The hostel this warden oversees. When unset, the backend returns no students,
-  // so we surface a "not configured" banner rather than a silently empty queue.
+  // Unset managedGender means no students; show the "not configured" banner.
   const managedGender = user?.managedGender;
   const hostelLabel = HOSTEL_LABEL[managedGender];
 
-  // Boys' outings are always auto-approved at creation (see backend
-  // outingRules.js — male requests carry requiresWarden: false), so a boys'
-  // warden never has an outing queue to action. Their only approval workload is
-  // leave applications. We therefore drop every outing-approval surface for them
-  // and promote pending leave onto the home dashboard instead. A girls' warden
-  // keeps both (female "Market" outings require warden approval) — unchanged.
+  // Boys' outings are auto-approved, so a boys' warden only approves leave.
   const isBoysWarden = managedGender === "Male";
 
   const handleLogout = () => logout(router, { role: "warden" });
 
-  // ── Push notification prompt ──────────────────────────────────────────────
-  // Tracks whether to show the "Enable notifications" banner. Starts null so
-  // we don't flash it on SSR / before the permission API is checked.
+  // Push notification banner state; null until permission API is checked.
   const [pushPermission, setPushPermission] = useState(null);
   const [pushBannerDismissed, setPushBannerDismissed] = useState(false);
   const [pushEnabling, setPushEnabling] = useState(false);
@@ -577,8 +513,7 @@ export default function WardenDashboardPage() {
     const perm = getNotificationPermission();
     setPushPermission(perm);
 
-    // If already granted (returning user), silently re-subscribe in case the
-    // subscription expired or the browser cleared it.
+    // Re-subscribe silently in case the subscription expired.
     if (perm === 'granted') {
       autoSubscribeIfGranted();
     }
@@ -591,13 +526,10 @@ export default function WardenDashboardPage() {
     if (result.success) {
       setPushPermission('granted');
     } else {
-      // If the user denied, update state so we show the "blocked" message
       setPushPermission(getNotificationPermission());
     }
   };
 
-  // Gate the dashboard on a valid warden session; the hook redirects to
-  // /login/warden when the token is missing or belongs to another role.
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
@@ -633,7 +565,7 @@ export default function WardenDashboardPage() {
                   )}
                 </div>
               </div>
-              {/* Compact avatar on small screens — full profile lives in the Profile tab. */}
+              {/* Compact avatar on small screens */}
               <button
                 type="button"
                 onClick={() => setView('profile')}
@@ -708,10 +640,7 @@ export default function WardenDashboardPage() {
 
           {view === 'home' && (
             <>
-              {/* Needs-attention strip: pinned to the very top of the home view so a
-                  warden arriving from a push notification (or just opening the app)
-                  sees every pending queue at a glance and can jump straight to it —
-                  no scrolling. Rendered only when something actually needs action. */}
+              {/* Needs-attention strip; rendered only when something needs action */}
               {(() => {
                 const attention = [
                   sosCount > 0 && {
@@ -799,8 +728,7 @@ export default function WardenDashboardPage() {
                 <div className="min-w-0">
                   <p className="sd-kicker">{t("dailyPulse")}</p>
                   <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">{t("greeting")} <span className="sd-name-live">Warden</span>.</h2>
-                  {/* Long overview text is desktop-only — on a phone it pushes the
-                      actionable content below the fold for no real benefit. */}
+                  {/* Desktop-only overview text */}
                   <p className="sd-body mt-2 hidden max-w-md sm:block">{isBoysWarden ? t("overviewTextBoys") : t("overviewText")}</p>
                 </div>
               </div>
@@ -873,8 +801,7 @@ export default function WardenDashboardPage() {
                   border: "rgba(56,189,248,0.5)",
                   onClick: () => openPanel('auto'),
                 };
-                // Boys' warden: no outing approvals — lead with Leave, drop the
-                // outing "Manage Requests" tile. Girls' warden: keep all four.
+                // Boys' warden has no outing approvals: lead with Leave.
                 return isBoysWarden
                   ? [leaveAction, safetyAction, autoAction]
                   : [manageAction, safetyAction, leaveAction, autoAction];
@@ -1068,8 +995,7 @@ export default function WardenDashboardPage() {
                   </div>
                 ) : (
                   reports.map((comp, i) => (
-                  // Whole row is tappable — jumps to the Complaints view where the
-                  // warden can act (resolve). The pill only displays status.
+                  // Row taps through to Complaints view; pill is display-only.
                   <button
                     key={comp.id}
                     onClick={() => setView('complaints')}

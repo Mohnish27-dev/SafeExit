@@ -36,15 +36,11 @@ const statusConfig = {
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
   expired: { label: "Expired", color: "text-rose-700", bg: "bg-rose-100", icon: TimerOff },
   cancelled: { label: "Cancelled", color: "text-slate-500", bg: "bg-slate-100", icon: Ban },
-  // Not a real backend status: derived in the UI when a 'Returned' trip was
-  // closed late (returnPunctuality === 'Overdue'), so a late return reads
-  // distinctly from an on-time one instead of a plain grey "Returned".
+  // UI-derived status for a 'Returned' trip closed late (returnPunctuality 'Overdue').
   "returned-late": { label: "Returned late", color: "text-rose-700", bg: "bg-rose-100", icon: AlertCircle },
 };
 
-// Pick the statusConfig key for an outing, promoting a late return to the
-// derived "returned-late" badge. The card's own `outing.status` is left as the
-// real backend value so filters and CSS variants keep working unchanged.
+// statusConfig key for an outing; promotes late returns to "returned-late".
 const badgeKeyFor = (outing) =>
   outing.status === "returned" && outing.returnPunctuality === "Overdue"
     ? "returned-late"
@@ -84,8 +80,7 @@ export default function MyOutings() {
     if (!hydrated) return;
     let cancelled = false;
 
-    // background=true is used by the poll / focus refetch so the full-page loader
-    // doesn't flash on every silent refresh.
+    // background=true skips the full-page loader on silent refreshes.
     const fetchOutings = async (background = false) => {
       if (!background) setLoading(true);
       try {
@@ -112,9 +107,7 @@ export default function MyOutings() {
 
     fetchOutings();
 
-    // The guard's gate entry scan flips this student's active pass to "Returned"
-    // on the server. Poll and refetch when the tab regains focus so that status
-    // shows here without needing a manual page reload.
+    // Poll + focus refetch so gate scans reflect without a reload.
     const interval = setInterval(() => fetchOutings(true), 15000);
     const onVisible = () => {
       if (document.visibilityState === "visible") fetchOutings(true);

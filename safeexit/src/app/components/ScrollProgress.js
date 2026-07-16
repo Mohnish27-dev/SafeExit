@@ -2,8 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-// A thin gradient bar pinned to the top of the viewport that fills as the user
-// scrolls the page. Writes a CSS var (no React re-render) for 60fps smoothness.
+// Top-of-viewport scroll progress bar; writes a CSS var (no re-render).
 export default function ScrollProgress() {
   const ref = useRef(null);
 

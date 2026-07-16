@@ -2,9 +2,7 @@
 
 import { useEffect } from "react";
 
-// Adds `.in-view` to any element with a `.reveal` class once it scrolls into
-// view, driving the CSS scroll-reveal transition. Elements can set an inline
-// `transition-delay` (or style prop) to stagger. Runs once per element.
+// Adds `.in-view` to `.reveal` elements on scroll-in; runs once per element.
 export default function useScrollReveal(deps = []) {
   useEffect(() => {
     const nodes = document.querySelectorAll(".reveal:not(.in-view)");

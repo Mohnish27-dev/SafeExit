@@ -1,15 +1,13 @@
 const mongoose = require('mongoose');
 
-// A single gate movement: a guard scanning a student's QR for entry (IN) or exit (OUT).
-// These rows are the source of truth for the admin "Movement Logs" view and for a
-// student's current campus status (derived from their most recent scan).
+// One gate movement (IN/OUT scan); source of truth for movement logs and campus status.
 const scanLogSchema = new mongoose.Schema({
   student: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  // The guard who performed the scan. Optional so seeded/system logs still validate.
+  // Optional so seeded/system logs still validate.
   guard: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -19,27 +17,20 @@ const scanLogSchema = new mongoose.Schema({
     enum: ['IN', 'OUT'],
     required: true
   },
-  // The outing pass this movement is tied to, when one exists.
+  // At most one of outing/leave is set (Outing-first resolution in scanController).
   outing: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'OutingRequest'
   },
-  // The leave application this movement is tied to, when one exists. A scan
-  // is tied to at most one of `outing`/`leave` — see scanController's
-  // Outing-first-then-Leave resolution priority.
   leave: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'LeaveApplication'
   },
-  // Which kind of pass this movement was resolved against, when any. Lets
-  // history/admin views label a scan without having to populate and inspect
-  // both refs.
   passType: {
     type: String,
     enum: ['Outing', 'Leave']
   },
-  // Whether the movement was within the approved window. 'N/A' when there is no
-  // window to judge against (e.g. an exit without a return time yet).
+  // 'N/A' when there is no window to judge against.
   punctuality: {
     type: String,
     enum: ['On-Time', 'Overdue', 'N/A'],

@@ -1,12 +1,9 @@
-// Lightweight profile store for the demo, keyed by student roll number.
-// Persisted to a JSON file in the OS temp dir so the student's photo survives
-// dev server restarts / Fast Refresh rebuilds (an in-memory map would be wiped
-// constantly, which is why scanned QRs showed no photo).
+// Demo profile store (by roll number) in the OS temp dir; survives dev restarts.
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 
-// Force the Node.js runtime — this handler uses the filesystem.
+// Node.js runtime required — this handler uses the filesystem
 export const runtime = "nodejs";
 
 const STORE_PATH = path.join(os.tmpdir(), "safeexit-profiles.json");
@@ -16,7 +13,7 @@ async function readStore() {
     const raw = await fs.readFile(STORE_PATH, "utf8");
     return JSON.parse(raw);
   } catch {
-    // File missing or unreadable → start from an empty store.
+    // File missing or unreadable → empty store
     return {};
   }
 }

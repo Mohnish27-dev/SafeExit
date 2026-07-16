@@ -6,38 +6,18 @@ const generateToken = require('../utils/generateToken');
 const { sendMail, isMailConfigured } = require('../utils/mailer');
 const { isValidStudentEmail, normalizeEmail } = require('../config/emailPolicy');
 
-// Password recovery for STUDENTS who have forgotten their password (and therefore
-// can no longer decrypt their device Quick Login PIN, which is just the password
-// encrypted under the PIN — see safeexit/src/app/lib/quickLogin.js).
-//
-// The flow mirrors the registration OTP in otpController.js, but with the OPPOSITE
-// account precondition: registration requires the email to be FREE, reset requires
-// it to already own a student account. We reuse the same EmailOtp collection —
-// keyed on (email, purpose) — under a distinct purpose so a pending registration
-// code and a pending reset code for the same address never clobber each other.
-//
-// After a successful reset we hand back a real session token (like /auth/login),
-// so the frontend can drop the student straight into Quick Login setup and
-// re-enrol the PIN (and optionally a passkey) against the NEW password. The
-// server-side passkey credentials are unaffected by a password change and keep
-// working; only the device-local PIN needs re-enrolling because it cached the old
-// password.
+// Student password recovery. Shares the EmailOtp collection with registration, keyed on (email, purpose) so the two flows' codes never clobber each other.
 
-// --- Tunables (kept in step with otpController) ---------------------------
-const OTP_TTL_MS = 10 * 60 * 1000; // code is valid for 10 minutes
-const RESEND_COOLDOWN_MS = 60 * 1000; // must wait 60s between sends
+const OTP_TTL_MS = 10 * 60 * 1000; // code valid 10 minutes
+const RESEND_COOLDOWN_MS = 60 * 1000; // 60s between sends
 const MAX_OTP_ATTEMPTS = 5; // wrong guesses before the code is burned
 const PURPOSE = 'password-reset';
-// The reset token proves "this email just passed OTP" to the reset endpoint. Kept
-// short so a verified-but-unused code can't be turned into a password change hours
-// later, but long enough to type a new password twice.
+// Short so a verified-but-unused code can't become a password change hours later.
 const RESET_TOKEN_TTL = '15m';
 
 const generateOtp = () => String(crypto.randomInt(100000, 1000000));
 
-// Signed proof that `email` completed the reset OTP. The final reset step requires
-// this instead of re-checking the code, so the password can only be changed for
-// the exact address that received (and entered) the code.
+// Signed proof that this exact email just passed the reset OTP.
 const issueResetToken = (email) =>
   jwt.sign({ email, purpose: PURPOSE }, process.env.JWT_SECRET, { expiresIn: RESET_TOKEN_TTL });
 
@@ -51,15 +31,11 @@ const isResetTokenValid = (token, email) => {
   }
 };
 
-// Reset is an email-based recovery, so it only applies to accounts that actually
-// have a college email — i.e. students. Staff are identified by loginId and have
-// no mailbox on file, so they recover through an admin, not here.
+// Students only — staff have no mailbox on file and recover through an admin.
 const findStudentByEmail = (email) =>
   User.findOne({ role: 'Student', $or: [{ email }, { loginId: email }] });
 
-// @desc    Start password recovery: email a 6-digit reset code to a student
-// @route   POST /api/auth/password/forgot
-// @access  Public
+// POST /api/auth/password/forgot — public
 const requestPasswordReset = async (req, res) => {
   try {
     const email = normalizeEmail(req.body.email);
@@ -69,21 +45,15 @@ const requestPasswordReset = async (req, res) => {
     }
 
     const user = await findStudentByEmail(email);
-    // Mirrors registration's 409-on-existing: here we surface 404-on-missing so a
-    // student who mistypes their address gets a clear dead end instead of waiting
-    // for a code that will never arrive. (This does reveal whether an address has
-    // an account — the same enumeration tradeoff the registration endpoint already
-    // makes — which is an acceptable UX call for a single-college app.)
+    // 404 reveals account existence — accepted enumeration tradeoff for a single-college app.
     if (!user) {
       return res.status(404).json({ message: 'No student account is registered with this email.' });
     }
-    // An account created via passkey-only would have no password to reset. In this
-    // app students always set a password at registration, but guard anyway.
     if (!user.password) {
       return res.status(400).json({ message: 'This account has no password set. Please contact an administrator.' });
     }
 
-    // Per-email resend cooldown so the endpoint can't be used to spam an inbox.
+    // Per-email resend cooldown to prevent inbox spam.
     const prior = await EmailOtp.findOne({ email, purpose: PURPOSE });
     if (prior && Date.now() - prior.lastSentAt.getTime() < RESEND_COOLDOWN_MS) {
       const waitMs = RESEND_COOLDOWN_MS - (Date.now() - prior.lastSentAt.getTime());
@@ -108,7 +78,7 @@ const requestPasswordReset = async (req, res) => {
     });
 
     const body = { message: 'Password reset code sent to your college email.' };
-    // Local dev with no SMTP: surface the code so the flow is testable. Never in prod.
+    // Dev-only fallback when SMTP isn't configured; never in prod.
     if (!delivered && !isMailConfigured() && process.env.NODE_ENV !== 'production') {
       body.devOtp = otp;
     }
@@ -118,9 +88,7 @@ const requestPasswordReset = async (req, res) => {
   }
 };
 
-// @desc    Verify a reset code and issue a short-lived reset token
-// @route   POST /api/auth/password/verify-otp
-// @access  Public
+// POST /api/auth/password/verify-otp — public
 const verifyResetOtp = async (req, res) => {
   try {
     const email = normalizeEmail(req.body.email);
@@ -149,8 +117,7 @@ const verifyResetOtp = async (req, res) => {
       return res.status(400).json({ message: `Incorrect code. ${remaining} attempt(s) remaining.` });
     }
 
-    // Correct. Burn the code (single-use) and hand back a signed proof that the
-    // reset endpoint will require before changing the password.
+    // Burn the single-use code, hand back the signed proof.
     await EmailOtp.deleteOne({ _id: record._id });
     const resetToken = issueResetToken(email);
     return res.status(200).json({ verified: true, resetToken });
@@ -159,9 +126,7 @@ const verifyResetOtp = async (req, res) => {
   }
 };
 
-// @desc    Set a new password using a verified reset token, then sign the user in
-// @route   POST /api/auth/password/reset
-// @access  Public (guarded by the signed reset token)
+// POST /api/auth/password/reset — public, guarded by the signed reset token
 const resetPassword = async (req, res) => {
   try {
     const email = normalizeEmail(req.body.email);
@@ -179,12 +144,11 @@ const resetPassword = async (req, res) => {
       return res.status(404).json({ message: 'Account not found.' });
     }
 
-    // Assigning triggers the model's pre-save hook, which salts + bcrypt-hashes it.
+    // Pre-save hook salts + bcrypt-hashes it.
     user.password = newPassword;
     await user.save();
 
-    // Issue a real session so the frontend can go straight to Quick Login setup and
-    // re-enrol the PIN (and optionally a passkey) against this new password.
+    // Real session so the frontend can re-enrol Quick Login against the new password.
     const token = generateToken(res, user._id);
     return res.status(200).json({
       _id: user._id,

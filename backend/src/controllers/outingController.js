@@ -10,7 +10,6 @@ const {
 const sseHub = require('../utils/sseHub');
 const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
-// Human-readable clock label for a minutes-since-midnight value, for messages.
 const clockLabel = (minutes) => {
   const h24 = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -19,51 +18,31 @@ const clockLabel = (minutes) => {
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 };
 
-// Lazily expire stale requests at read time. Two categories qualify:
-//
-// 1. **Approved-but-unused**: the pass was approved (by warden or auto-rule)
-//    but its departure `outTime` passed without the student exiting the gate,
-//    so the gate scan would refuse it anyway. Flipping to 'Expired' keeps
-//    every dashboard consistent with the gate's enforcement.
-//
-// 2. **Pending-and-missed**: the request was never acted on by the warden and
-//    the departure time has already passed. There's no point keeping it in the
-//    warden's approval queue — the student can't leave for a time that's gone.
-//
-// 'Out'/'Returned' trips have already left the gate, and 'Rejected' ones are
-// terminal, so those are never touched. Persistence is best-effort and per-doc
-// so one failed save doesn't block the whole list response.
+// Lazy read-time expiry of Approved-but-unused and Pending-and-missed passes; Out/Returned/Rejected are never touched. Saves are best-effort per doc.
 const expireStaleRequests = async (requests) => {
   const list = Array.isArray(requests) ? requests : [requests];
   await Promise.all(
     list.map(async (reqDoc) => {
       if (!reqDoc) return;
-      // Only 'Approved' and 'Pending' requests can expire on departure time.
       if (reqDoc.status !== 'Approved' && reqDoc.status !== 'Pending') return;
       if (!isDeparturePassed(reqDoc.outTime)) return;
       reqDoc.status = 'Expired';
       try {
         await reqDoc.save();
       } catch (err) {
-        // Leave the in-memory doc as 'Expired' for this response even if the
-        // write lost a race; the next read will retry the persist.
+        // Lost-race save is fine; next read retries the persist.
       }
     })
   );
   return requests;
 };
 
-// @desc    Create new outing request
-// @route   POST /api/outing
-// @access  Private (Student)
+// POST /api/outing — private (Student)
 const createOutingRequest = async (req, res) => {
   const { destination, purpose, outTime, outingType } = req.body;
 
   try {
-    // A student who is currently outside (or overdue) must log an entry at the
-    // gate before requesting another outing — otherwise a single student could
-    // stack passes while off-campus. campusStatus is flipped by gate scans, so
-    // 'Inside' is the only state from which a fresh request is valid.
+    // Must be 'Inside' to request — prevents stacking passes while off-campus.
     if (req.user.campusStatus && req.user.campusStatus !== 'Inside') {
       return res.status(409).json({
         message:
@@ -72,10 +51,7 @@ const createOutingRequest = async (req, res) => {
       });
     }
 
-    // The governing rule set is decided by the student's gender (trusted, from
-    // the authenticated user doc — never the request body) and the requested
-    // outing type. `normalizeOutingType` collapses any male request to the
-    // single 'General' path and pins a female request to 'Nearby'/'Market'.
+    // Gender comes from the authenticated user doc, never the body.
     const gender = req.user.gender;
     const resolvedType = normalizeOutingType(gender, outingType);
     const policy = resolveOutingPolicy(gender, resolvedType);
@@ -85,9 +61,7 @@ const createOutingRequest = async (req, res) => {
       return res.status(400).json({ message: 'A valid departure time is required.' });
     }
 
-    // Hard-block departures outside the policy window (both too early and too
-    // late). This is the authoritative check — the client shows the same window
-    // for UX, but a direct API call is stopped here.
+    // Authoritative window check — client shows the same window for UX only.
     if (!isWithinDepartureWindow(gender, resolvedType, departure)) {
       return res.status(400).json({
         message: `Departure for this outing must be between ${clockLabel(
@@ -100,15 +74,10 @@ const createOutingRequest = async (req, res) => {
       });
     }
 
-    // The return time is NOT student-chosen: the college rule fixes it (8:00 PM,
-    // or 5:30 PM for a market trip). Pinning it as `inTime` is what drives the
-    // existing overdue/punctuality machinery so the warden is alerted if the
-    // student isn't back by the deadline.
+    // Return time is fixed by college rule (8:00 PM, or 5:30 PM for market), never student-chosen.
     const inTime = computeReturnDeadline(gender, resolvedType, departure);
 
-    // Only outings that require warden approval start 'Pending'. Everyone else
-    // (male general, female nearby) is auto-approved with no warden step — the
-    // gate scan still logs their exit/entry (the digital "register").
+    // Male general and female nearby outings are auto-approved (no warden step).
     const autoApproved = !policy.requiresWarden;
 
     const outingRequest = await OutingRequest.create({
@@ -122,16 +91,12 @@ const createOutingRequest = async (req, res) => {
       autoApproved
     });
 
-    // Push to any warden/guard dashboards currently open so a new pending
-    // request shows up instantly instead of waiting for a manual refresh.
     sseHub.broadcast('outing:changed', {
       reason: 'created',
       id: outingRequest._id,
       status: outingRequest.status,
     });
 
-    // Send a push notification to the warden managing this student's hostel
-    // so they see the request even with the dashboard closed / phone locked.
     if (!autoApproved) {
       notifyWardens(gender, {
         title: '🔔 New Outing Request',
@@ -146,9 +111,7 @@ const createOutingRequest = async (req, res) => {
   }
 };
 
-// @desc    Get logged in student's outing requests
-// @route   GET /api/outing/myrequests
-// @access  Private (Student)
+// GET /api/outing/myrequests — private (Student)
 const getMyOutingRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find({ student: req.user._id }).sort({ createdAt: -1 });
@@ -159,17 +122,13 @@ const getMyOutingRequests = async (req, res) => {
   }
 };
 
-// @desc    Get all pending requests
-// @route   GET /api/outing/pending
-// @access  Private (Warden/Guard)
+// GET /api/outing/pending — private (Warden/Guard)
 const getPendingRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
       .populate('student', 'name studentId roomNumber')
       .sort({ createdAt: 1 });
 
-    // Expire any pending requests whose departure time has already passed
-    // so the warden never sees stale entries they can no longer act on.
     await expireStaleRequests(requests);
     const stillPending = requests.filter((r) => r.status === 'Pending');
 
@@ -179,19 +138,11 @@ const getPendingRequests = async (req, res) => {
   }
 };
 
-// @desc    Update request status
-// @route   PATCH /api/outing/:id/status
-// @access  Private (Warden/Guard)
+// PATCH /api/outing/:id/status — private (Warden/Guard)
 const updateRequestStatus = async (req, res) => {
   const { status, remarks } = req.body;
 
-  // This endpoint is a warden/guard *decision* on a pending request — the only
-  // two verdicts it may issue are 'Approved' and 'Rejected'. Every other status
-  // ('Out', 'Returned', 'Expired', 'Cancelled') belongs to the gate scan flow
-  // (scanController) or the lazy-expiry logic and must never be settable here;
-  // otherwise a warden could push a pass through its whole trip lifecycle —
-  // e.g. mark a student 'Returned' who never scanned in — bypassing the gate
-  // state machine entirely.
+  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a warden.
   if (!['Approved', 'Rejected'].includes(status)) {
     return res.status(400).json({
       message: 'Status can only be set to Approved or Rejected.',
@@ -202,20 +153,14 @@ const updateRequestStatus = async (req, res) => {
     const request = await OutingRequest.findById(req.params.id).populate('student', 'gender');
 
     if (request) {
-      // A warden may only act on requests from students in their own hostel.
-      // This re-checks scope server-side so a direct API call can't approve or
-      // reject a request outside the warden's gender scope.
+      // Server-side scope re-check: wardens may only act on their own hostel's students.
       if (!studentGenderInScope(req.user, request.student?.gender)) {
         return res.status(403).json({
           message: 'This request belongs to a student outside your hostel.',
         });
       }
 
-      // A decision can only be made on a request that is still awaiting one.
-      // Once a pass has left 'Pending' (approved, rejected, out on a trip,
-      // returned, expired or cancelled) it is out of the warden's hands — this
-      // stops an already-live or terminal pass being flipped back to
-      // Approved/Rejected.
+      // Only a still-Pending request can be decided; live/terminal passes can't be flipped back.
       if (request.status !== 'Pending') {
         return res.status(409).json({
           message: `This request has already been ${request.status.toLowerCase()} and can no longer be changed.`,
@@ -223,10 +168,7 @@ const updateRequestStatus = async (req, res) => {
         });
       }
 
-      // Guard against approving a request whose departure time has already
-      // passed. The warden may have had the pending card open and clicked
-      // "Approve" after the window closed — accepting it now would create
-      // an already-expired pass.
+      // Approving after the departure window closed would mint an already-expired pass.
       if (status === 'Approved' && isDeparturePassed(request.outTime)) {
         request.status = 'Expired';
         await request.save();
@@ -246,17 +188,13 @@ const updateRequestStatus = async (req, res) => {
 
       request.status = status;
       if (remarks) request.remarks = remarks;
-      
-      // If approved or rejected by warden
+
       if (['Approved', 'Rejected'].includes(status)) {
          request.approvedBy = req.user._id;
       }
 
       const updatedRequest = await request.save();
 
-      // Keep every other open warden/guard dashboard in sync (e.g. two wardens
-      // reviewing the same queue) so an already-decided request disappears
-      // from their pending list without a manual refresh.
       sseHub.broadcast('outing:changed', {
         reason: 'status',
         id: updatedRequest._id,
@@ -272,9 +210,7 @@ const updateRequestStatus = async (req, res) => {
   }
 };
 
-// @desc    Cancel an outing request (student withdraws their own pass)
-// @route   PATCH /api/outing/:id/cancel
-// @access  Private (Student)
+// PATCH /api/outing/:id/cancel — private (Student)
 const cancelOutingRequest = async (req, res) => {
   try {
     const request = await OutingRequest.findById(req.params.id);
@@ -283,13 +219,11 @@ const cancelOutingRequest = async (req, res) => {
       return res.status(404).json({ message: 'Request not found' });
     }
 
-    // Only the student who created the request can cancel it.
     if (request.student.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'You can only cancel your own outing requests.' });
     }
 
-    // Only actionable passes (still waiting or approved but unused) can be cancelled.
-    // Once the student has scanned out, the trip is live and must close normally.
+    // Once scanned out, the trip is live and must close via the gate.
     if (request.status !== 'Pending' && request.status !== 'Approved') {
       return res.status(409).json({
         message: `Cannot cancel a request that is already ${request.status.toLowerCase()}.`,
@@ -300,8 +234,6 @@ const cancelOutingRequest = async (req, res) => {
     request.status = 'Cancelled';
     const updatedRequest = await request.save();
 
-    // Notify warden/guard dashboards so a cancelled pending request
-    // disappears from their queue in real time.
     sseHub.broadcast('outing:changed', {
       reason: 'cancelled',
       id: updatedRequest._id,
@@ -314,10 +246,7 @@ const cancelOutingRequest = async (req, res) => {
   }
 };
 
-// @desc    Live stream of outing-request changes (new requests, approvals,
-//          rejections) so warden/guard dashboards update in real time.
-// @route   GET /api/outing/stream
-// @access  Private (Warden/Guard)
+// GET /api/outing/stream — private (Warden/Guard), SSE
 const streamOutingEvents = (req, res) => {
   req.socket.setTimeout(0);
 
@@ -331,8 +260,7 @@ const streamOutingEvents = (req, res) => {
 
   sseHub.addClient(res);
 
-  // Proxies/load balancers tend to kill idle connections; a periodic comment
-  // keeps this one alive without triggering any client-side event handler.
+  // Keeps proxies from killing the idle connection.
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
 
   req.on('close', () => {
