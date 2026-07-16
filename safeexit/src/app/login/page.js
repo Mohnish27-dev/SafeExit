@@ -8,16 +8,13 @@ import Link from "next/link";
 import { getToken } from "@/app/lib/auth";
 import { getStoredUser } from "@/app/lib/userProfile";
 
-// Quick Login PIN keys per role — these are the localStorage keys set during
-// Quick Login enrollment on each role's login page. Checking for these tells us
-// which role(s) this device has been set up for WITHOUT needing a session.
+// Per-role Quick Login PIN keys — presence tells which roles this device is set up for
 const ROLE_PIN_KEYS = {
   security: "safeexit_quick_pin_guard",
   student: "safeexit_quick_pin",
   warden: "safeexit_quick_pin_warden",
 };
 
-// Dashboard paths for active-session redirect.
 const ROLE_DASHBOARD = {
   student: "/dashboard/student",
   warden: "/dashboard/warden",
@@ -64,19 +61,15 @@ const allRoles = [
 export default function LoginRoleSelect() {
   const router = useRouter();
 
-  // "loading"   → checking localStorage / sessionStorage (show skeleton)
-  // "redirect"  → auto-redirect in flight (keep showing skeleton)
-  // "ready"     → show role cards
+  // loading | redirect | ready
   const [pageState, setPageState] = useState("loading");
 
-  // The role IDs that have Quick Login enrolled on this device.
   const [enrolledRoles, setEnrolledRoles] = useState([]);
 
-  // Whether the user clicked "Show all roles" to override the filtered view.
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
-    // 1. Active session? Go straight to the dashboard.
+    // Active session? Go straight to the dashboard
     const token = getToken();
     if (token) {
       const user = getStoredUser();
@@ -86,14 +79,13 @@ export default function LoginRoleSelect() {
       return;
     }
 
-    // 2. Check which roles have Quick Login set up on this device.
     const found = Object.entries(ROLE_PIN_KEYS)
       .filter(([, key]) => !!localStorage.getItem(key))
       .map(([role]) => role);
 
     setEnrolledRoles(found);
 
-    // 3. Exactly one role enrolled → auto-redirect to that role's login.
+    // Exactly one role enrolled → auto-redirect to that role's login
     if (found.length === 1) {
       const target = allRoles.find((r) => r.id === found[0]);
       if (target) {
@@ -103,21 +95,17 @@ export default function LoginRoleSelect() {
       }
     }
 
-    // 4. Zero or multiple → show cards (filtered if multiple).
     setPageState("ready");
   }, [router]);
 
-  // Decide which role cards to render.
   const visibleRoles =
     showAll || enrolledRoles.length === 0
       ? allRoles
       : allRoles.filter((r) => enrolledRoles.includes(r.id));
 
-  // --- Loading / redirect skeleton ---
   if (pageState !== "ready") {
     return (
       <div className="min-h-screen flex flex-col bg-[#f0f0ff] relative overflow-hidden">
-        {/* Background hostel illustration */}
         <div className="absolute inset-0 z-0">
           <Image
             src="/images/login/hostel-bg.png"
@@ -162,12 +150,10 @@ export default function LoginRoleSelect() {
     );
   }
 
-  // --- Ready: show role cards ---
   const isFiltered = !showAll && enrolledRoles.length > 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f0f0ff] relative overflow-hidden">
-      {/* Background hostel illustration */}
       <div className="absolute inset-0 z-0">
         <Image
           src="/images/login/hostel-bg.png"
@@ -285,7 +271,7 @@ export default function LoginRoleSelect() {
           ))}
         </div>
 
-        {/* "Show all roles" escape hatch — only shown when cards are filtered */}
+        {/* "Show all roles" escape hatch */}
         {isFiltered && (
           <div className="mt-6">
             <button
@@ -298,7 +284,7 @@ export default function LoginRoleSelect() {
           </div>
         )}
 
-        {/* Admin Console access — always visible */}
+        {/* Admin Console access */}
         <div className="mt-8">
           <Link
             href="/login/admin"

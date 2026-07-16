@@ -1,23 +1,6 @@
-// Device-local "Quick Login" for students — an IRCTC-style 4-digit PIN plus an
-// optional biometric passkey.
-//
-// The backend only issues a session for a real email+password login or a WebAuthn
-// assertion; there is no PIN endpoint. So the PIN can't be a server secret — it's
-// a *device* convenience. To turn a 4-digit PIN back into a real backend session
-// we keep the student's password on the device, but NEVER in plaintext: it is
-// encrypted with a key derived from the PIN (PBKDF2 → AES-GCM). Entering the right
-// PIN decrypts the password, which we then hand to /auth/login for a genuine token.
-// A wrong PIN fails the AES-GCM auth tag, so it can't leak the password.
-//
-// Tradeoff (intentional, matches consumer "quick login" apps): a 4-digit PIN has
-// only 10,000 combinations, so anyone with raw access to this device's
-// localStorage could brute-force it offline. PBKDF2 with a high iteration count
-// slows that down, but the PIN is a convenience factor for a trusted personal
-// device — the password + passkey remain the real security boundary.
+// Quick Login: password encrypted under a PIN-derived key (PBKDF2 → AES-GCM); convenience, not the security boundary.
 
-// Each role keeps its Quick Login under its OWN localStorage keys so the student,
-// guard and warden logins never clobber each other on the same browser. The
-// student keys below are also the default instance exported for the student page.
+// Per-role localStorage keys so student/guard/warden never clobber each other
 const STUDENT_KEYS = {
   pinKey: "safeexit_quick_pin",           // encrypted secret blob
   labelKey: "safeexit_quick_label",       // display name for the PIN screen
@@ -27,7 +10,7 @@ const STUDENT_KEYS = {
 
 const PBKDF2_ITERATIONS = 250000;
 
-// --- small base64 <-> ArrayBuffer helpers (localStorage only holds strings) ---
+// base64 <-> ArrayBuffer (localStorage only holds strings)
 const bufToB64 = (buf) => {
   const bytes = new Uint8Array(buf);
   let bin = "";
@@ -41,7 +24,6 @@ const b64ToBuf = (b64) => {
   return bytes;
 };
 
-// Derive an AES-GCM key from the PIN + a per-device random salt.
 const deriveKey = async (pin, salt) => {
   const enc = new TextEncoder();
   const baseKey = await crypto.subtle.importKey(
@@ -62,13 +44,11 @@ const deriveKey = async (pin, salt) => {
 
 // Build a Quick Login helper bound to a role's localStorage keys.
 export const makeQuickLogin = ({ pinKey, labelKey, profileKey, webauthnKey }) => {
-  // Is a PIN configured on THIS device?
   const hasQuickPin = () => {
     if (typeof window === "undefined") return false;
     return !!localStorage.getItem(pinKey);
   };
 
-  // Is a passkey enrolled on THIS device (the optional biometric factor)?
   const hasBiometric = () => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(webauthnKey) === "true";
@@ -79,8 +59,6 @@ export const makeQuickLogin = ({ pinKey, labelKey, profileKey, webauthnKey }) =>
     return localStorage.getItem(labelKey) || "";
   };
 
-  // Enrol a PIN: encrypt `secret` under a key derived from `pin` and persist the
-  // blob. `label` (e.g. roll number / staff ID) is shown on the PIN screen.
   const setQuickPin = async (pin, secret, label = "") => {
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -100,8 +78,7 @@ export const makeQuickLogin = ({ pinKey, labelKey, profileKey, webauthnKey }) =>
     if (label) localStorage.setItem(labelKey, label);
   };
 
-  // Verify a PIN by attempting to decrypt the stored blob. Returns the recovered
-  // secret on success, or null if the PIN is wrong / no blob exists.
+  // Returns the recovered secret, or null if the PIN is wrong / no blob exists
   const verifyQuickPin = async (pin) => {
     if (typeof window === "undefined") return null;
     const raw = localStorage.getItem(pinKey);
@@ -116,13 +93,11 @@ export const makeQuickLogin = ({ pinKey, labelKey, profileKey, webauthnKey }) =>
       );
       return new TextDecoder().decode(plain);
     } catch {
-      // Wrong PIN → GCM auth tag mismatch → decrypt throws.
+      // Wrong PIN → GCM auth tag mismatch
       return null;
     }
   };
 
-  // Forget the quick-login factors (PIN + optional passkey marker). When
-  // `forgetProfile` is true we also drop the stored profile.
   const clearQuickLogin = ({ forgetProfile = false } = {}) => {
     if (typeof window === "undefined") return;
     localStorage.removeItem(pinKey);
@@ -134,7 +109,7 @@ export const makeQuickLogin = ({ pinKey, labelKey, profileKey, webauthnKey }) =>
   return { hasQuickPin, hasBiometric, getQuickLabel, setQuickPin, verifyQuickPin, clearQuickLogin };
 };
 
-// Student-bound instance — keeps the existing named exports the student page uses.
+// Student-bound instance — named exports used by the student page
 const student = makeQuickLogin(STUDENT_KEYS);
 export const hasQuickPin = student.hasQuickPin;
 export const hasBiometric = student.hasBiometric;

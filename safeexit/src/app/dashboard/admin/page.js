@@ -67,9 +67,7 @@ export default function AdminDashboardPage() {
     if (stored?.name) setProfile((p) => ({ ...p, ...stored }));
   }, []);
 
-  // Deep-link from push notifications: /dashboard/admin?view=sos lands the
-  // admin directly on the SOS tab. The param is consumed once and stripped
-  // so later in-page navigation isn't overridden by a stale query.
+  // Push-notification deep link (?view=sos); param consumed once and stripped.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
@@ -104,9 +102,7 @@ export default function AdminDashboardPage() {
     return () => clearInterval(t);
   }, [loadOverview]);
 
-  // Live SOS push: refresh the overview (and its "Active SOS" badge) the moment
-  // a student raises an alert or a responder resolves one, without waiting for
-  // the 15s tick.
+  // SSE: refresh the overview immediately on SOS events, not just the 15s tick.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
     source.addEventListener("sos:created", () => loadOverview());
@@ -134,20 +130,13 @@ export default function AdminDashboardPage() {
     { icon: Siren, label: "Active SOS", value: overview?.activeSOS ?? "—", note: "Awaiting response", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: ShieldCheck, label: "Guards On Duty", value: overview ? `${overview.guards.onDuty}/${overview.guards.total}` : "—", note: "Active security staff", tone: "border-indigo-200 bg-indigo-50 text-indigo-700" },
     { icon: CalendarDays, label: "Pending Outings", value: overview?.pendingOutings ?? "—", note: "Awaiting warden approval", tone: "border-sky-200 bg-sky-50 text-sky-700" },
-    // Distinct from "Outside Campus" above: that tile counts User.campusStatus
-    // ('Outside'), set the moment a student scans out. This one counts
-    // OutingRequest.status === 'Out' — the pass-level lifecycle stage set by
-    // the same scan. They usually move together but aren't the same field,
-    // so surfacing both lets an admin spot the two ever drifting apart
-    // (e.g. an overdue student is 'Overdue' in campusStatus but their pass
-    // is still 'Out' until they're scanned back in).
+    // Counts OutingRequest.status === 'Out' (pass-level), distinct from campusStatus 'Outside'.
     { icon: DoorOpen, label: "Gate: Out", value: overview?.studentsOut ?? "—", note: "Outing passes currently 'Out'", tone: "border-cyan-200 bg-cyan-50 text-cyan-700" },
     { icon: MessageSquareWarning, label: "Open Complaints", value: overview?.openComplaints ?? "—", note: "Unresolved reports", tone: "border-orange-200 bg-orange-50 text-orange-700" },
     { icon: Building2, label: "Total Students", value: s.total ?? "—", note: "Registered on platform", tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];
 
-  // Gate the admin console on a valid admin session; the hook redirects to
-  // /login/admin when the token is missing or belongs to another role.
+  // Gate on a valid admin session; hook redirects to /login/admin otherwise.
   if (!checked || !authorized) return <AuthLoading />;
 
   return (

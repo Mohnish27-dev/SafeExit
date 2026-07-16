@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -8,7 +8,6 @@ import {
   Clock3,
   Loader2,
   Search,
-  UserRound,
   UsersRound,
 } from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
@@ -25,8 +24,7 @@ const CAMPUS_TONE = {
   Overdue: "bg-rose-100 text-rose-700",
 };
 
-// Pointer-tracked 3D tilt for the student roster tiles — module scope so it
-// isn't recreated every render; mirrors the guard home dashboard's tile physics.
+// 3D tilt for roster tiles; module scope so handlers aren't recreated per render.
 const handleTilePointerMove = (e) => {
   const el = e.currentTarget;
   const rect = el.getBoundingClientRect();
@@ -43,9 +41,8 @@ const handleTilePointerLeave = (e) => {
   e.currentTarget.style.setProperty("--ry", "0deg");
 };
 
-export default function SecurityStudentsPage() {
+function SecurityStudentsContent() {
   const { t } = useTranslation("security");
-  const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
   const { checked, authorized } = useRequireAuth("security");
   const searchParams = useSearchParams();
@@ -245,5 +242,14 @@ export default function SecurityStudentsPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// useSearchParams requires a Suspense boundary for static prerendering.
+export default function SecurityStudentsPage() {
+  return (
+    <Suspense fallback={<AuthLoading />}>
+      <SecurityStudentsContent />
+    </Suspense>
   );
 }

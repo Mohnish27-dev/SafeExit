@@ -20,14 +20,11 @@ import { startRegistration, startAuthentication } from "@simplewebauthn/browser"
 import { setStoredUser } from "@/app/lib/userProfile";
 import { makeQuickLogin } from "@/app/lib/quickLogin";
 
-// Guards have no college email. The backend keys every account + passkey login
-// on `loginId`, so a guard's normalized ID IS their identity — no fabricated
-// "@guard.safeexit.local" email required anywhere.
+// Guards have no email — the normalized Guard ID IS the backend loginId
 const buildGuardLoginId = (guardId) =>
   guardId.trim().toLowerCase().replace(/\s+/g, "");
 
-// Quick Login for guards — its own localStorage namespace so it never collides
-// with the student or warden logins on the same browser.
+// Own localStorage namespace so it never collides with student/warden logins
 const quick = makeQuickLogin({
   pinKey: "safeexit_quick_pin_guard",
   labelKey: "safeexit_quick_label_guard",
@@ -43,27 +40,22 @@ export default function SecurityLoginPage() {
   const [onboardingStep, setOnboardingStep] = useState(1); // 1: Details, 2: Quick Login setup
   const [storedProfile, setStoredProfile] = useState(null);
 
-  // Login fields: the Guard ID + PIN an admin provisioned for them.
   const [formData, setFormData] = useState({
     guardId: "",
     pin: "",
   });
 
-  // Status
   const [errorMsg, setErrorMsg] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Quick Login SETUP state (onboarding step 2).
   const [quickPin, setQuickPin] = useState("");
   const [confirmQuickPin, setConfirmQuickPin] = useState("");
   const [showSetupPin, setShowSetupPin] = useState(false);
   const [enableBiometric, setEnableBiometric] = useState(false);
-  // The admin-issued PIN (account secret) captured at step 1, locked behind the
-  // 4-digit Quick Login PIN during setup. A valid session token from that login.
+  // Admin-issued PIN captured at step 1, locked behind the Quick Login PIN
   const [pendingSecret, setPendingSecret] = useState("");
   const [sessionToken, setSessionToken] = useState(null);
 
-  // Returning-user Quick Login state.
   const [loginPin, setLoginPin] = useState("");
   const [showLoginPin, setShowLoginPin] = useState(false);
   const [hasBio, setHasBio] = useState(false);
@@ -103,9 +95,7 @@ export default function SecurityLoginPage() {
     return true;
   };
 
-  // Sign in against an admin-provisioned Guard account. Guards are no longer
-  // self-registered — an administrator creates the account, and this page simply
-  // authenticates it. Returns the login response (name, token, role, …).
+  // Guards are admin-provisioned, not self-registered
   const loginGuardAccount = async (loginId, pin) => {
     const res = await fetch("/api/backend/auth/login", {
       method: "POST",
@@ -121,9 +111,7 @@ export default function SecurityLoginPage() {
           : data.message || "Login failed."
       );
     }
-    // Defence in depth: the backend route guards are the real gate, but reject a
-    // non-guard here so, e.g., a student's own credentials can't land on the
-    // guard dashboard (where every request would just 403 anyway).
+    // Defence in depth: keep non-guard accounts off the guard dashboard
     if (data.role !== "Guard") {
       throw new Error("This account is not authorized for guard access.");
     }
@@ -136,12 +124,10 @@ export default function SecurityLoginPage() {
       role: "security",
       roleLabel: "Security Guard",
       id: profile.guardId,
-      // Staff are identified by their ID, not an email — leave email unset.
+      // Staff are identified by ID, not email
     });
   };
 
-  // Run the real WebAuthn registration ceremony to enrol a passkey. Requires a
-  // valid session token. Sets the device's biometric marker on success.
   const enrollBiometric = async (token) => {
     const authHeaders = {
       "Content-Type": "application/json",
@@ -181,14 +167,12 @@ export default function SecurityLoginPage() {
       const data = await loginGuardAccount(loginId, formData.pin);
       sessionStorage.setItem("safeexit_token", data.token);
 
-      // Persist just enough for the returning-user path (needs the ID to rebuild
-      // the loginId) — never the admin PIN in plaintext.
+      // Persist the ID for the returning-user path — never the admin PIN in plaintext
       const profile = { guardId: formData.guardId, fullName: data.name };
       localStorage.setItem("safeexit_guard_profile", JSON.stringify(profile));
       setStoredProfile(profile);
       persistGuardSession(profile);
 
-      // Carry the secret + token into Quick Login setup.
       setPendingSecret(formData.pin);
       setSessionToken(data.token);
       setQuickPin("");
@@ -216,7 +200,7 @@ export default function SecurityLoginPage() {
     setErrorMsg("");
     try {
       const profile = JSON.parse(localStorage.getItem("safeexit_guard_profile"));
-      // Lock the admin PIN behind the Quick Login PIN so it can log in next time.
+      // Lock the admin PIN behind the Quick Login PIN
       await quick.setQuickPin(quickPin, pendingSecret, profile.guardId);
 
       if (enableBiometric && !quick.hasBiometric()) {
@@ -238,7 +222,7 @@ export default function SecurityLoginPage() {
     }
   };
 
-  // RETURNING: sign in with the 4-digit PIN (decrypt the admin PIN, then auth).
+  // RETURNING: decrypt the admin PIN with the 4-digit PIN, then auth
   const handlePinLogin = async (e) => {
     e.preventDefault();
     if (!/^\d{4}$/.test(loginPin)) {
@@ -270,7 +254,6 @@ export default function SecurityLoginPage() {
     try {
       const loginId = buildGuardLoginId(storedProfile.guardId);
 
-      // 1. Get an authentication challenge scoped to this account's passkeys.
       const optionsRes = await fetch("/api/backend/auth/webauthn/login/options", {
         method: "POST",
         credentials: "include",
@@ -282,10 +265,8 @@ export default function SecurityLoginPage() {
       }
       const optionsJSON = await optionsRes.json();
 
-      // 2. Prompt the authenticator to sign the challenge.
       const asseResp = await startAuthentication({ optionsJSON });
 
-      // 3. Server verifies the signature and issues a session token.
       const verifyRes = await fetch("/api/backend/auth/webauthn/login/verify", {
         method: "POST",
         credentials: "include",
@@ -436,7 +417,7 @@ export default function SecurityLoginPage() {
                 </button>
               </form>
 
-              {/* Optional biometric — only when a passkey is enrolled on this device. */}
+              {/* Optional biometric */}
               {hasBio && (
                 <button
                   onClick={handleBiometricLogin}

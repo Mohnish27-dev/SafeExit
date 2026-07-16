@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Seed / update the admin accounts (manual one-off)
-// ---------------------------------------------------------------------------
-// Run:  npm run seed:admins   (from the backend/ folder)
-//
-// NOTE: the server already runs this same logic on every boot (see
-// src/utils/ensureAdmins.js), so you normally don't need this. It stays as a
-// standalone command for provisioning against a DB without starting the server.
+// npm run seed:admins — standalone admin provisioning; the server runs the same ensureAdmins on every boot.
 require('dotenv').config();
 const mongoose = require('mongoose');
 const connectDB = require('../src/config/db');

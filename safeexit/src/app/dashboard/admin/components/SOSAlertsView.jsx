@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Siren,
   Shield,
   HeartPulse,
   AlertTriangle,
@@ -65,8 +64,7 @@ export default function SOSAlertsView({ onChange }) {
     return () => clearInterval(t);
   }, [load]);
 
-  // Real-time push so a new SOS lands in the command center the instant a
-  // student raises it, and status changes from wardens/guards sync live.
+  // SSE: new SOS alerts and status changes sync live.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
     const refresh = () => {

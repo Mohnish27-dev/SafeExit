@@ -16,16 +16,11 @@ import Link from "next/link";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 
-// Admins have no college email. The backend keys every account + passkey login
-// on `loginId`, so an admin's normalized ID IS their identity — no fabricated
-// "@admin.safeexit.local" email required anywhere.
+// Admins have no email — the normalized Admin ID IS the backend loginId
 const buildAdminLoginId = (adminId) =>
   adminId.trim().toLowerCase().replace(/\s+/g, "");
 
-// Admin access is restricted to these two people. This mirrors the backend
-// allowlist (backend/src/config/adminAllowlist.js) purely for a friendly early
-// error — the PIN is intentionally NOT included here so it stays out of the
-// browser bundle. The backend is the real gate and enforces the PIN.
+// Mirrors the backend allowlist for a friendly early error; PIN intentionally excluded from the bundle
 const AUTHORIZED_ADMINS = [
   { name: "Gungun Wadhwani", adminId: "ADM-GUNGUN" },
   { name: "Mohnish Pamnani", adminId: "ADM-MOHNISH" },
@@ -42,7 +37,6 @@ const isAuthorizedAdmin = (name, adminId) =>
 export default function AdminLoginPage() {
   const router = useRouter();
 
-  // App state: returning admin or onboarding
   const [appState, setAppState] = useState("LOADING"); // LOADING, RETURNING_USER, ONBOARDING
   const [onboardingStep, setOnboardingStep] = useState(1); // 1: Details, 2: Quick Login
   const [storedProfile, setStoredProfile] = useState(null);
@@ -88,11 +82,7 @@ export default function AdminLoginPage() {
     setOnboardingStep(2);
   };
 
-  // Shared helper: sign in to the pre-provisioned admin account with the PIN and
-  // return a JWT. Admin accounts are seeded server-side (npm run seed:admins) —
-  // they are NOT self-registered here — so this is a plain login. The PIN is only
-  // a one-time bootstrap to attach a passkey to this device; once a passkey
-  // exists the backend rejects PIN login and the admin must use the passkey.
+  // PIN is a one-time bootstrap; once a passkey exists the backend rejects PIN login.
   const registerAdminAccount = async (profile) => {
     const loginId = buildAdminLoginId(profile.adminId);
     const loginRes = await fetch("/api/backend/auth/login", {
@@ -108,9 +98,7 @@ export default function AdminLoginPage() {
         throw new Error("Incorrect name, Admin ID or PIN. Access is restricted to authorized administrators.");
       }
       if (loginRes.status === 403) {
-        // Two distinct 403s: (a) this admin already set up a passkey, so PIN login
-        // is intentionally blocked — pivot to passkey login instead of erroring;
-        // (b) not on the allowlist at all.
+        // 403 "passkey" means PIN login is blocked — pivot to passkey login
         if (/passkey/i.test(data.message || "")) {
           const err = new Error(data.message);
           err.code = "PASSKEY_EXISTS";
@@ -131,8 +119,7 @@ export default function AdminLoginPage() {
     return loginData.token;
   };
 
-  // The account already has a passkey, so PIN login is blocked. Move the UI to
-  // the "Login with Passkey" screen for this admin instead of dead-ending.
+  // Account already has a passkey (PIN login blocked) — show the passkey screen
   const pivotToPasskeyLogin = (profile) => {
     setStoredProfile(profile);
     localStorage.setItem("safeexit_admin_profile", JSON.stringify(profile));
@@ -147,7 +134,7 @@ export default function AdminLoginPage() {
       role: "admin",
       roleLabel: "Administrator",
       id: profile.adminId,
-      // Staff are identified by their ID, not an email — leave email unset.
+      // Staff are identified by ID, not email
     });
   };
 
@@ -157,7 +144,6 @@ export default function AdminLoginPage() {
     try {
       const profile = JSON.parse(localStorage.getItem("safeexit_admin_profile"));
 
-      // 1. Create the account (or sign in if it already exists) to get a JWT.
       const token = await registerAdminAccount(profile);
       sessionStorage.setItem("safeexit_token", token);
 
@@ -166,7 +152,6 @@ export default function AdminLoginPage() {
         Authorization: `Bearer ${token}`,
       };
 
-      // 2. Ask the server for a registration challenge.
       const optionsRes = await fetch("/api/backend/auth/webauthn/register/options", {
         method: "POST",
         credentials: "include",
@@ -175,10 +160,8 @@ export default function AdminLoginPage() {
       if (!optionsRes.ok) throw new Error("Could not start passkey setup");
       const optionsJSON = await optionsRes.json();
 
-      // 3. Prompt the platform authenticator (fingerprint / FaceID).
       const attResp = await startRegistration({ optionsJSON });
 
-      // 4. Send the signed attestation back for cryptographic verification.
       const verifyRes = await fetch("/api/backend/auth/webauthn/register/verify", {
         method: "POST",
         credentials: "include",
@@ -234,7 +217,6 @@ export default function AdminLoginPage() {
     try {
       const loginId = buildAdminLoginId(storedProfile.adminId);
 
-      // 1. Get an authentication challenge scoped to this account's passkeys.
       const optionsRes = await fetch("/api/backend/auth/webauthn/login/options", {
         method: "POST",
         credentials: "include",
@@ -246,10 +228,8 @@ export default function AdminLoginPage() {
       }
       const optionsJSON = await optionsRes.json();
 
-      // 2. Prompt the authenticator to sign the challenge.
       const asseResp = await startAuthentication({ optionsJSON });
 
-      // 3. Server verifies the signature and issues a session token.
       const verifyRes = await fetch("/api/backend/auth/webauthn/login/verify", {
         method: "POST",
         credentials: "include",

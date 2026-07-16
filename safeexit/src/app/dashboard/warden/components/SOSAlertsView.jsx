@@ -26,8 +26,6 @@ const getInitials = (name = "") =>
     .join("")
     .toUpperCase() || "?";
 
-// Visual + label config per alert type, mirroring the student SOS screen and
-// the admin console so the same emergency reads identically everywhere.
 const TYPE_META = {
   harassment: { label: "Harassment / Threat", icon: Shield, tone: "bg-rose-100 text-rose-600" },
   medical: { label: "Medical Emergency", icon: HeartPulse, tone: "bg-orange-100 text-orange-600" },
@@ -47,10 +45,6 @@ const FILTERS = ["Active", "Acknowledged", "Resolved", "All"];
 const formatTime = (iso) =>
   new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
-// Live SOS feed for the warden. Data path mirrors the admin console: fetch
-// GET /sos (already authorized for Warden), subscribe to the shared SSE stream
-// so a student's alert appears the instant it's raised, and keep a low-rate
-// poll as a safety net if the SSE connection is silently dropped.
 export default function SOSAlertsView({ onCountChange }) {
   const [alerts, setAlerts] = useState([]);
   const [filter, setFilter] = useState("Active");
@@ -73,14 +67,11 @@ export default function SOSAlertsView({ onCountChange }) {
 
   useEffect(() => {
     load();
-    // Poll frequently — these are emergencies. This is the fallback; the SSE
-    // stream below is what makes new alerts appear instantly.
+    // Frequent poll: these are emergencies; SSE below is the fast path.
     const t = setInterval(load, 8000);
     return () => clearInterval(t);
   }, [load]);
 
-  // Real-time push: refetch the moment a student raises a new alert or another
-  // responder changes one, instead of waiting for the next poll tick.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
     source.addEventListener("sos:created", () => load());
@@ -207,7 +198,7 @@ export default function SOSAlertsView({ onCountChange }) {
                   </div>
                 </div>
 
-                {/* Student profile strip — who, where, and how to reach them fast. */}
+                {/* Student profile strip */}
                 <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 text-sm font-bold text-white">
@@ -229,8 +220,7 @@ export default function SOSAlertsView({ onCountChange }) {
                       <MapPin className="h-4 w-4 text-slate-400" /> {a.location}
                     </span>
                   )}
-                  {/* GPS snapshot from the student's device at raise time —
-                      opens the maps app pinned at their exact position. */}
+                  {/* GPS snapshot from raise time; opens maps at that pin */}
                   {a.coords?.lat != null && a.coords?.lng != null && (
                     <a
                       href={`https://www.google.com/maps?q=${a.coords.lat},${a.coords.lng}`}

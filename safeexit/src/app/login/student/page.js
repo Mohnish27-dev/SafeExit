@@ -40,17 +40,10 @@ import {
 export default function StudentLoginPage() {
   const router = useRouter();
 
-  // App States
-  //   LOADING        — deciding the landing screen
-  //   RETURNING_USER — this device has Quick Login set up (PIN + optional biometric)
-  //   LOGIN          — editable email + password sign-in (fresh device / fallback)
-  //   ONBOARDING     — registration (steps 1-3) then Quick Login setup (step 4)
-  //   QUICK_SETUP    — after an email+password sign-in, (re)enrol Quick Login
   const [appState, setAppState] = useState("LOADING");
   const [onboardingStep, setOnboardingStep] = useState(1); // 1: Form, 2: Verify, 3: Photo, 4: Quick Login
   const [storedProfile, setStoredProfile] = useState(null);
 
-  // Form States
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -62,49 +55,36 @@ export default function StudentLoginPage() {
     roomNumber: "",
     phoneNumber: "",
     emergencyContact: "",
-    // Login secret the student chooses (NOT the public roll number). Kept only in
-    // component state — never written to localStorage as plaintext. During Quick
-    // Login setup it is encrypted under the 4-digit PIN (see lib/quickLogin).
+    // Never persisted as plaintext; encrypted under the PIN during Quick Login setup
     password: "",
     confirmPassword: "",
   });
 
-  // Photo State
   const [photoPreview, setPhotoPreview] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Email verification (OTP) state
   const [otp, setOtp] = useState("");
   const [emailToken, setEmailToken] = useState(null); // signed proof from /otp/verify
   const [resendIn, setResendIn] = useState(0);         // resend cooldown (seconds)
   const [devOtp, setDevOtp] = useState(null);          // dev-only: code shown when SMTP is off
 
-  // Status
   const [errorMsg, setErrorMsg] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Returning-user Quick Login state.
-  const [hasBio, setHasBio] = useState(false);     // is a passkey enrolled on THIS device?
+  const [hasBio, setHasBio] = useState(false);     // passkey enrolled on THIS device?
   const [quickLabel, setQuickLabel] = useState(""); // roll number shown on the PIN screen
-  const [loginPin, setLoginPin] = useState("");     // PIN typed on the returning screen
+  const [loginPin, setLoginPin] = useState("");
   const [showLoginPin, setShowLoginPin] = useState(false);
 
-  // Quick Login SETUP state (onboarding step 4 + QUICK_SETUP).
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [showSetupPin, setShowSetupPin] = useState(false);
-  const [enableBiometric, setEnableBiometric] = useState(false); // optional, off by default
-  // A valid session token for the account being set up. In ONBOARDING it comes
-  // from /auth/register; in QUICK_SETUP from the email+password /auth/login. Kept
-  // so a retry (e.g. after a cancelled biometric prompt) doesn't re-register.
+  const [enableBiometric, setEnableBiometric] = useState(false);
+  // Kept so a retry after a cancelled biometric prompt doesn't re-register
   const [sessionToken, setSessionToken] = useState(null);
-  // The password to lock behind the PIN during QUICK_SETUP (typed at the login
-  // form). In ONBOARDING we use formData.password instead.
+  // Password to lock behind the PIN in QUICK_SETUP (ONBOARDING uses formData.password)
   const [pendingPassword, setPendingPassword] = useState("");
 
-  // Generic email + password sign-in (fresh device, forgotten PIN, or "someone
-  // else"). Both fields are editable — unlike the old read-only-email fallback,
-  // which is removed.
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
 
 
@@ -112,10 +92,7 @@ export default function StudentLoginPage() {
 
 
   
-  // Forgot-password flow state (student forgot BOTH the PIN and the password).
-  //   1: confirm college email  ·  2: enter emailed OTP  ·  3: choose new password
-  // On success the account is re-secured and we drop into QUICK_SETUP so the PIN
-  // (and optional passkey) is re-enrolled against the new password.
+  // Forgot-password: 1 confirm email · 2 emailed OTP · 3 new password, then QUICK_SETUP
   const [forgotStep, setForgotStep] = useState(1);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotOtp, setForgotOtp] = useState("");
@@ -125,12 +102,9 @@ export default function StudentLoginPage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
 
   useEffect(() => {
-    // Decide the landing screen from what this device already knows.
     const profileRaw = localStorage.getItem("safeexit_user_profile");
 
     if (profileRaw && hasQuickPin()) {
-      // This device has an onboarded account AND a Quick Login PIN — greet them
-      // back and ask only for the PIN (plus biometric if it was enrolled).
       try {
         setStoredProfile(JSON.parse(profileRaw));
       } catch {
@@ -140,8 +114,6 @@ export default function StudentLoginPage() {
       setQuickLabel(getQuickLabel());
       setAppState("RETURNING_USER");
     } else {
-      // No Quick Login on this device. Fall back to the email + password form. If
-      // we still remember the account's email, prefill it (still editable).
       if (profileRaw) {
         try {
           const p = JSON.parse(profileRaw);
@@ -154,7 +126,6 @@ export default function StudentLoginPage() {
     }
   }, []);
 
-  // Resend cooldown ticker — counts `resendIn` down to 0 once per second.
   useEffect(() => {
     if (resendIn <= 0) return;
     const t = setInterval(() => setResendIn((s) => (s <= 1 ? 0 : s - 1)), 1000);
@@ -166,10 +137,7 @@ export default function StudentLoginPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // ---- Shared helpers -------------------------------------------------------
-
-  // Publish the student's photo to the local profile store so the guard's scanner
-  // can find it even after the in-memory store was cleared (e.g. a server restart).
+  // Publish photo so the guard's scanner survives server restarts clearing the in-memory store
   const publishPhoto = (p) => {
     if (!p?.photo) return;
     fetch("/api/profile", {
@@ -183,7 +151,6 @@ export default function StudentLoginPage() {
     }).catch((err) => console.error("Failed to publish profile photo", err));
   };
 
-  // Persist the device profile (best-effort, tolerating localStorage quota).
   const persistProfile = (p) => {
     try {
       localStorage.setItem("safeexit_user_profile", JSON.stringify(p));
@@ -197,7 +164,6 @@ export default function StudentLoginPage() {
     }
   };
 
-  // Publish state to the app, then head to the dashboard.
   const hydrateAndGo = (p) => {
     publishPhoto(p);
     setStoredUser({
@@ -221,8 +187,6 @@ export default function StudentLoginPage() {
     router.push("/dashboard/student");
   };
 
-  // Run the real WebAuthn registration ceremony to enrol a passkey. Requires a
-  // valid session token. Sets the device's biometric marker on success.
   const enrollBiometric = async (token) => {
     const authHeaders = {
       "Content-Type": "application/json",
@@ -251,7 +215,6 @@ export default function StudentLoginPage() {
     localStorage.setItem("safeexit_webauthn_registered", "true");
   };
 
-  // Create the student account (onboarding). Returns a session token.
   const registerAccount = async () => {
     const profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
     const registerRes = await fetch("/api/backend/auth/register", {
@@ -261,7 +224,7 @@ export default function StudentLoginPage() {
       body: JSON.stringify({
         name: profile.fullName,
         email: profile.email,
-        password: formData.password, // student-chosen login secret (from step 1)
+        password: formData.password, // student-chosen login secret
         role: "Student",
         studentId: profile.rollNumber,
         department: profile.branch,
@@ -282,8 +245,6 @@ export default function StudentLoginPage() {
     return registerData.token;
   };
 
-  // Request a verification code for the entered college email. Shared by the
-  // "Continue" button on step 1 and the "Resend" button on step 2.
   const sendEmailOtp = async () => {
     setIsProcessing(true);
     setErrorMsg("");
@@ -296,8 +257,7 @@ export default function StudentLoginPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "Couldn't send the code. Please try again.");
       setResendIn(60);
-      // In local dev (no SMTP configured) the backend returns the code so the
-      // flow is testable without a real inbox. Never present in production.
+      // devOtp only returned when SMTP is off; never present in production
       setDevOtp(data.devOtp || null);
       return true;
     } catch (err) {
@@ -308,8 +268,6 @@ export default function StudentLoginPage() {
     }
   };
 
-  // Check the 6-digit code. On success we receive a signed token proving the
-  // email was verified, which is later required by the register endpoint.
   const verifyEmailOtp = async () => {
     if (otp.trim().length < 6) {
       setErrorMsg("Please enter the 6-digit code sent to your email.");
@@ -327,7 +285,7 @@ export default function StudentLoginPage() {
       if (!res.ok || !data.verified) throw new Error(data.message || "Verification failed.");
       setEmailToken(data.emailVerificationToken);
       setDevOtp(null);
-      setOnboardingStep(3); // proceed to Photo
+      setOnboardingStep(3);
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -346,12 +304,10 @@ export default function StudentLoginPage() {
     }
   };
 
-  // Compress a dataURL image to reduce size before storing in localStorage
   const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) => {
     return new Promise((resolve) => {
       if (!dataUrl) return resolve(null);
-      // Use the global browser Image constructor explicitly to avoid
-      // colliding with the imported Next.js Image component.
+      // window.Image, not the imported Next.js Image component
       const ImgConstructor = (typeof window !== 'undefined' && window.Image) ? window.Image : null;
       const img = ImgConstructor ? new ImgConstructor() : document.createElement('img');
       img.onload = () => {
@@ -363,7 +319,6 @@ export default function StudentLoginPage() {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        // Export as JPEG to reduce size (works well for photos)
         const compressed = canvas.toDataURL('image/jpeg', quality);
         resolve(compressed);
       };
@@ -380,7 +335,7 @@ export default function StudentLoginPage() {
         return false;
       }
     }
-    // College email must be a valid NIT Patna address (e.g. shubhamk.ug24.cs@nitp.ac.in)
+    // College email must be a valid NIT Patna address
     if (!/^[^\s@]+@nitp\.ac\.in$/i.test(formData.email.trim())) {
       setErrorMsg("Please enter a valid NIT Patna email ending in @nitp.ac.in.");
       return false;
@@ -389,8 +344,6 @@ export default function StudentLoginPage() {
       setErrorMsg("Please enter a valid phone number.");
       return false;
     }
-    // The password is the student's login secret — enforce a minimum length and a
-    // matching confirmation so they don't lock themselves out with a typo.
     if (formData.password.length < 6) {
       setErrorMsg("Password must be at least 6 characters.");
       return false;
@@ -406,7 +359,6 @@ export default function StudentLoginPage() {
   const submitStep1 = async (e) => {
     e.preventDefault();
     if (!validateStep1()) return;
-    // Fire off the verification email, then move to the code-entry step.
     setOtp("");
     setEmailToken(null);
     const sent = await sendEmailOtp();
@@ -414,16 +366,12 @@ export default function StudentLoginPage() {
   };
 
   const skipOrSubmitPhoto = () => {
-    // Save profile to localStorage temporarily
     (async () => {
-      // Never persist the login secret to localStorage — strip password fields
-      // before anything touches storage. The register call reads the password
-      // straight from component state instead.
+      // Never persist the login secret — strip password fields before storage
       const { password, confirmPassword, ...safeProfile } = formData;
       const profileToSave = { ...safeProfile };
       try {
         if (photoPreview && typeof photoPreview === 'string' && photoPreview.startsWith('data:')) {
-          // Try to compress large images before saving
           const compressed = await compressImage(photoPreview, 800, 0.7);
           profileToSave.photo = compressed || null;
         } else {
@@ -433,13 +381,12 @@ export default function StudentLoginPage() {
         try {
           localStorage.setItem("safeexit_user_profile", JSON.stringify(profileToSave));
         } catch (e) {
-          // If quota exceeded, fall back to saving without the photo
+          // Quota exceeded: retry without the photo
           console.warn('localStorage quota exceeded, saving profile without photo', e);
           const fallback = { ...profileToSave, photo: null };
           try {
             localStorage.setItem("safeexit_user_profile", JSON.stringify(fallback));
           } catch (e2) {
-            // If still failing, remove any stale large keys and try once more
             console.warn('second localStorage attempt failed, clearing old profile key and retrying', e2);
             try {
               localStorage.removeItem('safeexit_user_profile');
@@ -451,14 +398,12 @@ export default function StudentLoginPage() {
         }
       } catch (err) {
         console.error('Error while processing photo for storage', err);
-        // As a last resort, store only text data
         try {
           localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...safeProfile, photo: null }));
         } catch (e) {
           console.error('Unable to persist profile to localStorage after error', e);
         }
       } finally {
-        // Reset Quick Login setup fields before showing step 4.
         setPin("");
         setConfirmPin("");
         setEnableBiometric(false);
@@ -468,10 +413,7 @@ export default function StudentLoginPage() {
     })();
   };
 
-  // ---- Quick Login setup (onboarding step 4 + QUICK_SETUP) ------------------
-
-  // Enrol a PIN (and optional biometric), then go to the dashboard. Works for
-  // both ONBOARDING (register first) and QUICK_SETUP (already signed in).
+  // Enrol PIN (+ optional biometric); handles both ONBOARDING and QUICK_SETUP
   const submitQuickSetup = async () => {
     if (!/^\d{4}$/.test(pin)) {
       setErrorMsg("Please set a 4-digit numeric PIN.");
@@ -491,21 +433,18 @@ export default function StudentLoginPage() {
       if (appState === "ONBOARDING") {
         profile = JSON.parse(localStorage.getItem("safeexit_user_profile"));
         password = formData.password;
-        // Register once; a retry (after a cancelled biometric) reuses the token.
+        // Register once; a retry after a cancelled biometric reuses the token
         if (!token) {
           token = await registerAccount();
           setSessionToken(token);
         }
       } else {
-        // QUICK_SETUP: account already exists, token + password captured at login.
         profile = storedProfile;
         password = pendingPassword;
       }
 
-      // Lock the password behind the PIN so the PIN can log in next time.
       await setQuickPin(pin, password, profile.rollNumber || profile.email);
 
-      // Optional biometric — only enrol if requested and not already present.
       if (enableBiometric && !hasBiometric()) {
         await enrollBiometric(token);
       }
@@ -524,8 +463,6 @@ export default function StudentLoginPage() {
     }
   };
 
-  // Skip Quick Login entirely and continue. In ONBOARDING this still needs to
-  // create the account first.
   const skipQuickSetup = async () => {
     setIsProcessing(true);
     setErrorMsg("");
@@ -545,10 +482,7 @@ export default function StudentLoginPage() {
     }
   };
 
-  // ---- Returning-user Quick Login (PIN / biometric) -------------------------
-
-  // Sign in with the 4-digit PIN: decrypt the stored password, then authenticate
-  // for real against the backend.
+  // PIN login: decrypt the stored password, then authenticate against the backend
   const handlePinLogin = async (e) => {
     e.preventDefault();
     if (!/^\d{4}$/.test(loginPin)) {
@@ -590,7 +524,6 @@ export default function StudentLoginPage() {
     try {
       const email = storedProfile.email;
 
-      // 1. Get an authentication challenge scoped to this account's registered passkeys.
       const optionsRes = await fetch('/api/backend/auth/webauthn/login/options', {
         method: 'POST',
         credentials: 'include',
@@ -602,11 +535,8 @@ export default function StudentLoginPage() {
       }
       const optionsJSON = await optionsRes.json();
 
-      // 2. Prompt the authenticator to sign the challenge with the stored private key.
       const asseResp = await startAuthentication({ optionsJSON });
 
-      // 3. The server verifies the signature against the stored public key. Only a
-      //    cryptographically valid assertion yields a session token.
       const verifyRes = await fetch('/api/backend/auth/webauthn/login/verify', {
         method: 'POST',
         credentials: 'include',
@@ -631,17 +561,10 @@ export default function StudentLoginPage() {
     }
   };
 
-  // ---- Email + password sign-in (fallback / fresh device) -------------------
-
-  // Given a valid session (token) and the plaintext `password` it was obtained
-  // with, (re)build this device's profile from the server and hand off to Quick
-  // Login setup — so the student re-enrols a PIN (and optionally biometric) that
-  // caches this password. Shared by password sign-in and password reset.
+  // Rebuild this device's profile from the server, then hand off to Quick Login setup
   const enterQuickSetupWithSession = async (token, password, emailFallback) => {
     sessionStorage.setItem('safeexit_token', token);
 
-    // Pull the full profile so the dashboard, QR ticket, and guard scanner all
-    // have real data (roll number, room, phone) instead of just an email.
     let profileData = {};
     try {
       const profRes = await fetch('/api/backend/auth/profile', {
@@ -656,9 +579,7 @@ export default function StudentLoginPage() {
 
     const resolvedEmail = profileData.email || emailFallback;
 
-    // The server doesn't store the profile photo. If this device still holds a
-    // profile for the SAME account (e.g. a "Forgot PIN" re-login), carry its
-    // photo over so the guard's face-match keeps working.
+    // Server doesn't store the photo — carry over this device's copy for the same account
     let carriedPhoto = null;
     try {
       const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null");
@@ -684,7 +605,6 @@ export default function StudentLoginPage() {
     };
     persistProfile(deviceProfile);
 
-    // Hand off to Quick Login setup (demand PIN + optional biometric again).
     setStoredProfile(deviceProfile);
     setSessionToken(token);
     setPendingPassword(password);
@@ -695,9 +615,6 @@ export default function StudentLoginPage() {
     setAppState("QUICK_SETUP");
   };
 
-  // Sign in with college email + password. On success we (re)build this device's
-  // profile from the server and hand off to Quick Login setup — so the student is
-  // prompted to create a PIN (and optionally biometric) again.
   const handleGenericLogin = async (e) => {
     e.preventDefault();
     const email = loginForm.email.trim();
@@ -727,7 +644,7 @@ export default function StudentLoginPage() {
             : data.message || "Login failed."
         );
       }
-      // Keep non-students off the student dashboard even with valid staff creds.
+      // Keep non-students off the student dashboard even with valid staff creds
       if (data.role !== 'Student') {
         throw new Error("This account is not authorized for student access.");
       }
@@ -739,9 +656,6 @@ export default function StudentLoginPage() {
     }
   };
 
-  // ---- Forgot password (student forgot BOTH the PIN and the password) --------
-
-  // Step 1 → 2: email a reset code to the confirmed college address.
   const submitForgotEmail = async (e) => {
     e.preventDefault();
     const email = forgotEmail.trim();
@@ -770,7 +684,6 @@ export default function StudentLoginPage() {
     }
   };
 
-  // Step 2 → 3: verify the emailed code, receiving a signed reset token.
   const submitForgotOtp = async (e) => {
     e.preventDefault();
     if (forgotOtp.trim().length < 6) {
@@ -799,9 +712,6 @@ export default function StudentLoginPage() {
     }
   };
 
-  // Step 3: set the new password, then drop into Quick Login setup to re-enrol the
-  // PIN (and optional passkey) against it — the old PIN cached the old password and
-  // was cleared, so it must be recreated.
   const submitNewPassword = async (e) => {
     e.preventDefault();
     if (newPassword.length < 6) {
@@ -827,8 +737,7 @@ export default function StudentLoginPage() {
       if (data.role !== 'Student') {
         throw new Error("This account is not authorized for student access.");
       }
-      // The old device PIN encrypted the OLD password, so it's now useless — forget
-      // it (keep any profile/photo) before re-enrolling against the new password.
+      // The old PIN encrypted the OLD password — clear it before re-enrolling
       clearQuickLogin({ forgetProfile: false });
       setHasBio(false);
       setResetToken(null);
@@ -840,10 +749,7 @@ export default function StudentLoginPage() {
     }
   };
 
-  // ---- Navigation between screens -------------------------------------------
-
-  // Show the email + password sign-in form. `keepProfile` prefills the email for
-  // the SAME student (forgot PIN); dropping it lets a DIFFERENT student sign in.
+  // `keepProfile` prefills the email for the same student; dropping it lets another sign in
   const goToLogin = ({ keepProfile = false } = {}) => {
     setErrorMsg("");
     setLoginPin("");
@@ -855,17 +761,12 @@ export default function StudentLoginPage() {
     setAppState("LOGIN");
   };
 
-  // Forgot PIN / biometric unavailable — forget the Quick Login factors on this
-  // device but keep the account so the email is prefilled. After the email +
-  // password sign-in, Quick Login setup is demanded again.
   const forgotQuickLogin = () => {
     clearQuickLogin({ forgetProfile: false });
     setHasBio(false);
     goToLogin({ keepProfile: true });
   };
 
-  // "Not <name>? Sign in as someone else" — forget the account AND the Quick Login
-  // factors bound to this device so a different existing student can sign in.
   const signInAsSomeoneElse = () => {
     clearQuickLogin({ forgetProfile: true });
     setHasBio(false);
@@ -873,8 +774,6 @@ export default function StudentLoginPage() {
     goToLogin({ keepProfile: false });
   };
 
-  // Enter the forgot-password flow. Prefill the email from the sign-in form (or the
-  // remembered profile) so a student who just failed a password login doesn't retype it.
   const goToForgotPassword = () => {
     setErrorMsg("");
     setForgotStep(1);
@@ -888,7 +787,6 @@ export default function StudentLoginPage() {
     setAppState("FORGOT_PASSWORD");
   };
 
-  // Back out of the forgot-password flow to the email + password sign-in screen.
   const cancelForgotPassword = () => {
     setErrorMsg("");
     setDevOtp(null);
@@ -896,7 +794,6 @@ export default function StudentLoginPage() {
     setAppState("LOGIN");
   };
 
-  // From the sign-in form, a genuinely new student heads into registration.
   const goToRegister = () => {
     setErrorMsg("");
     setAppState("ONBOARDING");
@@ -914,7 +811,7 @@ export default function StudentLoginPage() {
     setSessionToken(null);
   };
 
-  // ---- Quick Login setup card body (shared by step 4 and QUICK_SETUP) -------
+  // Quick Login setup card body (shared by step 4 and QUICK_SETUP)
   const renderQuickSetupBody = () => (
     <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
       <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-1">
@@ -1027,7 +924,6 @@ export default function StudentLoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f4f1ff] via-[#efe8ff] to-[#e9e2ff] relative overflow-hidden">
-      {/* Background styling remains the same */}
       <div className="absolute inset-0 z-0">
         <Image src="/images/login/hostel-bg.png" alt="" fill className="object-cover opacity-[0.18] pointer-events-none select-none" priority />
       </div>
@@ -1048,7 +944,7 @@ export default function StudentLoginPage() {
         </Link>
 
         {appState === "RETURNING_USER" ? (
-          // RETURNING USER — Quick Login with PIN (+ optional biometric)
+          // RETURNING USER
           <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
             <div className="relative w-24 h-24 mb-6">
                <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 animate-pulse opacity-20"></div>
@@ -1104,7 +1000,7 @@ export default function StudentLoginPage() {
               </button>
             </form>
 
-            {/* Optional biometric — only when a passkey is enrolled on this device. */}
+            {/* Optional biometric */}
             {hasBio && (
               <button
                 onClick={handleBiometricLogin}
@@ -1125,7 +1021,7 @@ export default function StudentLoginPage() {
             </div>
           </div>
         ) : appState === "QUICK_SETUP" ? (
-          // QUICK LOGIN SETUP after an email + password sign-in.
+          // QUICK LOGIN SETUP
           <div className="w-full max-w-[440px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-6 sm:p-8 animate-fade-in-up">
             {errorMsg && (
               <div className="mb-6 bg-rose-50 text-rose-700 text-sm font-medium p-3 rounded-xl border border-rose-100 flex items-center gap-2">
@@ -1135,9 +1031,7 @@ export default function StudentLoginPage() {
             {renderQuickSetupBody()}
           </div>
         ) : appState === "FORGOT_PASSWORD" ? (
-          // FORGOT PASSWORD — student forgot BOTH the PIN and the password. Confirm
-          // the college email, verify an emailed OTP, then set a new password. On
-          // success we fall through to QUICK_SETUP to re-enrol the PIN + passkey.
+          // FORGOT PASSWORD
           <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
             <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-5">
               <KeyRound className="w-8 h-8" />
@@ -1288,7 +1182,7 @@ export default function StudentLoginPage() {
             </button>
           </div>
         ) : appState === "LOGIN" ? (
-          // EMAIL + PASSWORD SIGN-IN — fresh device, forgotten PIN, or "someone else".
+          // EMAIL + PASSWORD SIGN-IN
           <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
             <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-5">
               <LogIn className="w-8 h-8" />
@@ -1506,8 +1400,7 @@ export default function StudentLoginPage() {
                       </div>
                     </div>
 
-                    {/* Create Password — the student's login secret (used instead of
-                        the public roll number, so no one else can sign in as them). */}
+                    {/* Create Password */}
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Create Password</label>
                       <div className="relative">
@@ -1530,9 +1423,7 @@ export default function StudentLoginPage() {
                     Continue <ArrowRight className="w-4 h-4" />
                   </button>
 
-                  {/* Escape hatch for a student who already has an account and
-                      landed here by mistake — otherwise registration would fail
-                      with "User already exists" and leave them stuck. */}
+                  {/* Escape hatch for already-registered students, else "User already exists" strands them */}
                   <p className="text-center text-sm text-slate-500">
                     Already registered?{" "}
                     <button type="button" onClick={() => goToLogin()} className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors">
@@ -1550,9 +1441,7 @@ export default function StudentLoginPage() {
                    </div>
 
                    {emailToken ? (
-                     // Already verified (e.g. user navigated back from the Photo step).
-                     // The one-time code has been consumed server-side, so we show a
-                     // confirmed state instead of asking them to re-enter it.
+                     // Already verified — the one-time code was consumed server-side
                      <>
                        <div>
                          <h2 className="text-2xl font-bold text-slate-900">Email Verified</h2>

@@ -3,9 +3,7 @@ const sseHub = require('../utils/sseHub');
 const { notifyWardens } = require('../utils/pushService');
 const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
-// @desc    Create new complaint
-// @route   POST /api/complaint
-// @access  Private (Student)
+// POST /api/complaint — private (Student)
 const createComplaint = async (req, res) => {
   const { category, description } = req.body;
 
@@ -17,18 +15,13 @@ const createComplaint = async (req, res) => {
       description
     });
 
-    // Push the new complaint to any open warden/admin dashboards instantly,
-    // same real-time pattern as outing requests and SOS alerts.
-    // No student PII in the payload: the SSE hub broadcasts to every connected
-    // dashboard (including out-of-hostel wardens), so a name here would leak
-    // past the per-hostel visibility boundary. Clients refetch the scoped list.
+    // No student PII in the broadcast — the SSE hub reaches out-of-hostel wardens too.
     sseHub.broadcast('complaint:created', {
       id: complaint._id,
       category: complaint.category,
       status: complaint.status,
     });
 
-    // Push notification to the warden managing this student's hostel.
     const gender = req.user.gender;
     notifyWardens(gender, {
       title: '📝 New Complaint',
@@ -42,9 +35,7 @@ const createComplaint = async (req, res) => {
   }
 };
 
-// @desc    Get logged in student's complaints
-// @route   GET /api/complaint/mycomplaints
-// @access  Private (Student)
+// GET /api/complaint/mycomplaints — private (Student)
 const getMyComplaints = async (req, res) => {
   try {
     const complaints = await Complaint.find({ student: req.user._id }).sort({ createdAt: -1 });
@@ -54,9 +45,7 @@ const getMyComplaints = async (req, res) => {
   }
 };
 
-// @desc    Get all complaints
-// @route   GET /api/complaint
-// @access  Private (Warden/Admin)
+// GET /api/complaint — private (Warden/Admin)
 const getComplaints = async (req, res) => {
   try {
     const complaints = await Complaint.find({ ...(await scopedStudentFilter(req.user)) })
@@ -68,9 +57,7 @@ const getComplaints = async (req, res) => {
   }
 };
 
-// @desc    Update complaint status
-// @route   PATCH /api/complaint/:id/status
-// @access  Private (Warden/Admin)
+// PATCH /api/complaint/:id/status — private (Warden/Admin)
 const updateComplaintStatus = async (req, res) => {
   const { status, resolutionComments } = req.body;
 
@@ -78,7 +65,7 @@ const updateComplaintStatus = async (req, res) => {
     const complaint = await Complaint.findById(req.params.id).populate('student', 'gender');
 
     if (complaint) {
-      // A warden may only act on complaints from students in their own hostel.
+      // Wardens may only act on their own hostel's students.
       if (!studentGenderInScope(req.user, complaint.student?.gender)) {
         return res.status(403).json({
           message: 'This complaint belongs to a student outside your hostel.',
@@ -90,8 +77,6 @@ const updateComplaintStatus = async (req, res) => {
 
       const updatedComplaint = await complaint.save();
 
-      // Let every other open warden/admin dashboard reflect the resolution
-      // instantly, and let the student's own "My Complaints" poll pick it up.
       sseHub.broadcast('complaint:updated', {
         id: updatedComplaint._id,
         status: updatedComplaint.status,
@@ -106,10 +91,7 @@ const updateComplaintStatus = async (req, res) => {
   }
 };
 
-// @desc    Live stream of complaint changes (new complaints, status updates)
-//          so warden/admin dashboards update in real time.
-// @route   GET /api/complaint/stream
-// @access  Private (Warden/Admin)
+// GET /api/complaint/stream — private (Warden/Admin), SSE
 const streamComplaintEvents = (req, res) => {
   req.socket.setTimeout(0);
 
@@ -123,8 +105,7 @@ const streamComplaintEvents = (req, res) => {
 
   sseHub.addClient(res);
 
-  // Proxies/load balancers tend to kill idle connections; a periodic comment
-  // keeps this one alive without triggering any client-side event handler.
+  // Keeps proxies from killing the idle connection.
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
 
   req.on('close', () => {

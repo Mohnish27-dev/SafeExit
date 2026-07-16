@@ -1,4 +1,5 @@
 {
+  "id": "/login",
   "name": "SafeExit",
   "short_name": "SafeExit",
   "description": "Privacy-First Smart Hostel Access — secure digital outing system for students and wardens.",
@@ -7,18 +8,46 @@
   "orientation": "portrait",
   "background_color": "#0f172a",
   "theme_color": "#6366f1",
+  "screenshots": [
+    {
+      "src": "/images/screenshot-mobile.png",
+      "sizes": "884x1502",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "SafeExit on mobile — student safety and privacy portal"
+    },
+    {
+      "src": "/images/screenshot-wide.png",
+      "sizes": "1920x838",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "SafeExit landing page — Protect Students, Verify Every Exit"
+    }
+  ],
   "icons": [
     {
       "src": "/images/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/images/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/images/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/images/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

@@ -37,9 +37,7 @@ const formatWhen = (iso) =>
 
 // A warden's managedGender maps to the hostel they oversee.
 const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
-// The full set of hostels. Each has exactly one warden account, shared by that
-// hostel's wardens, so once a hostel is taken it drops out of the Add/Assign
-// pickers below.
+// One warden account per hostel; taken hostels drop out of the Add/Assign pickers.
 const HOSTEL_OPTIONS = [
   { value: "Male", label: "Boys' Hostel" },
   { value: "Female", label: "Girls' Hostel" },
@@ -80,14 +78,10 @@ export default function PeopleView() {
     );
   }, [people, search]);
 
-  // Staff (Guard/Warden) are provisioned here by admins — students self-register
-  // and are never created/removed from this screen.
+  // Only staff are provisioned here; students self-register.
   const isStaffTab = role === "Guard" || role === "Warden";
 
-  // Hostels that already have a warden account. Derived from the loaded roster
-  // while the Warden tab is active (that's when `people` holds wardens). Used to
-  // hide taken hostels from the Add/Assign pickers and to disable "Add Warden"
-  // once both hostels are covered — one warden account per hostel.
+  // Hostels with a warden already; hides them from pickers and caps "Add Warden".
   const takenHostels = useMemo(() => {
     if (role !== "Warden") return new Set();
     return new Set(people.map((p) => p.managedGender).filter(Boolean));

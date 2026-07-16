@@ -4,10 +4,7 @@ const { protect } = require('../middlewares/authMiddleware');
 const PushSubscription = require('../models/PushSubscription');
 const { VAPID_PUBLIC_KEY } = require('../utils/pushService');
 
-// @desc    Get the public VAPID key so the browser can subscribe to push
-// @route   GET /api/push/vapid-key
-// @access  Public (the key is public by definition — it's embedded in every
-//          push subscription the browser creates)
+// GET /api/push/vapid-key — public (the key is public by definition)
 router.get('/vapid-key', (req, res) => {
   if (!VAPID_PUBLIC_KEY) {
     return res.status(503).json({ message: 'Push notifications not configured on this server.' });
@@ -15,9 +12,7 @@ router.get('/vapid-key', (req, res) => {
   res.json({ publicKey: VAPID_PUBLIC_KEY });
 });
 
-// @desc    Save a push subscription for the authenticated user
-// @route   POST /api/push/subscribe
-// @access  Private (any authenticated user, but practically wardens/admins)
+// POST /api/push/subscribe — private
 router.post('/subscribe', protect, async (req, res) => {
   const { subscription } = req.body;
 
@@ -26,8 +21,7 @@ router.post('/subscribe', protect, async (req, res) => {
   }
 
   try {
-    // Upsert by endpoint: if the same browser re-subscribes (e.g. after a page
-    // reload), update the existing doc rather than creating a duplicate.
+    // Upsert by endpoint so a re-subscribing browser doesn't create a duplicate.
     await PushSubscription.findOneAndUpdate(
       { 'subscription.endpoint': subscription.endpoint },
       {
@@ -50,9 +44,7 @@ router.post('/subscribe', protect, async (req, res) => {
   }
 });
 
-// @desc    Remove a push subscription (logout, manual unsubscribe)
-// @route   DELETE /api/push/subscribe
-// @access  Private
+// DELETE /api/push/subscribe — private
 router.delete('/subscribe', protect, async (req, res) => {
   const { endpoint } = req.body;
 

@@ -196,7 +196,6 @@ export default function StudentComplaintPage() {
   );
 
   const complaintId = created ? `CMP-${String(created._id).slice(-6).toUpperCase()}` : "";
-  const selectedCategory = categories.find((c) => c.value === category);
 
   if (created) {
     return (

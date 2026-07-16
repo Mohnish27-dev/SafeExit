@@ -1,19 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { 
-  Shield, User, ShieldAlert, Users, 
-  Search, EyeOff, AlertTriangle, CheckCircle, 
-  XCircle, Send, QrCode, PhoneCall, Upload, 
-  ListFilter, RefreshCw, Radio, FileCheck
+import { useState } from "react";
+import {
+  Shield, User, ShieldAlert, Users,
+  Search, EyeOff, AlertTriangle, CheckCircle,
+  Send, QrCode, PhoneCall, Upload,
+  RefreshCw, Radio, FileCheck
 } from "lucide-react";
 import confetti from "canvas-confetti";
 
 export default function Simulator() {
   const [role, setRole] = useState("student"); // student | guard | warden | admin
   const [scannedStudent, setScannedStudent] = useState(null);
-  const [scanMessage, setScanMessage] = useState("");
-  
+
   // SOS State
   const [sosActive, setSosActive] = useState(false);
 
@@ -157,7 +156,6 @@ export default function Simulator() {
 
   const handleGuardScan = (studentReq) => {
     setScannedStudent(studentReq);
-    setScanMessage(`QR code scanned successfully! Profile loaded.`);
     addLog("Guard (Gate 1)", `Scanned QR Code for student: ${studentReq.studentName}. Info masked.`, "info");
   };
 

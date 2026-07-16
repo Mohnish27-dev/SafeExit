@@ -1,6 +1,4 @@
-// In-memory pub/sub for Server-Sent Events. Lets warden/guard dashboards react
-// to outing-request changes the instant they happen instead of only on their
-// next manual refresh or page load.
+// In-memory pub/sub for Server-Sent Events.
 const clients = new Set();
 
 const addClient = (res) => {

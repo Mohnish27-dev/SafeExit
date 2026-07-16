@@ -5,8 +5,6 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-// Refuse to boot if required secrets are missing, so failures surface here with
-// a clear message instead of as opaque 500s on the first auth/DB request.
 const validateEnv = require('./config/validateEnv');
 validateEnv();
 
@@ -29,7 +27,6 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/outing', outingRoutes);
 app.use('/api/complaint', complaintRoutes);
@@ -39,7 +36,6 @@ app.use('/api/scan', scanRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/push', pushRoutes);
 
-// Basic health check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
 });

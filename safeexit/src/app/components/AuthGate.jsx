@@ -2,10 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 
-// Full-screen placeholder shown while useRequireAuth verifies the session (and
-// while an unauthorized redirect is in flight). Rendering this instead of the
-// real dashboard is what prevents protected content from flashing before the
-// redirect completes.
+// Full-screen placeholder while useRequireAuth verifies; prevents protected content flashing.
 export default function AuthLoading() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f0f0ff] text-slate-600">

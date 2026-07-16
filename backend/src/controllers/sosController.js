@@ -3,15 +3,12 @@ const sseHub = require('../utils/sseHub');
 const { notifyWardensAndAdmins } = require('../utils/pushService');
 const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
 
-// @desc    Raise a new SOS alert
-// @route   POST /api/sos
-// @access  Private (Student)
+// POST /api/sos — private (Student)
 const createSOSAlert = async (req, res) => {
   const { type, note, location, coords } = req.body;
 
   try {
-    // Only persist coordinates that are actually plottable. Anything malformed
-    // is silently dropped — an SOS must never fail because of bad GPS data.
+    // Malformed GPS is silently dropped — an SOS must never fail on bad coords.
     let safeCoords;
     if (
       coords &&
@@ -35,20 +32,13 @@ const createSOSAlert = async (req, res) => {
 
     const populated = await alert.populate('student', 'name studentId roomNumber hostelName phoneNumber department year');
 
-    // Push the emergency to every open warden / guard / admin dashboard the
-    // instant it's raised, instead of waiting for their next poll. Clients
-    // listening on /api/sos/stream refetch the (gender-scoped) list on this
-    // event. The payload deliberately carries NO student PII — since the SSE
-    // hub broadcasts to every connected dashboard, including out-of-hostel
-    // wardens, a name here would leak past the per-hostel visibility boundary.
+    // No student PII in the broadcast — the SSE hub reaches out-of-hostel wardens too.
     sseHub.broadcast('sos:created', {
       id: populated._id,
       type: populated.type,
       status: populated.status,
     });
 
-    // Urgent push notification to wardens + admins — SOS alerts are
-    // time-critical and need immediate attention even if no dashboard is open.
     const gender = req.user.gender;
     notifyWardensAndAdmins(gender, {
       title: '🚨 SOS ALERT',
@@ -64,9 +54,7 @@ const createSOSAlert = async (req, res) => {
   }
 };
 
-// @desc    Get the logged-in student's own SOS alerts
-// @route   GET /api/sos/mine
-// @access  Private (Student)
+// GET /api/sos/mine — private (Student)
 const getMySOSAlerts = async (req, res) => {
   try {
     const alerts = await SOSAlert.find({ student: req.user._id }).sort({ createdAt: -1 });
@@ -76,9 +64,7 @@ const getMySOSAlerts = async (req, res) => {
   }
 };
 
-// @desc    Get all SOS alerts (optionally filtered by status)
-// @route   GET /api/sos
-// @access  Private (Admin / Warden / Guard)
+// GET /api/sos — private (Admin/Warden/Guard)
 const getSOSAlerts = async (req, res) => {
   try {
     const filter = {};
@@ -96,9 +82,7 @@ const getSOSAlerts = async (req, res) => {
   }
 };
 
-// @desc    Acknowledge / resolve an SOS alert
-// @route   PATCH /api/sos/:id/status
-// @access  Private (Admin / Warden)
+// PATCH /api/sos/:id/status — private (Admin/Warden)
 const updateSOSStatus = async (req, res) => {
   const { status, resolutionNote } = req.body;
 
@@ -108,7 +92,7 @@ const updateSOSStatus = async (req, res) => {
       return res.status(404).json({ message: 'SOS alert not found' });
     }
 
-    // A warden may only act on alerts from students in their own hostel.
+    // Wardens may only act on their own hostel's students.
     if (!studentGenderInScope(req.user, alert.student?.gender)) {
       return res.status(403).json({
         message: 'This alert belongs to a student outside your hostel.',
@@ -122,8 +106,6 @@ const updateSOSStatus = async (req, res) => {
     const updated = await alert.save();
     const populated = await updated.populate('student', 'name studentId roomNumber hostelName phoneNumber');
 
-    // Keep every other open console in sync when one responder acknowledges or
-    // resolves an alert, so two wardens don't both chase the same emergency.
     sseHub.broadcast('sos:updated', {
       id: populated._id,
       status: populated.status,
@@ -136,9 +118,7 @@ const updateSOSStatus = async (req, res) => {
   }
 };
 
-// @desc    Live SSE stream of SOS events for responder dashboards
-// @route   GET /api/sos/stream
-// @access  Private (Admin / Warden / Guard)
+// GET /api/sos/stream — private (Admin/Warden/Guard), SSE
 const streamSOSEvents = (req, res) => {
   req.socket.setTimeout(0);
 
@@ -152,8 +132,7 @@ const streamSOSEvents = (req, res) => {
 
   sseHub.addClient(res);
 
-  // Proxies/load balancers tend to kill idle connections; a periodic comment
-  // keeps this one alive without triggering any client-side event handler.
+  // Keeps proxies from killing the idle connection.
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
 
   req.on('close', () => {

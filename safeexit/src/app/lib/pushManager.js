@@ -1,21 +1,8 @@
-// Push subscription manager — handles the entire lifecycle of subscribing to
-// and unsubscribing from Web Push Notifications on the client side.
-//
-// Flow:
-//   1. Service Worker is registered (done in layout.js on first page load)
-//   2. User clicks "Enable Notifications" → subscribePush() is called
-//   3. Browser asks for notification permission
-//   4. On grant: pushManager.subscribe() creates a PushSubscription
-//   5. The subscription is sent to POST /api/push/subscribe on the backend
-//   6. Done — the backend can now send push messages to this device
-//
-// On logout, unsubscribePush() removes the subscription from the backend and
-// unsubscribes the browser so the old session doesn't keep getting notifications.
+// Web Push subscription lifecycle (subscribe on user gesture, unsubscribe on logout).
 
-import { getApiBase, apiFetch } from './api';
+import { apiFetch } from './api';
 
-// Convert a base64 string to a Uint8Array — the Push API needs the VAPID key
-// in this format for the `applicationServerKey` parameter.
+// Push API needs the VAPID key as a Uint8Array.
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -27,7 +14,7 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-// Cached VAPID key — fetched once per page load from the backend.
+// Cached per page load.
 let vapidPublicKey = null;
 
 async function getVapidKey() {
@@ -41,7 +28,6 @@ async function getVapidKey() {
   }
 }
 
-// Check if push notifications are supported in this browser.
 export function isPushSupported() {
   return (
     typeof window !== 'undefined' &&
@@ -51,14 +37,12 @@ export function isPushSupported() {
   );
 }
 
-// Get the current notification permission state.
 export function getNotificationPermission() {
   if (!isPushSupported()) return 'unsupported';
-  return Notification.permission; // 'default', 'granted', or 'denied'
+  return Notification.permission; // 'default' | 'granted' | 'denied'
 }
 
-// Check if the user is currently subscribed to push on this device.
-export async function isSubscribed() {
+async function isSubscribed() {
   if (!isPushSupported()) return false;
   try {
     const registration = await navigator.serviceWorker.ready;
@@ -69,36 +53,29 @@ export async function isSubscribed() {
   }
 }
 
-// Subscribe to push notifications. Must be called from a user gesture (button
-// click) — browsers block programmatic permission prompts.
-//
-// Returns: { success: boolean, error?: string }
+// Must be called from a user gesture. Returns { success, error? }.
 export async function subscribePush() {
   if (!isPushSupported()) {
     return { success: false, error: 'Push notifications are not supported in this browser.' };
   }
 
   try {
-    // 1. Request notification permission
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
       return { success: false, error: 'Notification permission was denied.' };
     }
 
-    // 2. Get the VAPID public key from the backend
     const publicKey = await getVapidKey();
     if (!publicKey) {
       return { success: false, error: 'Could not fetch push configuration from server.' };
     }
 
-    // 3. Subscribe via the Push API
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     });
 
-    // 4. Send the subscription to the backend for storage
     await apiFetch('/push/subscribe', {
       method: 'POST',
       body: JSON.stringify({ subscription: subscription.toJSON() }),
@@ -111,8 +88,7 @@ export async function subscribePush() {
   }
 }
 
-// Unsubscribe from push notifications — called on logout to stop delivering
-// notifications to a session that's no longer active.
+// Called on logout so stale sessions stop receiving notifications.
 export async function unsubscribePush() {
   if (!isPushSupported()) return;
 
@@ -121,29 +97,24 @@ export async function unsubscribePush() {
     const subscription = await registration.pushManager.getSubscription();
     if (!subscription) return;
 
-    // Remove from backend first (best-effort)
     try {
       await apiFetch('/push/subscribe', {
         method: 'DELETE',
         body: JSON.stringify({ endpoint: subscription.endpoint }),
       });
     } catch {
-      // Network errors on logout are non-critical
+      // best-effort on logout
     }
 
-    // Unsubscribe the browser
     await subscription.unsubscribe();
   } catch (err) {
     console.error('Push unsubscribe error:', err);
   }
 }
 
-// Auto-subscribe if permission was already granted (e.g. returning user).
-// Safe to call on page load — it won't prompt for permission.
+// Re-subscribe silently on page load if permission already granted (no prompt).
 export async function autoSubscribeIfGranted() {
   if (getNotificationPermission() !== 'granted') return;
-  if (await isSubscribed()) return; // Already subscribed on this device
-
-  // Re-subscribe silently (permission already granted, no prompt shown)
+  if (await isSubscribed()) return;
   await subscribePush();
 }

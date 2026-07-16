@@ -40,8 +40,7 @@ const formatDateTime = (value) =>
     ? new Date(value).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
     : "—";
 
-// Includes the year — used in the full letter view, where the compact card
-// format (no year) would be ambiguous on a formal document.
+// With year: the letter view needs an unambiguous formal date.
 const formatLetterDateTime = (value) =>
   value
     ? new Date(value).toLocaleString("en-US", {
@@ -89,10 +88,9 @@ export default function LeaveApplicationsView({
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState("");
   const [viewingId, setViewingId] = useState(null);
-  // 'pending' shows the actionable queue; 'approved'/'rejected' show history.
   const [tab, setTab] = useState("pending");
 
-  // The full-letter viewer can open from any tab, so search both lists.
+  // Viewer can open from any tab, so search both lists.
   const viewing = [...pending, ...history].find((r) => r.id === viewingId) || null;
 
   const historyFor = (status) => history.filter((r) => r.status === status);
@@ -103,10 +101,8 @@ export default function LeaveApplicationsView({
     { key: "rejected", label: t("rejectedTab"), count: historyFor("Rejected").length },
   ];
 
-  // The list shown under the Approved/Rejected tabs.
   const historyList = tab === "approved" ? historyFor("Approved") : tab === "rejected" ? historyFor("Rejected") : [];
 
-  // Decision badge styling for history cards — mirrors the student leave page's tones.
   const statusBadge = (status) =>
     status === "Approved"
       ? { label: tc("approved"), tone: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 }
@@ -390,10 +386,7 @@ export default function LeaveApplicationsView({
       </div>
     </section>
 
-    {/* Portaled to <body>: ancestors use CSS transforms (sd-tile/sd-luxe-panel),
-        which trap `fixed` children in their stacking context — the dashboard's
-        bottom nav (z-50) was painting over this modal. From <body>, z-[70]
-        genuinely sits above everything, including the nav. */}
+    {/* Portaled to <body>: transformed ancestors trap `fixed` children, letting the z-50 nav paint over the modal */}
     {viewing && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-70 overflow-y-auto">
           <div onClick={closeViewer} className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
@@ -442,8 +435,7 @@ export default function LeaveApplicationsView({
               {t("duration")} {getDurationLabel(viewing.leaveDate, viewing.returnDate)}
             </div>
 
-            {/* Already-decided applications (opened from a history tab) are
-                read-only — show the outcome instead of approve/reject. */}
+            {/* Decided applications are read-only */}
             {viewing.status ? (
               <div className="mt-6">
                 <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${statusBadge(viewing.status).tone}`}>

@@ -6,23 +6,7 @@ const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenSc
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
-// Lazily transition stale applications at read time, mirroring
-// outingController's expireStaleRequests pattern:
-//
-// 1. **Pending-and-missed**: the warden never acted and the departure date
-//    has already passed — there's no point keeping it in the approval queue.
-// 2. **Approved-and-unused**: the trip was approved but the student never
-//    actually scanned out through the gate (see scanController), and the
-//    departure date has passed. Once a student does scan out, gate
-//    integration flips status to 'Out' before this can ever fire — so this
-//    only catches passes that were approved but never used, mirroring
-//    outingController's Approved-and-unused -> Expired pattern.
-//
-// 'Out' -> 'Returned' only happens via an actual gate entry scan (see
-// scanController), never lazily here — mirroring OutingRequest's
-// Out/Returned states, which are also never touched by time-based expiry.
-// 'Rejected'/'Cancelled' are terminal and never touched. Persistence is
-// best-effort and per-doc so one failed save doesn't block the whole list.
+// Lazy read-time expiry of Pending/Approved passes whose leaveDate passed; Out/Returned/Rejected/Cancelled are never touched. Saves are best-effort per doc.
 const expireStaleApplications = async (applications) => {
   const list = Array.isArray(applications) ? applications : [applications];
   const now = Date.now();
@@ -39,17 +23,14 @@ const expireStaleApplications = async (applications) => {
       try {
         await appDoc.save();
       } catch (err) {
-        // Leave the in-memory doc updated for this response even if the
-        // write lost a race; the next read will retry the persist.
+        // Lost-race save is fine; next read retries the persist.
       }
     })
   );
   return applications;
 };
 
-// @desc    Create a new multi-day leave application
-// @route   POST /api/leave
-// @access  Private (Student)
+// POST /api/leave — private (Student)
 const createLeaveApplication = async (req, res) => {
   const { destination, reason, leaveDate, returnDate, acknowledgement } = req.body;
 
@@ -75,8 +56,7 @@ const createLeaveApplication = async (req, res) => {
       return res.status(400).json({ message: 'Return date must be after the leave date.' });
     }
 
-    // The 24-hour lead time is the actual enforcement layer — the client
-    // shows the same rule for a good UX, but this is what makes it real.
+    // 24-hour lead time enforced here; client shows the same rule for UX only.
     const earliestAllowed = new Date(Date.now() + MIN_LEAD_TIME_MS);
     if (leaveDateObj.getTime() < earliestAllowed.getTime()) {
       return res.status(400).json({
@@ -85,13 +65,7 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
-    // Departure window: a leave pass may only be used to depart between 6:00 AM
-    // and 5:30 PM (campus time) on its departure day, so a leave departing
-    // outside that window could never be used at the gate. Reject it up front
-    // for EVERY student (leave timing is gender-agnostic). The gate re-enforces
-    // the same 5:30 PM late cap at scan time (see scanController's
-    // isAfterLeaveCurfew), so this early check is a friendly guard rail, not the
-    // security boundary — an application that gets Approved is already compliant.
+    // Friendly guard rail — the gate re-enforces the 5:30 PM curfew at scan time.
     if (!isBeforeEveningCurfew(leaveDateObj)) {
       return res.status(400).json({
         message:
@@ -115,8 +89,6 @@ const createLeaveApplication = async (req, res) => {
       status: application.status,
     });
 
-    // Push notification to the warden managing this student's hostel so they
-    // see the application even with the dashboard closed.
     const gender = req.user.gender;
     notifyWardens(gender, {
       title: '📋 New Leave Application',
@@ -130,9 +102,7 @@ const createLeaveApplication = async (req, res) => {
   }
 };
 
-// @desc    Get logged in student's leave applications
-// @route   GET /api/leave/myrequests
-// @access  Private (Student)
+// GET /api/leave/myrequests — private (Student)
 const getMyLeaveApplications = async (req, res) => {
   try {
     const applications = await LeaveApplication.find({ student: req.user._id }).sort({ createdAt: -1 });
@@ -143,17 +113,13 @@ const getMyLeaveApplications = async (req, res) => {
   }
 };
 
-// @desc    Get all pending leave applications
-// @route   GET /api/leave/pending
-// @access  Private (Warden)
+// GET /api/leave/pending — private (Warden)
 const getPendingLeaveApplications = async (req, res) => {
   try {
     const applications = await LeaveApplication.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
       .populate('student', 'name studentId roomNumber hostelName')
       .sort({ leaveDate: 1 });
 
-    // Expire any pending applications whose leave date has already passed so
-    // the warden never sees stale entries they can no longer act on.
     await expireStaleApplications(applications);
     const stillPending = applications.filter((a) => a.status === 'Pending');
 
@@ -163,15 +129,9 @@ const getPendingLeaveApplications = async (req, res) => {
   }
 };
 
-// @desc    Get leave applications this warden has already acted on
-//          (Approved / Rejected), so the pending queue isn't the only record.
-// @route   GET /api/leave/history
-// @access  Private (Warden)
+// GET /api/leave/history — private (Warden); warden-actioned outcomes only, scoped to their hostel.
 const getLeaveHistory = async (req, res) => {
   try {
-    // Only warden-actioned outcomes — Pending stays in the live queue, and
-    // system states (Cancelled/Expired/Out/Returned) aren't warden decisions.
-    // Scoped to the warden's own hostel, newest action first.
     const applications = await LeaveApplication.find({
       status: { $in: ['Approved', 'Rejected'] },
       ...(await scopedStudentFilter(req.user)),
@@ -185,9 +145,7 @@ const getLeaveHistory = async (req, res) => {
   }
 };
 
-// @desc    Approve/reject a leave application
-// @route   PATCH /api/leave/:id/status
-// @access  Private (Warden)
+// PATCH /api/leave/:id/status — private (Warden)
 const updateLeaveStatus = async (req, res) => {
   const { status, remarks } = req.body;
 
@@ -198,15 +156,14 @@ const updateLeaveStatus = async (req, res) => {
       return res.status(404).json({ message: 'Leave application not found' });
     }
 
-    // A warden may only act on applications from students in their own hostel.
+    // Server-side scope re-check: wardens may only act on their own hostel's students.
     if (!studentGenderInScope(req.user, application.student?.gender)) {
       return res.status(403).json({
         message: 'This application belongs to a student outside your hostel.',
       });
     }
 
-    // Guard against approving an application whose leave date has already
-    // passed — the warden may have had the card open past the window.
+    // Approving after the leave date passed would mint an already-expired pass.
     if (
       application.status === 'Pending' &&
       status === 'Approved' &&
@@ -252,9 +209,7 @@ const updateLeaveStatus = async (req, res) => {
   }
 };
 
-// @desc    Cancel a leave application (student withdraws their own request)
-// @route   PATCH /api/leave/:id/cancel
-// @access  Private (Student)
+// PATCH /api/leave/:id/cancel — private (Student)
 const cancelLeaveApplication = async (req, res) => {
   try {
     const application = await LeaveApplication.findById(req.params.id);
@@ -289,10 +244,7 @@ const cancelLeaveApplication = async (req, res) => {
   }
 };
 
-// @desc    Live stream of leave-application changes so the warden dashboard
-//          updates in real time.
-// @route   GET /api/leave/stream
-// @access  Private (Warden)
+// GET /api/leave/stream — private (Warden), SSE
 const streamLeaveEvents = (req, res) => {
   req.socket.setTimeout(0);
 
