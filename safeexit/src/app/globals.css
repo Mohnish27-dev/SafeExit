@@ -540,6 +540,20 @@ body {
   line-height: 1.25;
 }
 
+/* Compact headings on phones — smaller titles mean shorter sections and far
+   less thumb-scrolling on the student dashboard. */
+@media (max-width: 639px) {
+  .sd-title-md {
+    font-size: 1.5rem;
+  }
+  .sd-title-sm {
+    font-size: 1.2rem;
+  }
+  .sd-passport-name {
+    font-size: 1.45rem;
+  }
+}
+
 .sd-subtitle {
   font-size: 0.95rem;
   font-weight: 600;
@@ -3304,6 +3318,22 @@ body {
   border-color: transparent;
   color: #ffffff;
   box-shadow: 0 18px 32px -12px rgba(67, 56, 202, 0.6);
+}
+
+/* Phone-size bottom bar: the nav is fixed to the viewport bottom, so shrink
+   labels/icons enough that all six tabs fit one thumb-friendly row. */
+@media (max-width: 767px) {
+  .sd-navx {
+    gap: 0.3rem;
+    padding: 0.45rem 0.1rem;
+    font-size: 0.52rem;
+    letter-spacing: 0.06em;
+  }
+  .sd-navx__icon {
+    height: 2.1rem;
+    width: 2.1rem;
+    border-radius: 0.8rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

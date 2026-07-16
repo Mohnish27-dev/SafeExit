@@ -131,7 +131,7 @@ const outingAccent = (outing) => {
       return "#94a3b8";
     case "rejected":
     case "expired":
-      return "#f43f5e";
+      return "#f43f5e"; 
     default:
       return "#f59e0b";
   }
@@ -262,7 +262,7 @@ function ActionCard({ action, index }) {
         "--tile-border": action.border,
       }}
     >
-      <div className="sd-tile__inner flex min-h-[15rem] flex-col p-5">
+      <div className="sd-tile__inner flex min-h-0 flex-col p-3.5 sm:min-h-[15rem] sm:p-5">
         <span className="sd-tile__glare" aria-hidden="true" />
 
         {/* Top row: gradient badge left, reveal arrow right */}
@@ -271,18 +271,19 @@ function ActionCard({ action, index }) {
             className="sd-act sd-lift-lg shadow-lg"
             style={{ background: action.badge, boxShadow: `0 14px 26px -12px ${action.glow}` }}
           >
-            <action.icon className="h-6 w-6" />
+            <action.icon className="h-5 w-5 sm:h-6 sm:w-6" />
           </span>
           <span className="sd-act-arrow sd-lift-sm">
             <ArrowUpRight className="h-4 w-4" />
           </span>
         </div>
 
-        {/* Copy anchored to the base with breathing room above */}
-        <div className="sd-lift-md mt-auto pt-6">
-          <span className="sd-act-rule mb-3 block" aria-hidden="true" />
-          <span className="sd-card-title block text-[1.05rem] leading-snug">{action.title}</span>
-          <span className="sd-body mt-1.5 block text-[0.88rem] leading-relaxed">
+        {/* Copy anchored to the base. On phones the tile is a compact launcher:
+            the description is hidden so five actions fit two screens-worth less scroll. */}
+        <div className="sd-lift-md mt-auto pt-3 sm:pt-6">
+          <span className="sd-act-rule mb-2 hidden sm:mb-3 sm:block" aria-hidden="true" />
+          <span className="sd-card-title block text-[0.9rem] leading-snug sm:text-[1.05rem]">{action.title}</span>
+          <span className="sd-body mt-1.5 hidden text-[0.88rem] leading-relaxed sm:block">
             {action.description}
           </span>
         </div>
@@ -304,25 +305,25 @@ function StatCard({ stat }) {
   const Icon = stat.icon;
 
   return (
-    <div ref={ref} className="sd-stat px-4 py-4" style={{ "--stat-glow": stat.glow }}>
+    <div ref={ref} className="sd-stat px-3.5 py-3 sm:px-4 sm:py-4" style={{ "--stat-glow": stat.glow }}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-md"
+            className="flex h-8 w-8 items-center justify-center rounded-xl text-white shadow-md sm:h-9 sm:w-9"
             style={{ background: stat.chip, boxShadow: `0 10px 20px -10px ${stat.glow}` }}
           >
-            <Icon className="h-[1.05rem] w-[1.05rem]" />
+            <Icon className="h-4 w-4 sm:h-[1.05rem] sm:w-[1.05rem]" />
           </span>
           <p className="sd-micro text-[0.8rem]">{stat.label}</p>
         </div>
         <p
-          className="text-2xl font-bold italic tracking-tight text-transparent bg-clip-text"
+          className="text-xl font-bold italic tracking-tight text-transparent bg-clip-text sm:text-2xl"
           style={{ backgroundImage: stat.fill, fontFamily: "var(--font-display), 'Space Grotesk', sans-serif" }}
         >
           {display}
         </p>
       </div>
-      <div className="sd-bar mt-3.5">
+      <div className="sd-bar mt-2.5 sm:mt-3.5">
         <div
           className="sd-bar__fill"
           style={{ width: stat.width, background: stat.fill, boxShadow: `0 0 12px ${stat.glow}` }}
@@ -752,17 +753,17 @@ export default function StudentDashboardPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-24 md:pb-28">
       <div className="relative overflow-hidden">
         <div className="sd-aura sd-aura--a" aria-hidden="true" />
         <div className="sd-aura sd-aura--b" aria-hidden="true" />
         <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
-        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="sd-luxe-panel sd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-4xl px-5 py-4 sm:px-6 shadow-xl">
-            <div className="flex items-center gap-4">
-              <div className="sd-luxe-badge sd-luxe-float flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-lg">
-                <Shield className="h-7 w-7" />
+        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+          <header className="sd-luxe-panel sd-glow-border sd-enter flex flex-wrap items-center justify-between gap-3 rounded-4xl px-4 py-3.5 shadow-xl sm:gap-4 sm:px-6 sm:py-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="sd-luxe-badge sd-luxe-float flex h-11 w-11 items-center justify-center rounded-2xl text-white shadow-lg sm:h-14 sm:w-14">
+                <Shield className="h-6 w-6 sm:h-7 sm:w-7" />
               </div>
               <div>
                 <p className="sd-eyebrow flex items-center gap-2">
@@ -777,7 +778,7 @@ export default function StudentDashboardPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt flex items-center gap-3 rounded-2xl px-4 py-3 min-w-[200px]">
+              <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt flex items-center gap-3 rounded-2xl px-3 py-2.5 sm:min-w-[200px] sm:px-4 sm:py-3">
                 <div className="relative shrink-0 group">
                   <div className="sd-profile-avatar overflow-hidden">
                     {mounted && profile.photo ? (
@@ -815,7 +816,7 @@ export default function StudentDashboardPage() {
           </header>
 
           {mounted && !profile.gender && !genderDismissed && (
-            <section className="sd-luxe-panel sd-luxe-rise mt-6 rounded-4xl p-5 sm:p-6 shadow-xl border border-indigo-100">
+            <section className="sd-luxe-panel sd-luxe-rise mt-4 rounded-4xl p-4 shadow-xl border border-indigo-100 sm:mt-6 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-4 min-w-0">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
@@ -874,16 +875,16 @@ export default function StudentDashboardPage() {
               e.currentTarget.style.setProperty("--spot-y", `${e.clientY - r.top}px`);
             }}
             style={{ animationDelay: "0.12s" }}
-            className="sd-luxe-panel sd-glow-border sd-spot-host sd-enter mt-6 rounded-4xl p-6 sm:p-7 shadow-xl"
+            className="sd-luxe-panel sd-glow-border sd-spot-host sd-enter mt-4 rounded-4xl p-4 shadow-xl sm:mt-6 sm:p-7"
           >
             <span className="sd-spotlight" aria-hidden="true" />
-            <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
-              <div className="flex flex-wrap items-center gap-5">
+            <div className="grid items-center gap-4 sm:gap-6 lg:grid-cols-[1.2fr_auto]">
+              <div className="flex flex-wrap items-center gap-4 sm:gap-5">
                 <div
-                  className={`sd-luxe-float sd-orb-halo flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-gradient-to-br ${timeVisual.orb} text-white ring-8 ring-white/70 shadow-xl`}
+                  className={`sd-luxe-float sd-orb-halo flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br sm:h-20 sm:w-20 sm:rounded-3xl ${timeVisual.orb} text-white ring-4 ring-white/70 shadow-xl sm:ring-8`}
                   style={{ "--halo": timeVisual.halo }}
                 >
-                  <timeVisual.Icon className="h-10 w-10" />
+                  <timeVisual.Icon className="h-7 w-7 sm:h-10 sm:w-10" />
                 </div>
                 <div>
                   <p className="sd-kicker">Daily Pulse</p>
@@ -918,15 +919,15 @@ export default function StudentDashboardPage() {
                   </div>
                 </div>
               </div>
-              <div className="grid gap-3 text-sm font-semibold text-slate-600 sm:grid-cols-2 lg:grid-cols-1">
-                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-3 rounded-full px-4 py-2.5">
-                  <CalendarDays className="h-5 w-5 text-indigo-500" />
-                  {mounted ? formattedDate : "Loading..."}
+              <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600 sm:grid-cols-2 sm:gap-3 sm:text-sm lg:grid-cols-1">
+                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-2 rounded-full px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+                  <CalendarDays className="h-4 w-4 shrink-0 text-indigo-500 sm:h-5 sm:w-5" />
+                  <span className="truncate">{mounted ? formattedDate : "Loading..."}</span>
                 </span>
-                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-3 rounded-full px-4 py-2.5">
-                  <Clock3 className="h-5 w-5 text-sky-500" />
-                  <span className="tabular-nums">{mounted ? formattedTime : "Loading..."}</span>
-                  <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-2 rounded-full px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+                  <Clock3 className="h-4 w-4 shrink-0 text-sky-500 sm:h-5 sm:w-5" />
+                  <span className="tabular-nums truncate">{mounted ? formattedTime : "Loading..."}</span>
+                  <span className="ml-auto hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200 sm:inline-flex">
                     <span className="sd-tag-dot" />
                     Live
                   </span>
@@ -935,31 +936,31 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          <section className="sd-luxe-panel sd-enter mt-6 rounded-4xl p-6 sm:p-7 shadow-xl" style={{ animationDelay: "0.2s" }}>
+          <section className="sd-luxe-panel sd-enter mt-4 rounded-4xl p-4 shadow-xl sm:mt-6 sm:p-7" style={{ animationDelay: "0.2s" }}>
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="sd-kicker">Quick Actions</p>
-                <h2 className="sd-title sd-title-sm mt-2">Everything at a glance</h2>
-              </div>
+                <div>
+                  <p className="sd-kicker">Quick Actions</p>
+                  <h2 className="sd-title sd-title-sm mt-1 sm:mt-2">Everything at a glance</h2>
+                </div>
               <span className="sd-tag">
                 <span className="sd-tag-dot" />
                 Ready
               </span>
             </div>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-3 xl:grid-cols-5">
               {actions.map((action, index) => (
                 <ActionCard key={action.title} action={action} index={index} />
               ))}
             </div>
           </section>
 
-          <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+          <section className="mt-4 grid gap-4 sm:mt-6 sm:gap-6 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="sd-passport sd-enter flex flex-col lg:flex-row" style={{ animationDelay: "0.28s" }}>
               <div className="sd-passport-grid" aria-hidden="true" />
               <div className="sd-passport-sheen" aria-hidden="true" />
 
               {/* Boarding-pass body: identity + travel-style data fields */}
-              <div className="relative z-[1] flex-1 p-6 sm:p-8">
+              <div className="relative z-[1] flex-1 p-4 sm:p-8">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15 backdrop-blur">
@@ -978,12 +979,12 @@ export default function StudentDashboardPage() {
                   </span>
                 </div>
 
-                <h3 className="sd-passport-name mt-7">{profile.name}</h3>
+                <h3 className="sd-passport-name mt-4 sm:mt-7">{profile.name}</h3>
                 <p className="mt-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   {profile.subtitle}
                 </p>
 
-                <div className="mt-7 grid grid-cols-2 gap-x-6 gap-y-4">
+                <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:mt-7 sm:gap-y-4">
                   <div>
                     <p className="sd-passport-label">Roll No</p>
                     <p className="sd-passport-value">{profile.rollNo}</p>
@@ -1007,7 +1008,7 @@ export default function StudentDashboardPage() {
                 <MagneticButton
                   type="button"
                   onClick={() => setShowQrModal(true)}
-                  className="sd-btn-glow mt-8 inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-cyan-500/25 cursor-pointer"
+                  className="sd-btn-glow mt-5 inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-cyan-500/25 cursor-pointer sm:mt-8"
                 >
                   <QrCode className="h-5 w-5" />
                   Show QR Code
@@ -1019,7 +1020,7 @@ export default function StudentDashboardPage() {
               <div className="hidden lg:block sd-seam-v" aria-hidden="true" />
 
               {/* Detachable stub carrying the scannable QR */}
-              <div className="relative z-[1] flex flex-col items-center justify-center gap-4 p-6 sm:p-8 lg:w-[250px]">
+              <div className="relative z-[1] flex flex-col items-center justify-center gap-3 p-4 sm:gap-4 sm:p-8 lg:w-[250px]">
                 <p className="sd-passport-eyebrow flex items-center gap-1.5">
                   <ScanLine className="h-3.5 w-3.5 text-cyan-300" />
                   Scan at gate
@@ -1039,11 +1040,11 @@ export default function StudentDashboardPage() {
               </div>
             </div>
 
-            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-5 rounded-4xl p-6 shadow-xl">
+            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-5 rounded-4xl p-4 shadow-xl sm:p-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="sd-kicker">Recent</p>
-                  <h2 className="sd-title sd-title-sm mt-2">Your Outings</h2>
+                  <h2 className="sd-title sd-title-sm mt-1 sm:mt-2">Your Outings</h2>
                 </div>
                 <Link
                   href="/dashboard/student/my-outings"
@@ -1053,7 +1054,7 @@ export default function StudentDashboardPage() {
                   <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                 </Link>
               </div>
-              <div className="mt-5 space-y-3">
+              <div className="mt-4 space-y-2.5 sm:mt-5 sm:space-y-3">
                 {outingsLoading ? (
                   <div className="space-y-3">
                     {[0, 1, 2].map((i) => (
@@ -1067,12 +1068,12 @@ export default function StudentDashboardPage() {
                     ))}
                   </div>
                 ) : outings.length === 0 ? (
-                  <div className="sd-empty py-8">
-                    <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center">
+                  <div className="sd-empty py-4 sm:py-8">
+                    <div className="relative mx-auto mb-3 flex h-12 w-12 items-center justify-center sm:mb-5 sm:h-16 sm:w-16">
                       <span className="sd-ring" aria-hidden="true" />
                       <span className="sd-ring sd-ring--2" aria-hidden="true" />
-                      <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 text-white shadow-lg shadow-indigo-500/30">
-                        <ClipboardList className="h-6 w-6" />
+                      <span className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 text-white shadow-lg shadow-indigo-500/30 sm:h-12 sm:w-12">
+                        <ClipboardList className="h-5 w-5 sm:h-6 sm:w-6" />
                       </span>
                     </div>
                     <p className="sd-card-title text-slate-700 text-[0.95rem]">No outings yet</p>
@@ -1110,44 +1111,44 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          <section className="mt-6 grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
-            <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-6 shadow-xl">
+          <section className="mt-4 grid gap-4 sm:mt-6 sm:gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+            <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-4 shadow-xl sm:p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="sd-kicker">Overview</p>
-                  <h2 className="sd-title sd-title-sm mt-2">Activity Stats</h2>
+                  <h2 className="sd-title sd-title-sm mt-1 sm:mt-2">Activity Stats</h2>
                 </div>
                 <span className="sd-tag">
                   <Activity className="h-3.5 w-3.5 text-indigo-500" />
                   Live
                 </span>
               </div>
-              <div className="mt-5 space-y-4">
+              <div className="mt-4 space-y-3 sm:mt-5 sm:space-y-4">
                 {stats.map((stat) => (
                   <StatCard key={stat.label} stat={stat} />
                 ))}
               </div>
             </div>
 
-            <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-6 shadow-xl">
+            <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-4 shadow-xl sm:p-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="sd-kicker">Timeline</p>
-                  <h2 className="sd-title sd-title-sm mt-2">Today’s Movement</h2>
+                  <h2 className="sd-title sd-title-sm mt-1 sm:mt-2">Today’s Movement</h2>
                 </div>
                 <span className="sd-tag">
                   <span className="sd-tag-dot" />
                   Auto sync
                 </span>
               </div>
-              <div className="mt-5 space-y-4">
+              <div className="mt-4 space-y-3 sm:mt-5 sm:space-y-4">
                 {timeline.length === 0 ? (
-                  <div className="sd-empty py-10">
-                    <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center">
+                  <div className="sd-empty py-5 sm:py-10">
+                    <div className="relative mx-auto mb-3 flex h-12 w-12 items-center justify-center sm:mb-5 sm:h-16 sm:w-16">
                       <span className="sd-ring" aria-hidden="true" />
                       <span className="sd-ring sd-ring--2" aria-hidden="true" />
-                      <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-sky-500 to-cyan-400 text-white shadow-lg shadow-cyan-500/30">
-                        <Clock3 className="h-6 w-6" />
+                      <span className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-sky-500 to-cyan-400 text-white shadow-lg shadow-cyan-500/30 sm:h-12 sm:w-12">
+                        <Clock3 className="h-5 w-5 sm:h-6 sm:w-6" />
                       </span>
                     </div>
                     <p className="sd-card-title text-slate-700 text-[0.95rem]">Nothing in motion</p>
@@ -1174,7 +1175,9 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-6 gap-1 rounded-4xl p-2.5 sm:p-3 backdrop-blur">
+          {/* Floating bottom bar on phones (one-tap jumps, no scrolling back up);
+              inline panel at the end of the page on desktop. */}
+          <nav className="sd-luxe-panel sd-luxe-rise fixed inset-x-3 bottom-3 z-40 grid grid-cols-6 gap-0.5 rounded-3xl p-1.5 backdrop-blur md:static md:inset-x-auto md:mt-6 md:gap-1 md:rounded-4xl md:p-3">
             {navItems.map((item) => (
               <Link
                 key={item.label}

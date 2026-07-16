@@ -459,7 +459,7 @@ export default function WardenDashboardPage() {
         return;
       }
       // Roll back on other failures.
-      setApproved((a) => a.filter((r) => r.id !== id));
+      setApproved((a) => a.filter((r) =>r.id !== id));
       setPending((p) => [req, ...p]);
       setRequestsError(err.message || t("couldNotApprove"));
     }
@@ -791,24 +791,26 @@ export default function WardenDashboardPage() {
                 className="sd-luxe-panel sd-glow-border sd-spot-host sd-enter mt-6 rounded-4xl p-5 sm:p-7 shadow-xl"
               >
             <span className="sd-spotlight" aria-hidden="true" />
-            <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
-              <div className="flex flex-wrap items-center gap-5">
-                <div className="sd-luxe-float sd-orb-halo flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-white to-sky-50 text-slate-900 ring-8 ring-white/80 shadow-lg" style={{ "--halo": "rgba(99,102,241,0.45)" }}>
+            <div className="grid items-center gap-4 sm:gap-6 lg:grid-cols-[1.2fr_auto]">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-5">
+                <div className="sd-luxe-float sd-orb-halo hidden h-20 w-20 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-white to-sky-50 text-slate-900 ring-8 ring-white/80 shadow-lg sm:flex" style={{ "--halo": "rgba(99,102,241,0.45)" }}>
                   <Clock className="h-10 w-10 text-indigo-600" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="sd-kicker">{t("dailyPulse")}</p>
-                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-2">{t("greeting")} <span className="sd-name-live">{firstName}</span>.</h2>
-                  <p className="sd-body mt-2 max-w-md">{isBoysWarden ? t("overviewTextBoys") : t("overviewText")}</p>
+                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">{t("greeting")} <span className="sd-name-live">Warden</span>.</h2>
+                  {/* Long overview text is desktop-only — on a phone it pushes the
+                      actionable content below the fold for no real benefit. */}
+                  <p className="sd-body mt-2 hidden max-w-md sm:block">{isBoysWarden ? t("overviewTextBoys") : t("overviewText")}</p>
                 </div>
               </div>
-              <div className="grid gap-3 text-sm font-semibold text-slate-600 sm:grid-cols-2 lg:grid-cols-1">
-                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-3 rounded-full px-4 py-2.5">
-                  <CalendarDays className="h-5 w-5 text-indigo-500" />
+              <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
+                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-2 rounded-full px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+                  <CalendarDays className="h-4 w-4 text-indigo-500 sm:h-5 sm:w-5" />
                   {formattedDate}
                 </span>
-                <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex items-center gap-3 rounded-full px-4 py-2.5">
-                  <Clock className="h-5 w-5 text-sky-500" />
+                <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex flex-1 items-center gap-2 rounded-full px-3 py-2 sm:flex-none sm:gap-3 sm:px-4 sm:py-2.5">
+                  <Clock className="h-4 w-4 text-sky-500 sm:h-5 sm:w-5" />
                   {formattedTime}
                   <span className="sd-luxe-chip ml-auto rounded-full px-3 py-1 text-xs font-bold">{tc("live")}</span>
                 </span>
