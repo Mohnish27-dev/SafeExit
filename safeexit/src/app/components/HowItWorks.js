@@ -29,7 +29,7 @@ const STEPS = [
     num: "03",
     icon: EyeOff,
     title: "Secure Verification",
-    description: "A temporary QR pass is generated. Guards scan without ever seeing phone numbers or rooms.",
+    description: "The student's identity QR is scanned at the gate — approval is verified live against the server, so a screenshot can never fake a pass.",
     accent: "from-emerald-500 to-emerald-600",
     tint: "text-emerald-600 dark:text-emerald-400",
   },
@@ -104,13 +104,13 @@ function StageQR() {
       </div>
       <div className="space-y-2">
         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-          <Sparkles className="h-2.5 w-2.5" /> Temporary Pass
+          <Sparkles className="h-2.5 w-2.5" /> Identity-Only Pass
         </span>
         <div className="flex items-center gap-2 text-xs text-slate-300 font-medium">
-          <EyeOff className="h-3.5 w-3.5 text-emerald-300" /> Phone &amp; room hidden from guard
+          <EyeOff className="h-3.5 w-3.5 text-emerald-300" /> Approval verified live from the server
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-300 font-medium">
-          <Clock className="h-3.5 w-3.5 text-emerald-300" /> Expires after single scan
+          <Clock className="h-3.5 w-3.5 text-emerald-300" /> Screenshots can&apos;t fake a pass
         </div>
       </div>
     </div>
