@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, X, CalendarDays, Loader2, RefreshCcw, MapPin, Clock3, AlertTriangle, FileText, CheckCircle2, XCircle } from "lucide-react";
 import { useTranslation } from "@/app/lib/i18n";
 
@@ -389,10 +390,14 @@ export default function LeaveApplicationsView({
       </div>
     </section>
 
-    {viewing && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
+    {/* Portaled to <body>: ancestors use CSS transforms (sd-tile/sd-luxe-panel),
+        which trap `fixed` children in their stacking context — the dashboard's
+        bottom nav (z-50) was painting over this modal. From <body>, z-[70]
+        genuinely sits above everything, including the nav. */}
+    {viewing && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-70 overflow-y-auto">
           <div onClick={closeViewer} className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
-          <aside className="sd-luxe-panel sd-glow-border sd-enter relative ml-auto min-h-full w-full max-w-lg rounded-l-[2.25rem] p-6">
+          <aside className="sd-luxe-panel sd-glow-border sd-enter relative ml-auto min-h-full w-full max-w-lg rounded-l-[2.25rem] p-5 pb-[max(2rem,env(safe-area-inset-bottom))] sm:p-6">
             <div className="mb-5 flex items-center justify-between">
               <h3 className="sd-title sd-title-sm">{t("fullApplication")}</h3>
               <button
@@ -500,7 +505,8 @@ export default function LeaveApplicationsView({
               </div>
             )}
           </aside>
-        </div>
+        </div>,
+        document.body
     )}
     </>
   );

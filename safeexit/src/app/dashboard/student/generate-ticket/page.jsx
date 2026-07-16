@@ -442,14 +442,14 @@ export default function GenerateTicket() {
         icon={Ticket}
         iconTone="ticket"
         onBack={() => setStep("form")}
-        contentClassName="space-y-4"
+        contentClassName="space-y-3 sm:space-y-4"
       >
         <StepBar current="review" />
 
         {hydrated && <StudentProfileBanner display={display} compact />}
 
-        <StudentFeaturePanel className="p-6 sm:p-7 animate-scale-in" delay={60}>
-          <div className="flex items-center gap-3 pb-4 border-b border-slate-100 mb-5">
+        <StudentFeaturePanel className="p-4 sm:p-7 animate-scale-in" delay={60}>
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-100 mb-4 sm:pb-4 sm:mb-5">
             <div className="w-11 h-11 rounded-xl sf-icon-ticket flex items-center justify-center">
               <Ticket size={18} className="text-white" />
             </div>
@@ -458,12 +458,12 @@ export default function GenerateTicket() {
               <p className="text-xs text-slate-500">Verify all details before submitting</p>
             </div>
           </div>
-          
-          <div className="space-y-6">
+
+          <div className="space-y-4 sm:space-y-6">
             {/* Identity & Contact credentials section */}
             <div>
               <p className="sf-section-label mb-3">Verified Student Credentials</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                 {[
                   { label: "Roll Number", value: display.rollNo, icon: Hash, border: "border-l-4 border-amber-400 bg-amber-50/30" },
                   { label: "Official Email", value: display.email, icon: Mail, border: "border-l-4 border-sky-400 bg-sky-50/30" },
@@ -596,22 +596,29 @@ export default function GenerateTicket() {
       icon={Ticket}
       iconTone="ticket"
       onBack={() => router.push("/dashboard/student")}
-      contentClassName="space-y-5"
+      contentClassName="space-y-3 sm:space-y-5"
     >
       <StepBar current="form" />
 
-      <FeatureHeroStrip
-        variant="ticket"
-        icon={Ticket}
-        title="Digital outing pass"
-        description="Fill in your trip details — warden approval follows after submit."
-      />
+      {/* Decorative intro — desktop only. On phones the form itself should be
+          the first thing under the header: generating a pass is a daily task. */}
+      <div className="hidden sm:block">
+        <FeatureHeroStrip
+          variant="ticket"
+          icon={Ticket}
+          title="Digital outing pass"
+          description="Fill in your trip details — warden approval follows after submit."
+        />
+      </div>
 
-      {hydrated && <StudentProfileBanner display={display} />}
+      {hydrated && <StudentProfileBanner display={display} compact />}
 
-      <StudentFeaturePanel className="p-6 sm:p-7 shadow-lg" delay={40}>
+      {/* Full credentials panel is desktop-only: on phones the compact banner
+          above already identifies the student, and this read-only block was
+          costing two screens of scroll on every (daily) ticket request. */}
+      <StudentFeaturePanel className="hidden md:block p-6 sm:p-7 shadow-lg" delay={40}>
         <p className="sf-section-label mb-4">Student Information & Credentials</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           {studentFields.map(({ icon: Icon, label, val, badge, desc, theme }) => (
             <div
               key={label}
@@ -635,7 +642,7 @@ export default function GenerateTicket() {
         </div>
       </StudentFeaturePanel>
 
-      <StudentFeaturePanel className="p-5 space-y-4" delay={80}>
+      <StudentFeaturePanel className="p-4 sm:p-5 space-y-3 sm:space-y-4" delay={80}>
         <p className="sf-section-label">Outing Details</p>
 
         {isFemale && (
@@ -704,7 +711,7 @@ export default function GenerateTicket() {
 
       </StudentFeaturePanel>
 
-      <StudentFeaturePanel className="p-5 space-y-4" delay={120}>
+      <StudentFeaturePanel className="p-4 sm:p-5 space-y-3 sm:space-y-4" delay={120}>
         <p className="sf-section-label">Schedule</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -742,36 +749,38 @@ export default function GenerateTicket() {
 
 
 
-      <StudentFeaturePanel className="p-5 space-y-4" delay={200}>
+      <StudentFeaturePanel className="p-4 sm:p-5 space-y-3 sm:space-y-4" delay={200}>
         <p className="sf-section-label">Contact Information</p>
-        <div>
-          <label className="text-xs font-semibold text-slate-600 block mb-1.5">
-            <Phone size={11} className="inline mr-1 text-sky-500" />
-            Your Mobile Number *
-          </label>
-          <input
-            type="tel"
-            maxLength={10}
-            placeholder="10-digit mobile number"
-            value={form.contact}
-            onChange={set("contact")}
-            className={`sf-input ${errors.contact ? "sf-input--error" : ""}`}
-          />
-          {errors.contact && <p className="text-xs text-rose-500 mt-1">{errors.contact}</p>}
-        </div>
-        <div>
-          <label className="text-xs font-semibold text-slate-600 block mb-1.5">
-            <Phone size={11} className="inline mr-1 text-sky-500" />
-            Parent / Guardian Contact
-          </label>
-          <input
-            type="tel"
-            maxLength={10}
-            placeholder="Optional"
-            value={form.parentContact}
-            onChange={set("parentContact")}
-            className="sf-input"
-          />
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 min-[420px]:grid-cols-2">
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+              <Phone size={11} className="inline mr-1 text-sky-500" />
+              Your Mobile Number *
+            </label>
+            <input
+              type="tel"
+              maxLength={10}
+              placeholder="10-digit mobile number"
+              value={form.contact}
+              onChange={set("contact")}
+              className={`sf-input ${errors.contact ? "sf-input--error" : ""}`}
+            />
+            {errors.contact && <p className="text-xs text-rose-500 mt-1">{errors.contact}</p>}
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+              <Phone size={11} className="inline mr-1 text-sky-500" />
+              Parent / Guardian Contact
+            </label>
+            <input
+              type="tel"
+              maxLength={10}
+              placeholder="Optional"
+              value={form.parentContact}
+              onChange={set("parentContact")}
+              className="sf-input"
+            />
+          </div>
         </div>
         <div>
           <label className="text-xs font-semibold text-slate-600 block mb-1.5">Additional Note</label>
