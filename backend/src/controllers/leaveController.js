@@ -149,6 +149,13 @@ const getLeaveHistory = async (req, res) => {
 const updateLeaveStatus = async (req, res) => {
   const { status, remarks } = req.body;
 
+  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a warden.
+  if (!['Approved', 'Rejected'].includes(status)) {
+    return res.status(400).json({
+      message: 'Status can only be set to Approved or Rejected.',
+    });
+  }
+
   try {
     const application = await LeaveApplication.findById(req.params.id).populate('student', 'gender');
 
@@ -160,6 +167,14 @@ const updateLeaveStatus = async (req, res) => {
     if (!studentGenderInScope(req.user, application.student?.gender)) {
       return res.status(403).json({
         message: 'This application belongs to a student outside your hostel.',
+      });
+    }
+
+    // Only a still-Pending application can be decided; live/terminal passes can't be flipped back.
+    if (application.status !== 'Pending') {
+      return res.status(409).json({
+        message: `This application has already been ${application.status.toLowerCase()} and can no longer be changed.`,
+        status: application.status,
       });
     }
 

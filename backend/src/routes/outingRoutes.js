@@ -10,9 +10,10 @@ const {
 } = require('../controllers/outingController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authorizeRoles } = require('../middlewares/roleMiddleware');
+const { createLimiter } = require('../middlewares/rateLimit');
 
 router.route('/')
-  .post(protect, authorizeRoles('Student'), createOutingRequest);
+  .post(protect, authorizeRoles('Student'), createLimiter, createOutingRequest);
 
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyOutingRequests);
 

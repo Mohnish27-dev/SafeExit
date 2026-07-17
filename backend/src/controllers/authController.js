@@ -167,6 +167,7 @@ const getUserProfile = async (req, res) => {
       phoneNumber: user.phoneNumber,
       gender: user.gender,
       managedGender: user.managedGender,
+      photo: user.photo,
       webAuthnRegistered: user.webAuthnRegistered
     });
   } else {
@@ -174,11 +175,26 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// PATCH /api/auth/profile — private (gender backfill only)
+// PATCH /api/auth/profile — private (gender backfill + own photo)
 const updateUserProfile = async (req, res) => {
-  const { gender } = req.body;
+  const { gender, photo } = req.body;
 
-  if (!['Male', 'Female', 'Other'].includes(gender)) {
+  // Reject oversized payloads early; a data-URL face photo should be well under this.
+  if (photo !== undefined) {
+    if (photo !== null && typeof photo !== 'string') {
+      return res.status(400).json({ message: 'Invalid photo.' });
+    }
+    if (typeof photo === 'string' && photo.length > 1_500_000) {
+      return res.status(413).json({ message: 'Photo is too large.' });
+    }
+  }
+
+  // At least one supported field must be present.
+  if (gender === undefined && photo === undefined) {
+    return res.status(400).json({ message: 'Nothing to update.' });
+  }
+
+  if (gender !== undefined && !['Male', 'Female', 'Other'].includes(gender)) {
     return res.status(400).json({ message: 'Please select a valid gender.' });
   }
 
@@ -188,7 +204,20 @@ const updateUserProfile = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    user.gender = gender;
+    if (gender !== undefined) {
+      if (user.gender) {
+        return res.status(403).json({
+          message: 'Gender is already set and can only be changed by an administrator.',
+        });
+      }
+      user.gender = gender;
+    }
+
+    // Scoped to the authenticated caller — no rollNo from the body, so no cross-account writes.
+    if (photo !== undefined) {
+      user.photo = photo || undefined;
+    }
+
     await user.save();
 
     res.json({
@@ -203,6 +232,7 @@ const updateUserProfile = async (req, res) => {
       year: user.year,
       phoneNumber: user.phoneNumber,
       gender: user.gender,
+      photo: user.photo,
       webAuthnRegistered: user.webAuthnRegistered,
     });
   } catch (error) {

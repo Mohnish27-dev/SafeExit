@@ -18,6 +18,8 @@ const userSchema = new mongoose.Schema({
   roomNumber: { type: String },
   hostelName: { type: String },
   phoneNumber: { type: String },
+  // Student face photo (base64 data URL). Owner-writable only; guards read it via /scan/preview.
+  photo: { type: String },
 
   // Live status, maintained by gate scans / duty toggles.
   campusStatus: { type: String, enum: ['Inside', 'Outside', 'Overdue'], default: 'Inside' },

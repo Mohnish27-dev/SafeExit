@@ -11,9 +11,10 @@ const {
 } = require('../controllers/leaveController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authorizeRoles } = require('../middlewares/roleMiddleware');
+const { createLimiter } = require('../middlewares/rateLimit');
 
 router.route('/')
-  .post(protect, authorizeRoles('Student'), createLeaveApplication);
+  .post(protect, authorizeRoles('Student'), createLimiter, createLeaveApplication);
 
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyLeaveApplications);
 

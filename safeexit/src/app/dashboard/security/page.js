@@ -182,19 +182,6 @@ export default function SecurityDashboardPage() {
       try {
         const parsed = JSON.parse(result[0].rawValue);
 
-        // Fetch full profile from API if available
-        try {
-          const res = await fetch(`/api/profile?rollNo=${encodeURIComponent(parsed.id)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.profile && data.profile.photo) {
-              parsed.photo = data.profile.photo;
-            }
-          }
-        } catch(e) {
-          console.error("Failed to fetch photo from API");
-        }
-
         setScanResult(parsed);
         setIsScanning(false);
 
@@ -204,8 +191,12 @@ export default function SecurityDashboardPage() {
           const params = new URLSearchParams();
           if (parsed.sid) params.set("sid", parsed.sid);
           if (parsed.id) params.set("studentId", parsed.id);
+          // Authenticated (Guard/Admin) — also carries the student's face photo.
           const preview = await apiFetch(`/scan/preview?${params.toString()}`);
           setScanPreview(preview);
+          if (preview?.student?.photo) {
+            setScanResult((prev) => (prev ? { ...prev, photo: preview.student.photo } : prev));
+          }
         } catch (e) {
           console.error("Failed to load scan preview:", e);
         } finally {

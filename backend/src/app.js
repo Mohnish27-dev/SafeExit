@@ -18,13 +18,15 @@ const adminRoutes = require('./routes/adminRoutes');
 const pushRoutes = require('./routes/pushRoutes');
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
 }));
 
-app.use(express.json());
+// 2mb covers a base64 face photo on PATCH /auth/profile; controllers cap the photo field itself.
+app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
 app.use('/api/auth', authRoutes);
