@@ -203,7 +203,7 @@ export default function Features() {
                 </div>
                 <h4 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Live SOS Safety Shield</h4>
                 <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed font-medium">
-                  Active journey tracking outside campus with one-tap distress escalation. Anonymous misconduct reports route straight to ICC leadership, protecting anyone who raises a concern.
+                  One-tap distress escalation with GPS location, pushed instantly to wardens and security. Overdue returns are flagged automatically the moment a pass misses its curfew. Anonymous misconduct reports route straight to ICC leadership, protecting anyone who raises a concern.
                 </p>
               </div>
               <ArrowUpRight className="h-5 w-5 text-slate-300 dark:text-slate-600 shrink-0" />

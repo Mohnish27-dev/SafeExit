@@ -186,7 +186,7 @@ export default function Security() {
               <div className="relative z-10 mt-6 flex items-center gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-700/50">
                 <ShieldCheck className="h-5 w-5 text-cyan-300 shrink-0" />
                 <p className="text-[11px] text-slate-400 font-medium leading-relaxed">
-                  Even offline, local QR validations stay tamper-proof. Data only reveals under authorized multi-key access.
+                  Every QR pass is verified live against the server at the gate — a screenshot or stale pass can never get a student through.
                 </p>
               </div>
             </div>

@@ -390,8 +390,8 @@ export default function Simulator() {
                         <Radio className={`h-5 w-5 ${sosActive ? "animate-spin" : ""}`} />
                       </div>
                       <div>
-                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Active Journey Guard</h4>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">One-Tap Emergency SOS Broadcasting</p>
+                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Emergency SOS Shield</h4>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">One-Tap Distress Broadcasting</p>
                       </div>
                     </div>
 
@@ -697,7 +697,7 @@ export default function Simulator() {
                           <span className="font-black text-rose-700 dark:text-rose-400 uppercase block mb-1">🚨 EMERGENCY SOS</span>
                           <strong>Student:</strong> Megha Sen (Room 205-C)<br />
                           <strong>Triggered:</strong> Just Now (Gate 1 perimeter)<br />
-                          <strong>Live Tracking:</strong> Active
+                          <strong>GPS Location:</strong> Captured &amp; attached
                         </div>
                         <button
                           onClick={() => setSosActive(false)}
