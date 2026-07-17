@@ -270,7 +270,7 @@ export default function SecurityDashboardPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-10">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28 md:pb-10">
       <div className="relative overflow-hidden">
         <div className="sd-aura sd-aura--a" aria-hidden="true" />
         <div className="sd-aura sd-aura--b" aria-hidden="true" />
@@ -278,37 +278,37 @@ export default function SecurityDashboardPage() {
 
         <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
           <header className="sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <span
-                className="flex h-14 w-14 items-center justify-center rounded-2xl text-white"
+                className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl text-white"
                 style={{
                   background: "linear-gradient(145deg, #0f172a 0%, #0f766e 52%, #2dd4bf 100%)",
                   boxShadow: "0 18px 40px -20px rgba(13,148,136,0.6)",
                 }}
               >
-                <Shield className="h-7 w-7" />
+                <Shield className="h-6 w-6 sm:h-7 sm:w-7" />
               </span>
-              <div>
+              <div className="min-w-0">
                 <span className="sd-kicker">{t("liveCommand")}</span>
                 <h1 className="sd-title sd-title-md mt-1">{t("controlTitle")}</h1>
                 <p className="sd-body mt-0.5 text-sm">{t("guardOps")}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
               <LanguageSwitcher />
               <Link
                 href="/dashboard/security/profile"
-                className="sd-profile-chip flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3"
+                className="sd-profile-chip flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-3 sm:flex-none"
               >
-                <span className="sd-profile-avatar">
+                <span className="sd-profile-avatar shrink-0">
                   <ShieldCheck className="h-5 w-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="sd-card-title">{profile.name}</p>
-                  <p className="sd-micro">{profile.roleLabel}</p>
+                  <p className="sd-card-title truncate">{profile.name}</p>
+                  <p className="sd-micro truncate">{profile.roleLabel}</p>
                 </div>
-                <ChevronRight className="h-5 w-5 rotate-90 text-slate-400" />
+                <ChevronRight className="h-5 w-5 shrink-0 rotate-90 text-slate-400" />
               </Link>
             </div>
           </header>
@@ -316,7 +316,7 @@ export default function SecurityDashboardPage() {
           <section
             onPointerMove={handleHeroMove}
             style={{ animationDelay: "0.12s" }}
-            className="sd-luxe-panel grd-glow-border sd-spot-host sd-enter mt-6 rounded-[2.5rem] p-6"
+            className="sd-luxe-panel grd-glow-border sd-spot-host sd-enter mt-6 rounded-[2.5rem] p-5 sm:p-6"
           >
             <span className="sd-spotlight" aria-hidden="true" />
             <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
@@ -361,13 +361,13 @@ export default function SecurityDashboardPage() {
           </section>
 
           <section className="mt-6 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-start">
-            <div className="sd-luxe-panel sd-enter rounded-[2.5rem] p-6" style={{ animationDelay: "0.2s" }}>
-              <div className="flex items-center justify-between">
+            <div className="sd-luxe-panel sd-enter min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.2s" }}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="sd-kicker">{t("quickScan")}</span>
                   <h2 className="sd-title sd-title-sm mt-1">{t("scanGateway")}</h2>
                 </div>
-                <span className="sd-tag">
+                <span className="sd-tag shrink-0 whitespace-nowrap">
                   <span className="grd-radar h-3 w-3" aria-hidden="true" />
                   {t("realtime")}
                 </span>
@@ -384,7 +384,7 @@ export default function SecurityDashboardPage() {
                     "--tile-border": "rgba(56,189,248,0.5)",
                   }}
                 >
-                  <div className="sd-tile__inner flex flex-col items-center p-7 text-center">
+                  <div className="sd-tile__inner flex flex-col items-center p-5 text-center sm:p-7">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
                       className="sd-lift-lg flex h-20 w-20 items-center justify-center rounded-full text-white"
@@ -429,7 +429,7 @@ export default function SecurityDashboardPage() {
                     "--tile-border": "rgba(45,212,191,0.5)",
                   }}
                 >
-                  <div className="sd-tile__inner flex flex-col items-center p-7 text-center">
+                  <div className="sd-tile__inner flex flex-col items-center p-5 text-center sm:p-7">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
                       className="sd-lift-lg flex h-20 w-20 items-center justify-center rounded-full text-white"
@@ -465,7 +465,7 @@ export default function SecurityDashboardPage() {
               </div>
             </div>
 
-            <aside className="sd-luxe-panel sd-luxe-rise mt-0 rounded-[2.5rem] p-6" style={{ animationDelay: "0.34s" }}>
+            <aside className="sd-luxe-panel sd-luxe-rise mt-0 min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.34s" }}>
               <span className="sd-kicker">{t("shiftSignal")}</span>
               <h3 className="sd-title sd-title-sm mt-2">{t("zoneReadiness")}</h3>
               <p className="sd-body mt-2 text-[0.9rem]">{t("zoneReadinessDesc")}</p>
@@ -493,13 +493,13 @@ export default function SecurityDashboardPage() {
           </section>
 
           <section className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-            <div className="sd-luxe-panel sd-enter rounded-[2.5rem] p-6" style={{ animationDelay: "0.38s" }}>
-              <div className="flex items-center justify-between">
+            <div className="sd-luxe-panel sd-enter min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.38s" }}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="sd-kicker">{t("shiftPulse")}</span>
                   <h2 className="sd-title sd-title-sm mt-1">{t("studentsStatus")}</h2>
                 </div>
-                <Link href="/dashboard/security/students" className="sd-tag">
+                <Link href="/dashboard/security/students" className="sd-tag shrink-0 whitespace-nowrap">
                   {tc("viewAll")}
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </Link>
@@ -511,13 +511,13 @@ export default function SecurityDashboardPage() {
               </div>
             </div>
 
-            <div className="sd-luxe-panel sd-enter rounded-[2.5rem] p-6" style={{ animationDelay: "0.44s" }}>
-              <div className="flex items-center justify-between">
+            <div className="sd-luxe-panel sd-enter min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.44s" }}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="sd-kicker">{t("realtime")}</span>
                   <h2 className="sd-title sd-title-sm mt-1">{t("recentScans")}</h2>
                 </div>
-                <Link href="/dashboard/security/history" className="sd-tag">
+                <Link href="/dashboard/security/history" className="sd-tag shrink-0 whitespace-nowrap">
                   {tc("viewAll")}
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </Link>
@@ -534,29 +534,29 @@ export default function SecurityDashboardPage() {
                   </div>
                 )}
                 {recentScans.map((scan) => (
-                  <div key={scan.id} className="sd-row" style={{ "--accent": scan.type === "in" ? "#10b981" : "#38bdf8" }}>
+                  <div key={scan.id} className="sd-row flex-wrap" style={{ "--accent": scan.type === "in" ? "#10b981" : "#38bdf8" }}>
                     <span className="sd-row__accent" aria-hidden="true" />
-                    <div className="flex items-center gap-3.5">
+                    <div className="flex min-w-0 flex-1 items-center gap-3.5">
                       <span
-                        className="sd-profile-avatar"
+                        className="sd-profile-avatar shrink-0"
                         style={{ height: "2.5rem", width: "2.5rem", fontSize: "0.78rem" }}
                       >
                         {scan.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
                       </span>
-                      <div>
-                        <p className="sd-card-title text-[0.88rem]">{scan.name}</p>
-                        <p className="sd-micro text-[0.72rem]">{scan.meta}</p>
+                      <div className="min-w-0">
+                        <p className="sd-card-title truncate text-[0.88rem]">{scan.name}</p>
+                        <p className="sd-micro truncate text-[0.72rem]">{scan.meta}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
                       <span
-                        className={`rounded-full px-3 py-1 text-[0.68rem] font-bold uppercase tracking-wide ${
+                        className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide sm:px-3 ${
                           scan.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
                         }`}
                       >
                         {scan.tag}
                       </span>
-                      <span className="sd-micro grd-mono text-[0.72rem]">{scan.time}</span>
+                      <span className="sd-micro grd-mono whitespace-nowrap text-[0.72rem]">{scan.time}</span>
                     </div>
                   </div>
                 ))}
@@ -566,18 +566,18 @@ export default function SecurityDashboardPage() {
 
           {counts.overdue > 0 && (
             <section
-              className="sd-luxe-panel sd-glow-border sd-enter mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[2.5rem] p-6"
+              className="sd-luxe-panel sd-glow-border sd-enter mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[2.5rem] p-5 sm:p-6"
               style={{ "--tile-border": "rgba(244,63,94,0.5)" }}
             >
-              <div className="flex items-center gap-4">
+              <div className="flex min-w-0 items-center gap-4">
                 <span
-                  className="sd-orb-halo relative flex h-14 w-14 items-center justify-center rounded-full text-white"
+                  className="sd-orb-halo relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white"
                   style={{ "--halo": "rgba(244,63,94,0.5)", background: "linear-gradient(145deg, #be123c 0%, #f43f5e 100%)" }}
                 >
                   <span className="sd-ring" style={{ borderColor: "rgba(244,63,94,0.4)" }} aria-hidden="true" />
                   <Bell className="h-7 w-7" />
                 </span>
-                <div>
+                <div className="min-w-0">
                   <span className="sd-kicker text-rose-400">{t("alerts")}</span>
                   <h2 className="sd-title sd-title-sm mt-1">
                     {counts.overdue} {counts.overdue === 1 ? t("studentOverdue") : t("studentsOverduePlural")}
@@ -587,7 +587,7 @@ export default function SecurityDashboardPage() {
               </div>
               <Link
                 href="/dashboard/security/students?filter=overdue"
-                className="sd-btn-glow rounded-2xl px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-lg"
+                className="sd-btn-glow w-full rounded-2xl px-6 py-3 text-center text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-lg sm:w-auto"
                 style={{ background: "linear-gradient(135deg, #f43f5e 0%, #be123c 100%)" }}
               >
                 {t("viewNow")}
@@ -601,7 +601,7 @@ export default function SecurityDashboardPage() {
 
       {isScanning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
-          <div className="sd-enter relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+          <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 p-4">
               <h3 className="sd-card-title flex items-center gap-2 text-lg">
                 {t("scanStudentQR")}
@@ -628,7 +628,7 @@ export default function SecurityDashboardPage() {
 
       {scanResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="sd-enter relative w-full max-w-sm rounded-[2rem] bg-white p-6 text-center shadow-2xl">
+          <div className="sd-enter relative max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-[2rem] bg-white p-5 text-center shadow-2xl sm:p-6">
             <button
               onClick={() => { setScanResult(null); setScanPreview(null); }}
               className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 transition cursor-pointer text-slate-400"
@@ -835,20 +835,20 @@ function GuardStatCard({ card, value, total }) {
   return (
     <div ref={ref} className="sd-stat px-4 py-4" style={{ "--stat-glow": palette.glow }}>
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-md"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-md"
             style={{ background: palette.chip, boxShadow: `0 10px 20px -10px ${palette.glow}` }}
           >
             <Icon className="h-[1.05rem] w-[1.05rem]" />
           </span>
-          <div>
+          <div className="min-w-0">
             <p className="sd-micro text-[0.8rem]">{card.label}</p>
             <p className="text-[0.7rem] font-medium text-slate-400">{card.note}</p>
           </div>
         </div>
         <p
-          className="grd-mono text-2xl font-bold tracking-tight text-transparent bg-clip-text"
+          className="grd-mono shrink-0 text-2xl font-bold tracking-tight text-transparent bg-clip-text"
           style={{ backgroundImage: palette.fill }}
         >
           {display}

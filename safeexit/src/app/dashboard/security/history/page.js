@@ -58,7 +58,7 @@ export default function SecurityHistoryPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-10">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28 md:pb-10">
       <div className="relative overflow-hidden">
         <div className="sd-aura sd-aura--a" aria-hidden="true" />
         <div className="sd-aura sd-aura--b" aria-hidden="true" />
@@ -84,15 +84,15 @@ export default function SecurityHistoryPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
               <LanguageSwitcher />
-              <div className="sd-luxe-card flex items-center gap-3 rounded-2xl px-4 py-3">
-                <Search className="h-4 w-4 text-slate-400" />
+              <div className="sd-luxe-card flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-3 sm:flex-none">
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t("searchNameRoll")}
-                  className="w-56 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                  className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none sm:w-56"
                 />
               </div>
             </div>
@@ -114,7 +114,7 @@ export default function SecurityHistoryPage() {
             ))}
           </div>
 
-          <section className="sd-luxe-panel sd-enter mt-6 rounded-[2.5rem] p-6" style={{ animationDelay: "0.14s" }}>
+          <section className="sd-luxe-panel sd-enter mt-6 rounded-3xl p-4 sm:rounded-[2.5rem] sm:p-6" style={{ animationDelay: "0.14s" }}>
             {error && (
               <p className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
                 {error}
@@ -150,20 +150,20 @@ export default function SecurityHistoryPage() {
                       }}
                     >
                       <span className="sd-row__accent" aria-hidden="true" />
-                      <div className="flex items-center gap-4">
+                      <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
                         <span
-                          className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
                             log.direction === "IN" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
                           }`}
                         >
                           {log.direction === "IN" ? <LogIn className="h-5 w-5" /> : <LogOut className="h-5 w-5" />}
                         </span>
-                        <div>
-                          <p className="sd-card-title text-[0.88rem]">{st.name || t("unknownStudent")}</p>
-                          <p className="sd-micro">{st.studentId || "—"}</p>
+                        <div className="min-w-0">
+                          <p className="sd-card-title truncate text-[0.88rem]">{st.name || t("unknownStudent")}</p>
+                          <p className="sd-micro truncate">{st.studentId || "—"}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex shrink-0 items-center gap-2 sm:gap-4">
                         {log.punctuality && log.punctuality !== "N/A" && (
                           <span
                             className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -175,7 +175,7 @@ export default function SecurityHistoryPage() {
                             {log.punctuality}
                           </span>
                         )}
-                        <span className="sd-micro grd-mono">
+                        <span className="sd-micro grd-mono whitespace-nowrap">
                           {new Date(log.createdAt).toLocaleString(dateLocale, {
                             day: "2-digit",
                             month: "short",

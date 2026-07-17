@@ -106,7 +106,7 @@ function SecurityStudentsContent() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-10">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28 md:pb-10">
       <div className="relative overflow-hidden">
         <div className="sd-aura sd-aura--a" aria-hidden="true" />
         <div className="sd-aura sd-aura--b" aria-hidden="true" />
@@ -132,15 +132,15 @@ function SecurityStudentsContent() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
               <LanguageSwitcher />
-              <div className="sd-luxe-card flex items-center gap-3 rounded-2xl px-4 py-3">
-                <Search className="h-4 w-4 text-slate-400" />
+              <div className="sd-luxe-card flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-3 sm:flex-none">
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t("searchNameRoll") || t("searchNameRollEmail")}
-                  className="w-56 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                  className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none sm:w-56"
                 />
               </div>
             </div>
@@ -167,7 +167,7 @@ function SecurityStudentsContent() {
             ))}
           </div>
 
-          <section className="sd-luxe-panel sd-enter mt-6 rounded-[2.5rem] p-6" style={{ animationDelay: "0.14s" }}>
+          <section className="sd-luxe-panel sd-enter mt-6 rounded-3xl p-4 sm:rounded-[2.5rem] sm:p-6" style={{ animationDelay: "0.14s" }}>
             {error && (
               <p className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
                 {error}
