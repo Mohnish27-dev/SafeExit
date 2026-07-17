@@ -15,20 +15,31 @@ export default function SecurityBottomNav({ active }) {
     { label: tc("profile"), matchKey: "Profile", icon: UserRound, href: "/dashboard/security/profile" },
   ];
 
+  const renderItems = () =>
+    NAV_ITEMS.map((item) => (
+      <Link
+        key={item.matchKey}
+        href={item.href}
+        className={`sd-navx ${item.matchKey === active ? "sd-navx--active" : ""}`}
+      >
+        <span className="sd-navx__icon">
+          <item.icon className="h-5 w-5" />
+        </span>
+        {item.label}
+      </Link>
+    ));
+
   return (
-    <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-[2rem] p-3">
-      {NAV_ITEMS.map((item) => (
-        <Link
-          key={item.matchKey}
-          href={item.href}
-          className={`sd-navx ${item.matchKey === active ? "sd-navx--active" : ""}`}
-        >
-          <span className="sd-navx__icon">
-            <item.icon className="h-5 w-5" />
-          </span>
-          {item.label}
-        </Link>
-      ))}
-    </nav>
+    <>
+      {/* Desktop: inline panel at the end of the page flow */}
+      <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-4xl p-3">
+        {renderItems()}
+      </nav>
+
+      {/* Mobile: floating bottom bar, always reachable with one thumb */}
+      <nav className="sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid grid-cols-4 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
+        {renderItems()}
+      </nav>
+    </>
   );
 }

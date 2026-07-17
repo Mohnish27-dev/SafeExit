@@ -55,7 +55,7 @@ export default function SecurityProfilePage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-10">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28 md:pb-10">
       <div className="relative overflow-hidden">
         <div className="sd-aura sd-aura--a" aria-hidden="true" />
         <div className="sd-aura sd-aura--b" aria-hidden="true" />
@@ -108,9 +108,9 @@ export default function SecurityProfilePage() {
                   {me.email && (
                     <div className="sd-row" style={{ "--accent": "#6366f1" }}>
                       <span className="sd-row__accent" aria-hidden="true" />
-                      <div className="flex items-center gap-3">
-                        <Mail className="h-4 w-4 text-slate-400" />
-                        <span className="sd-card-title text-[0.88rem]">{me.email}</span>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Mail className="h-4 w-4 shrink-0 text-slate-400" />
+                        <span className="sd-card-title break-all text-[0.88rem]">{me.email}</span>
                       </div>
                     </div>
                   )}
