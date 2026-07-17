@@ -1,0 +1,42 @@
+▲ Next.js 16.2.6 (webpack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 18.5s
+  Running TypeScript ...
+  Finished TypeScript in 196ms ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/23) ...
+  Generating static pages using 11 workers (5/23) 
+  Generating static pages using 11 workers (11/23) 
+  Generating static pages using 11 workers (17/23) 
+✓ Generating static pages using 11 workers (23/23) in 3.4s
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/profile
+├ ○ /dashboard
+├ ○ /dashboard/admin
+├ ○ /dashboard/security
+├ ○ /dashboard/security/history
+├ ○ /dashboard/security/profile
+├ ○ /dashboard/security/students
+├ ○ /dashboard/student
+├ ○ /dashboard/student/complaint
+├ ○ /dashboard/student/generate-ticket
+├ ○ /dashboard/student/leave-application
+├ ○ /dashboard/student/my-outings
+├ ○ /dashboard/student/sos
+├ ○ /dashboard/warden
+├ ○ /login
+├ ○ /login/admin
+├ ○ /login/security
+├ ○ /login/student
+└ ○ /login/warden
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

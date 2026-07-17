@@ -29,6 +29,8 @@ import StudentProfileBanner from "@/app/components/student/StudentProfileBanner"
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { apiFetch } from "@/app/lib/api";
+import { useRequireAuth } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 
 const MIN_LEAD_HOURS = 24;
 
@@ -94,6 +96,7 @@ const describeSubmitError = (error) => {
 
 export default function LeaveApplicationPage() {
   const router = useRouter();
+  const { checked, authorized } = useRequireAuth("student");
   const { display, hydrated } = useStudentProfile();
 
   const [tab, setTab] = useState("new");
@@ -400,6 +403,8 @@ export default function LeaveApplicationPage() {
       </StudentFeatureShell>
     );
   }
+
+  if (!checked || !authorized) return <AuthLoading />;
 
   return (
     <StudentFeatureShell

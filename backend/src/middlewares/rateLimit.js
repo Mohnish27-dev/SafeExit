@@ -1,4 +1,7 @@
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
+const perUserKey = (req) =>
+  req.user?._id ? `user:${req.user._id}` : ipKeyGenerator(req.ip);
 
 // Credential-checking endpoints: 10 attempts / 15 min / IP; successes don't count.
 const authLimiter = rateLimit({
@@ -27,4 +30,23 @@ const otpLimiter = rateLimit({
   message: { message: 'Too many code requests. Please wait a few minutes and try again.' },
 });
 
-module.exports = { authLimiter, registerLimiter, otpLimiter };
+
+const sosLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: perUserKey,
+  message: { message: 'Too many SOS alerts in a short time. If this is a real emergency, call campus security directly.' },
+});
+
+const createLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: perUserKey,
+  message: { message: 'Too many requests in a short time. Please wait a moment and try again.' },
+});
+
+module.exports = { authLimiter, registerLimiter, otpLimiter, sosLimiter, createLimiter };

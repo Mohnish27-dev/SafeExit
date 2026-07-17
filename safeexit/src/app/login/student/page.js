@@ -28,6 +28,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
+import { apiFetch } from "@/app/lib/api";
 import {
   hasQuickPin,
   hasBiometric,
@@ -137,17 +138,12 @@ export default function StudentLoginPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Publish photo so the guard's scanner survives server restarts clearing the in-memory store
+  // Persist the face photo to the authenticated backend so the guard's scanner can show it.
   const publishPhoto = (p) => {
     if (!p?.photo) return;
-    fetch("/api/profile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        rollNo: p.rollNumber,
-        name: p.fullName,
-        photo: p.photo,
-      }),
+    apiFetch("/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify({ photo: p.photo }),
     }).catch((err) => console.error("Failed to publish profile photo", err));
   };
 

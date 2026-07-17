@@ -198,22 +198,22 @@ export default function LoginRoleSelect() {
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-8">
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-4 sm:py-8">
         {/* Title */}
-        <div className="text-center mb-10">
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+        <div className="text-center mb-5 sm:mb-10">
+          <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             {isFiltered ? (
               <>Welcome back to <span className="text-indigo-600">SafeExit</span></>
             ) : (
               <>Welcome to <span className="text-indigo-600">SafeExit</span></>
             )}
           </h1>
-          <p className="text-slate-500 mt-2 text-base font-medium">
+          <p className="text-slate-500 mt-1.5 text-sm sm:text-base font-medium">
             {isFiltered
               ? "Continue with your registered role"
               : "Choose your role to continue to the login page"}
           </p>
-          <div className="mx-auto mt-3 h-1 w-12 rounded-full bg-indigo-600"></div>
+          <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-indigo-600"></div>
         </div>
 
         {/* Role Cards */}
@@ -224,16 +224,16 @@ export default function LoginRoleSelect() {
               : visibleRoles.length === 2
               ? "md:grid-cols-2 max-w-2xl"
               : "md:grid-cols-3 max-w-4xl"
-          } gap-6 lg:gap-8 w-full`}
+          } gap-4 sm:gap-6 lg:gap-8 w-full`}
         >
           {visibleRoles.map((role, index) => (
             <div
               key={role.id}
-              className="group relative bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all duration-300 overflow-hidden flex flex-col items-center text-center p-6 pt-0"
+              className="group relative bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all duration-300 overflow-hidden flex flex-col items-center text-center p-4 sm:p-6 pt-0"
               style={{ animationDelay: `${index * 100}ms` }}
             >
               {/* Character Image */}
-              <div className="relative w-48 h-48 -mt-2 mb-1">
+              <div className="relative w-32 h-32 sm:w-48 sm:h-48 -mt-1 sm:-mt-2 mb-0.5 sm:mb-1">
                 <div className="absolute inset-0 bg-indigo-100/50 rounded-full scale-75 group-hover:scale-80 transition-transform duration-500"></div>
                 <Image
                   src={role.image}
@@ -245,24 +245,24 @@ export default function LoginRoleSelect() {
               </div>
 
               {/* Role Icon Badge */}
-              <div className={`h-11 w-11 rounded-full ${role.iconBg} flex items-center justify-center -mt-2 mb-3 shadow-sm border border-white ring-4 ring-white`}>
-                <role.icon className="h-5 w-5" />
+              <div className={`h-9 w-9 sm:h-11 sm:w-11 rounded-full ${role.iconBg} flex items-center justify-center -mt-1.5 sm:-mt-2 mb-2 sm:mb-3 shadow-sm border border-white ring-2 sm:ring-4 ring-white`}>
+                <role.icon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
 
               {/* Role Title */}
-              <h2 className="text-lg font-bold text-slate-900 mb-1">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 mb-0.5 sm:mb-1">
                 {role.title}
               </h2>
 
               {/* Description */}
-              <p className="text-sm text-slate-500 font-medium mb-5 leading-relaxed max-w-[200px]">
+              <p className="text-xs sm:text-sm text-slate-500 font-medium mb-3 sm:mb-5 leading-relaxed max-w-[180px] sm:max-w-[200px]">
                 {role.description}
               </p>
 
               {/* Login Button */}
               <Link
                 href={role.href}
-                className={`w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r ${role.color} hover:opacity-90 shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200 mt-auto`}
+                className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r ${role.color} hover:opacity-90 shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200 mt-auto`}
               >
                 <LogIn className="h-4 w-4" />
                 {role.buttonText}
@@ -285,10 +285,10 @@ export default function LoginRoleSelect() {
         )}
 
         {/* Admin Console access */}
-        <div className="mt-8">
+        <div className="mt-5 sm:mt-8">
           <Link
             href="/login/admin"
-            className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/70 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-md transition-all"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/70 backdrop-blur-sm px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-md transition-all"
           >
             <ShieldCheck className="h-4 w-4 text-indigo-500" />
             Admin Console
@@ -297,8 +297,8 @@ export default function LoginRoleSelect() {
         </div>
 
         {/* Privacy Notice */}
-        <div className="mt-8 max-w-2xl w-full">
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/60 shadow-sm px-6 py-4 flex items-center justify-between gap-4">
+        <div className="mt-5 sm:mt-8 max-w-2xl w-full">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-slate-200/60 shadow-sm px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 flex-shrink-0">
                 <Lock className="h-5 w-5" />

@@ -85,13 +85,13 @@ export default function Security() {
   }, [open]);
 
   return (
-    <section id="security" className="py-20 bg-slate-900 text-white relative overflow-hidden">
+    <section id="security" className="py-12 sm:py-16 md:py-20 bg-slate-900 text-white relative overflow-hidden">
       <div className="absolute top-0 right-0 -z-10 w-96 h-96 rounded-full bg-indigo-500/10 blur-3xl"></div>
       <div className="absolute bottom-0 left-0 -z-10 w-96 h-96 rounded-full bg-violet-500/10 blur-3xl"></div>
       <div className="absolute inset-0 -z-10 bg-grid-pattern opacity-10"></div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 sm:gap-12 items-center">
 
           {/* Text + pillars */}
           <div className="lg:col-span-6 space-y-6">
@@ -110,13 +110,13 @@ export default function Security() {
                 <div
                   key={idx}
                   style={{ transitionDelay: `${idx * 70}ms` }}
-                  className="reveal p-5 bg-slate-800/40 border border-slate-750/70 rounded-2xl space-y-3 hover:border-indigo-500/50 hover:bg-slate-800/70 transition-all duration-300"
+                  className="reveal p-4 sm:p-5 bg-slate-800/40 border border-slate-700/70 rounded-2xl space-y-3 hover:border-indigo-500/50 hover:bg-slate-800/70 transition-all duration-300"
                 >
-                  <div className="h-10 w-10 bg-slate-850 rounded-xl flex items-center justify-center border border-slate-700/60">
+                  <div className="h-10 w-10 bg-slate-900 rounded-xl flex items-center justify-center border border-slate-700/60">
                     {pillar.icon}
                   </div>
                   <h4 className="font-extrabold text-sm text-slate-100">{pillar.title}</h4>
-                  <p className="text-xs text-slate-450 leading-relaxed font-medium">{pillar.desc}</p>
+                  <p className="text-xs text-slate-400 leading-relaxed font-medium">{pillar.desc}</p>
                 </div>
               ))}
             </div>
@@ -171,7 +171,7 @@ export default function Security() {
                         ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40"
                         : holding
                         ? "bg-cyan-500 text-white scale-95 shadow-lg shadow-cyan-500/50"
-                        : "bg-slate-800 text-cyan-300 border border-cyan-500/40 hover:bg-slate-750"
+                         : "bg-slate-800 text-cyan-300 border border-cyan-500/40 hover:bg-slate-700"
                     }`}
                   >
                     {open ? <Unlock className="h-6 w-6" /> : <KeyRound className={`h-6 w-6 ${holding ? "animate-pulse" : ""}`} />}

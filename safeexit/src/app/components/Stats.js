@@ -13,7 +13,7 @@ function StatCard({ icon, target, suffix, label, desc, bg, accent, delay }) {
     <div
       ref={ref}
       style={{ transitionDelay: `${delay}ms` }}
-      className="reveal card-3d-hover relative overflow-hidden p-6 rounded-2xl card-elevated space-y-4 group"
+      className="reveal card-3d-hover relative overflow-hidden p-5 sm:p-6 rounded-2xl card-elevated space-y-4 group"
     >
       {/* Accent glow that blooms on hover */}
       <div className={`absolute -top-10 -right-10 h-28 w-28 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${accent}`}></div>
@@ -22,7 +22,7 @@ function StatCard({ icon, target, suffix, label, desc, bg, accent, delay }) {
         {icon}
       </div>
       <div className="space-y-1 relative z-10">
-        <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight count-glow tabular-nums">
+        <h4 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight count-glow tabular-nums">
           {display}<span className="text-cyan-500">{suffix}</span>
         </h4>
         <h5 className="text-sm font-bold text-slate-800 dark:text-slate-200">{label}</h5>
@@ -48,7 +48,7 @@ export default function Stats() {
   return (
     <section
       id="metrics"
-      className="py-20 bg-gradient-to-b from-[#f4f7ff] via-white to-[#edf4ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 border-t border-slate-200/55 dark:border-slate-800/55 relative overflow-hidden"
+      className="py-12 sm:py-16 md:py-20 bg-gradient-to-b from-[#f4f7ff] via-white to-[#edf4ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 border-t border-slate-200/55 dark:border-slate-800/55 relative overflow-hidden"
     >
       <div className="absolute -top-24 right-8 h-64 w-64 rounded-full bg-cyan-200/20 blur-3xl -z-10"></div>
       <div className="absolute bottom-0 left-0 h-72 w-72 rounded-full bg-indigo-200/20 blur-3xl -z-10"></div>
@@ -56,17 +56,17 @@ export default function Stats() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Title */}
-        <div className="text-center max-w-2xl mx-auto mb-16 space-y-3 reveal">
+        <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-14 md:mb-16 space-y-3 reveal">
           <h2 className="text-xs font-bold text-cyan-600 uppercase tracking-widest">
             Safety You Can Measure
           </h2>
-          <h3 className="font-display text-3xl font-extrabold text-slate-900 dark:text-white dark:drop-shadow-[0_2px_16px_rgba(56,189,248,0.2)] tracking-tight">
+          <h3 className="font-display text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white dark:drop-shadow-[0_2px_16px_rgba(56,189,248,0.2)] tracking-tight">
             Student Safety, Verified Daily
           </h3>
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6 lg:gap-8">
           {statsList.map((stat, idx) => (
             <StatCard key={idx} {...stat} delay={idx * 80} />
           ))}

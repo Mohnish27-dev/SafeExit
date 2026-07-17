@@ -78,7 +78,7 @@ export default function Footer() {
             <ul className="space-y-3 text-sm font-medium text-slate-600 dark:text-slate-400">
               <li className="flex items-center gap-2">
                 <Mail className="h-4 w-4 text-indigo-500" />
-                <span>support@safeexit.edu</span>
+                <span>safeexit927@gmail.com</span>
               </li>
               <li className="flex items-center gap-2">
                 <Phone className="h-4 w-4 text-indigo-500" />
@@ -86,7 +86,7 @@ export default function Footer() {
               </li>
               <li className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-indigo-500" />
-                <span>Safety Inc., Tech Hub Sector 12, India</span>
+                <span>NIT PATNA BIHTA CAMPUS</span>
               </li>
             </ul>
           </div>

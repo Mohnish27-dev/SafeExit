@@ -50,13 +50,13 @@ function ApprovalVisual() {
   return (
     <div className="relative rounded-xl bg-slate-950 border border-emerald-900/60 p-4 overflow-hidden">
       <div className="flex items-center justify-between mb-2.5">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Auto-Approval</span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Warden Approved</span>
         <span className="text-[10px] font-mono text-slate-500">REQ-4091</span>
       </div>
       <div className="approve-bar h-2 w-full mb-2.5"></div>
       <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium">
         <FileCheck className="h-3.5 w-3.5 text-emerald-400" />
-        Ticket validated · Warden notified · Approved
+        Request reviewed · Warden approved · QR pass issued
       </div>
     </div>
   );
@@ -64,10 +64,10 @@ function ApprovalVisual() {
 
 function AuditVisual() {
   const rows = [
-    { t: "17:15", a: "Student filed REQ-4092", c: "text-cyan-300" },
-    { t: "16:45", a: "AI flagged repeat lookup", c: "text-amber-300" },
+    { t: "17:15", a: "Student submitted REQ-4092", c: "text-cyan-300" },
+    { t: "16:50", a: "Guard scan — Exit OUT recorded", c: "text-indigo-300" },
     { t: "16:30", a: "Warden approved outing", c: "text-emerald-300" },
-    { t: "16:28", a: "Travel proof uploaded", c: "text-slate-300" },
+    { t: "16:28", a: "Student submitted REQ-4091", c: "text-slate-300" },
   ];
   return (
     <div className="relative rounded-xl bg-slate-950 border border-cyan-900/60 p-3 h-[104px] ticker-mask">
@@ -108,30 +108,30 @@ export default function Features() {
   return (
     <section
       id="features"
-      className="py-20 bg-gradient-to-b from-[#f1f4ff] via-[#eef3ff] to-[#e8f0ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 relative overflow-hidden"
+      className="py-12 sm:py-16 md:py-20 bg-gradient-to-b from-[#f1f4ff] via-[#eef3ff] to-[#e8f0ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 relative overflow-hidden"
     >
       <div className="absolute -top-24 right-10 h-64 w-64 rounded-full bg-cyan-200/30 blur-3xl -z-10"></div>
       <div className="absolute bottom-0 left-0 h-72 w-72 rounded-full bg-indigo-200/25 blur-3xl -z-10"></div>
       <div className="absolute inset-0 bg-dot-pattern opacity-40 -z-10"></div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16 space-y-4 reveal">
+        <div className="text-center max-w-3xl mx-auto mb-10 sm:mb-14 md:mb-16 space-y-4 reveal">
           <h2 className="text-xs font-bold text-cyan-600 uppercase tracking-widest">
             Safety That Students Can Trust
           </h2>
-          <h3 className="font-display text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white dark:drop-shadow-[0_2px_16px_rgba(56,189,248,0.2)] tracking-tight">
+          <h3 className="font-display text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white dark:drop-shadow-[0_2px_16px_rgba(56,189,248,0.2)] tracking-tight">
             Built Around Student Safety, Not Just Access
           </h3>
-          <p className="text-lg text-slate-600 dark:text-slate-400 font-medium">
+          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 font-medium">
             SafeExit replaces exposed registers with a privacy-first system that verifies exits, alerts wardens, and protects student data at every step.
           </p>
         </div>
 
         {/* Bento Grid — asymmetric, with live product visuals */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-5 auto-rows-[minmax(0,1fr)]">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 sm:gap-5 auto-rows-[minmax(0,1fr)]">
 
           {/* Contact masking — hero cell (spans 4) */}
-          <div className="reveal bento-card card-elevated md:col-span-4 p-7 flex flex-col justify-between gap-6">
+          <div className="reveal bento-card card-elevated md:col-span-4 p-5 sm:p-7 flex flex-col justify-between gap-5 sm:gap-6">
             <div className="bento-spot"></div>
             <div className="flex items-start justify-between gap-4">
               <div className="max-w-sm">
@@ -149,7 +149,7 @@ export default function Features() {
           </div>
 
           {/* Secure QR pass (spans 2) */}
-          <div className="reveal bento-card card-elevated md:col-span-2 p-7 flex flex-col justify-between gap-5" style={{ transitionDelay: "80ms" }}>
+          <div className="reveal bento-card card-elevated md:col-span-2 p-5 sm:p-7 flex flex-col justify-between gap-5" style={{ transitionDelay: "80ms" }}>
             <div className="bento-spot"></div>
             <div>
               <div className="h-11 w-11 rounded-xl flex items-center justify-center mb-4 border bg-violet-50 border-violet-100 dark:bg-violet-950/40 dark:border-violet-900/60 text-violet-600 dark:text-violet-400">
@@ -164,7 +164,7 @@ export default function Features() {
           </div>
 
           {/* Live audit ticker (spans 2) */}
-          <div className="reveal bento-card card-elevated md:col-span-2 p-7 flex flex-col justify-between gap-5" style={{ transitionDelay: "120ms" }}>
+          <div className="reveal bento-card card-elevated md:col-span-2 p-5 sm:p-7 flex flex-col justify-between gap-5" style={{ transitionDelay: "120ms" }}>
             <div className="bento-spot"></div>
             <div>
               <div className="h-11 w-11 rounded-xl flex items-center justify-center mb-4 border bg-cyan-50 border-cyan-100 dark:bg-cyan-950/40 dark:border-cyan-900/60 text-cyan-600 dark:text-cyan-400">
@@ -179,7 +179,7 @@ export default function Features() {
           </div>
 
           {/* Smart approvals (spans 2) */}
-          <div className="reveal bento-card card-elevated md:col-span-2 p-7 flex flex-col justify-between gap-5" style={{ transitionDelay: "160ms" }}>
+          <div className="reveal bento-card card-elevated md:col-span-2 p-5 sm:p-7 flex flex-col justify-between gap-5" style={{ transitionDelay: "160ms" }}>
             <div className="bento-spot"></div>
             <div>
               <div className="h-11 w-11 rounded-xl flex items-center justify-center mb-4 border bg-emerald-50 border-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-900/60 text-emerald-600 dark:text-emerald-400">
@@ -187,14 +187,14 @@ export default function Features() {
               </div>
               <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Smart Outing Approvals</h4>
               <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed font-medium">
-                Upload travel proof in-app to trigger instant or quick-warden approvals.
+                Students submit digital outing requests; wardens review and approve them, then a QR exit pass is issued instantly.
               </p>
             </div>
             <ApprovalVisual />
           </div>
 
           {/* Live SOS — wide cell (spans 4) */}
-          <div className="reveal bento-card card-elevated md:col-span-4 p-7 flex flex-col justify-between gap-6" style={{ transitionDelay: "200ms" }}>
+          <div className="reveal bento-card card-elevated md:col-span-4 p-5 sm:p-7 flex flex-col justify-between gap-5 sm:gap-6" style={{ transitionDelay: "200ms" }}>
             <div className="bento-spot"></div>
             <div className="flex items-start justify-between gap-4">
               <div className="max-w-sm">

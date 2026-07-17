@@ -28,6 +28,8 @@ import StudentProfileBanner from "@/app/components/student/StudentProfileBanner"
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { apiFetch } from "@/app/lib/api";
+import { useRequireAuth } from "@/app/lib/auth";
+import AuthLoading from "@/app/components/AuthGate";
 
 const categories = [
   {
@@ -107,6 +109,7 @@ const describeSubmitError = (error) => {
 
 export default function StudentComplaintPage() {
   const router = useRouter();
+  const { checked, authorized } = useRequireAuth("student");
   const { display, hydrated } = useStudentProfile();
 
   const [tab, setTab] = useState("new");
@@ -270,6 +273,8 @@ export default function StudentComplaintPage() {
       </StudentFeatureCentered>
     );
   }
+
+  if (!checked || !authorized) return <AuthLoading />;
 
   return (
     <StudentFeatureShell

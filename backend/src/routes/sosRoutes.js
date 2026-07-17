@@ -9,9 +9,10 @@ const {
 } = require('../controllers/sosController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authorizeRoles } = require('../middlewares/roleMiddleware');
+const { sosLimiter } = require('../middlewares/rateLimit');
 
 router.route('/')
-  .post(protect, authorizeRoles('Student'), createSOSAlert)
+  .post(protect, authorizeRoles('Student'), sosLimiter, createSOSAlert)
   .get(protect, authorizeRoles('Admin', 'Warden', 'Guard'), getSOSAlerts);
 
 router.get('/mine', protect, authorizeRoles('Student'), getMySOSAlerts);

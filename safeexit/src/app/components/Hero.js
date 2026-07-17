@@ -35,7 +35,7 @@ export default function Hero() {
   }, []);
 
   return (
-    <section className="relative pt-32 pb-20 md:pt-40 md:pb-28 overflow-hidden bg-gradient-to-b from-[#eef2ff] via-[#f3f6ff] to-[#e8f1ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 bg-dot-pattern transition-colors duration-300">
+    <section className="relative pt-28 pb-14 sm:pt-32 sm:pb-20 md:pt-40 md:pb-28 overflow-hidden bg-gradient-to-b from-[#eef2ff] via-[#f3f6ff] to-[#e8f1ff] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:bg-slate-950 bg-dot-pattern transition-colors duration-300">
       <div className="hero-aurora-3d -z-10" />
       {/* Background Decorative Gradients */}
       <div className="absolute top-0 right-0 -z-10 w-[520px] h-[520px] rounded-full bg-cyan-200/35 dark:bg-cyan-900/10 blur-3xl opacity-60"></div>
@@ -43,7 +43,7 @@ export default function Hero() {
       <div className="absolute -top-20 left-1/3 -z-10 h-56 w-56 rounded-full bg-sky-200/30 dark:bg-sky-900/10 blur-3xl"></div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 sm:gap-12 lg:gap-8 items-center">
           {/* Text Content Column */}
           <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-left space-y-6 animate-fade-in-up">
             {/* Pill Tag */}
