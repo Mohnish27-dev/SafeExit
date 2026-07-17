@@ -350,16 +350,11 @@ export default function StudentDashboardPage() {
       }
       setProfile(normalized);
 
-      // Republish photo (keyed by roll number) so the gate scanner can show it.
-      if (normalized.photo && normalized.rollNo) {
-        fetch("/api/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            rollNo: normalized.rollNo,
-            name: normalized.name,
-            photo: normalized.photo,
-          }),
+      // Republish photo to the authenticated backend so the gate scanner can show it.
+      if (normalized.photo) {
+        apiFetch("/auth/profile", {
+          method: "PATCH",
+          body: JSON.stringify({ photo: normalized.photo }),
         }).catch((err) => console.error("Failed to publish profile photo", err));
       }
     }
@@ -657,18 +652,11 @@ export default function StudentDashboardPage() {
         /* best-effort — device storage may be full or unavailable */
       }
 
-      // Republish so the new photo shows at the gate immediately.
-      if (updatedProfile.rollNo && updatedProfile.rollNo !== defaultStudentProfile.rollNo) {
-        fetch("/api/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            rollNo: updatedProfile.rollNo,
-            name: updatedProfile.name,
-            photo: nextPhoto,
-          }),
-        }).catch((err) => console.error("Failed to publish profile photo", err));
-      }
+      // Republish to the authenticated backend so the new photo shows at the gate immediately.
+      apiFetch("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ photo: nextPhoto }),
+      }).catch((err) => console.error("Failed to publish profile photo", err));
 
       setShowPhotoModal(false);
       setPhotoDraft(null);

@@ -272,6 +272,7 @@ const previewScan = async (req, res) => {
         name: studentDoc.name,
         studentId: studentDoc.studentId,
         campusStatus: studentDoc.campusStatus,
+        photo: studentDoc.photo,
       },
       activePass: activePass
         ? {

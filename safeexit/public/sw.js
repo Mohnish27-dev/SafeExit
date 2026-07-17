@@ -2,11 +2,30 @@
 
 const CACHE_NAME = 'safeexit-v1';
 const OFFLINE_URL = '/offline';
+const PRECACHE_URLS = [OFFLINE_URL];
+
+// Precache without letting a single failed fetch reject `install`.
+// cache.addAll() rejects atomically if ANY request is non-OK, which would
+// prevent the SW from ever activating (breaking offline + push). Instead we
+// fetch + cache.put() each URL individually and swallow failures.
+async function precache() {
+  const cache = await caches.open(CACHE_NAME);
+  await Promise.all(
+    PRECACHE_URLS.map(async (url) => {
+      try {
+        const response = await fetch(url, { cache: 'no-store' });
+        if (response && response.ok) {
+          await cache.put(url, response.clone());
+        }
+      } catch {
+        // Ignore — offline route just won't be available until first success.
+      }
+    })
+  );
+}
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll([OFFLINE_URL]))
-  );
+  event.waitUntil(precache());
   // Activate immediately — don't wait for old tabs to close
   self.skipWaiting();
 });
@@ -30,7 +49,20 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode !== 'navigate') return;
 
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(OFFLINE_URL))
+    fetch(event.request).catch(async () => {
+      const cached = await caches.match(OFFLINE_URL);
+      // If the offline page wasn't precached yet, fall back to a minimal
+      // inline response so we never resolve the navigation with undefined.
+      return (
+        cached ||
+        new Response(
+          '<!doctype html><meta charset="utf-8"><title>Offline</title>' +
+            '<body style="font-family:system-ui;text-align:center;padding:2rem">' +
+            "<h1>You're offline</h1><p>Check your connection and try again.</p>",
+          { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        )
+      );
+    })
   );
 });
 

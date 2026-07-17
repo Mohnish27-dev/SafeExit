@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middlewares/authMiddleware');
+const { createLimiter } = require('../middlewares/rateLimit');
 const PushSubscription = require('../models/PushSubscription');
 const { VAPID_PUBLIC_KEY } = require('../utils/pushService');
 
@@ -13,7 +14,7 @@ router.get('/vapid-key', (req, res) => {
 });
 
 // POST /api/push/subscribe — private
-router.post('/subscribe', protect, async (req, res) => {
+router.post('/subscribe', protect, createLimiter, async (req, res) => {
   const { subscription } = req.body;
 
   if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
