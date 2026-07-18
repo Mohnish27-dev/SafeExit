@@ -1,0 +1,43 @@
+# SafeExit — two app containers on a private network.
+# nginx + certbot live on the HOST and reverse-proxy into these published ports.
+# MongoDB is Atlas (cloud), so there is no database service here.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: safeexit-backend:latest
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+    # Only exposed to the host loopback; nginx reaches it, the public internet does not.
+    ports:
+      - "127.0.0.1:5000:5000"
+    networks:
+      - safeexit
+
+  frontend:
+    build:
+      context: ./safeexit
+      args:
+        # Empty on purpose: getApiBase() uses the /api/backend rewrite for non-localhost.
+        NEXT_PUBLIC_API_URL: ""
+    image: safeexit-frontend:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # The Next rewrite proxies /api/backend/* to the backend container by service name.
+      BACKEND_ORIGIN: "http://backend:5000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - safeexit
+
+networks:
+  safeexit:
+    driver: bridge
