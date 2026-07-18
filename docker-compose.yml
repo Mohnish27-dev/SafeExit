@@ -25,6 +25,8 @@ services:
       args:
         # Empty on purpose: getApiBase() uses the /api/backend rewrite for non-localhost.
         NEXT_PUBLIC_API_URL: ""
+        # Baked into the build because Next resolves rewrites() at build time.
+        BACKEND_ORIGIN: "http://backend:5000"
     image: safeexit-frontend:latest
     restart: unless-stopped
     environment:

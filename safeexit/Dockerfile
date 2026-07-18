@@ -16,6 +16,10 @@ ENV NODE_OPTIONS=--max-old-space-size=4096
 # Bake the public API base URL at build time (used by getApiBase()).
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Next.js resolves rewrites() at BUILD time, so BACKEND_ORIGIN must be set here,
+# not only at runtime, or the proxy target freezes to the 127.0.0.1 default.
+ARG BACKEND_ORIGIN
+ENV BACKEND_ORIGIN=$BACKEND_ORIGIN
 RUN node ./node_modules/next/dist/bin/next build --webpack
 
 FROM node:22-alpine AS runner
