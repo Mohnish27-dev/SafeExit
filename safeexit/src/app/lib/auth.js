@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { getApiBase } from "./api";
 import { getStoredUser, setStoredUser } from "./userProfile";
-import { unsubscribePush, autoSubscribeIfGranted } from "./pushManager";
+import { autoSubscribeIfGranted } from "./pushManager";
 
 // Logout deliberately keeps each role's device-local Quick Login (PIN/passkey)
 const ROLE_CONFIG = {
@@ -127,8 +127,12 @@ export const logout = async (router, { role } = {}) => {
     /* ignore network errors on logout */
   }
 
-  // Unsubscribe push so the old session stops receiving alerts. Best-effort.
-  try { await unsubscribePush(); } catch { /* ignore */ }
+  // Deliberately DON'T unsubscribe push on logout: this is a safety app, so a
+  // warden's device must keep receiving SOS/outing alerts even when no one is
+  // logged in. Tapping the notification opens the login page. The subscription
+  // is re-associated to whichever warden next logs in on this browser (the
+  // /push/subscribe upsert keys on endpoint). To fully stop alerts, a warden
+  // disables notifications in their browser's site settings.
 
   if (typeof window !== "undefined") {
     ["safeexit_token", "safeexit:user"].forEach((k) => sessionStorage.removeItem(k));
