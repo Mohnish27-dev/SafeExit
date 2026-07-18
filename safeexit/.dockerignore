@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+build
+.git
+.gitignore
+Dockerfile
+.dockerignore
+*.md
+.env
+.env.*
+*.log
+build.log
+.next-dev.err.log
+.vercel
