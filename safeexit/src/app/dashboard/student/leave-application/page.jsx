@@ -149,6 +149,13 @@ export default function LeaveApplicationPage() {
 
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
+  // Mirrors the backend rule: one live leave at a time (Pending/Approved/Out).
+  // A student must finish the current trip (Returned) or let it end before applying again.
+  const activeLeave = useMemo(
+    () => applications.find((a) => ["pending", "approved", "out"].includes((a.status || "").toLowerCase())),
+    [applications]
+  );
+
   const leaveDateObj = form.leaveDate ? new Date(form.leaveDate) : null;
   const returnDateObj = form.returnDate ? new Date(form.returnDate) : null;
   const duration = useMemo(
@@ -441,7 +448,38 @@ export default function LeaveApplicationPage() {
         </button>
       </div>
 
-      {tab === "new" ? (
+      {tab === "new" && activeLeave ? (
+        <StudentFeaturePanel className="p-6 sm:p-7 animate-scale-in text-center" delay={60}>
+          <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+            <ShieldAlert size={30} className="text-amber-600" />
+          </div>
+          <h3 className="font-sora text-lg font-bold text-slate-800 mb-1.5">
+            You already have an active leave
+          </h3>
+          <p className="text-sm text-slate-500 mb-5">
+            {activeLeave.status === "Out"
+              ? "You're currently on leave. Once you return and get scanned back in at the gate, you can apply for new leave."
+              : activeLeave.status === "Approved"
+              ? "Your leave pass is approved. Complete that trip and return to campus — or cancel it — before applying again."
+              : "Your leave application is awaiting your warden's decision. Wait for the outcome, or cancel it, before applying again."}
+          </p>
+          <div className="rounded-2xl p-4 mb-5 text-left bg-slate-50 border border-slate-100 space-y-1.5">
+            <div className="flex justify-between gap-3">
+              <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Destination</span>
+              <span className="text-sm font-bold text-slate-700 text-right">{activeLeave.destination}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
+              <span className="text-sm font-bold text-violet-600 text-right">
+                {statusConfig[(activeLeave.status || "").toLowerCase()]?.label || activeLeave.status}
+              </span>
+            </div>
+          </div>
+          <button type="button" onClick={() => setTab("mine")} className="sf-btn-primary w-full">
+            View My Applications
+          </button>
+        </StudentFeaturePanel>
+      ) : tab === "new" ? (
         <>
           <StudentFeaturePanel className="p-6 sm:p-7 animate-scale-in" delay={60}>
             <p className="sf-section-label mb-4">Trip Details</p>

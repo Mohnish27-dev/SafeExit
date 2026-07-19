@@ -6,6 +6,11 @@ const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenSc
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
+// A student may only hold one live leave at a time: awaiting a decision (Pending),
+// approved-but-not-departed (Approved), or currently away (Out). Only once the trip
+// finishes (Returned) or the pass dies (Rejected/Cancelled/Expired) may they file again.
+const ACTIVE_LEAVE_STATUSES = ['Pending', 'Approved', 'Out'];
+
 // Lazy read-time expiry of Pending/Approved passes whose leaveDate passed; Out/Returned/Rejected/Cancelled are never touched. Saves are best-effort per doc.
 const expireStaleApplications = async (applications) => {
   const list = Array.isArray(applications) ? applications : [applications];
@@ -70,6 +75,30 @@ const createLeaveApplication = async (req, res) => {
       return res.status(400).json({
         message:
           'Leave departure must be between 6:00 AM and 5:30 PM (campus time) on the departure day. Please choose a leave time in that window.',
+      });
+    }
+
+    // One live leave at a time. Expire any stale Pending/Approved passes first so a
+    // missed leave date doesn't wrongly block a fresh application.
+    const existingActive = await LeaveApplication.find({
+      student: req.user._id,
+      status: { $in: ACTIVE_LEAVE_STATUSES },
+    });
+    await expireStaleApplications(existingActive);
+    const blockingLeave = existingActive.find((doc) => ACTIVE_LEAVE_STATUSES.includes(doc.status));
+
+    if (blockingLeave) {
+      const message =
+        blockingLeave.status === 'Out'
+          ? 'You are currently on leave. Return to campus and get scanned back in at the gate before applying for new leave.'
+          : blockingLeave.status === 'Approved'
+          ? 'You already have an approved leave pass. Complete or cancel that leave before applying again.'
+          : 'You already have a leave application awaiting approval. Wait for a decision or cancel it before applying again.';
+
+      return res.status(409).json({
+        message,
+        status: blockingLeave.status,
+        activeLeaveId: blockingLeave._id,
       });
     }
 

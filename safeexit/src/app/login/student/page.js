@@ -1058,7 +1058,7 @@ export default function StudentLoginPage() {
                       type="email"
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
-                      placeholder="E.g. mohnishp.ug24.cs@nitp.ac.in"
+                      placeholder="college mail"
                       autoComplete="username"
                       autoFocus
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
@@ -1200,7 +1200,7 @@ export default function StudentLoginPage() {
                     type="email"
                     value={loginForm.email}
                     onChange={(e) => setLoginForm((p) => ({ ...p, email: e.target.value }))}
-                    placeholder="E.g. mohnishp.ug24.cs@nitp.ac.in"
+                    placeholder="college mail"
                     autoComplete="username"
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
                   />
