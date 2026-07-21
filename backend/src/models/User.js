@@ -10,8 +10,12 @@ const userSchema = new mongoose.Schema({
   password: { type: String }, // optional for webauthn-only, but usually required for first login
   role: { type: String, enum: ['Student', 'Warden', 'Guard', 'Admin'], default: 'Student' },
   gender: { type: String, enum: ['Male', 'Female', 'Other'] },
-  // Warden's hostel scope; unset = sees no students until assigned by admin.
+  // Warden's hostel scope (derived gender), kept for the existing auto-approval
+  // rules; unset = legacy/unassigned. managedHostel is the real routing key.
   managedGender: { type: String, enum: ['Male', 'Female'] },
+  // Warden's specific hostel (one of the campus hostels); requests route here.
+  // Unset on a warden = not yet assigned (falls back to managedGender scope).
+  managedHostel: { type: String },
   studentId: { type: String }, // e.g., register number
   department: { type: String },
   year: { type: String },

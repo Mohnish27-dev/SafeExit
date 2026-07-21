@@ -61,6 +61,7 @@ const tryRestoreSession = async () => {
           }
         : {}),
       ...(data.managedGender ? { managedGender: data.managedGender } : {}),
+      ...(data.managedHostel ? { managedHostel: data.managedHostel } : {}),
     });
 
     // Re-sync the push subscription under the fresh token. Best-effort.

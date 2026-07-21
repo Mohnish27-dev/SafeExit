@@ -1,7 +1,7 @@
 const Complaint = require('../models/Complaint');
 const sseHub = require('../utils/sseHub');
 const { notifyWardens } = require('../utils/pushService');
-const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
+const { scopedStudentFilter, studentInScope } = require('../utils/wardenScope');
 
 // POST /api/complaint — private (Student)
 const createComplaint = async (req, res) => {
@@ -22,8 +22,7 @@ const createComplaint = async (req, res) => {
       status: complaint.status,
     });
 
-    const gender = req.user.gender;
-    notifyWardens(gender, {
+    notifyWardens({ hostelName: req.user.hostelName, gender: req.user.gender }, {
       title: '📝 New Complaint',
       body: `A ${category || 'general'} complaint has been filed${req.user.roomNumber ? ` (Room ${req.user.roomNumber})` : ''}.`,
       url: '/dashboard/warden?view=complaints',
@@ -62,11 +61,11 @@ const updateComplaintStatus = async (req, res) => {
   const { status, resolutionComments } = req.body;
 
   try {
-    const complaint = await Complaint.findById(req.params.id).populate('student', 'gender');
+    const complaint = await Complaint.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (complaint) {
       // Wardens may only act on their own hostel's students.
-      if (!studentGenderInScope(req.user, complaint.student?.gender)) {
+      if (!studentInScope(req.user, complaint.student)) {
         return res.status(403).json({
           message: 'This complaint belongs to a student outside your hostel.',
         });
