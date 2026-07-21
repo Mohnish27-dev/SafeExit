@@ -14,6 +14,8 @@ import {
   Home,
   ImageIcon,
   Loader2,
+  MapPin,
+  MapPinOff,
   MessageSquareWarning,
   MoonStar,
   QrCode,
@@ -45,6 +47,10 @@ import {
 } from "@/app/lib/userProfile";
 import { getTimeGreeting } from "@/app/lib/greeting";
 import { apiFetch } from "@/app/lib/api";
+import {
+  getGeolocationPermission,
+  requestGeolocationPermission,
+} from "@/app/lib/locationManager";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import useCountUp from "@/app/hooks/useCountUp";
@@ -334,6 +340,13 @@ export default function StudentDashboardPage() {
   const [savingGender, setSavingGender] = useState(false);
   const [genderError, setGenderError] = useState("");
 
+  // Location permission banner — primed on first dashboard visit so the SOS
+  // page never has to surface the browser's location prompt mid-emergency.
+  // null until the permission state is read; then 'granted'|'denied'|'prompt'|'unsupported'.
+  const [locPermission, setLocPermission] = useState(null);
+  const [locBannerDismissed, setLocBannerDismissed] = useState(false);
+  const [locEnabling, setLocEnabling] = useState(false);
+
   // Crop step before an image becomes `photoDraft`; pan/zoom in frame-space pixels.
   const [cropSrc, setCropSrc] = useState(null);
   const [cropNatural, setCropNatural] = useState(null);
@@ -360,6 +373,26 @@ export default function StudentDashboardPage() {
     }
     setMounted(true);
   }, []);
+
+  // Read the current location-permission state on first visit so we can decide
+  // whether to show the priming banner. Reading is silent — it never prompts.
+  useEffect(() => {
+    let cancelled = false;
+    getGeolocationPermission().then((state) => {
+      if (!cancelled) setLocPermission(state);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fires the native location prompt from the button's user gesture.
+  const handleEnableLocation = async () => {
+    setLocEnabling(true);
+    const result = await requestGeolocationPermission();
+    setLocEnabling(false);
+    setLocPermission(result);
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -875,6 +908,49 @@ export default function StudentDashboardPage() {
               </div>
             </div>
           </section>
+
+          {/* Location permission priming — so the SOS flow isn't interrupted by
+              the browser's location prompt during an emergency. */}
+          {locPermission === "prompt" && !locBannerDismissed && (
+            <div className="mt-4 flex items-center gap-3 rounded-3xl border border-rose-200 bg-rose-50/80 px-5 py-4 text-rose-800 shadow-sm backdrop-blur-sm sd-enter" style={{ animationDelay: "0.15s" }}>
+              <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-rose-500 animate-bounce" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">Enable location for SOS</p>
+                <p className="text-sm text-rose-700">Allow location access now so that in an emergency your exact spot reaches the warden instantly</p>
+              </div>
+              <button
+                onClick={handleEnableLocation}
+                disabled={locEnabling}
+                className="shrink-0 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 active:scale-95 disabled:opacity-60"
+              >
+                {locEnabling ? "Enabling…" : "Enable"}
+              </button>
+              <button
+                onClick={() => setLocBannerDismissed(true)}
+                className="shrink-0 rounded-xl p-2 text-rose-400 transition hover:bg-rose-100"
+                title="Later"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {locPermission === "denied" && !locBannerDismissed && (
+            <div className="mt-4 flex items-center gap-3 rounded-3xl border border-amber-200 bg-amber-50/80 px-5 py-4 text-amber-800 shadow-sm backdrop-blur-sm sd-enter" style={{ animationDelay: "0.15s" }}>
+              <MapPinOff className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">Location is blocked</p>
+                <p className="text-sm text-amber-700">SOS alerts will be sent without your location. To share it in an emergency, allow location for this site in your browser settings.</p>
+              </div>
+              <button
+                onClick={() => setLocBannerDismissed(true)}
+                className="shrink-0 rounded-xl p-2 text-amber-400 transition hover:bg-amber-100"
+                title="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
 
           <section className="sd-luxe-panel sd-enter mt-4 rounded-4xl p-4 shadow-xl sm:mt-6 sm:p-7" style={{ animationDelay: "0.2s" }}>
             <div className="flex items-center justify-between gap-3">
