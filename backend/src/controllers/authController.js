@@ -2,6 +2,7 @@ const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
 const { isValidStudentEmail } = require('../config/emailPolicy');
+const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
 const { isEmailVerificationValid } = require('./otpController');
 
 // loginId is the canonical key: student email or normalized staff ID; `email` accepted as legacy alias.
@@ -36,7 +37,7 @@ const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
 
 // POST /api/auth/register — public
 const registerUser = async (req, res) => {
-  const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber, gender, emailVerificationToken } = req.body;
+  const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber, hostelName, emailVerificationToken } = req.body;
 
   try {
     // Role is resolved server-side; body `role` is untrusted. Self-registration mints Students ONLY — a missing role must still hit the verification gate.
@@ -59,9 +60,14 @@ const registerUser = async (req, res) => {
     if (!password || String(password).length < 6) {
       return res.status(400).json({ message: 'Please choose a password with at least 6 characters.' });
     }
-    if (!['Male', 'Female', 'Other'].includes(gender)) {
-      return res.status(400).json({ message: 'Please select your gender.' });
+    // Hostel is the source of truth: it's required, must be a known campus hostel,
+    // and the student's gender is DERIVED from it (the form has no separate gender
+    // question, and deriving server-side stops a spoofed body from mismatching).
+    if (!isValidHostel(hostelName)) {
+      return res.status(400).json({ message: 'Please select your hostel.' });
     }
+    const resolvedHostel = canonicalHostelName(hostelName);
+    const resolvedGender = genderForHostel(hostelName);
 
     const loginId = resolveLoginId(req.body) || (studentId || '').trim().toLowerCase();
     if (!loginId) {
@@ -79,7 +85,8 @@ const registerUser = async (req, res) => {
 
     const user = await User.create({
       name, loginId, email: realEmail, password, role: resolvedRole,
-      studentId, roomNumber, department, year, phoneNumber, gender
+      studentId, roomNumber, department, year, phoneNumber,
+      gender: resolvedGender, hostelName: resolvedHostel
     });
 
     if (user) {
@@ -138,6 +145,7 @@ const authUser = async (req, res) => {
         role: user.role,
         studentId: user.studentId,
         managedGender: user.managedGender,
+        managedHostel: user.managedHostel,
         webAuthnRegistered: user.webAuthnRegistered,
         token
       });
@@ -167,6 +175,7 @@ const getUserProfile = async (req, res) => {
       phoneNumber: user.phoneNumber,
       gender: user.gender,
       managedGender: user.managedGender,
+      managedHostel: user.managedHostel,
       photo: user.photo,
       webAuthnRegistered: user.webAuthnRegistered
     });
@@ -278,6 +287,7 @@ const refreshSession = async (req, res) => {
       phoneNumber: user.phoneNumber,
       gender: user.gender,
       managedGender: user.managedGender,
+      managedHostel: user.managedHostel,
       webAuthnRegistered: user.webAuthnRegistered,
       token,
     });

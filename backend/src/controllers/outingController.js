@@ -8,7 +8,7 @@ const {
   computeReturnDeadline,
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
-const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
+const { scopedStudentFilter, studentInScope } = require('../utils/wardenScope');
 
 const clockLabel = (minutes) => {
   const h24 = Math.floor(minutes / 60);
@@ -98,7 +98,7 @@ const createOutingRequest = async (req, res) => {
     });
 
     if (!autoApproved) {
-      notifyWardens(gender, {
+      notifyWardens({ hostelName: req.user.hostelName, gender }, {
         title: '🔔 New Outing Request',
         body: `${req.user.name} has requested a ${resolvedType} outing to ${destination}.`,
         url: '/dashboard/warden?view=requests',
@@ -126,7 +126,7 @@ const getMyOutingRequests = async (req, res) => {
 const getPendingRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
-      .populate('student', 'name studentId roomNumber')
+      .populate('student', 'name studentId roomNumber hostelName')
       .sort({ createdAt: 1 });
 
     await expireStaleRequests(requests);
@@ -150,11 +150,11 @@ const updateRequestStatus = async (req, res) => {
   }
 
   try {
-    const request = await OutingRequest.findById(req.params.id).populate('student', 'gender');
+    const request = await OutingRequest.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (request) {
       // Server-side scope re-check: wardens may only act on their own hostel's students.
-      if (!studentGenderInScope(req.user, request.student?.gender)) {
+      if (!studentInScope(req.user, request.student)) {
         return res.status(403).json({
           message: 'This request belongs to a student outside your hostel.',
         });

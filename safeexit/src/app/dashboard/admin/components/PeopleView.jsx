@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
 import { getInitials } from "@/app/lib/userProfile";
+import { HOSTELS, HOSTEL_GENDER_LABEL } from "@/app/lib/hostels";
 
 const TABS = [
   { key: "Student", label: "Students", icon: GraduationCap },
@@ -35,13 +36,9 @@ const CAMPUS_TONE = {
 const formatWhen = (iso) =>
   iso ? new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
-// A warden's managedGender maps to the hostel they oversee.
-const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
+// A warden oversees one specific hostel (managedHostel).
 // One warden account per hostel; taken hostels drop out of the Add/Assign pickers.
-const HOSTEL_OPTIONS = [
-  { value: "Male", label: "Boys' Hostel" },
-  { value: "Female", label: "Girls' Hostel" },
-];
+const HOSTEL_OPTIONS = HOSTELS.map((h) => ({ value: h.name, label: h.name, gender: h.gender }));
 
 export default function PeopleView() {
   const [role, setRole] = useState("Student");
@@ -84,12 +81,12 @@ export default function PeopleView() {
   // Hostels with a warden already; hides them from pickers and caps "Add Warden".
   const takenHostels = useMemo(() => {
     if (role !== "Warden") return new Set();
-    return new Set(people.map((p) => p.managedGender).filter(Boolean));
+    return new Set(people.map((p) => p.managedHostel).filter(Boolean));
   }, [role, people]);
   const allHostelsTaken = role === "Warden" && takenHostels.size >= HOSTEL_OPTIONS.length;
 
   // --- Add staff modal ---
-  const emptyAddForm = { name: "", staffId: "", pin: "", phoneNumber: "", managedGender: "" };
+  const emptyAddForm = { name: "", staffId: "", pin: "", phoneNumber: "", managedHostel: "" };
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(emptyAddForm);
   const [busy, setBusy] = useState(false);
@@ -123,7 +120,7 @@ export default function PeopleView() {
           pin: addForm.pin,
           phoneNumber: addForm.phoneNumber,
           // Only wardens carry a hostel scope; the backend ignores it for guards.
-          ...(role === "Warden" ? { managedGender: addForm.managedGender } : {}),
+          ...(role === "Warden" ? { managedHostel: addForm.managedHostel } : {}),
         }),
       });
       setShowAdd(false);
@@ -163,7 +160,7 @@ export default function PeopleView() {
     try {
       await apiFetch(`/admin/staff/${scopeTarget._id}/scope`, {
         method: "PATCH",
-        body: JSON.stringify({ managedGender: scopeValue }),
+        body: JSON.stringify({ managedHostel: scopeValue }),
       });
       setScopeTarget(null);
       setScopeValue("");
@@ -217,7 +214,7 @@ export default function PeopleView() {
             <button
               onClick={openAdd}
               disabled={allHostelsTaken}
-              title={allHostelsTaken ? "Both hostels already have a warden account." : undefined}
+              title={allHostelsTaken ? "Every hostel already has a warden account." : undefined}
               className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus className="h-4 w-4" /> Add {role}
@@ -275,8 +272,8 @@ export default function PeopleView() {
                   </span>
                 )}
                 {role === "Warden" && (
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${p.managedGender ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>
-                    {p.managedGender ? HOSTEL_LABEL[p.managedGender] : "No hostel"}
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${p.managedHostel ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>
+                    {p.managedHostel || "No hostel"}
                   </span>
                 )}
               </div>
@@ -316,11 +313,11 @@ export default function PeopleView() {
 
               {role === "Warden" && (
                 <button
-                  onClick={() => { setScopeTarget(p); setScopeValue(p.managedGender || ""); setActionMsg(""); }}
+                  onClick={() => { setScopeTarget(p); setScopeValue(p.managedHostel || ""); setActionMsg(""); }}
                   disabled={busy}
                   className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 transition hover:bg-indigo-100 disabled:opacity-50"
                 >
-                  <UserCog className="h-3.5 w-3.5" /> {p.managedGender ? "Change hostel" : "Assign hostel"}
+                  <UserCog className="h-3.5 w-3.5" /> {p.managedHostel ? "Change hostel" : "Assign hostel"}
                 </button>
               )}
 
@@ -392,19 +389,27 @@ export default function PeopleView() {
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Hostel</label>
                   <select
-                    value={addForm.managedGender}
-                    onChange={(e) => setAddForm((f) => ({ ...f, managedGender: e.target.value }))}
+                    value={addForm.managedHostel}
+                    onChange={(e) => setAddForm((f) => ({ ...f, managedHostel: e.target.value }))}
                     className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:bg-white focus:outline-none"
                     required
                   >
                     <option value="" disabled>Select hostel…</option>
-                    {/* Only hostels without a warden yet — the other is already taken. */}
-                    {HOSTEL_OPTIONS.filter((h) => !takenHostels.has(h.value)).map((h) => (
-                      <option key={h.value} value={h.value}>{h.label}</option>
-                    ))}
+                    {/* Only hostels without a warden yet; grouped by boys'/girls'. */}
+                    {["Male", "Female"].map((g) => {
+                      const opts = HOSTEL_OPTIONS.filter((h) => h.gender === g && !takenHostels.has(h.value));
+                      if (opts.length === 0) return null;
+                      return (
+                        <optgroup key={g} label={HOSTEL_GENDER_LABEL[g]}>
+                          {opts.map((h) => (
+                            <option key={h.value} value={h.value}>{h.label}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
                   </select>
                   <p className="mt-1 text-[11px] text-slate-400">
-                    Each hostel has one warden login, shared by that hostel&apos;s wardens. This account will only see and manage students of the selected hostel.
+                    Each hostel has one warden login. This account will only see and manage students of the selected hostel.
                   </p>
                 </div>
               )}
@@ -531,11 +536,19 @@ export default function PeopleView() {
                 <option value="" disabled>Select hostel…</option>
                 {/* Free hostels plus this warden's own current one — a hostel held
                     by ANOTHER warden is excluded to keep one account per hostel. */}
-                {HOSTEL_OPTIONS.filter(
-                  (h) => !takenHostels.has(h.value) || h.value === scopeTarget.managedGender
-                ).map((h) => (
-                  <option key={h.value} value={h.value}>{h.label}</option>
-                ))}
+                {["Male", "Female"].map((g) => {
+                  const opts = HOSTEL_OPTIONS.filter(
+                    (h) => h.gender === g && (!takenHostels.has(h.value) || h.value === scopeTarget.managedHostel)
+                  );
+                  if (opts.length === 0) return null;
+                  return (
+                    <optgroup key={g} label={HOSTEL_GENDER_LABEL[g]}>
+                      {opts.map((h) => (
+                        <option key={h.value} value={h.value}>{h.label}</option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
               <div className="flex gap-2 pt-1">
                 <button

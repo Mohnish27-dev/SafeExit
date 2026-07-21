@@ -206,7 +206,7 @@ export default function WardenDashboardPage() {
     }
   }, []);
 
-  // Refresh from server so managedGender is current even for older sessions.
+  // Refresh from server so managedHostel/managedGender are current even for older sessions.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -491,9 +491,12 @@ export default function WardenDashboardPage() {
 
   const displayName = (user && (user.name || user.displayName)) || t("chiefWarden");
 
-  // Unset managedGender means no students; show the "not configured" banner.
+  // Unset scope means no students; show the "not configured" banner.
   const managedGender = user?.managedGender;
-  const hostelLabel = HOSTEL_LABEL[managedGender];
+  const managedHostel = user?.managedHostel;
+  // Prefer the specific hostel name; fall back to the generic label for legacy wardens.
+  const hostelLabel = managedHostel || HOSTEL_LABEL[managedGender];
+  const isConfigured = Boolean(managedHostel || managedGender);
 
   // Boys' outings are auto-approved, so a boys' warden only approves leave.
   const isBoysWarden = managedGender === "Male";
@@ -586,12 +589,12 @@ export default function WardenDashboardPage() {
             </div>
           </header>
 
-          {user && !managedGender && (
+          {user && !isConfigured && (
             <div className="mt-6 flex items-start gap-3 rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-800 shadow-sm">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div>
                 <p className="font-bold">Your hostel isn&apos;t configured yet</p>
-                <p className="text-sm">Until an admin assigns you to the boys&apos; or girls&apos; hostel, you won&apos;t see any student requests, leave applications, complaints, or alerts. Please contact the admin.</p>
+                <p className="text-sm">Until an admin assigns you to a hostel, you won&apos;t see any student requests, leave applications, complaints, or alerts. Please contact the admin.</p>
               </div>
             </div>
           )}

@@ -3,6 +3,7 @@ const OutingRequest = require('../models/OutingRequest');
 const Complaint = require('../models/Complaint');
 const SOSAlert = require('../models/SOSAlert');
 const { getOverdueStudentIds } = require('../utils/overdue');
+const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
 
 // GET /api/admin/overview — private (Admin)
 const getOverview = async (req, res) => {
@@ -66,7 +67,7 @@ const getUsers = async (req, res) => {
     if (req.user.role === 'Guard') filter.role = 'Student';
 
     const guardFields = 'name studentId campusStatus lastSeenAt photo';
-    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
+    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender managedHostel campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
 
     const users = await User.find(filter)
       .select(req.user.role === 'Guard' ? guardFields : allFields)
@@ -88,11 +89,9 @@ const getUsers = async (req, res) => {
 // Trim, lowercase, strip whitespace — must match the login pages' helper.
 const buildStaffLoginId = (id) => (id || '').trim().toLowerCase().replace(/\s+/g, '');
 
-const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
-
-// One shared warden account per hostel; exceptId lets a warden re-save its own hostel without a duplicate conflict.
-const findWardenForHostel = (managedGender, exceptId) => {
-  const filter = { role: 'Warden', managedGender };
+// One warden account per hostel; exceptId lets a warden re-save its own hostel without a duplicate conflict.
+const findWardenForHostel = (managedHostel, exceptId) => {
+  const filter = { role: 'Warden', managedHostel };
   if (exceptId) filter._id = { $ne: exceptId };
   return User.findOne(filter);
 };
@@ -100,7 +99,7 @@ const findWardenForHostel = (managedGender, exceptId) => {
 // POST /api/admin/staff — private (Admin)
 const createStaff = async (req, res) => {
   try {
-    const { name, staffId, role, pin, phoneNumber, managedGender } = req.body;
+    const { name, staffId, role, pin, phoneNumber, managedHostel } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Name is required.' });
@@ -116,14 +115,15 @@ const createStaff = async (req, res) => {
       return res.status(400).json({ message: 'An initial PIN of at least 4 characters is required.' });
     }
     // A warden must be tied to exactly one hostel for request routing and privacy.
-    if (role === 'Warden' && !['Male', 'Female'].includes(managedGender)) {
-      return res.status(400).json({ message: "Select the warden's hostel (Boys' or Girls')." });
+    if (role === 'Warden' && !isValidHostel(managedHostel)) {
+      return res.status(400).json({ message: "Select the warden's hostel." });
     }
     if (role === 'Warden') {
-      const existing = await findWardenForHostel(managedGender);
+      const hostel = canonicalHostelName(managedHostel);
+      const existing = await findWardenForHostel(hostel);
       if (existing) {
         return res.status(409).json({
-          message: `The ${HOSTEL_LABEL[managedGender]} already has a warden account (${existing.loginId}). Share that ID with the new warden, or reset its PIN — don't create a second one.`,
+          message: `${hostel} hostel already has a warden account (${existing.loginId}). Share that ID with the new warden, or reset its PIN — don't create a second one.`,
         });
       }
     }
@@ -141,7 +141,9 @@ const createStaff = async (req, res) => {
       role,
       studentId: staffId.trim(),
       phoneNumber,
-      managedGender: role === 'Warden' ? managedGender : undefined,
+      // Wardens carry a specific hostel; managedGender is derived for the auto-approval rules.
+      managedHostel: role === 'Warden' ? canonicalHostelName(managedHostel) : undefined,
+      managedGender: role === 'Warden' ? genderForHostel(managedHostel) : undefined,
     });
 
     res.status(201).json({
@@ -151,6 +153,7 @@ const createStaff = async (req, res) => {
       role: user.role,
       studentId: user.studentId,
       phoneNumber: user.phoneNumber,
+      managedHostel: user.managedHostel,
       managedGender: user.managedGender,
       createdAt: user.createdAt,
     });
@@ -188,24 +191,27 @@ const resetStaffPin = async (req, res) => {
 // PATCH /api/admin/staff/:id/scope — private (Admin); an unassigned warden sees no students until scoped.
 const updateStaffScope = async (req, res) => {
   try {
-    const { managedGender } = req.body;
-    if (!['Male', 'Female'].includes(managedGender)) {
-      return res.status(400).json({ message: "Hostel must be 'Male' (boys') or 'Female' (girls')." });
+    const { managedHostel } = req.body;
+    if (!isValidHostel(managedHostel)) {
+      return res.status(400).json({ message: 'Select a valid campus hostel.' });
     }
+    const hostel = canonicalHostelName(managedHostel);
 
     const user = await User.findById(req.params.id);
     if (!user || user.role !== 'Warden') {
       return res.status(404).json({ message: 'Warden not found.' });
     }
     // Preserve the one-warden-per-hostel invariant.
-    const clash = await findWardenForHostel(managedGender, user._id);
+    const clash = await findWardenForHostel(hostel, user._id);
     if (clash) {
       return res.status(409).json({
-        message: `The ${HOSTEL_LABEL[managedGender]} already has a warden account (${clash.loginId}). Remove or reassign that one first.`,
+        message: `${hostel} hostel already has a warden account (${clash.loginId}). Remove or reassign that one first.`,
       });
     }
 
-    user.managedGender = managedGender;
+    // Keep the derived gender in step with the assigned hostel.
+    user.managedHostel = hostel;
+    user.managedGender = genderForHostel(hostel);
     await user.save();
 
     res.json({
@@ -213,6 +219,7 @@ const updateStaffScope = async (req, res) => {
       name: user.name,
       loginId: user.loginId,
       role: user.role,
+      managedHostel: user.managedHostel,
       managedGender: user.managedGender,
     });
   } catch (error) {

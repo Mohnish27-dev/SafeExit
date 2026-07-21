@@ -37,16 +37,11 @@ import {
   verifyQuickPin,
   clearQuickLogin,
 } from "@/app/lib/quickLogin";
+import { HOSTELS } from "@/app/lib/hostels";
 
-// Campus hostels. Gender is implied by the hostel, so selecting one
-// verifies the student as a boy/girl without a separate gender question.
-const HOSTELS = [
-  { name: "Kautilya", gender: "Male" },
-  { name: "Aryabhatta", gender: "Male" },
-  { name: "Nagarjuna", gender: "Male" },
-  { name: "Kadambini", gender: "Female" },
-  { name: "Sarojini", gender: "Female" },
-];
+
+// Campus hostels come from the shared registry — gender is implied by the
+// hostel, so selecting one verifies the student as a boy/girl.
 
 export default function StudentLoginPage() {
   const router = useRouter();

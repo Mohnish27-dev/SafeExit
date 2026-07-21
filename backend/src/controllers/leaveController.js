@@ -2,7 +2,7 @@ const LeaveApplication = require('../models/LeaveApplication');
 const sseHub = require('../utils/sseHub');
 const { notifyWardens } = require('../utils/pushService');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
-const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
+const { scopedStudentFilter, studentInScope } = require('../utils/wardenScope');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
@@ -118,8 +118,7 @@ const createLeaveApplication = async (req, res) => {
       status: application.status,
     });
 
-    const gender = req.user.gender;
-    notifyWardens(gender, {
+    notifyWardens({ hostelName: req.user.hostelName, gender: req.user.gender }, {
       title: '📋 New Leave Application',
       body: `${req.user.name} has applied for leave from ${leaveDateObj.toLocaleDateString()} to ${returnDateObj.toLocaleDateString()}.`,
       url: '/dashboard/warden?view=leave',
@@ -186,14 +185,14 @@ const updateLeaveStatus = async (req, res) => {
   }
 
   try {
-    const application = await LeaveApplication.findById(req.params.id).populate('student', 'gender');
+    const application = await LeaveApplication.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
     }
 
     // Server-side scope re-check: wardens may only act on their own hostel's students.
-    if (!studentGenderInScope(req.user, application.student?.gender)) {
+    if (!studentInScope(req.user, application.student)) {
       return res.status(403).json({
         message: 'This application belongs to a student outside your hostel.',
       });

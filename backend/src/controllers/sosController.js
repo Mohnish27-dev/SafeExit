@@ -1,7 +1,7 @@
 const SOSAlert = require('../models/SOSAlert');
 const sseHub = require('../utils/sseHub');
 const { notifyWardensAndAdmins } = require('../utils/pushService');
-const { scopedStudentFilter, studentGenderInScope } = require('../utils/wardenScope');
+const { scopedStudentFilter, studentInScope } = require('../utils/wardenScope');
 
 // POST /api/sos — private (Student)
 const createSOSAlert = async (req, res) => {
@@ -39,8 +39,7 @@ const createSOSAlert = async (req, res) => {
       status: populated.status,
     });
 
-    const gender = req.user.gender;
-    notifyWardensAndAdmins(gender, {
+    notifyWardensAndAdmins({ hostelName: req.user.hostelName, gender: req.user.gender }, {
       title: '🚨 SOS ALERT',
       body: `${req.user.name} has raised an emergency${type ? ` (${type})` : ''}!${safeCoords ? ' 📍 Location attached' : ''}`,
       url: '/dashboard/warden?view=sos',
@@ -87,13 +86,13 @@ const updateSOSStatus = async (req, res) => {
   const { status, resolutionNote } = req.body;
 
   try {
-    const alert = await SOSAlert.findById(req.params.id).populate('student', 'gender');
+    const alert = await SOSAlert.findById(req.params.id).populate('student', 'gender hostelName');
     if (!alert) {
       return res.status(404).json({ message: 'SOS alert not found' });
     }
 
     // Wardens may only act on their own hostel's students.
-    if (!studentGenderInScope(req.user, alert.student?.gender)) {
+    if (!studentInScope(req.user, alert.student)) {
       return res.status(403).json({
         message: 'This alert belongs to a student outside your hostel.',
       });
