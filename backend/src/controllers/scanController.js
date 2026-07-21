@@ -189,6 +189,8 @@ const createScanLog = async (req, res) => {
     let resolvedPunctuality = 'N/A';
     if (direction === 'OUT' && linkedPass) {
       linkedPass.doc.status = 'Out';
+      // Stamp actual gate-exit time so student dashboards can show it without reading scan logs.
+      if (linkedPass.passType === 'Outing') linkedPass.doc.actualOutTime = new Date();
       await linkedPass.doc.save();
     } else if (direction === 'IN') {
       linkedPass = await resolveOutPass(studentDoc._id);
@@ -196,8 +198,9 @@ const createScanLog = async (req, res) => {
         const { windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
         resolvedPunctuality = isReturnLate(windowEnd) ? 'Overdue' : 'On-Time';
         linkedPass.doc.status = 'Returned';
-        // Stamp punctuality on the pass too — student dashboards read the pass, not scan logs.
+        // Stamp punctuality and actual gate-entry time — student dashboards read the pass, not scan logs.
         linkedPass.doc.returnPunctuality = resolvedPunctuality;
+        if (linkedPass.passType === 'Outing') linkedPass.doc.actualInTime = new Date();
         await linkedPass.doc.save();
       }
     }

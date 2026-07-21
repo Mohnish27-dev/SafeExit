@@ -86,16 +86,20 @@ export default function MyOutings() {
       try {
         const data = await apiFetch("/outing/myrequests");
         if (cancelled) return;
+        const fmtTime = (v) => v ? new Date(v).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null;
+        const fmtDate = (v) => v ? new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
         const mapped = data.map((o) => ({
           _id: o._id,
           id: `SE-${String(o._id).slice(-6).toUpperCase()}`,
           destination: o.destination,
-          dateOut: new Date(o.outTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-          timeOut: new Date(o.outTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-          dateReturn: new Date(o.inTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-          timeReturn: new Date(o.inTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+          dateOut: fmtDate(o.outTime),
+          timeOut: fmtTime(o.outTime),
+          dateReturn: fmtDate(o.inTime),
+          timeReturn: fmtTime(o.inTime),
           status: (o.status || "Pending").toLowerCase(),
           returnPunctuality: o.returnPunctuality || null,
+          actualOutTime: fmtTime(o.actualOutTime),
+          actualInTime: fmtTime(o.actualInTime),
         }));
         setOutings(mapped);
       } catch (err) {
@@ -300,6 +304,23 @@ export default function MyOutings() {
                           <span className="text-sm font-bold text-slate-700">{value}</span>
                         </div>
                       ))}
+                      {(outing.actualOutTime || outing.actualInTime) && (
+                        <div className="pt-3 mt-1 border-t border-slate-100 space-y-2.5">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gate Scan Times</p>
+                          {outing.actualOutTime && (
+                            <div className="flex justify-between items-center py-0.5">
+                              <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Scanned Out</span>
+                              <span className="text-sm font-bold text-sky-700">{outing.actualOutTime}</span>
+                            </div>
+                          )}
+                          {outing.actualInTime && (
+                            <div className="flex justify-between items-center py-0.5">
+                              <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Scanned In</span>
+                              <span className="text-sm font-bold text-emerald-700">{outing.actualInTime}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {outing.status === "rejected" && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
                           <AlertCircle size={15} className="text-rose-500 shrink-0 mt-0.5" />

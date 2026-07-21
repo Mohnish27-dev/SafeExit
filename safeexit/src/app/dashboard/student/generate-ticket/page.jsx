@@ -600,14 +600,6 @@ export default function GenerateTicket() {
           </div>
         )}
 
-        {!isFemale && (
-          <div className="sf-notice sf-notice--warn">
-            <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-amber-800 leading-relaxed">
-              No warden approval needed. Leave between 6:00 AM and 5:30 PM; you must return by 8:00 PM.
-            </p>
-          </div>
-        )}
 
         <div>
           <label className="text-xs font-semibold text-slate-600 block mb-1.5">

@@ -38,6 +38,16 @@ import {
   clearQuickLogin,
 } from "@/app/lib/quickLogin";
 
+// Campus hostels. Gender is implied by the hostel, so selecting one
+// verifies the student as a boy/girl without a separate gender question.
+const HOSTELS = [
+  { name: "Kautilya", gender: "Male" },
+  { name: "Aryabhatta", gender: "Male" },
+  { name: "Nagarjuna", gender: "Male" },
+  { name: "Kadambini", gender: "Female" },
+  { name: "Sarojini", gender: "Female" },
+];
+
 export default function StudentLoginPage() {
   const router = useRouter();
 
@@ -136,6 +146,13 @@ export default function StudentLoginPage() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Picking a hostel also fixes the student's gender (boys' vs girls' hostel).
+  const handleHostelChange = (e) => {
+    const hostelBlock = e.target.value;
+    const gender = HOSTELS.find((h) => h.name === hostelBlock)?.gender || "";
+    setFormData((prev) => ({ ...prev, hostelBlock, gender }));
   };
 
   // Persist the face photo to the authenticated backend so the guard's scanner can show it.
@@ -357,8 +374,8 @@ export default function StudentLoginPage() {
     if (!validateStep1()) return;
     setOtp("");
     setEmailToken(null);
-    const sent = await sendEmailOtp();
-    if (sent) setOnboardingStep(2);
+    setOnboardingStep(2);
+    sendEmailOtp();
   };
 
   const skipOrSubmitPhoto = () => {
@@ -1346,26 +1363,25 @@ export default function StudentLoginPage() {
                       </div>
                     </div>
 
-                    {/* Gender */}
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Gender</label>
-                      <div className="relative">
-                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><ChevronDown className="w-4 h-4" /></div>
-                        <select name="gender" value={formData.gender} onChange={handleInputChange} className="w-full appearance-none pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors">
-                          <option value="">Select Gender</option>
-                          <option value="Male">Male</option>
-                          <option value="Female">Female</option>
-                          <option value="Other">Other</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Hostel Block */}
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Hostel Block</label>
+                    {/* Hostel Name (also determines gender) */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Hostel Name</label>
                       <div className="relative">
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Building className="w-4 h-4" /></div>
-                        <input type="text" name="hostelBlock" value={formData.hostelBlock} onChange={handleInputChange} placeholder="E.g. Block A" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
+                        <select name="hostelBlock" value={formData.hostelBlock} onChange={handleHostelChange} className="w-full appearance-none pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors">
+                          <option value="">Select Hostel</option>
+                          <optgroup label="Boys' Hostels">
+                            {HOSTELS.filter((h) => h.gender === "Male").map((h) => (
+                              <option key={h.name} value={h.name}>{h.name}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Girls' Hostels">
+                            {HOSTELS.filter((h) => h.gender === "Female").map((h) => (
+                              <option key={h.name} value={h.name}>{h.name}</option>
+                            ))}
+                          </optgroup>
+                        </select>
+                        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><ChevronDown className="w-4 h-4" /></div>
                       </div>
                     </div>
 
