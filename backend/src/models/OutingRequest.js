@@ -45,6 +45,16 @@ const outingRequestSchema = new mongoose.Schema({
     enum: ['On-Time', 'Overdue', null],
     default: null
   },
+  // Real gate-scan timestamps (QR scanned by security). Distinct from the scheduled
+  // outTime/inTime — student dashboards read these to show actual exit/entry at the gate.
+  actualOutTime: {
+    type: Date,
+    default: null
+  },
+  actualInTime: {
+    type: Date,
+    default: null
+  },
   remarks: {
     type: String
   },
