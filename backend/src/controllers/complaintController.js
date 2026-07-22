@@ -1,18 +1,28 @@
 const Complaint = require('../models/Complaint');
 const sseHub = require('../utils/sseHub');
 const { notifyWardens } = require('../utils/pushService');
-const { scopedStudentFilter, studentInScope } = require('../utils/wardenScope');
+const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
 
 // POST /api/complaint — private (Student)
 const createComplaint = async (req, res) => {
-  const { category, description } = req.body;
+  const { category, description, targetWardenId } = req.body;
 
   try {
+    // Resolve the routed warden (default = own-hostel warden); enforces the
+    // same-gender fence server-side before we persist the complaint.
+    let targetWarden;
+    try {
+      targetWarden = await resolveTargetWarden(req.user, targetWardenId);
+    } catch (err) {
+      return res.status(err.statusCode || 400).json({ message: err.message });
+    }
+
     const complaint = await Complaint.create({
       student: req.user._id,
       roomNumber: req.user.roomNumber,
       category,
-      description
+      description,
+      targetWarden: targetWarden ? targetWarden._id : undefined,
     });
 
     // No student PII in the broadcast — the SSE hub reaches out-of-hostel wardens too.
@@ -22,7 +32,10 @@ const createComplaint = async (req, res) => {
       status: complaint.status,
     });
 
-    notifyWardens({ hostelName: req.user.hostelName, gender: req.user.gender }, {
+    const scope = targetWarden
+      ? { wardenId: targetWarden._id }
+      : { hostelName: req.user.hostelName, gender: req.user.gender };
+    notifyWardens(scope, {
       title: '📝 New Complaint',
       body: `A ${category || 'general'} complaint has been filed${req.user.roomNumber ? ` (Room ${req.user.roomNumber})` : ''}.`,
       url: '/dashboard/warden?view=complaints',
@@ -64,10 +77,11 @@ const updateComplaintStatus = async (req, res) => {
     const complaint = await Complaint.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (complaint) {
-      // Wardens may only act on their own hostel's students.
-      if (!studentInScope(req.user, complaint.student)) {
+      // The warden must be the routed target (or, for legacy untargeted complaints,
+      // own this student's hostel).
+      if (!requestInScope(req.user, complaint, complaint.student)) {
         return res.status(403).json({
-          message: 'This complaint belongs to a student outside your hostel.',
+          message: 'This complaint is not routed to you.',
         });
       }
 

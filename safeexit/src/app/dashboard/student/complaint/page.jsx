@@ -30,6 +30,7 @@ import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
+import WardenSelect from "@/app/components/student/WardenSelect";
 
 const categories = [
   {
@@ -115,6 +116,7 @@ export default function StudentComplaintPage() {
   const [tab, setTab] = useState("new");
   const [category, setCategory] = useState(null);
   const [description, setDescription] = useState("");
+  const [targetWardenId, setTargetWardenId] = useState("");
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
@@ -176,7 +178,11 @@ export default function StudentComplaintPage() {
     try {
       const data = await apiFetch("/complaint", {
         method: "POST",
-        body: JSON.stringify({ category, description: description.trim() }),
+        body: JSON.stringify({
+          category,
+          description: description.trim(),
+          ...(targetWardenId ? { targetWardenId } : {}),
+        }),
       });
       setCreated(data);
       setComplaints((prev) => [data, ...prev]);
@@ -191,6 +197,7 @@ export default function StudentComplaintPage() {
     setCreated(null);
     setCategory(null);
     setDescription("");
+    setTargetWardenId("");
     setErrors({});
   };
 
@@ -361,6 +368,9 @@ export default function StudentComplaintPage() {
                 <span className="font-bold text-slate-600">{display.room}</span>
               </p>
             )}
+            <div className="mt-4">
+              <WardenSelect value={targetWardenId} onChange={setTargetWardenId} />
+            </div>
           </StudentFeaturePanel>
 
           {errors.submit && (

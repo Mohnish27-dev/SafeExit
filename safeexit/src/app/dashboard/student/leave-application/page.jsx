@@ -31,6 +31,7 @@ import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
+import WardenSelect from "@/app/components/student/WardenSelect";
 
 const MIN_LEAD_HOURS = 24;
 
@@ -112,6 +113,7 @@ export default function LeaveApplicationPage() {
 
   const [form, setForm] = useState({ destination: "", reason: "", leaveDate: "", returnDate: "" });
   const [acknowledged, setAcknowledged] = useState(false);
+  const [targetWardenId, setTargetWardenId] = useState("");
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
@@ -221,6 +223,7 @@ export default function LeaveApplicationPage() {
           leaveDate: leaveDateObj.toISOString(),
           returnDate: returnDateObj.toISOString(),
           acknowledgement: true,
+          ...(targetWardenId ? { targetWardenId } : {}),
         }),
       });
       setCreated(data);
@@ -237,6 +240,7 @@ export default function LeaveApplicationPage() {
     setCreated(null);
     setForm({ destination: "", reason: "", leaveDate: "", returnDate: "" });
     setAcknowledged(false);
+    setTargetWardenId("");
     setErrors({});
     setStep("form");
   };
@@ -522,6 +526,8 @@ export default function LeaveApplicationPage() {
                 />
                 {errors.reason && <p className="text-xs text-rose-500 mt-1">{errors.reason}</p>}
               </div>
+
+              <WardenSelect value={targetWardenId} onChange={setTargetWardenId} />
             </div>
           </StudentFeaturePanel>
 

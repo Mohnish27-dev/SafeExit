@@ -26,6 +26,7 @@ import StudentFeatureShell, {
   StudentFeatureCentered,
 } from "@/app/components/student/StudentFeatureShell";
 import { apiFetch } from "@/app/lib/api";
+import WardenSelect from "@/app/components/student/WardenSelect";
 
 const STEPS = ["form", "review", "success"];
 
@@ -124,6 +125,7 @@ export default function GenerateTicket() {
   });
   const [errors, setErrors] = useState({});
   const [createdOuting, setCreatedOuting] = useState(null);
+  const [targetWardenId, setTargetWardenId] = useState("");
   const submitErrorRef = useRef(null);
 
   useEffect(() => {
@@ -238,6 +240,8 @@ export default function GenerateTicket() {
         // Return time is NOT sent — the server fixes it from policy.
         outingType: isFemale ? form.outingType : "General",
         outTime: buildTodayISO(form.timeOut),
+        // Only warden-gated outings route to a chosen warden; server ignores it otherwise.
+        ...(activePolicy.requiresWarden && targetWardenId ? { targetWardenId } : {}),
       };
 
       const data = await apiFetch("/outing", {
@@ -615,6 +619,10 @@ export default function GenerateTicket() {
           />
           {errors.destination && <p className="text-xs text-rose-500 mt-1">{errors.destination}</p>}
         </div>
+
+        {activePolicy.requiresWarden && (
+          <WardenSelect value={targetWardenId} onChange={setTargetWardenId} />
+        )}
 
       </StudentFeaturePanel>
 
