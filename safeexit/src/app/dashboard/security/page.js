@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Scanner } from '@yudiel/react-qr-scanner';
 import {
   ArrowUpRight,
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
-import { useRequireAuth } from "@/app/lib/auth";
+import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
@@ -66,6 +67,9 @@ export default function SecurityDashboardPage() {
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
   const { checked, authorized } = useRequireAuth("security");
+  const router = useRouter();
+
+  const handleLogout = () => logout(router, { role: "security" });
 
   const statusCards = useMemo(() => [
     {
@@ -301,6 +305,15 @@ export default function SecurityDashboardPage() {
                 </div>
                 <ChevronRight className="h-5 w-5 shrink-0 rotate-90 text-slate-400" />
               </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                title={tc("logout")}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50 sm:h-12 sm:w-12"
+              >
+                <LogOut className="h-5 w-5" />
+                <span className="sr-only">{tc("logout")}</span>
+              </button>
             </div>
           </header>
 
