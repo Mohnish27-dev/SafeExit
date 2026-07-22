@@ -32,7 +32,7 @@ export default function SecurityBottomNav({ active }) {
   return (
     <>
       {/* Desktop: inline panel at the end of the page flow */}
-      <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-4xl p-3">
+      <nav className="order-6 lg:order-0 sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-4xl p-3">
         {renderItems()}
       </nav>
 
