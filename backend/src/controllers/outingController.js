@@ -8,7 +8,7 @@ const {
   computeReturnDeadline,
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
-const { scopedStudentFilter, studentInScope } = require('../utils/wardenScope');
+const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
 
 const clockLabel = (minutes) => {
   const h24 = Math.floor(minutes / 60);
@@ -39,7 +39,7 @@ const expireStaleRequests = async (requests) => {
 
 // POST /api/outing — private (Student)
 const createOutingRequest = async (req, res) => {
-  const { destination, purpose, outTime, outingType } = req.body;
+  const { destination, purpose, outTime, outingType, targetWardenId } = req.body;
 
   try {
     // Must be 'Inside' to request — prevents stacking passes while off-campus.
@@ -80,6 +80,17 @@ const createOutingRequest = async (req, res) => {
     // Male general and female nearby outings are auto-approved (no warden step).
     const autoApproved = !policy.requiresWarden;
 
+    // Only warden-gated outings carry a routed target. Resolve it (default = own-hostel
+    // warden) and enforce the same-gender fence server-side before storing.
+    let targetWarden = null;
+    if (!autoApproved) {
+      try {
+        targetWarden = await resolveTargetWarden(req.user, targetWardenId);
+      } catch (err) {
+        return res.status(err.statusCode || 400).json({ message: err.message });
+      }
+    }
+
     const outingRequest = await OutingRequest.create({
       student: req.user._id,
       destination,
@@ -88,7 +99,8 @@ const createOutingRequest = async (req, res) => {
       outTime: departure,
       inTime,
       status: autoApproved ? 'Approved' : 'Pending',
-      autoApproved
+      autoApproved,
+      targetWarden: targetWarden ? targetWarden._id : undefined,
     });
 
     sseHub.broadcast('outing:changed', {
@@ -98,7 +110,11 @@ const createOutingRequest = async (req, res) => {
     });
 
     if (!autoApproved) {
-      notifyWardens({ hostelName: req.user.hostelName, gender }, {
+      // Route to the chosen warden when resolved; else fall back to hostel routing.
+      const scope = targetWarden
+        ? { wardenId: targetWarden._id }
+        : { hostelName: req.user.hostelName, gender };
+      notifyWardens(scope, {
         title: '🔔 New Outing Request',
         body: `${req.user.name} has requested a ${resolvedType} outing to ${destination}.`,
         url: '/dashboard/warden?view=requests',
@@ -153,10 +169,11 @@ const updateRequestStatus = async (req, res) => {
     const request = await OutingRequest.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (request) {
-      // Server-side scope re-check: wardens may only act on their own hostel's students.
-      if (!studentInScope(req.user, request.student)) {
+      // Server-side scope re-check: the warden must be the routed target (or, for
+      // legacy untargeted requests, own this student's hostel).
+      if (!requestInScope(req.user, request, request.student)) {
         return res.status(403).json({
-          message: 'This request belongs to a student outside your hostel.',
+          message: 'This request is not routed to you.',
         });
       }
 

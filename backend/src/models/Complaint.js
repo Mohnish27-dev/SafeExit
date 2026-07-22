@@ -26,6 +26,10 @@ const complaintSchema = new mongoose.Schema({
   },
   resolutionComments: {
     type: String
+  },
+  targetWarden: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   }
 }, {
   timestamps: true

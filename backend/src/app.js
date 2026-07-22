@@ -16,6 +16,7 @@ const sosRoutes = require('./routes/sosRoutes');
 const scanRoutes = require('./routes/scanRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const pushRoutes = require('./routes/pushRoutes');
+const wardenRoutes = require('./routes/wardenRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -37,6 +38,7 @@ app.use('/api/sos', sosRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/warden', wardenRoutes);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK' });

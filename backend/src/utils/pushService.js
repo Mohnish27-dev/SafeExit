@@ -69,15 +69,15 @@ const notifyUsers = async (userFilter, payload) => {
 };
 
 // Notify the warden(s) responsible for a student. `scope` may be:
-//   - an object { hostelName, gender } (preferred) — routes to the warden of that
-//     specific hostel, and also to any legacy warden still scoped only by gender.
 //   - a bare gender string (legacy callers) — routes by managedGender.
 //   - falsy — notifies every warden.
 const wardenFilterForScope = (scope) => {
   if (!scope) return { role: 'Warden' };
   if (typeof scope === 'string') return { role: 'Warden', managedGender: scope };
 
-  const { hostelName, gender } = scope;
+  const { wardenId, hostelName, gender } = scope;
+  if (wardenId) return { role: 'Warden', _id: wardenId };
+
   if (hostelName) {
     const or = [{ managedHostel: hostelName }];
     // Wardens not yet migrated to a specific hostel still catch by gender.

@@ -2,7 +2,7 @@ const LeaveApplication = require('../models/LeaveApplication');
 const sseHub = require('../utils/sseHub');
 const { notifyWardens } = require('../utils/pushService');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
-const { scopedStudentFilter, studentInScope } = require('../utils/wardenScope');
+const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
@@ -37,7 +37,7 @@ const expireStaleApplications = async (applications) => {
 
 // POST /api/leave — private (Student)
 const createLeaveApplication = async (req, res) => {
-  const { destination, reason, leaveDate, returnDate, acknowledgement } = req.body;
+  const { destination, reason, leaveDate, returnDate, acknowledgement, targetWardenId } = req.body;
 
   try {
     if (!destination || !reason || !leaveDate || !returnDate) {
@@ -102,6 +102,15 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
+    // Resolve the routed warden (default = own-hostel warden); enforces the
+    // same-gender fence server-side before we persist the application.
+    let targetWarden;
+    try {
+      targetWarden = await resolveTargetWarden(req.user, targetWardenId);
+    } catch (err) {
+      return res.status(err.statusCode || 400).json({ message: err.message });
+    }
+
     const application = await LeaveApplication.create({
       student: req.user._id,
       destination,
@@ -110,6 +119,7 @@ const createLeaveApplication = async (req, res) => {
       returnDate: returnDateObj,
       acknowledgement: true,
       status: 'Pending',
+      targetWarden: targetWarden ? targetWarden._id : undefined,
     });
 
     sseHub.broadcast('leave:changed', {
@@ -118,7 +128,10 @@ const createLeaveApplication = async (req, res) => {
       status: application.status,
     });
 
-    notifyWardens({ hostelName: req.user.hostelName, gender: req.user.gender }, {
+    const scope = targetWarden
+      ? { wardenId: targetWarden._id }
+      : { hostelName: req.user.hostelName, gender: req.user.gender };
+    notifyWardens(scope, {
       title: '📋 New Leave Application',
       body: `${req.user.name} has applied for leave from ${leaveDateObj.toLocaleDateString()} to ${returnDateObj.toLocaleDateString()}.`,
       url: '/dashboard/warden?view=leave',
@@ -191,10 +204,11 @@ const updateLeaveStatus = async (req, res) => {
       return res.status(404).json({ message: 'Leave application not found' });
     }
 
-    // Server-side scope re-check: wardens may only act on their own hostel's students.
-    if (!studentInScope(req.user, application.student)) {
+    // Server-side scope re-check: the warden must be the routed target (or, for
+    // legacy untargeted applications, own this student's hostel).
+    if (!requestInScope(req.user, application, application.student)) {
       return res.status(403).json({
-        message: 'This application belongs to a student outside your hostel.',
+        message: 'This application is not routed to you.',
       });
     }
 
