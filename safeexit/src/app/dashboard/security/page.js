@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Scanner } from '@yudiel/react-qr-scanner';
 import {
   ArrowUpRight,
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
-import { useRequireAuth } from "@/app/lib/auth";
+import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
@@ -66,6 +67,9 @@ export default function SecurityDashboardPage() {
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
   const { checked, authorized } = useRequireAuth("security");
+  const router = useRouter();
+
+  const handleLogout = () => logout(router, { role: "security" });
 
   const statusCards = useMemo(() => [
     {
@@ -240,13 +244,13 @@ export default function SecurityDashboardPage() {
     [now, dateLocale]
   );
 
-  // Decorative time-of-day visual for the greeting orb.
+  // Decorative time-of-day visual for the greeting orb, plus the matching greeting.
   const timeVisual = useMemo(() => {
     const hour = now ? now.getHours() : 9;
-    if (hour < 12) return { Icon: Sunrise, orb: "from-amber-400 via-orange-400 to-rose-400", halo: "rgba(251,146,60,0.5)" };
-    if (hour < 17) return { Icon: SunMedium, orb: "from-sky-400 via-cyan-400 to-blue-400", halo: "rgba(56,189,248,0.5)" };
-    if (hour < 21) return { Icon: Sunset, orb: "from-orange-400 via-pink-500 to-violet-500", halo: "rgba(236,72,153,0.5)" };
-    return { Icon: MoonStar, orb: "from-indigo-500 via-violet-500 to-slate-700", halo: "rgba(99,102,241,0.5)" };
+    if (hour < 12) return { Icon: Sunrise, orb: "from-amber-400 via-orange-400 to-rose-400", halo: "rgba(251,146,60,0.5)", greetingKey: "goodMorning" };
+    if (hour < 17) return { Icon: SunMedium, orb: "from-sky-400 via-cyan-400 to-blue-400", halo: "rgba(56,189,248,0.5)", greetingKey: "goodAfternoon" };
+    if (hour < 21) return { Icon: Sunset, orb: "from-orange-400 via-pink-500 to-violet-500", halo: "rgba(236,72,153,0.5)", greetingKey: "goodEvening" };
+    return { Icon: MoonStar, orb: "from-indigo-500 via-violet-500 to-slate-700", halo: "rgba(99,102,241,0.5)", greetingKey: "goodNight" };
   }, [now]);
 
   const handleHeroMove = (e) => {
@@ -268,7 +272,7 @@ export default function SecurityDashboardPage() {
         <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
         <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4">
+          <header className="order-1 lg:order-0 sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4">
             <div className="flex items-center gap-3 sm:gap-4">
               <span
                 className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl text-white"
@@ -301,57 +305,57 @@ export default function SecurityDashboardPage() {
                 </div>
                 <ChevronRight className="h-5 w-5 shrink-0 rotate-90 text-slate-400" />
               </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                title={tc("logout")}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50 sm:h-12 sm:w-12"
+              >
+                <LogOut className="h-5 w-5" />
+                <span className="sr-only">{tc("logout")}</span>
+              </button>
             </div>
           </header>
 
           <section
             onPointerMove={handleHeroMove}
             style={{ animationDelay: "0.12s" }}
-            className="sd-luxe-panel grd-glow-border sd-spot-host sd-enter mt-6 rounded-[2.5rem] p-5 sm:p-6"
+            className="order-2 lg:order-0 sd-luxe-panel grd-glow-border sd-spot-host sd-enter mt-6 rounded-[2.5rem] p-5 sm:p-7 shadow-xl"
           >
             <span className="sd-spotlight" aria-hidden="true" />
-            <div className="grid items-center gap-6 lg:grid-cols-[1.2fr_auto]">
-              <div className="flex flex-wrap items-center gap-5">
+            <div className="grid items-center gap-4 sm:gap-6 lg:grid-cols-[1.2fr_auto]">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-5">
                 <div
-                  className="sd-orb-halo flex h-20 w-20 shrink-0 items-center justify-center rounded-full ring-8 ring-white/70"
+                  className="sd-luxe-float sd-orb-halo hidden h-20 w-20 shrink-0 items-center justify-center rounded-full ring-8 ring-white/80 shadow-lg sm:flex"
                   style={{ "--halo": timeVisual.halo }}
                 >
                   <span className={`flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br text-white ${timeVisual.orb}`}>
-                    <timeVisual.Icon className="h-9 w-9" />
+                    <timeVisual.Icon className="h-10 w-10" />
                   </span>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <span className="sd-kicker">{t("shiftPulse")}</span>
-                  <h2 className="sd-title sd-title-md mt-1">
-                    {t("goodMorning")} <span className="sd-name-live">{greetingName}</span>.
+                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">
+                    {t(timeVisual.greetingKey)} <span className="sd-name-live">{greetingName}</span>.
                   </h2>
-                  <div className="mt-2 flex items-center gap-3">
-                    <p className="sd-body">{t("gatesSynced")}</p>
-                    <svg className="grd-pulse h-5 w-16 shrink-0" viewBox="0 0 120 24" aria-hidden="true">
-                      <path className="grd-pulse__track" d="M0 12 H30 L38 2 L46 22 L54 12 H70 L76 4 L82 20 L88 12 H120" />
-                      <path className="grd-pulse__beat" d="M0 12 H30 L38 2 L46 22 L54 12 H70 L76 4 L82 20 L88 12 H120" />
-                    </svg>
-                  </div>
+                  <p className="sd-body mt-2 hidden max-w-md sm:block">{t("gatesSynced")}</p>
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                <span className="sd-tag grd-mono">
-                  <CalendarDays className="h-4 w-4" />
+              <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
+                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-2 rounded-full px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+                  <CalendarDays className="h-4 w-4 text-indigo-500 sm:h-5 sm:w-5" />
                   {formattedDate}
                 </span>
-                <span className="sd-tag grd-mono">
-                  <Clock3 className="h-4 w-4" />
+                <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex flex-1 items-center gap-2 rounded-full px-3 py-2 sm:flex-none sm:gap-3 sm:px-4 sm:py-2.5">
+                  <Clock3 className="h-4 w-4 text-sky-500 sm:h-5 sm:w-5" />
                   {formattedTime}
-                  <span className="ml-auto inline-flex items-center gap-1.5 text-emerald-600">
-                    <span className="grd-radar h-3 w-3" aria-hidden="true" />
-                    {tc("live")}
-                  </span>
+                  <span className="sd-luxe-chip ml-auto rounded-full px-3 py-1 text-xs font-bold">{tc("live")}</span>
                 </span>
               </div>
             </div>
           </section>
 
-          <section className="mt-6 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-start">
+          <section className="order-3 lg:order-0 mt-6 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-start">
             <div className="sd-luxe-panel sd-enter min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.2s" }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -483,7 +487,7 @@ export default function SecurityDashboardPage() {
             </aside>
           </section>
 
-          <section className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+          <section className="order-5 lg:order-0 mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
             <div className="sd-luxe-panel sd-enter min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.38s" }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -557,7 +561,7 @@ export default function SecurityDashboardPage() {
 
           {counts.overdue > 0 && (
             <section
-              className="sd-luxe-panel sd-glow-border sd-enter mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[2.5rem] p-5 sm:p-6"
+              className="order-4 lg:order-0 sd-luxe-panel sd-glow-border sd-enter mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[2.5rem] p-5 sm:p-6"
               style={{ "--tile-border": "rgba(244,63,94,0.5)" }}
             >
               <div className="flex min-w-0 items-center gap-4">
