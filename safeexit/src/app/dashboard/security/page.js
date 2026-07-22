@@ -271,8 +271,8 @@ export default function SecurityDashboardPage() {
         <div className="sd-aura sd-aura--b" aria-hidden="true" />
         <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
-        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="order-1 lg:order-0 sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center justify-between gap-4 rounded-[2.25rem] px-5 py-4">
+        <div className="relative z-[1] mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+          <header className="order-1 lg:order-0 sd-luxe-panel grd-glow-border sd-enter flex flex-wrap items-center justify-between gap-3 rounded-4xl px-4 py-3 sm:px-5 sm:py-4">
             <div className="flex items-center gap-3 sm:gap-4">
               <span
                 className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl text-white"
@@ -320,43 +320,42 @@ export default function SecurityDashboardPage() {
           <section
             onPointerMove={handleHeroMove}
             style={{ animationDelay: "0.12s" }}
-            className="order-2 lg:order-0 sd-luxe-panel grd-glow-border sd-spot-host sd-enter mt-6 rounded-[2.5rem] p-5 sm:p-7 shadow-xl"
+            className="order-2 lg:order-0 sd-luxe-panel grd-glow-border sd-spot-host sd-enter mt-4 rounded-4xl p-4 sm:p-6 shadow-xl"
           >
             <span className="sd-spotlight" aria-hidden="true" />
-            <div className="grid items-center gap-4 sm:gap-6 lg:grid-cols-[1.2fr_auto]">
-              <div className="flex flex-wrap items-center gap-3 sm:gap-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
                 <div
-                  className="sd-luxe-float sd-orb-halo hidden h-20 w-20 shrink-0 items-center justify-center rounded-full ring-8 ring-white/80 shadow-lg sm:flex"
+                  className="sd-luxe-float sd-orb-halo hidden h-12 w-12 shrink-0 items-center justify-center rounded-full ring-4 ring-white/80 shadow-lg sm:flex"
                   style={{ "--halo": timeVisual.halo }}
                 >
                   <span className={`flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br text-white ${timeVisual.orb}`}>
-                    <timeVisual.Icon className="h-10 w-10" />
+                    <timeVisual.Icon className="h-6 w-6" />
                   </span>
                 </div>
                 <div className="min-w-0">
                   <span className="sd-kicker">{t("shiftPulse")}</span>
-                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">
-                    {t(timeVisual.greetingKey)} <span className="sd-name-live">{greetingName}</span>.
+                  <h2 className="sd-title sd-reveal sd-stagger-2 mt-0.5 text-base sm:text-lg">
+                    {t(timeVisual.greetingKey)}, <span className="sd-name-live">{greetingName}</span>.
                   </h2>
-                  <p className="sd-body mt-2 hidden max-w-md sm:block">{t("gatesSynced")}</p>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
-                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-2 rounded-full px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
-                  <CalendarDays className="h-4 w-4 text-indigo-500 sm:h-5 sm:w-5" />
+              <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600">
+                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-2 rounded-full px-3 py-1.5">
+                  <CalendarDays className="h-4 w-4 text-indigo-500" />
                   {formattedDate}
                 </span>
-                <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex flex-1 items-center gap-2 rounded-full px-3 py-2 sm:flex-none sm:gap-3 sm:px-4 sm:py-2.5">
-                  <Clock3 className="h-4 w-4 text-sky-500 sm:h-5 sm:w-5" />
+                <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex items-center gap-2 rounded-full px-3 py-1.5">
+                  <Clock3 className="h-4 w-4 text-sky-500" />
                   {formattedTime}
-                  <span className="sd-luxe-chip ml-auto rounded-full px-3 py-1 text-xs font-bold">{tc("live")}</span>
+                  <span className="sd-luxe-chip ml-1 rounded-full px-2 py-0.5 text-xs font-bold">{tc("live")}</span>
                 </span>
               </div>
             </div>
           </section>
 
-          <section className="order-3 lg:order-0 mt-6 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-start">
-            <div className="sd-luxe-panel sd-enter min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.2s" }}>
+          <section className="order-3 lg:order-0 mt-4 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-start">
+            <div className="sd-luxe-panel sd-enter min-w-0 rounded-4xl p-4 sm:p-6" style={{ animationDelay: "0.2s" }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="sd-kicker">{t("quickScan")}</span>
@@ -367,7 +366,7 @@ export default function SecurityDashboardPage() {
                   {t("realtime")}
                 </span>
               </div>
-              <div className="mt-6 grid gap-5 md:grid-cols-2">
+              <div className="mt-4 grid grid-cols-2 gap-3">
                 <div
                   onPointerMove={handleTilePointerMove}
                   onPointerLeave={handleTilePointerLeave}
@@ -379,22 +378,22 @@ export default function SecurityDashboardPage() {
                     "--tile-border": "rgba(56,189,248,0.5)",
                   }}
                 >
-                  <div className="sd-tile__inner flex flex-col items-center p-5 text-center sm:p-7">
+                  <div onClick={() => { setScanMode('exit'); setIsScanning(true); }} className="sd-tile__inner flex flex-col items-center p-4 text-center cursor-pointer">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
-                      className="sd-lift-lg flex h-20 w-20 items-center justify-center rounded-full text-white"
+                      className="sd-lift-lg flex h-14 w-14 items-center justify-center rounded-full text-white"
                       style={{
                         background: "linear-gradient(145deg, #0369a1 0%, #38bdf8 55%, #6366f1 100%)",
-                        boxShadow: "0 20px 40px -18px rgba(14,165,233,0.55)",
+                        boxShadow: "0 12px 24px -10px rgba(14,165,233,0.55)",
                       }}
                     >
-                      <LogOut className="h-10 w-10" />
+                      <LogOut className="h-7 w-7" />
                     </span>
-                    <h3 className="sd-lift-md sd-card-title mt-5 text-2xl">{t("scanExit")}</h3>
-                    <p className="sd-lift-md sd-body mt-2 max-w-sm text-[0.95rem]">{t("scanExitDesc")}</p>
+                    <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanExit")}</h3>
+                    <p className="sd-lift-md sd-body mt-1 text-xs leading-snug">{t("scanExitDesc")}</p>
                     <button
                       onClick={() => { setScanMode('exit'); setIsScanning(true); }}
-                      className="sd-magnetic mt-6 inline-flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
+                      className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
                       style={{ background: "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)" }}
                       onPointerMove={(e) => {
                         const el = e.currentTarget;
@@ -424,22 +423,22 @@ export default function SecurityDashboardPage() {
                     "--tile-border": "rgba(45,212,191,0.5)",
                   }}
                 >
-                  <div className="sd-tile__inner flex flex-col items-center p-5 text-center sm:p-7">
+                  <div onClick={() => { setScanMode('entry'); setIsScanning(true); }} className="sd-tile__inner flex flex-col items-center p-4 text-center cursor-pointer">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
-                      className="sd-lift-lg flex h-20 w-20 items-center justify-center rounded-full text-white"
+                      className="sd-lift-lg flex h-14 w-14 items-center justify-center rounded-full text-white"
                       style={{
                         background: "linear-gradient(145deg, #047857 0%, #10b981 55%, #2dd4bf 100%)",
-                        boxShadow: "0 20px 40px -18px rgba(16,185,129,0.55)",
+                        boxShadow: "0 12px 24px -10px rgba(16,185,129,0.55)",
                       }}
                     >
-                      <LogIn className="h-10 w-10" />
+                      <LogIn className="h-7 w-7" />
                     </span>
-                    <h3 className="sd-lift-md sd-card-title mt-5 text-2xl">{t("scanEntry")}</h3>
-                    <p className="sd-lift-md sd-body mt-2 max-w-sm text-[0.95rem]">{t("scanEntryDesc")}</p>
+                    <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanEntry")}</h3>
+                    <p className="sd-lift-md sd-body mt-1 text-xs leading-snug">{t("scanEntryDesc")}</p>
                     <button
                       onClick={() => { setScanMode('entry'); setIsScanning(true); }}
-                      className="sd-magnetic mt-6 inline-flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
+                      className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
                       style={{ background: "linear-gradient(135deg, #10b981 0%, #0d9488 100%)" }}
                       onPointerMove={(e) => {
                         const el = e.currentTarget;
@@ -590,9 +589,9 @@ export default function SecurityDashboardPage() {
             </section>
           )}
 
-          <SecurityBottomNav active="Home" />
         </div>
       </div>
+    <SecurityBottomNav active="Home" />
 
       {isScanning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
