@@ -75,6 +75,14 @@ const formatDateTime = (date) =>
     { hour: "2-digit", minute: "2-digit" }
   )}`;
 
+// Return is a date only — no time is collected or shown.
+const formatDate = (date) =>
+  date.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
+
+// The return field is date-only; treat it as end of that day so it always falls
+// after a same-day departure and reads as "back by the end of this day".
+const parseReturnDate = (value) => (value ? new Date(`${value}T23:59:59`) : null);
+
 const getDuration = (leave, ret) => {
   if (!leave || !ret) return null;
   const ms = ret.getTime() - leave.getTime();
@@ -157,9 +165,9 @@ export default function LeaveApplicationPage() {
   );
 
   const leaveDateObj = form.leaveDate ? new Date(form.leaveDate) : null;
-  const returnDateObj = form.returnDate ? new Date(form.returnDate) : null;
+  const returnDateObj = parseReturnDate(form.returnDate);
   const duration = useMemo(
-    () => getDuration(form.leaveDate ? new Date(form.leaveDate) : null, form.returnDate ? new Date(form.returnDate) : null),
+    () => getDuration(form.leaveDate ? new Date(form.leaveDate) : null, parseReturnDate(form.returnDate)),
     [form.leaveDate, form.returnDate]
   );
 
@@ -182,9 +190,9 @@ export default function LeaveApplicationPage() {
       nextErrors.leaveDate = "Leave departure must be on or before 5:30 PM — a leave pass is only valid until 5:30 PM on the departure day. Please choose an earlier leave time.";
     }
     if (!form.returnDate) {
-      nextErrors.returnDate = "Return date & time is required";
+      nextErrors.returnDate = "Return date is required";
     } else if (leaveDateObj && returnDateObj.getTime() <= leaveDateObj.getTime()) {
-      nextErrors.returnDate = "Return date must be after the leave date";
+      nextErrors.returnDate = "Return date must be on or after the leave date";
     }
     if (!acknowledged) {
       nextErrors.acknowledged = "You must acknowledge this before continuing";
@@ -277,7 +285,7 @@ export default function LeaveApplicationPage() {
               { label: "Application ID", value: applicationId, highlight: true },
               { label: "Destination", value: created.destination },
               { label: "Leave Window", value: formatDateTime(new Date(created.leaveDate)) },
-              { label: "Return By", value: formatDateTime(new Date(created.returnDate)) },
+              { label: "Return By", value: formatDate(new Date(created.returnDate)) },
               ...(duration ? [{ label: "Duration", value: duration.label }] : []),
             ].map(({ label, value, highlight }) => (
               <div key={label} className="flex justify-between items-center gap-3">
@@ -353,7 +361,7 @@ export default function LeaveApplicationPage() {
               {display.subtitle ? ` (${display.subtitle})` : ""}, Roll No. {display.rollNo}, would like to
               request leave to visit <strong>{form.destination}</strong> from{" "}
               <strong>{leaveDateObj ? formatDateTime(leaveDateObj) : "—"}</strong> to{" "}
-              <strong>{returnDateObj ? formatDateTime(returnDateObj) : "—"}</strong>.
+              <strong>{returnDateObj ? formatDate(returnDateObj) : "—"}</strong>.
             </p>
             <p className="mt-3">
               <strong>Reason:</strong> {form.reason}
@@ -545,11 +553,11 @@ export default function LeaveApplicationPage() {
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1.5">
                   <Calendar size={11} className="inline mr-1 text-violet-500" />
-                  Return Date & Time *
+                  Return Date *
                 </label>
                 <input
-                  type="datetime-local"
-                  min={form.leaveDate || minLeaveInputValue}
+                  type="date"
+                  min={(form.leaveDate || minLeaveInputValue).slice(0, 10)}
                   value={form.returnDate}
                   onChange={set("returnDate")}
                   className={`sf-input ${errors.returnDate ? "sf-input--error" : ""}`}
@@ -707,7 +715,7 @@ export default function LeaveApplicationPage() {
                           {[
                             { label: "Reason", value: a.reason },
                             { label: "Departure", value: formatDateTime(leave) },
-                            { label: "Expected Return", value: formatDateTime(ret) },
+                            { label: "Expected Return", value: formatDate(ret) },
                           ].map(({ label, value }) => (
                             <div key={label} className="flex justify-between items-start gap-3 py-0.5">
                               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider shrink-0">{label}</span>

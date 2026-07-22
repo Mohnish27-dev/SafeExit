@@ -111,7 +111,7 @@ const hi = {
     rejectionRequired: "रिजेक्ट करने से पहले कारण बताएं।",
     destination: "जगह:",
     departure: "जाने का समय",
-    returnLabel: "वापसी का समय",
+    returnLabel: "वापसी की तारीख",
     duration: "अवधि:",
     actingSoon: "जल्द एक्शन ज़रूरी",
     viewFullApplication: "पूरी एप्लीकेशन देखें",
