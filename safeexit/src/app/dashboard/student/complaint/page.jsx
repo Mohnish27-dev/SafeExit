@@ -296,7 +296,7 @@ export default function StudentComplaintPage() {
         variant="complaint"
         icon={MessageSquareWarning}
         title="Raise a complaint"
-        description="Report maintenance, safety, or hostel issues directly to your warden."
+        description="Report maintenance and hostel issues directly to your warden, tracked until resolved."
       />
 
       {hydrated && <StudentProfileBanner display={display} compact />}
