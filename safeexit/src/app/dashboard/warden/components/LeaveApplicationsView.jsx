@@ -430,6 +430,14 @@ export default function LeaveApplicationsView({
                   journey at my own responsibility.
                 </p>
                 <p className="mt-5">Yours sincerely,</p>
+                {viewing.studentSignature && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={viewing.studentSignature}
+                    alt="Student signature"
+                    className="mt-1 h-14 w-auto"
+                  />
+                )}
                 <p className="mt-1 font-bold">{viewing.name}</p>
                 {viewing.roll && <p>{viewing.roll}</p>}
                 <p>{formatLetterDate(viewing.submittedAt)}</p>
@@ -452,6 +460,17 @@ export default function LeaveApplicationsView({
                   <p className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">
                     {t("rejectionReason")} {viewing.remarks}
                   </p>
+                )}
+                {viewing.status === "Approved" && viewing.wardenSignature && (
+                  <div className="mt-3">
+                    <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Signed by warden</p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={viewing.wardenSignature}
+                      alt="Warden signature"
+                      className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
+                    />
+                  </div>
                 )}
               </div>
             ) : rejectingId !== viewing.id ? (

@@ -9,6 +9,7 @@ const {
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
 const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
+const { isSignatureDataUrl } = require('../utils/signature');
 
 const clockLabel = (minutes) => {
   const h24 = Math.floor(minutes / 60);
@@ -39,9 +40,14 @@ const expireStaleRequests = async (requests) => {
 
 // POST /api/outing — private (Student)
 const createOutingRequest = async (req, res) => {
-  const { destination, purpose, outTime, outingType, targetWardenId } = req.body;
+  const { destination, purpose, outTime, outingType, targetWardenId, studentSignature } = req.body;
 
   try {
+    // The student's drawn signature is required to file a request.
+    if (!isSignatureDataUrl(studentSignature)) {
+      return res.status(400).json({ message: 'Your signature is required to submit this request.' });
+    }
+
     // Must be 'Inside' to request — prevents stacking passes while off-campus.
     if (req.user.campusStatus && req.user.campusStatus !== 'Inside') {
       return res.status(409).json({
@@ -100,6 +106,7 @@ const createOutingRequest = async (req, res) => {
       inTime,
       status: autoApproved ? 'Approved' : 'Pending',
       autoApproved,
+      studentSignature,
       targetWarden: targetWarden ? targetWarden._id : undefined,
     });
 
@@ -156,13 +163,18 @@ const getPendingRequests = async (req, res) => {
 
 // PATCH /api/outing/:id/status — private (Warden/Guard)
 const updateRequestStatus = async (req, res) => {
-  const { status, remarks } = req.body;
+  const { status, remarks, wardenSignature } = req.body;
 
   // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a warden.
   if (!['Approved', 'Rejected'].includes(status)) {
     return res.status(400).json({
       message: 'Status can only be set to Approved or Rejected.',
     });
+  }
+
+  // Approving mints a pass — the warden must sign it. (Rejection needs no signature.)
+  if (status === 'Approved' && !isSignatureDataUrl(wardenSignature)) {
+    return res.status(400).json({ message: 'Your signature is required to approve this request.' });
   }
 
   try {
@@ -208,6 +220,10 @@ const updateRequestStatus = async (req, res) => {
 
       if (['Approved', 'Rejected'].includes(status)) {
          request.approvedBy = req.user._id;
+      }
+
+      if (status === 'Approved') {
+        request.wardenSignature = wardenSignature;
       }
 
       const updatedRequest = await request.save();

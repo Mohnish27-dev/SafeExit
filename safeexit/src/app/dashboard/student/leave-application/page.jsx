@@ -32,6 +32,7 @@ import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import WardenSelect from "@/app/components/student/WardenSelect";
+import SignaturePad from "@/app/components/SignaturePad";
 
 const MIN_LEAD_HOURS = 24;
 
@@ -113,6 +114,7 @@ export default function LeaveApplicationPage() {
 
   const [form, setForm] = useState({ destination: "", reason: "", leaveDate: "", returnDate: "" });
   const [acknowledged, setAcknowledged] = useState(false);
+  const [signature, setSignature] = useState(null);
   const [targetWardenId, setTargetWardenId] = useState("");
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -223,6 +225,7 @@ export default function LeaveApplicationPage() {
           leaveDate: leaveDateObj.toISOString(),
           returnDate: returnDateObj.toISOString(),
           acknowledgement: true,
+          studentSignature: signature,
           ...(targetWardenId ? { targetWardenId } : {}),
         }),
       });
@@ -240,6 +243,7 @@ export default function LeaveApplicationPage() {
     setCreated(null);
     setForm({ destination: "", reason: "", leaveDate: "", returnDate: "" });
     setAcknowledged(false);
+    setSignature(null);
     setTargetWardenId("");
     setErrors({});
     setStep("form");
@@ -379,6 +383,14 @@ export default function LeaveApplicationPage() {
             <p className="mt-1 font-bold">{display.name}</p>
             <p>{display.rollNo}</p>
             <p>{today}</p>
+
+            <div className="mt-5 border-t border-dashed border-slate-200 pt-4">
+              <SignaturePad
+                label="Student signature"
+                hint="Sign here to submit your application"
+                onChange={setSignature}
+              />
+            </div>
           </div>
         </StudentFeaturePanel>
 
@@ -407,11 +419,13 @@ export default function LeaveApplicationPage() {
           <button type="button" onClick={() => setStep("form")} className="sf-btn-secondary flex-1">
             Edit Details
           </button>
-          <button type="button" onClick={handleSubmit} disabled={submitting} className="sf-btn-primary flex-1">
+          <button type="button" onClick={handleSubmit} disabled={submitting || !signature} className="sf-btn-primary flex-1">
             {submitting ? (
               <>
                 <Loader2 size={16} className="animate-spin" /> Submitting...
               </>
+            ) : !signature ? (
+              "Sign to Submit"
             ) : (
               "Submit Application"
             )}
@@ -735,6 +749,19 @@ export default function LeaveApplicationPage() {
                                 <span className="font-bold text-slate-700">Warden&rsquo;s note: </span>
                                 {a.remarks}
                               </p>
+                            </div>
+                          )}
+                          {a.wardenSignature && (
+                            <div className="mt-3 pt-3 border-t border-emerald-100">
+                              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
+                                <CheckCircle2 size={12} /> Approved &amp; signed by warden
+                              </p>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={a.wardenSignature}
+                                alt="Warden signature"
+                                className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
+                              />
                             </div>
                           )}
                           {statusKey === "pending" && (
