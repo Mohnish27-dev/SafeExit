@@ -3,12 +3,11 @@ const sseHub = require('../utils/sseHub');
 const { notifyWardens } = require('../utils/pushService');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
 const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
+const { isSignatureDataUrl } = require('../utils/signature');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
-// A student may only hold one live leave at a time: awaiting a decision (Pending),
-// approved-but-not-departed (Approved), or currently away (Out). Only once the trip
-// finishes (Returned) or the pass dies (Rejected/Cancelled/Expired) may they file again.
+
 const ACTIVE_LEAVE_STATUSES = ['Pending', 'Approved', 'Out'];
 
 // Lazy read-time expiry of Pending/Approved passes whose leaveDate passed; Out/Returned/Rejected/Cancelled are never touched. Saves are best-effort per doc.
@@ -37,11 +36,16 @@ const expireStaleApplications = async (applications) => {
 
 // POST /api/leave — private (Student)
 const createLeaveApplication = async (req, res) => {
-  const { destination, reason, leaveDate, returnDate, acknowledgement, targetWardenId } = req.body;
+  const { destination, reason, leaveDate, returnDate, acknowledgement, targetWardenId, studentSignature } = req.body;
 
   try {
     if (!destination || !reason || !leaveDate || !returnDate) {
       return res.status(400).json({ message: 'Destination, reason, leave date and return date are all required.' });
+    }
+
+    // The student's drawn signature is required to file an application.
+    if (!isSignatureDataUrl(studentSignature)) {
+      return res.status(400).json({ message: 'Your signature is required to submit this application.' });
     }
 
     if (acknowledgement !== true) {
@@ -119,6 +123,7 @@ const createLeaveApplication = async (req, res) => {
       returnDate: returnDateObj,
       acknowledgement: true,
       status: 'Pending',
+      studentSignature,
       targetWarden: targetWarden ? targetWarden._id : undefined,
     });
 
@@ -188,13 +193,18 @@ const getLeaveHistory = async (req, res) => {
 
 // PATCH /api/leave/:id/status — private (Warden)
 const updateLeaveStatus = async (req, res) => {
-  const { status, remarks } = req.body;
+  const { status, remarks, wardenSignature } = req.body;
 
   // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a warden.
   if (!['Approved', 'Rejected'].includes(status)) {
     return res.status(400).json({
       message: 'Status can only be set to Approved or Rejected.',
     });
+  }
+
+  // Approving mints a pass — the warden must sign it. (Rejection needs no signature.)
+  if (status === 'Approved' && !isSignatureDataUrl(wardenSignature)) {
+    return res.status(400).json({ message: 'Your signature is required to approve this application.' });
   }
 
   try {
@@ -250,6 +260,10 @@ const updateLeaveStatus = async (req, res) => {
 
     if (['Approved', 'Rejected'].includes(status)) {
       application.approvedBy = req.user._id;
+    }
+
+    if (status === 'Approved') {
+      application.wardenSignature = wardenSignature;
     }
 
     const updatedApplication = await application.save();

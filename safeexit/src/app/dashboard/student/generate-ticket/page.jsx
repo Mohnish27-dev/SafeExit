@@ -27,6 +27,7 @@ import StudentFeatureShell, {
 } from "@/app/components/student/StudentFeatureShell";
 import { apiFetch } from "@/app/lib/api";
 import WardenSelect from "@/app/components/student/WardenSelect";
+import SignaturePad from "@/app/components/SignaturePad";
 
 const STEPS = ["form", "review", "success"];
 
@@ -126,6 +127,7 @@ export default function GenerateTicket() {
   const [errors, setErrors] = useState({});
   const [createdOuting, setCreatedOuting] = useState(null);
   const [targetWardenId, setTargetWardenId] = useState("");
+  const [signature, setSignature] = useState(null);
   const submitErrorRef = useRef(null);
 
   useEffect(() => {
@@ -240,6 +242,7 @@ export default function GenerateTicket() {
         // Return time is NOT sent — the server fixes it from policy.
         outingType: isFemale ? form.outingType : "General",
         outTime: buildTodayISO(form.timeOut),
+        studentSignature: signature,
         // Only warden-gated outings route to a chosen warden; server ignores it otherwise.
         ...(activePolicy.requiresWarden && targetWardenId ? { targetWardenId } : {}),
       };
@@ -486,6 +489,14 @@ export default function GenerateTicket() {
           </p>
         </div>
 
+        <StudentFeaturePanel className="p-4 sm:p-5" delay={80}>
+          <SignaturePad
+            label="Student signature"
+            hint="Sign here to submit your request"
+            onChange={setSignature}
+          />
+        </StudentFeaturePanel>
+
         <div className="flex gap-3 sf-rise sf-stagger-3">
           <button type="button" onClick={() => setStep("form")} className="sf-btn-secondary flex-1">
             Edit Details
@@ -493,7 +504,7 @@ export default function GenerateTicket() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || !signature}
             className="sf-btn-primary flex-1"
           >
             {loading ? (
@@ -502,6 +513,8 @@ export default function GenerateTicket() {
               </>
             ) : errors.submit ? (
               "Try Again"
+            ) : !signature ? (
+              "Sign to Submit"
             ) : (
               "Submit Request"
             )}

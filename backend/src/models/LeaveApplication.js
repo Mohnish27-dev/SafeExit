@@ -36,6 +36,14 @@ const leaveApplicationSchema = new mongoose.Schema({
   remarks: {
     type: String
   },
+  // Drawn signatures (base64 image data URLs), same storage style as User.photo.
+ 
+  studentSignature: {
+    type: String
+  },
+  wardenSignature: {
+    type: String
+  },
   approvedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

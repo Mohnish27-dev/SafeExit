@@ -100,6 +100,7 @@ export default function MyOutings() {
           returnPunctuality: o.returnPunctuality || null,
           actualOutTime: fmtTime(o.actualOutTime),
           actualInTime: fmtTime(o.actualInTime),
+          wardenSignature: o.wardenSignature || null,
         }));
         setOutings(mapped);
       } catch (err) {
@@ -319,6 +320,19 @@ export default function MyOutings() {
                               <span className="text-sm font-bold text-emerald-700">{outing.actualInTime}</span>
                             </div>
                           )}
+                        </div>
+                      )}
+                      {outing.wardenSignature && (
+                        <div className="pt-3 mt-1 border-t border-emerald-100">
+                          <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
+                            <CheckCircle2 size={12} /> Approved &amp; signed by warden
+                          </p>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={outing.wardenSignature}
+                            alt="Warden signature"
+                            className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
+                          />
                         </div>
                       )}
                       {outing.status === "rejected" && (

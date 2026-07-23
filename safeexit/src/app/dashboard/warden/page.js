@@ -26,6 +26,7 @@ import AutoApprovedView from "./components/AutoApprovedView";
 import RequestsView from "./components/RequestsView";
 import SOSAlertsView from "./components/SOSAlertsView";
 import LeaveApplicationsView from "./components/LeaveApplicationsView";
+import SignaturePad from "@/app/components/SignaturePad";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
@@ -67,6 +68,7 @@ const mapPending = (o) => ({
   outingType: o.outingType || "",
   out: formatTime(o.outTime),
   return: formatTime(o.inTime),
+  studentSignature: o.studentSignature || null,
   initials: initials(o.student?.name),
 });
 
@@ -102,6 +104,8 @@ const mapLeavePending = (l) => ({
   leaveDate: l.leaveDate,
   returnDate: l.returnDate,
   submittedAt: l.createdAt,
+  studentSignature: l.studentSignature || null,
+  wardenSignature: l.wardenSignature || null,
   initials: initials(l.student?.name),
 });
 
@@ -389,7 +393,46 @@ export default function WardenDashboardPage() {
     setActivePanel(null);
   }
 
-  async function approveRequest(id) {
+  // Approving mints a signed pass, so it routes through a modal that captures the
+  // warden's drawn signature. { kind: 'outing' | 'leave', id, name } while open.
+  const [approvalTarget, setApprovalTarget] = useState(null);
+  const [approvalSignature, setApprovalSignature] = useState(null);
+  const [approving, setApproving] = useState(false);
+
+  const openOutingApproval = (id) => {
+    const req = pending.find((p) => p.id === id);
+    setApprovalSignature(null);
+    setApprovalTarget({ kind: "outing", id, name: req?.name || "", studentSignature: req?.studentSignature || null });
+  };
+
+  const openLeaveApproval = (id) => {
+    const req = leavePending.find((l) => l.id === id);
+    setApprovalSignature(null);
+    setApprovalTarget({ kind: "leave", id, name: req?.name || "", studentSignature: req?.studentSignature || null });
+  };
+
+  const closeApproval = () => {
+    setApprovalTarget(null);
+    setApprovalSignature(null);
+  };
+
+  async function confirmApproval() {
+    if (!approvalTarget || !approvalSignature) return;
+    setApproving(true);
+    const { kind, id } = approvalTarget;
+    try {
+      if (kind === "outing") {
+        await approveRequest(id, approvalSignature);
+      } else {
+        await approveLeave(id, approvalSignature);
+      }
+      closeApproval();
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function approveRequest(id, signature) {
     const req = pending.find((p) => p.id === id);
     if (!req) return;
     // Optimistic update; persist to backend after.
@@ -398,7 +441,7 @@ export default function WardenDashboardPage() {
     try {
       await apiFetch(`/outing/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Approved" }),
+        body: JSON.stringify({ status: "Approved", wardenSignature: signature }),
       });
     } catch (err) {
       // 409 = request expired: don't roll back, just drop the card.
@@ -428,14 +471,14 @@ export default function WardenDashboardPage() {
     }
   }
 
-  async function approveLeave(id) {
+  async function approveLeave(id, signature) {
     const req = leavePending.find((l) => l.id === id);
     if (!req) return;
     setLeavePending((l) => l.filter((r) => r.id !== id));
     try {
       await apiFetch(`/leave/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Approved" }),
+        body: JSON.stringify({ status: "Approved", wardenSignature: signature }),
       });
     } catch (err) {
       if (err?.status === 409) {
@@ -885,7 +928,7 @@ export default function WardenDashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button onClick={() => approveLeave(req.id)} className="flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-white font-bold shadow hover:-translate-y-0.5 transition-transform">
+                      <button onClick={() => openLeaveApproval(req.id)} className="flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-white font-bold shadow hover:-translate-y-0.5 transition-transform">
                         <Check className="h-4 w-4" /> {tc("approve")}
                       </button>
                       <button onClick={() => setView('leave')} className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 transition-colors">
@@ -924,7 +967,7 @@ export default function WardenDashboardPage() {
                       </div>
                       <div className="flex sm:flex-col gap-2">
                         <button
-                          onClick={() => approveRequest(req.id)}
+                          onClick={() => openOutingApproval(req.id)}
                           onPointerMove={handleMagneticMove}
                           onPointerLeave={handleMagneticLeave}
                           className="sd-magnetic flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-white font-bold shadow"
@@ -1031,7 +1074,7 @@ export default function WardenDashboardPage() {
           {view === 'requests' && (
             <RequestsView
               pending={pending}
-              approveRequest={approveRequest}
+              approveRequest={openOutingApproval}
               rejectRequest={rejectRequest}
               loading={loadingRequests}
               error={requestsError}
@@ -1059,7 +1102,7 @@ export default function WardenDashboardPage() {
             <LeaveApplicationsView
               pending={leavePending}
               history={leaveHistory}
-              approveLeave={approveLeave}
+              approveLeave={openLeaveApproval}
               rejectLeave={rejectLeave}
               loading={loadingLeave}
               loadingHistory={loadingLeaveHistory}
@@ -1118,7 +1161,7 @@ export default function WardenDashboardPage() {
                       <p className="sd-micro">{r.branch} • {r.roll}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => approveRequest(r.id)} className="rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500">{tc("approve")}</button>
+                      <button onClick={() => openOutingApproval(r.id)} className="rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500">{tc("approve")}</button>
                       <button onClick={() => rejectRequest(r.id)} className="rounded-xl border border-rose-300 px-3 py-1.5 text-sm font-bold text-rose-600 hover:bg-rose-50 transition-colors">{tc("reject")}</button>
                     </div>
                   </div>
@@ -1173,6 +1216,68 @@ export default function WardenDashboardPage() {
               </div>
             )}
           </aside>
+        </div>
+      )}
+
+      {approvalTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+          <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <p className="sd-kicker">{approvalTarget.kind === "leave" ? t("leaveApplications") : t("outingRequests")}</p>
+                <h3 className="sd-title sd-title-sm mt-0.5">{tc("approve")}{approvalTarget.name ? ` — ${approvalTarget.name}` : ""}</h3>
+              </div>
+              <button
+                onClick={closeApproval}
+                disabled={approving}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mt-4 text-sm text-slate-600">
+              Sign below to approve this {approvalTarget.kind === "leave" ? "leave application" : "outing request"}. Your signature will be attached to the student&apos;s pass.
+            </p>
+
+            {approvalTarget.studentSignature && (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student signature</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={approvalTarget.studentSignature}
+                  alt="Student signature"
+                  className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
+                />
+              </div>
+            )}
+
+            <div className="mt-4">
+              <SignaturePad
+                label="Warden signature"
+                hint="Sign here to approve"
+                onChange={setApprovalSignature}
+              />
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={closeApproval}
+                disabled={approving}
+                className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50"
+              >
+                {tc("cancel")}
+              </button>
+              <button
+                onClick={confirmApproval}
+                disabled={approving || !approvalSignature}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Check className="h-4 w-4" />
+                {approving ? tc("loading") : !approvalSignature ? "Sign to Approve" : tc("approve")}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
