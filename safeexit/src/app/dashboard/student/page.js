@@ -134,7 +134,7 @@ const outingAccent = (outing) => {
 const actions = [
   {
     title: "Generate Ticket",
-    description: "Create a new request and get your digital pass.",
+    description: "Request a same-day outing — café, meal, or market trip — and get a QR gate pass once approved.",
     icon: Ticket,
     href: "/dashboard/student/generate-ticket",
     badge: "linear-gradient(145deg, #0f172a 0%, #4338ca 52%, #06b6d4 100%)",
@@ -144,7 +144,7 @@ const actions = [
   },
   {
     title: "My Outings",
-    description: "View upcoming and past outing history.",
+    description: "Track every outing's approval, return, and ticket status in one place.",
     icon: ClipboardList,
     href: "/dashboard/student/my-outings",
     badge: "linear-gradient(145deg, #1e40af 0%, #38bdf8 100%)",
@@ -154,7 +154,7 @@ const actions = [
   },
   {
     title: "SOS Alert",
-    description: "Instant emergency alert to warden & security.",
+    description: "Instantly send your live location and details to warden and security.",
     icon: Siren,
     href: "/dashboard/student/sos",
     badge: "linear-gradient(145deg, #fb7185 0%, #f43f5e 48%, #e11d48 100%)",
@@ -164,7 +164,7 @@ const actions = [
   },
   {
     title: "Register Complaint",
-    description: "Report a maintenance or safety issue.",
+    description: "Report a hostel issue — electrical, plumbing, or cleaning — and track it until your warden resolves it.",
     icon: MessageSquareWarning,
     href: "/dashboard/student/complaint",
     badge: "linear-gradient(145deg, #b45309 0%, #f97316 55%, #fbbf24 100%)",
@@ -174,7 +174,7 @@ const actions = [
   },
   {
     title: "Leave Application",
-    description: "Apply for festival or multi-day home leave.",
+    description: "Send your warden a formal multi-day leave request for festivals or home visits.",
     icon: CalendarDays,
     href: "/dashboard/student/leave-application",
     badge: "linear-gradient(145deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%)",
