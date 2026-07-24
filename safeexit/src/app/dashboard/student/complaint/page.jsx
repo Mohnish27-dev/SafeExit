@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   MessageSquareWarning,
-  Wrench,
+  Armchair,
   Zap,
   Droplets,
   Sparkles,
-  ShieldAlert,
+  Wifi,
   MoreHorizontal,
   CheckCircle2,
   AlertCircle,
@@ -34,14 +34,6 @@ import WardenSelect from "@/app/components/student/WardenSelect";
 
 const categories = [
   {
-    value: "Maintenance",
-    label: "Maintenance",
-    desc: "Furniture, fittings, general repairs",
-    color: "text-orange-600",
-    selectedBg: "bg-orange-50 border-orange-300",
-    icon: Wrench,
-  },
-  {
     value: "Electrical",
     label: "Electrical",
     desc: "Power, wiring, lights, fans, sockets",
@@ -66,12 +58,20 @@ const categories = [
     icon: Sparkles,
   },
   {
-    value: "Security",
-    label: "Security",
-    desc: "Safety concerns, unauthorized entry",
-    color: "text-rose-600",
-    selectedBg: "bg-rose-50 border-rose-300",
-    icon: ShieldAlert,
+    value: "Wifi",
+    label: "Wifi",
+    desc: "Internet, network, connectivity issues",
+    color: "text-indigo-600",
+    selectedBg: "bg-indigo-50 border-indigo-300",
+    icon: Wifi,
+  },
+  {
+    value: "Furniture",
+    label: "Furniture",
+    desc: "Furniture, fittings, general repairs",
+    color: "text-orange-600",
+    selectedBg: "bg-orange-50 border-orange-300",
+    icon: Armchair,
   },
   {
     value: "Other",

@@ -19,7 +19,8 @@ import {
   Siren,
   Sparkles,
   Users,
-  ScrollText,
+  Wifi,
+  Armchair,
 } from "lucide-react";
 import ProfileView from "./components/ProfileView";
 import MovementLogsView from "./components/MovementLogsView";
@@ -80,10 +81,14 @@ const complaintTone = (category) => {
       return { tone: "bg-amber-100 text-amber-500", icon: AlertTriangle };
     case "Plumbing":
       return { tone: "bg-sky-100 text-sky-500", icon: AlertCircle };
-    case "Security":
-      return { tone: "bg-rose-100 text-rose-500", icon: ShieldAlert };
+    case "Cleaning":
+      return { tone: "bg-emerald-100 text-emerald-500", icon: Sparkles };
+    case "Wifi":
+      return { tone: "bg-indigo-100 text-indigo-500", icon: Wifi };
+    case "Furniture":
+      return { tone: "bg-orange-100 text-orange-500", icon: Armchair };
     default:
-      return { tone: "bg-orange-100 text-orange-500", icon: AlertCircle };
+      return { tone: "bg-slate-100 text-slate-500", icon: AlertCircle };
   }
 };
 
