@@ -6,6 +6,7 @@ const {
   normalizeOutingType,
   isWithinDepartureWindow,
   computeReturnDeadline,
+  isReturnLate,
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
 const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
@@ -54,6 +55,25 @@ const createOutingRequest = async (req, res) => {
         message:
           'You are currently marked outside campus. Log your entry at the gate before creating a new outing request.',
         campusStatus: req.user.campusStatus,
+      });
+    }
+
+    const ACTIVE_STATUSES = ['Pending', 'Approved', 'Out'];
+    const activeRequests = await OutingRequest.find({
+      student: req.user._id,
+      status: { $in: ACTIVE_STATUSES },
+    });
+
+    await expireStaleRequests(activeRequests);
+    const blocking = activeRequests.find((r) => ACTIVE_STATUSES.includes(r.status));
+    if (blocking) {
+      return res.status(409).json({
+        message:
+          blocking.status === 'Out'
+            ? 'You already have an outing in progress. Log your entry at the gate before creating a new request.'
+            : `You already have a ${blocking.status.toLowerCase()} outing request. Complete that journey or cancel it before creating a new one.`,
+        status: blocking.status,
+        activeRequestId: blocking._id,
       });
     }
 
@@ -156,6 +176,20 @@ const getPendingRequests = async (req, res) => {
     const stillPending = requests.filter((r) => r.status === 'Pending');
 
     res.json(stillPending);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getOverdueOutings = async (req, res) => {
+  try {
+    const scope = await scopedStudentFilter(req.user);
+    const outings = await OutingRequest.find({ status: 'Out', ...scope })
+      .populate('student', 'name studentId roomNumber hostelName phoneNumber department year')
+      .sort({ inTime: 1 });
+
+    const overdue = outings.filter((o) => isReturnLate(o.inTime));
+    res.json(overdue);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -306,6 +340,7 @@ module.exports = {
   createOutingRequest,
   getMyOutingRequests,
   getPendingRequests,
+  getOverdueOutings,
   updateRequestStatus,
   cancelOutingRequest,
   streamOutingEvents

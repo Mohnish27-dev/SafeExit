@@ -115,7 +115,7 @@ export default function GenerateTicket() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     destination: "",
-    outingType: "Nearby", // females: 'Nearby' | 'Market'; ignored otherwise
+    outingType: "Nearby", 
     dateOut: "",
     timeOut: "",
     dateReturn: "",
@@ -128,7 +128,31 @@ export default function GenerateTicket() {
   const [createdOuting, setCreatedOuting] = useState(null);
   const [targetWardenId, setTargetWardenId] = useState("");
   const [signature, setSignature] = useState(null);
+
+  const [activeOuting, setActiveOuting] = useState(null);
+  const [checkingActive, setCheckingActive] = useState(true);
   const submitErrorRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch("/outing/myrequests");
+        if (cancelled) return;
+        const active = Array.isArray(data)
+          ? data.find((o) => ["Pending", "Approved", "Out"].includes(o.status))
+          : null;
+        setActiveOuting(active || null);
+      } catch {
+        // If the check fails, fall through to the form — the backend is the gate.
+      } finally {
+        if (!cancelled) setCheckingActive(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -271,7 +295,65 @@ export default function GenerateTicket() {
     }
   }, [step, errors.submit]);
 
-  if (!checked || !authorized) return <AuthLoading />;
+  if (!checked || !authorized || checkingActive) return <AuthLoading />;
+
+  if (activeOuting && step !== "success") {
+    const activeTicketId = `SE-${String(activeOuting._id).slice(-6).toUpperCase()}`;
+    const isOut = activeOuting.status === "Out";
+    const statusLabel = isOut ? "Outside" : activeOuting.status;
+
+    return (
+      <StudentFeatureCentered>
+        <StudentFeaturePanel className="p-8 text-center animate-scale-in">
+          <div className="w-20 h-20 rounded-full bg-linear-to-br from-amber-100 to-orange-100 flex items-center justify-center mx-auto mb-6 shadow-lg">
+            <AlertCircle size={40} className="text-amber-500" />
+          </div>
+          <p className="sf-eyebrow mb-1">One pass at a time</p>
+          <h2 className="font-sora text-2xl font-bold sf-gradient-text mb-1">
+            You already have an active outing
+          </h2>
+          <p className="text-slate-500 text-sm mb-6">
+            {isOut
+              ? "You're currently marked outside campus. Log your entry at the gate before requesting a new outing."
+              : "Complete that journey or cancel your current request before generating a new outing ticket."}
+          </p>
+
+          <div className="rounded-2xl p-6 mb-6 text-left space-y-4 bg-linear-to-br from-slate-50 to-amber-50/50 border border-slate-100 shadow-sm">
+            {[
+              { label: "Ticket ID", value: activeTicketId, highlight: true },
+              { label: "Destination", value: activeOuting.destination },
+            ].map(({ label, value, highlight }) => (
+              <div key={label} className="flex justify-between items-center">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">{label}</span>
+                <span className={`text-base font-bold ${highlight ? "sf-gradient-text" : "text-slate-700"}`}>{value}</span>
+              </div>
+            ))}
+            <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
+              <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
+              <span className="text-xs font-bold text-amber-800 bg-linear-to-r from-amber-100 to-amber-50 rounded-full px-3.5 py-1.5 border border-amber-200 shadow-xs">
+                {statusLabel}
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard/student/my-outings")}
+            className="sf-btn-primary w-full mb-3"
+          >
+            View My Outings
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard/student")}
+            className="sf-btn-secondary w-full"
+          >
+            Back to Dashboard
+          </button>
+        </StudentFeaturePanel>
+      </StudentFeatureCentered>
+    );
+  }
 
   const destLabel = form.destination;
   const ticketId = createdOuting ? `SE-${String(createdOuting._id).slice(-6).toUpperCase()}` : "SE-" + Math.random().toString(36).substring(2, 8).toUpperCase();

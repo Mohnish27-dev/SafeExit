@@ -4,6 +4,7 @@ const {
   createOutingRequest,
   getMyOutingRequests,
   getPendingRequests,
+  getOverdueOutings,
   updateRequestStatus,
   cancelOutingRequest,
   streamOutingEvents
@@ -18,6 +19,8 @@ router.route('/')
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyOutingRequests);
 
 router.get('/pending', protect, authorizeRoles('Warden', 'Guard'), getPendingRequests);
+
+router.get('/overdue', protect, authorizeRoles('Warden', 'Guard'), getOverdueOutings);
 
 router.get('/stream', protect, authorizeRoles('Warden', 'Guard'), streamOutingEvents);
 
