@@ -298,6 +298,18 @@ const getScanLogs = async (req, res) => {
     const filter = {};
     if (req.query.direction) filter.direction = req.query.direction;
 
+    // Wardens only see logs for students in their managed hostel.
+    if (req.user.role === 'Warden') {
+      const hostelFilter = req.user.managedHostel
+        ? { hostelName: req.user.managedHostel }
+        : req.user.managedGender
+        ? { gender: req.user.managedGender }
+        : null;
+      if (!hostelFilter) return res.json([]);
+      const students = await User.find({ role: 'Student', ...hostelFilter }, '_id');
+      filter.student = { $in: students.map((s) => s._id) };
+    }
+
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
     const logs = await ScanLog.find(filter)

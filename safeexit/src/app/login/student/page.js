@@ -1350,10 +1350,11 @@ export default function StudentLoginPage() {
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><ChevronDown className="w-4 h-4" /></div>
                         <select name="yearLevel" value={formData.yearLevel} onChange={handleInputChange} className="w-full appearance-none pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors">
                           <option value="">Select Year</option>
-                          <option value="1st">1st Year</option>
                           <option value="2nd">2nd Year</option>
                           <option value="3rd">3rd Year</option>
                           <option value="4th">4th Year</option>
+                          <option value="4th">PhD</option>
+                          <option value="4th">M.Tech</option>
                         </select>
                       </div>
                     </div>
