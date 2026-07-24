@@ -21,6 +21,8 @@ import {
   Users,
   Wifi,
   Armchair,
+  ScrollText,
+  AlarmClock,
 } from "lucide-react";
 import ProfileView from "./components/ProfileView";
 import MovementLogsView from "./components/MovementLogsView";
@@ -28,6 +30,7 @@ import ComplaintsView from "./components/ComplaintsView";
 import AutoApprovedView from "./components/AutoApprovedView";
 import RequestsView from "./components/RequestsView";
 import SOSAlertsView from "./components/SOSAlertsView";
+import OverdueStudentsView from "./components/OverdueStudentsView";
 import LeaveApplicationsView from "./components/LeaveApplicationsView";
 import SignaturePad from "@/app/components/SignaturePad";
 import { apiFetch, getApiBase } from "@/app/lib/api";
@@ -254,10 +257,22 @@ export default function WardenDashboardPage() {
   // Kept live independently of the SOS view so the badge shows on every tab.
   const [sosCount, setSosCount] = useState(0);
 
+  // Students still out past their outing return time; kept live for the badge.
+  const [overdueCount, setOverdueCount] = useState(0);
+
   const loadSosCount = useCallback(async () => {
     try {
       const data = await apiFetch("/sos?status=Active");
       setSosCount(data.length);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
+  const loadOverdueCount = useCallback(async () => {
+    try {
+      const data = await apiFetch("/outing/overdue");
+      setOverdueCount(data.length);
     } catch {
       /* best-effort */
     }
@@ -268,6 +283,12 @@ export default function WardenDashboardPage() {
     const interval = setInterval(loadSosCount, 30000);
     return () => clearInterval(interval);
   }, [loadSosCount]);
+
+  useEffect(() => {
+    loadOverdueCount();
+    const interval = setInterval(loadOverdueCount, 30000);
+    return () => clearInterval(interval);
+  }, [loadOverdueCount]);
 
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
@@ -340,9 +361,10 @@ export default function WardenDashboardPage() {
     const source = new EventSource(`${getApiBase()}/outing/stream`, { withCredentials: true });
     source.addEventListener("outing:changed", () => {
       loadRequests();
+      loadOverdueCount();
     });
     return () => source.close();
-  }, [loadRequests]);
+  }, [loadRequests, loadOverdueCount]);
 
   // Poll as safety net in case the SSE connection is silently dropped.
   useEffect(() => {
@@ -390,7 +412,7 @@ export default function WardenDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["sos", "complaints", "leave", "requests", "approved", "profile"].includes(target)) {
+    if (target && ["sos", "overdue", "complaints", "leave", "requests", "approved", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -704,6 +726,14 @@ export default function WardenDashboardPage() {
                     className: 'wd-attn--sos',
                     onClick: () => setView('sos'),
                   },
+                  overdueCount > 0 && {
+                    key: 'overdue',
+                    label: t("overdueStudents"),
+                    count: overdueCount,
+                    icon: AlarmClock,
+                    className: 'wd-attn--sos',
+                    onClick: () => setView('overdue'),
+                  },
                   !isBoysWarden && pending.length > 0 && {
                     key: 'requests',
                     label: t("requests"),
@@ -864,10 +894,21 @@ export default function WardenDashboardPage() {
                   border: "rgba(129,140,248,0.5)",
                   onClick: () => setView('logs'),
                 };
+                const overdueAction = {
+                  title: t("overdueTitle"),
+                  desc: t("overdueDesc"),
+                  icon: AlarmClock,
+                  badgeBg: "linear-gradient(145deg, #9f1239 0%, #fb7185 100%)",
+                  tint: "linear-gradient(160deg, rgba(244,63,94,0.14) 0%, rgba(251,113,133,0.08) 100%)",
+                  glow: "rgba(244,63,94,0.45)",
+                  border: "rgba(251,113,133,0.5)",
+                  badge: overdueCount,
+                  onClick: () => setView('overdue'),
+                };
                 // Boys' warden has no outing approvals: lead with Leave.
                 return isBoysWarden
-                  ? [leaveAction, safetyAction, logsAction, autoAction]
-                  : [manageAction, safetyAction, leaveAction, logsAction, autoAction];
+                  ? [leaveAction, safetyAction, overdueAction, logsAction, autoAction]
+                  : [manageAction, safetyAction, overdueAction, leaveAction, logsAction, autoAction];
               })().map((a, idx) => (
                 <button
                   key={idx}
@@ -1104,6 +1145,7 @@ export default function WardenDashboardPage() {
           )}
 
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
+          {view === 'overdue' && <OverdueStudentsView onCountChange={setOverdueCount} />}
           {view === 'profile' && <ProfileView user={user} displayName={displayName} onLogout={handleLogout} />}
           {view === 'complaints' && (
             <ComplaintsView

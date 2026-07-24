@@ -1,6 +1,7 @@
 const app = require('./app');
 const connectDB = require('./config/db');
 const { ensureAdmins } = require('./utils/ensureAdmins');
+const { startOverdueSweep } = require('./utils/overdueSweep');
 
 const PORT = process.env.PORT || 5000;
 
@@ -18,6 +19,7 @@ connectDB().then(async () => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
+  startOverdueSweep();
 }).catch(err => {
   console.error("Failed to connect to DB", err);
 });
