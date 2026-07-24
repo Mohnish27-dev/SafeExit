@@ -19,8 +19,10 @@ import {
   Siren,
   Sparkles,
   Users,
+  ScrollText,
 } from "lucide-react";
 import ProfileView from "./components/ProfileView";
+import MovementLogsView from "./components/MovementLogsView";
 import ComplaintsView from "./components/ComplaintsView";
 import AutoApprovedView from "./components/AutoApprovedView";
 import RequestsView from "./components/RequestsView";
@@ -847,10 +849,20 @@ export default function WardenDashboardPage() {
                   border: "rgba(56,189,248,0.5)",
                   onClick: () => openPanel('auto'),
                 };
+                const logsAction = {
+                  title: t("movementLogs"),
+                  desc: t("movementLogsDesc"),
+                  icon: ScrollText,
+                  badgeBg: "linear-gradient(145deg, #4338ca 0%, #38bdf8 100%)",
+                  tint: "linear-gradient(160deg, rgba(67,56,202,0.14) 0%, rgba(56,189,248,0.08) 100%)",
+                  glow: "rgba(67,56,202,0.45)",
+                  border: "rgba(129,140,248,0.5)",
+                  onClick: () => setView('logs'),
+                };
                 // Boys' warden has no outing approvals: lead with Leave.
                 return isBoysWarden
-                  ? [leaveAction, safetyAction, autoAction]
-                  : [manageAction, safetyAction, leaveAction, autoAction];
+                  ? [leaveAction, safetyAction, logsAction, autoAction]
+                  : [manageAction, safetyAction, leaveAction, logsAction, autoAction];
               })().map((a, idx) => (
                 <button
                   key={idx}
@@ -1111,7 +1123,9 @@ export default function WardenDashboardPage() {
             />
           )}
 
-          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysWarden ? 'grid-cols-5' : 'grid-cols-6'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
+          {view === 'logs' && <MovementLogsView />}
+
+          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysWarden ? 'grid-cols-6' : 'grid-cols-7'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
             <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span>{tc("home")}</button>
             {!isBoysWarden && (
               <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span>{t("requests")}</button>
@@ -1137,6 +1151,7 @@ export default function WardenDashboardPage() {
               </span>
               {t("complaints")}
             </button>
+            <button onClick={() => setView('logs')} className={`sd-navx ${view === 'logs' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ScrollText className="h-5 w-5" /></span>{t("movementLogs")}</button>
             <button onClick={() => setView('profile')} className={`sd-navx ${view === 'profile' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><User className="h-5 w-5" /></span>{tc("profile")}</button>
           </nav>
         </div>
@@ -1281,7 +1296,7 @@ export default function WardenDashboardPage() {
         </div>
       )}
 
-      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysWarden ? 'grid-cols-5' : 'grid-cols-6'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
+      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysWarden ? 'grid-cols-6' : 'grid-cols-7'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
         <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="text-[9px]">{tc("home")}</span></button>
         {!isBoysWarden && (
           <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="text-[9px]">{t("requests")}</span></button>
@@ -1307,6 +1322,7 @@ export default function WardenDashboardPage() {
           </span>
           <span className="text-[9px]">{t("complaints")}</span>
         </button>
+        <button onClick={() => setView('logs')} className={`sd-navx ${view === 'logs' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ScrollText className="h-5 w-5" /></span><span className="text-[9px]">Logs</span></button>
         <button onClick={() => setView('profile')} className={`sd-navx ${view === 'profile' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><User className="h-5 w-5" /></span><span className="text-[9px]">{tc("profile")}</span></button>
       </nav>
     </main>

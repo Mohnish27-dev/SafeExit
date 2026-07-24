@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -16,6 +16,7 @@ import {
   DoorOpen,
 } from "lucide-react";
 import { apiFetch, getApiBase } from "@/app/lib/api";
+import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 
 const getInitials = (name = "") =>
   name
@@ -26,12 +27,12 @@ const getInitials = (name = "") =>
     .join("")
     .toUpperCase() || "?";
 
-const TYPE_META = {
-  harassment: { label: "Harassment / Threat", icon: Shield, tone: "bg-rose-100 text-rose-600" },
-  medical: { label: "Medical Emergency", icon: HeartPulse, tone: "bg-orange-100 text-orange-600" },
-  unsafe: { label: "Unsafe Location", icon: AlertTriangle, tone: "bg-amber-100 text-amber-600" },
-  stalking: { label: "Online Stalking", icon: Eye, tone: "bg-sky-100 text-sky-600" },
-  other: { label: "Other Emergency", icon: Radio, tone: "bg-slate-100 text-slate-600" },
+const TYPE_TONE = {
+  harassment: { icon: Shield, tone: "bg-rose-100 text-rose-600" },
+  medical: { icon: HeartPulse, tone: "bg-orange-100 text-orange-600" },
+  unsafe: { icon: AlertTriangle, tone: "bg-amber-100 text-amber-600" },
+  stalking: { icon: Eye, tone: "bg-sky-100 text-sky-600" },
+  other: { icon: Radio, tone: "bg-slate-100 text-slate-600" },
 };
 
 const STATUS_META = {
@@ -40,12 +41,36 @@ const STATUS_META = {
   Resolved: "bg-emerald-100 text-emerald-700 border-emerald-200",
 };
 
-const FILTERS = ["Active", "Acknowledged", "Resolved", "All"];
-
-const formatTime = (iso) =>
-  new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+const FILTER_KEYS = ["Active", "Acknowledged", "Resolved", "All"];
 
 export default function SOSAlertsView({ onCountChange }) {
+  const { t } = useTranslation("sos");
+  const dateLocale = useDateLocale();
+
+  const formatTime = (iso) =>
+    new Date(iso).toLocaleString(dateLocale, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+
+  const FILTER_LABELS = {
+    Active: t("filterActive"),
+    Acknowledged: t("filterAcknowledged"),
+    Resolved: t("filterResolved"),
+    All: t("filterAll"),
+  };
+
+  const TYPE_LABELS = {
+    harassment: t("typeHarassment"),
+    medical: t("typeMedical"),
+    unsafe: t("typeUnsafe"),
+    stalking: t("typeStalking"),
+    other: t("typeOther"),
+  };
+
+  const STATUS_LABELS = {
+    Active: t("statusActive"),
+    Acknowledged: t("statusAcknowledged"),
+    Resolved: t("statusResolved"),
+  };
+
   const [alerts, setAlerts] = useState([]);
   const [filter, setFilter] = useState("Active");
   const [loading, setLoading] = useState(true);
@@ -59,11 +84,11 @@ export default function SOSAlertsView({ onCountChange }) {
       setError("");
       onCountChange?.(data.filter((a) => a.status === "Active").length);
     } catch (err) {
-      setError(err.message || "Could not load SOS alerts");
+      setError(err.message || t("couldNotLoad"));
     } finally {
       setLoading(false);
     }
-  }, [onCountChange]);
+  }, [onCountChange, t]);
 
   useEffect(() => {
     load();
@@ -79,13 +104,15 @@ export default function SOSAlertsView({ onCountChange }) {
     return () => source.close();
   }, [load]);
 
+  const { t: tc } = useTranslation("common");
+
   const updateStatus = async (id, status) => {
     setBusyId(id);
     try {
       await apiFetch(`/sos/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
       await load();
     } catch (err) {
-      setError(err.message || "Could not update alert");
+      setError(err.message || t("couldNotUpdate"));
     } finally {
       setBusyId(null);
     }
@@ -103,12 +130,12 @@ export default function SOSAlertsView({ onCountChange }) {
             {activeCount > 0 && <span className="absolute -right-1 -top-1 h-3 w-3 animate-ping rounded-full bg-rose-500" />}
           </span>
           <div>
-            <h2 className="sd-title sd-title-sm">Emergency SOS Feed</h2>
-            <p className="sd-micro mt-0.5">{activeCount} active · live + auto-refreshing</p>
+            <h2 className="sd-title sd-title-sm">{t("title")}</h2>
+            <p className="sd-micro mt-0.5">{t("subtitle", { count: activeCount })}</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {FILTERS.map((f) => (
+          {FILTER_KEYS.map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -116,7 +143,7 @@ export default function SOSAlertsView({ onCountChange }) {
                 filter === f ? "bg-slate-900 text-white" : "sd-luxe-card text-slate-500 hover:bg-slate-50"
               }`}
             >
-              {f}
+              {FILTER_LABELS[f]}
             </button>
           ))}
         </div>
@@ -126,7 +153,7 @@ export default function SOSAlertsView({ onCountChange }) {
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading alerts…
+          <Loader2 className="h-5 w-5 animate-spin" /> {t("loadingAlerts")}
         </div>
       ) : visible.length === 0 ? (
         <div className="sd-luxe-panel sd-enter rounded-4xl py-16">
@@ -134,18 +161,18 @@ export default function SOSAlertsView({ onCountChange }) {
             <div className="relative mx-auto mb-4 flex h-14 w-14 items-center justify-center">
               <span className="sd-ring" aria-hidden="true" />
               <span className="sd-ring sd-ring--2" aria-hidden="true" />
-              <span className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-400 text-white">
+              <span className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-linear-to-br from-emerald-500 to-teal-400 text-white">
                 <CheckCircle2 className="h-5 w-5" />
               </span>
             </div>
-            <p className="sd-card-title">No {filter !== "All" ? filter.toLowerCase() : ""} alerts</p>
-            <p className="sd-micro mt-1">All clear on this filter.</p>
+            <p className="sd-card-title">{filter === "All" ? t("noAlertsAll") : t("noAlerts", { filter: FILTER_LABELS[filter] })}</p>
+            <p className="sd-micro mt-1">{t("allClear")}</p>
           </div>
         </div>
       ) : (
         <div className="grid gap-4">
           {visible.map((a, i) => {
-            const meta = TYPE_META[a.type] || TYPE_META.other;
+            const meta = TYPE_TONE[a.type] || TYPE_TONE.other;
             const student = a.student || {};
             return (
               <article
@@ -165,13 +192,13 @@ export default function SOSAlertsView({ onCountChange }) {
                     </span>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-base font-bold text-slate-900">{meta.label}</h3>
-                        <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${STATUS_META[a.status]}`}>{a.status}</span>
+                        <h3 className="text-base font-bold text-slate-900">{TYPE_LABELS[a.type] || TYPE_LABELS.other}</h3>
+                        <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${STATUS_META[a.status]}`}>{STATUS_LABELS[a.status] || a.status}</span>
                       </div>
                       <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
                         <Clock3 className="h-3.5 w-3.5" /> {formatTime(a.createdAt)}
                       </p>
-                      {a.note && <p className="mt-2 max-w-xl rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">“{a.note}”</p>}
+                      {a.note && <p className="mt-2 max-w-xl rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">&ldquo;{a.note}&rdquo;</p>}
                     </div>
                   </div>
 
@@ -182,7 +209,7 @@ export default function SOSAlertsView({ onCountChange }) {
                         disabled={busyId === a._id}
                         className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
                       >
-                        Acknowledge
+                        {t("acknowledge")}
                       </button>
                     )}
                     {a.status !== "Resolved" && (
@@ -192,7 +219,7 @@ export default function SOSAlertsView({ onCountChange }) {
                         className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-600 disabled:opacity-50"
                       >
                         {busyId === a._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                        Resolve
+                        {tc("resolve")}
                       </button>
                     )}
                   </div>
@@ -201,11 +228,11 @@ export default function SOSAlertsView({ onCountChange }) {
                 {/* Student profile strip */}
                 <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 text-sm font-bold text-white">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-cyan-400 text-sm font-bold text-white">
                       {getInitials(student.name)}
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-slate-900">{student.name || "Unknown student"}</p>
+                      <p className="text-sm font-bold text-slate-900">{student.name || "—"}</p>
                       <p className="text-xs text-slate-500">
                         {[student.studentId, student.department, student.year].filter(Boolean).join(" · ") || "—"}
                       </p>
@@ -240,7 +267,7 @@ export default function SOSAlertsView({ onCountChange }) {
                     </a>
                   )}
                   {a.handledBy?.name && (
-                    <span className="ml-auto text-xs text-slate-400">Handled by {a.handledBy.name}</span>
+                    <span className="ml-auto text-xs text-slate-400">{t("handledBy")} {a.handledBy.name}</span>
                   )}
                 </div>
               </article>
