@@ -132,6 +132,12 @@ const mapReport = (c) => {
     id: c._id,
     title: c.description || c.category,
     by: c.student?.name || "Unknown Student",
+    // Where the student lives — shown on the oversight card.
+    hostelName: c.student?.hostelName || "",
+    roomNumber: c.roomNumber || c.student?.roomNumber || "",
+    // The department handling this category, and how to reach them.
+    departmentName: c.department?.name || c.category,
+    departmentPhone: c.department?.phoneNumber || "",
     time: c.createdAt
       ? new Date(c.createdAt).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
       : "—",
@@ -535,24 +541,6 @@ export default function WardenDashboardPage() {
       }
       setLeavePending((l) => [req, ...l]);
       setLeaveError(err.message || t("couldNotRejectLeave"));
-    }
-  }
-
-  async function resolveReport(id) {
-    const rep = reports.find((r) => r.id === id);
-    if (!rep) return;
-    const resolved = { ...rep, status: "Resolved", statusTone: statusToneFor("Resolved") };
-    setReports((r) => r.filter((item) => item.id !== id));
-    setResolvedReports((r) => [resolved, ...r]);
-    try {
-      await apiFetch(`/complaint/${id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "Resolved" }),
-      });
-    } catch (err) {
-      setResolvedReports((r) => r.filter((item) => item.id !== id));
-      setReports((r) => [rep, ...r]);
-      setReportsError(err.message || t("couldNotResolve"));
     }
   }
 
@@ -1151,7 +1139,6 @@ export default function WardenDashboardPage() {
             <ComplaintsView
               reports={reports}
               resolvedReports={resolvedReports}
-              resolveReport={resolveReport}
               loading={loadingReports}
               error={reportsError}
               onRefresh={loadReports}
@@ -1240,9 +1227,7 @@ export default function WardenDashboardPage() {
                       <p className="sd-card-title text-[0.9rem]">{rep.title}</p>
                       <p className="sd-micro">{rep.by} • {rep.time}</p>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => resolveReport(rep.id)} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 transition-colors">{tc("resolve")}</button>
-                    </div>
+                    <span className={`text-[10px] font-bold px-3 py-1 rounded-md ${rep.statusTone}`}>{rep.status}</span>
                   </div>
                 ))}
               </div>

@@ -201,6 +201,22 @@ export default function StudentComplaintPage() {
     setErrors({});
   };
 
+  // A student can close their own complaint once it's been dealt with.
+  const [resolvingId, setResolvingId] = useState(null);
+
+  const handleResolve = async (id) => {
+    const prev = complaints;
+    setResolvingId(id);
+    setComplaints((list) => list.map((c) => (c._id === id ? { ...c, status: "Resolved" } : c)));
+    try {
+      await apiFetch(`/complaint/${id}/resolve`, { method: "PATCH" });
+    } catch {
+      setComplaints(prev);
+    } finally {
+      setResolvingId(null);
+    }
+  };
+
   const filteredComplaints = complaints.filter(
     (c) => filter === "all" || c.status === filter
   );
@@ -498,6 +514,25 @@ export default function StudentComplaintPage() {
                           <span className="font-bold text-slate-700">Warden&rsquo;s note: </span>
                           {c.resolutionComments}
                         </p>
+                      </div>
+                    )}
+
+                    {/* Only the student closes their own complaint, and only while it's still open. */}
+                    {c.status !== "Resolved" && c.status !== "Rejected" && (
+                      <div className="mt-4 pt-3 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => handleResolve(c._id)}
+                          disabled={resolvingId === c._id}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          {resolvingId === c._id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <CheckCircle2 size={14} />
+                          )}
+                          Mark as Resolved
+                        </button>
                       </div>
                     )}
                   </div>

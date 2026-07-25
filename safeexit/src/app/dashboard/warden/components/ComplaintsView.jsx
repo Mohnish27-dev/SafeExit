@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Loader2, MessageSquare, RefreshCcw } from "lucide-react";
+import { CheckCircle2, Loader2, MessageSquare, RefreshCcw, Home, DoorClosed, Phone, Wrench } from "lucide-react";
 import { useTranslation } from "@/app/lib/i18n";
 
 export default function ComplaintsView({
   reports = [],
   resolvedReports = [],
-  resolveReport = () => {},
   loading = false,
   error = "",
   onRefresh = () => {},
@@ -82,7 +81,7 @@ export default function ComplaintsView({
           </div>
         ) : (
           list.map((comp, i) => (
-            <div key={comp.id} className="sd-row sd-luxe-rise" style={{ "--accent": tab === "open" ? "#f97316" : "#10b981", animationDelay: `${0.08 + i * 0.04}s` }}>
+            <div key={comp.id} className="sd-row sd-luxe-rise !flex-col !items-stretch gap-3" style={{ "--accent": tab === "open" ? "#f97316" : "#10b981", animationDelay: `${0.08 + i * 0.04}s` }}>
               <span className="sd-row__accent" aria-hidden="true" />
               <div className="flex items-center gap-3 min-w-0">
                 <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${comp.tone}`}>
@@ -92,13 +91,41 @@ export default function ComplaintsView({
                   <p className="sd-card-title text-slate-900 truncate">{comp.title}</p>
                   <p className="sd-micro">{comp.by} • {comp.time}</p>
                 </div>
+                <div className="shrink-0 flex items-center gap-2">
+                  <span className={`text-[10px] font-bold px-3 py-1 rounded-md ${comp.statusTone}`}>{comp.status}</span>
+                  {tab === "resolved" && (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500" aria-hidden="true" />
+                  )}
+                </div>
               </div>
-              <div className="shrink-0 flex items-center gap-2">
-                <span className={`text-[10px] font-bold px-3 py-1 rounded-md ${comp.statusTone}`}>{comp.status}</span>
-                {tab === "open" ? (
-                  <button onClick={() => resolveReport(comp.id)} className="px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">{tc("resolve")}</button>
+
+              {/* Student location + which department is handling it (with a tap-to-call). */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 pt-2.5 text-xs font-semibold text-slate-600">
+                <span className="inline-flex items-center gap-1.5">
+                  <Home className="h-3.5 w-3.5 text-slate-400" />
+                  {comp.hostelName || "—"}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <DoorClosed className="h-3.5 w-3.5 text-slate-400" />
+                  {t("room")} {comp.roomNumber || "—"}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Wrench className="h-3.5 w-3.5 text-slate-400" />
+                  {comp.departmentName}
+                </span>
+                {comp.departmentPhone ? (
+                  <a
+                    href={`tel:${comp.departmentPhone}`}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 transition hover:bg-emerald-100"
+                  >
+                    <Phone className="h-3.5 w-3.5" />
+                    {comp.departmentPhone}
+                  </a>
                 ) : (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500" aria-hidden="true" />
+                  <span className="inline-flex items-center gap-1.5 text-slate-400">
+                    <Phone className="h-3.5 w-3.5" />
+                    {t("noDeptPhone")}
+                  </span>
                 )}
               </div>
             </div>
