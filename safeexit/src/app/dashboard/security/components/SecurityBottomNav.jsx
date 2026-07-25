@@ -31,12 +31,14 @@ export default function SecurityBottomNav({ active }) {
 
   return (
     <>
-      {/* Desktop: inline panel at the end of the page flow */}
-      <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-4xl p-3">
-        {renderItems()}
-      </nav>
+      {/* Desktop: inline panel constrained to page width */}
+      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
+        <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-4 gap-1 rounded-4xl p-3">
+          {renderItems()}
+        </nav>
+      </div>
 
-      {/* Mobile: floating bottom bar, always reachable with one thumb */}
+      {/* Mobile: floating bottom bar fixed to viewport */}
       <nav className="sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid grid-cols-4 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
         {renderItems()}
       </nav>

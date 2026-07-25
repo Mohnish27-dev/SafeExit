@@ -134,7 +134,7 @@ const outingAccent = (outing) => {
 const actions = [
   {
     title: "Generate Ticket",
-    description: "Request a same-day outing and get an instant QR gate pass once it's approved.",
+    description: "Tap to request a café, meal, or market outing and get your gate pass once approved.",
     icon: Ticket,
     href: "/dashboard/student/generate-ticket",
     badge: "linear-gradient(145deg, #0f172a 0%, #4338ca 52%, #06b6d4 100%)",
