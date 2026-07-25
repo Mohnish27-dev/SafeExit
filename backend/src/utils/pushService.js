@@ -94,6 +94,10 @@ const notifyWardens = (scope, payload) =>
 const notifyAdmins = (payload) =>
   notifyUsers({ role: 'Admin' }, payload);
 
+// Notify the department staff account(s) servicing a complaint category.
+const notifyDepartment = (category, payload) =>
+  notifyUsers({ role: 'Department', managedDepartment: category }, payload);
+
 // Wardens + admins together (SOS); each role deep-links to its own dashboard.
 // `scope` accepts the same forms as notifyWardens (hostel object or gender string).
 const notifyWardensAndAdmins = async (scope, payload) => {
@@ -106,5 +110,6 @@ const notifyWardensAndAdmins = async (scope, payload) => {
 module.exports = {
   notifyWardens,
   notifyWardensAndAdmins,
+  notifyDepartment,
   VAPID_PUBLIC_KEY,
 };

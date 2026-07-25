@@ -146,6 +146,7 @@ const authUser = async (req, res) => {
         studentId: user.studentId,
         managedGender: user.managedGender,
         managedHostel: user.managedHostel,
+        managedDepartment: user.managedDepartment,
         webAuthnRegistered: user.webAuthnRegistered,
         token
       });
@@ -176,6 +177,7 @@ const getUserProfile = async (req, res) => {
       gender: user.gender,
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,
+      managedDepartment: user.managedDepartment,
       photo: user.photo,
       webAuthnRegistered: user.webAuthnRegistered
     });
@@ -288,6 +290,7 @@ const refreshSession = async (req, res) => {
       gender: user.gender,
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,
+      managedDepartment: user.managedDepartment,
       webAuthnRegistered: user.webAuthnRegistered,
       token,
     });
