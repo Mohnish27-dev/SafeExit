@@ -100,7 +100,7 @@ export default function MyOutings() {
           returnPunctuality: o.returnPunctuality || null,
           actualOutTime: fmtTime(o.actualOutTime),
           actualInTime: fmtTime(o.actualInTime),
-          wardenSignature: o.wardenSignature || null,
+          caretakerSignature: o.caretakerSignature || null,
         }));
         setOutings(mapped);
       } catch (err) {
@@ -322,15 +322,15 @@ export default function MyOutings() {
                           )}
                         </div>
                       )}
-                      {outing.wardenSignature && (
+                      {outing.caretakerSignature && (
                         <div className="pt-3 mt-1 border-t border-emerald-100">
                           <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-                            <CheckCircle2 size={12} /> Approved &amp; signed by warden
+                            <CheckCircle2 size={12} /> Approved &amp; signed by caretaker
                           </p>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={outing.wardenSignature}
-                            alt="Warden signature"
+                            src={outing.caretakerSignature}
+                            alt="Caretaker signature"
                             className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
                           />
                         </div>
@@ -338,13 +338,13 @@ export default function MyOutings() {
                       {outing.status === "rejected" && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
                           <AlertCircle size={15} className="text-rose-500 shrink-0 mt-0.5" />
-                          <p className="text-xs font-semibold text-rose-600">Request was rejected. Contact your warden for details.</p>
+                          <p className="text-xs font-semibold text-rose-600">Request was rejected. Contact your caretaker for details.</p>
                         </div>
                       )}
                       {outing.status === "pending" && (
                         <div className="mt-3 pt-3 border-t border-amber-100 flex items-start gap-2.5">
                           <Loader2 size={15} className="text-amber-500 shrink-0 mt-0.5 animate-spin" />
-                          <p className="text-xs font-semibold text-amber-705">Awaiting warden approval. You will be notified.</p>
+                          <p className="text-xs font-semibold text-amber-705">Awaiting caretaker approval. You will be notified.</p>
                         </div>
                       )}
                       {outing.status === "expired" && (

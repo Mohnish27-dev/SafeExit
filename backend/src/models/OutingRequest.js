@@ -34,7 +34,7 @@ const outingRequestSchema = new mongoose.Schema({
     enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned', 'Expired', 'Cancelled'],
     default: 'Pending'
   },
-  // True when approved by the system rule, not a warden (approvedBy stays null).
+  // True when approved by the system rule, not a caretaker (approvedBy stays null).
   autoApproved: {
     type: Boolean,
     default: false
@@ -66,14 +66,14 @@ const outingRequestSchema = new mongoose.Schema({
   studentSignature: {
     type: String
   },
-  wardenSignature: {
+  caretakerSignature: {
     type: String
   },
   approvedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  targetWarden: {
+  targetCaretaker: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }

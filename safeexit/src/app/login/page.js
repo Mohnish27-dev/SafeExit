@@ -12,12 +12,12 @@ import { getStoredUser } from "@/app/lib/userProfile";
 const ROLE_PIN_KEYS = {
   security: "safeexit_quick_pin_guard",
   student: "safeexit_quick_pin",
-  warden: "safeexit_quick_pin_warden",
+  caretaker: "safeexit_quick_pin_caretaker",
 };
 
 const ROLE_DASHBOARD = {
   student: "/dashboard/student",
-  warden: "/dashboard/warden",
+  caretaker: "/dashboard/caretaker",
   security: "/dashboard/security",
   admin: "/dashboard/admin",
 };
@@ -46,13 +46,13 @@ const allRoles = [
     iconBg: "bg-violet-100 text-violet-600",
   },
   {
-    id: "warden",
-    title: "Warden",
+    id: "caretaker",
+    title: "Caretaker",
     icon: UserCog,
-    image: "/images/login/warden.png",
+    image: "/images/login/caretaker.png",
     description: "Login to approve requests, manage complaints and monitor",
-    buttonText: "Login as Warden",
-    href: "/login/warden",
+    buttonText: "Login as Caretaker",
+    href: "/login/caretaker",
     color: "from-purple-500 to-purple-700",
     iconBg: "bg-purple-100 text-purple-600",
   },

@@ -62,7 +62,7 @@ const formatTime = (value) =>
     ? new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
     : "—";
 
-// managedGender maps to the hostel the warden oversees.
+// managedGender maps to the hostel the caretaker oversees.
 const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
 
 const mapPending = (o) => ({
@@ -115,7 +115,7 @@ const mapLeavePending = (l) => ({
   returnDate: l.returnDate,
   submittedAt: l.createdAt,
   studentSignature: l.studentSignature || null,
-  wardenSignature: l.wardenSignature || null,
+  caretakerSignature: l.caretakerSignature || null,
   initials: initials(l.student?.name),
 });
 
@@ -179,7 +179,7 @@ const handleMagneticLeave = (e) => {
   e.currentTarget.style.setProperty("--mag-y", "0px");
 };
 
-function WardenStat({ label, value, width, fill, glow }) {
+function CaretakerStat({ label, value, width, fill, glow }) {
   const [ref, animated] = useCountUp(value);
   return (
     <div ref={ref} className="sd-stat px-4 py-4" style={{ "--stat-glow": glow }}>
@@ -199,12 +199,12 @@ function WardenStat({ label, value, width, fill, glow }) {
   );
 }
 
-export default function WardenDashboardPage() {
-  const { t } = useTranslation("warden");
+export default function CaretakerDashboardPage() {
+  const { t } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
   const router = useRouter();
-  const { checked, authorized } = useRequireAuth("warden");
+  const { checked, authorized } = useRequireAuth("caretaker");
 
   const [now, setNow] = useState(null);
   const [user, setUser] = useState(null);
@@ -429,7 +429,7 @@ export default function WardenDashboardPage() {
   }
 
   // Approving mints a signed pass, so it routes through a modal that captures the
-  // warden's drawn signature. { kind: 'outing' | 'leave', id, name } while open.
+  // caretaker's drawn signature. { kind: 'outing' | 'leave', id, name } while open.
   const [approvalTarget, setApprovalTarget] = useState(null);
   const [approvalSignature, setApprovalSignature] = useState(null);
   const [approving, setApproving] = useState(false);
@@ -476,7 +476,7 @@ export default function WardenDashboardPage() {
     try {
       await apiFetch(`/outing/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Approved", wardenSignature: signature }),
+        body: JSON.stringify({ status: "Approved", caretakerSignature: signature }),
       });
     } catch (err) {
       // 409 = request expired: don't roll back, just drop the card.
@@ -513,7 +513,7 @@ export default function WardenDashboardPage() {
     try {
       await apiFetch(`/leave/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Approved", wardenSignature: signature }),
+        body: JSON.stringify({ status: "Approved", caretakerSignature: signature }),
       });
     } catch (err) {
       if (err?.status === 409) {
@@ -549,19 +549,19 @@ export default function WardenDashboardPage() {
     alert('Toggled auto-approval rule (demo)');
   }
 
-  const displayName = (user && (user.name || user.displayName)) || t("chiefWarden");
+  const displayName = (user && (user.name || user.displayName)) || t("chiefCaretaker");
 
   // Unset scope means no students; show the "not configured" banner.
   const managedGender = user?.managedGender;
   const managedHostel = user?.managedHostel;
-  // Prefer the specific hostel name; fall back to the generic label for legacy wardens.
+  // Prefer the specific hostel name; fall back to the generic label for legacy caretakers.
   const hostelLabel = managedHostel || HOSTEL_LABEL[managedGender];
   const isConfigured = Boolean(managedHostel || managedGender);
 
-  // Boys' outings are auto-approved, so a boys' warden only approves leave.
-  const isBoysWarden = managedGender === "Male";
+  // Boys' outings are auto-approved, so a boys' caretaker only approves leave.
+  const isBoysCaretaker = managedGender === "Male";
 
-  const handleLogout = () => logout(router, { role: "warden" });
+  const handleLogout = () => logout(router, { role: "caretaker" });
 
   // Push notification banner state; null until permission API is checked.
   const [pushPermission, setPushPermission] = useState(null);
@@ -722,7 +722,7 @@ export default function WardenDashboardPage() {
                     className: 'wd-attn--sos',
                     onClick: () => setView('overdue'),
                   },
-                  !isBoysWarden && pending.length > 0 && {
+                  !isBoysCaretaker && pending.length > 0 && {
                     key: 'requests',
                     label: t("requests"),
                     count: pending.length,
@@ -798,9 +798,9 @@ export default function WardenDashboardPage() {
                 </div>
                 <div className="min-w-0">
                   <p className="sd-kicker">{t("dailyPulse")}</p>
-                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">{t("greeting")} <span className="sd-name-live">Warden</span>.</h2>
+                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">{t("greeting")} <span className="sd-name-live">Caretaker</span>.</h2>
                   {/* Desktop-only overview text */}
-                  <p className="sd-body mt-2 hidden max-w-md sm:block">{isBoysWarden ? t("overviewTextBoys") : t("overviewText")}</p>
+                  <p className="sd-body mt-2 hidden max-w-md sm:block">{isBoysCaretaker ? t("overviewTextBoys") : t("overviewText")}</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
@@ -893,8 +893,8 @@ export default function WardenDashboardPage() {
                   badge: overdueCount,
                   onClick: () => setView('overdue'),
                 };
-                // Boys' warden has no outing approvals: lead with Leave.
-                return isBoysWarden
+                // Boys' caretaker has no outing approvals: lead with Leave.
+                return isBoysCaretaker
                   ? [leaveAction, safetyAction, overdueAction, logsAction, autoAction]
                   : [manageAction, safetyAction, overdueAction, leaveAction, logsAction, autoAction];
               })().map((a, idx) => (
@@ -935,7 +935,7 @@ export default function WardenDashboardPage() {
             </div>
               </section>
 
-              {isBoysWarden ? (
+              {isBoysCaretaker ? (
               <section className="mt-6">
             <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-5 sm:p-7 shadow-xl">
               <div className="flex items-center justify-between gap-3">
@@ -1044,14 +1044,14 @@ export default function WardenDashboardPage() {
                 <span className="sd-tag">{tc("autoSync")}</span>
               </div>
               <div className="mt-5 space-y-4">
-                <WardenStat
-                  label={isBoysWarden ? t("pendingLeave") : t("pendingRequests")}
-                  value={isBoysWarden ? leavePending.length : pending.length}
+                <CaretakerStat
+                  label={isBoysCaretaker ? t("pendingLeave") : t("pendingRequests")}
+                  value={isBoysCaretaker ? leavePending.length : pending.length}
                   width="48%"
                   fill="linear-gradient(90deg, #6366f1, #38bdf8)"
                   glow="rgba(99,102,241,0.45)"
                 />
-                <WardenStat
+                <CaretakerStat
                   label={t("outNow")}
                   value={21}
                   width="62%"
@@ -1159,9 +1159,9 @@ export default function WardenDashboardPage() {
 
           {view === 'logs' && <MovementLogsView />}
 
-          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysWarden ? 'grid-cols-6' : 'grid-cols-7'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
+          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysCaretaker ? 'grid-cols-6' : 'grid-cols-7'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
             <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span>{tc("home")}</button>
-            {!isBoysWarden && (
+            {!isBoysCaretaker && (
               <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span>{t("requests")}</button>
             )}
             <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
@@ -1301,7 +1301,7 @@ export default function WardenDashboardPage() {
 
             <div className="mt-4">
               <SignaturePad
-                label="Warden signature"
+                label="Caretaker signature"
                 hint="Sign here to approve"
                 onChange={setApprovalSignature}
               />
@@ -1328,9 +1328,9 @@ export default function WardenDashboardPage() {
         </div>
       )}
 
-      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysWarden ? 'grid-cols-6' : 'grid-cols-7'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
+      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-6' : 'grid-cols-7'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
         <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="text-[9px]">{tc("home")}</span></button>
-        {!isBoysWarden && (
+        {!isBoysCaretaker && (
           <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="text-[9px]">{t("requests")}</span></button>
         )}
         <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>

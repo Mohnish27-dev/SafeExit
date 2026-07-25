@@ -8,7 +8,7 @@ const securityPillars = [
   { title: "AES-256 Contact Encryption", desc: "All phone numbers and room details are encrypted at rest. Guards see only a hashed validation token.", icon: <Lock className="h-5 w-5 text-indigo-400" /> },
   { title: "Relay Phone Masking", desc: "Guard calls route through an in-app masked relay (like Uber/Ola), completely hiding real numbers.", icon: <EyeOff className="h-5 w-5 text-violet-400" /> },
   { title: "AI Misuse Alerts", desc: "Every lookup is logged. An AI monitor alerts admins if staff view a profile repeatedly or off-duty.", icon: <Radio className="h-5 w-5 text-rose-400" /> },
-  { title: "Role-Restricted Decryption", desc: "Data decrypts only via temporary multi-auth keys held by the Registrar and Warden during emergencies.", icon: <ShieldCheck className="h-5 w-5 text-emerald-400" /> },
+  { title: "Role-Restricted Decryption", desc: "Data decrypts only via temporary multi-auth keys held by the Registrar and Caretaker during emergencies.", icon: <ShieldCheck className="h-5 w-5 text-emerald-400" /> },
 ];
 
 const CIPHER = "AF3B9E7C2D8140";

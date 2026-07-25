@@ -50,13 +50,13 @@ function ApprovalVisual() {
   return (
     <div className="relative rounded-xl bg-slate-950 border border-emerald-900/60 p-4 overflow-hidden">
       <div className="flex items-center justify-between mb-2.5">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Warden Approved</span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Caretaker Approved</span>
         <span className="text-[10px] font-mono text-slate-500">REQ-4091</span>
       </div>
       <div className="approve-bar h-2 w-full mb-2.5"></div>
       <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium">
         <FileCheck className="h-3.5 w-3.5 text-emerald-400" />
-        Request reviewed · Warden approved · QR pass issued
+        Request reviewed · Caretaker approved · QR pass issued
       </div>
     </div>
   );
@@ -66,7 +66,7 @@ function AuditVisual() {
   const rows = [
     { t: "17:15", a: "Student submitted REQ-4092", c: "text-cyan-300" },
     { t: "16:50", a: "Guard scan — Exit OUT recorded", c: "text-indigo-300" },
-    { t: "16:30", a: "Warden approved outing", c: "text-emerald-300" },
+    { t: "16:30", a: "Caretaker approved outing", c: "text-emerald-300" },
     { t: "16:28", a: "Student submitted REQ-4091", c: "text-slate-300" },
   ];
   return (
@@ -96,7 +96,7 @@ function SosVisual() {
       </div>
       <div className="space-y-1">
         <span className="text-[10px] font-bold uppercase tracking-widest text-rose-400">Live SOS</span>
-        <p className="text-[11px] text-slate-400 font-medium leading-snug">Distress signal broadcasts location to wardens <span className="text-white font-bold">instantly</span>.</p>
+        <p className="text-[11px] text-slate-400 font-medium leading-snug">Distress signal broadcasts location to caretakers <span className="text-white font-bold">instantly</span>.</p>
       </div>
     </div>
   );
@@ -123,7 +123,7 @@ export default function Features() {
             Built Around Student Safety, Not Just Access
           </h3>
           <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 font-medium">
-            SafeExit replaces exposed registers with a privacy-first system that verifies exits, alerts wardens, and protects student data at every step.
+            SafeExit replaces exposed registers with a privacy-first system that verifies exits, alerts caretakers, and protects student data at every step.
           </p>
         </div>
 
@@ -172,7 +172,7 @@ export default function Features() {
               </div>
               <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Immutable Audit Logs</h4>
               <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed font-medium">
-                Every lookup and scan is recorded so wardens see exactly who accessed what.
+                Every lookup and scan is recorded so caretakers see exactly who accessed what.
               </p>
             </div>
             <AuditVisual />
@@ -187,7 +187,7 @@ export default function Features() {
               </div>
               <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Smart Outing Approvals</h4>
               <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed font-medium">
-                Students submit digital outing requests; wardens review and approve them, then a QR exit pass is issued instantly.
+                Students submit digital outing requests; caretakers review and approve them, then a QR exit pass is issued instantly.
               </p>
             </div>
             <ApprovalVisual />
@@ -203,7 +203,7 @@ export default function Features() {
                 </div>
                 <h4 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Live SOS Safety Shield</h4>
                 <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed font-medium">
-                  One-tap distress escalation with GPS location, pushed instantly to wardens and security. Overdue returns are flagged automatically the moment a pass misses its curfew. Anonymous misconduct reports route straight to ICC leadership, protecting anyone who raises a concern.
+                  One-tap distress escalation with GPS location, pushed instantly to caretakers and security. Overdue returns are flagged automatically the moment a pass misses its curfew. Anonymous misconduct reports route straight to ICC leadership, protecting anyone who raises a concern.
                 </p>
               </div>
               <ArrowUpRight className="h-5 w-5 text-slate-300 dark:text-slate-600 shrink-0" />

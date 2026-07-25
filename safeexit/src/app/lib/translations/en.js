@@ -1,6 +1,6 @@
 /**
  * English translations for SafeExit dashboards.
- * Keys are grouped by dashboard area (common, warden, security).
+ * Keys are grouped by dashboard area (common, caretaker, security).
  */
 const en = {
   // ─── Common / Shared ───
@@ -33,23 +33,23 @@ const en = {
     search: "Search",
   },
 
-  // ─── Warden Dashboard ───
-  warden: {
-    hub: "Warden Hub",
-    dashboardTitle: "Warden Dashboard",
+  // ─── Caretaker Dashboard ───
+  caretaker: {
+    hub: "Caretaker Hub",
+    dashboardTitle: "Caretaker Dashboard",
     dashboardSubtitle: "Manage passes, complaints & hostel safety",
     dailyPulse: "Daily Pulse",
     needsAttention: "Needs your attention",
     pendingShort: "pending",
     greeting: "Good day,",
-    greetingName: "Warden",
+    greetingName: "Caretaker",
     overviewText: "Overview of active passes, pending approvals and hotspot alerts. Use quick actions to respond swiftly.",
     overviewTextBoys: "Overview of pending leave approvals, complaints and safety alerts. Boys' outings are auto-logged at the gate — you review leave applications here.",
     pendingLeave: "Pending leave",
     pendingLeaveApprovals: "Pending Leave Approvals",
     leaveApprovalsHint: "Leave requests awaiting your decision",
     reviewInLeave: "Review",
-    leaveOnlyNote: "Boys' outings don't need warden approval — only leave applications do.",
+    leaveOnlyNote: "Boys' outings don't need caretaker approval — only leave applications do.",
     quickActions: "Quick Actions",
     respondFaster: "Respond faster",
     autoRulesOn: "Auto Rules ON",
@@ -99,8 +99,8 @@ const en = {
     outSince: "Out Since",
     notReturned: "Not Returned",
     pageOf: "Page {page} of {total} — {count} total",
-    chiefWarden: "Chief Warden",
-    wardenId: "Warden ID:",
+    chiefCaretaker: "Chief Caretaker",
+    caretakerId: "Caretaker ID:",
     outingRequests: "Outing Requests",
     loadingRequests: "Loading requests…",
     noRequestsYet: "New outing requests will appear here.",
@@ -255,7 +255,7 @@ const en = {
     entryDenied: "Entry Denied",
     exitBlockedExpired: "This pass has expired — its departure time has passed. Student must file a new request.",
     exitBlockedNotYetValid: "This pass is not valid yet — the approved departure time hasn't arrived. Exit denied until then.",
-    exitBlockedNoPass: "No warden-approved outing or leave pass for this student. Exit denied until a new request is approved.",
+    exitBlockedNoPass: "No caretaker-approved outing or leave pass for this student. Exit denied until a new request is approved.",
     entryBlockedInside: "This student is already inside — an entry has already been logged. Log an exit first.",
     couldNotLogScan: "Could not log this scan",
 

@@ -10,7 +10,7 @@ import {
 import confetti from "canvas-confetti";
 
 export default function Simulator() {
-  const [role, setRole] = useState("student"); // student | guard | warden | admin
+  const [role, setRole] = useState("student"); // student | guard | caretaker | admin
   const [scannedStudent, setScannedStudent] = useState(null);
 
   // SOS State
@@ -27,7 +27,7 @@ export default function Simulator() {
       destination: "New Delhi (Hometown)",
       travelTime: "9:30 PM (Late Night)",
       status: "Approved",
-      approvedBy: "Warden (Self)",
+      approvedBy: "Caretaker (Self)",
       timestamp: "Today, 4:30 PM"
     },
     {
@@ -57,7 +57,7 @@ export default function Simulator() {
     {
       time: "17:15:32",
       actor: "Student (Priya Sharma)",
-      action: "Submitted outing request #REQ-4092 to Local Market — pending warden approval.",
+      action: "Submitted outing request #REQ-4092 to Local Market — pending caretaker approval.",
       severity: "info"
     },
     {
@@ -68,7 +68,7 @@ export default function Simulator() {
     },
     {
       time: "16:30:15",
-      actor: "Warden",
+      actor: "Caretaker",
       action: "Approved outing #REQ-4091 for Ananya Verma — QR pass issued.",
       severity: "success"
     },
@@ -121,9 +121,9 @@ export default function Simulator() {
     };
 
     setRequests(prev => [addedReq, ...prev]);
-    addLog("Student (Megha Sen)", `Submitted outing request to ${newRequest.destination} (${requestID}) — pending warden approval.`, "info");
+    addLog("Student (Megha Sen)", `Submitted outing request to ${newRequest.destination} (${requestID}) — pending caretaker approval.`, "info");
 
-    alert(`Outing Request Submitted! Status: Pending — Awaiting warden approval. Once approved, you can generate your QR exit pass.`);
+    alert(`Outing Request Submitted! Status: Pending — Awaiting caretaker approval. Once approved, you can generate your QR exit pass.`);
     setNewRequest(prev => ({
       ...prev,
       destination: "",
@@ -135,8 +135,8 @@ export default function Simulator() {
     const nextSos = !sosActive;
     setSosActive(nextSos);
     if (nextSos) {
-      addLog("Student (Megha Sen)", "SOS alert triggered — warden and security notified immediately.", "danger");
-      alert("🚨 EMERGENCY SOS SENT! High-priority alerts pushed to Warden & Security Control.");
+      addLog("Student (Megha Sen)", "SOS alert triggered — caretaker and security notified immediately.", "danger");
+      alert("🚨 EMERGENCY SOS SENT! High-priority alerts pushed to Caretaker & Security Control.");
     } else {
       addLog("Student (Megha Sen)", "SOS alert deactivated.", "info");
     }
@@ -158,19 +158,19 @@ export default function Simulator() {
     setScannedStudent(null);
   };
 
-  const handleWardenApproval = (reqId, approve) => {
+  const handleCaretakerApproval = (reqId, approve) => {
     setRequests(prev => prev.map(req => {
       if (req.id === reqId) {
         return {
           ...req,
           status: approve ? "Approved" : "Rejected",
-          approvedBy: "Warden (Self)"
+          approvedBy: "Caretaker (Self)"
         };
       }
       return req;
     }));
     const req = requests.find(r => r.id === reqId);
-    addLog("Warden", `${approve ? 'Approved' : 'Rejected'} outing request ${reqId} for ${req.studentName}`, approve ? "success" : "warning");
+    addLog("Caretaker", `${approve ? 'Approved' : 'Rejected'} outing request ${reqId} for ${req.studentName}`, approve ? "success" : "warning");
 
     if (approve) {
       triggerConfetti();
@@ -232,7 +232,7 @@ export default function Simulator() {
               {[
                 { id: "student", label: "Student App", icon: <User className="h-3.5 w-3.5" /> },
                 { id: "guard", label: "Guard Scan", icon: <Search className="h-3.5 w-3.5" /> },
-                { id: "warden", label: "Warden Desk", icon: <Shield className="h-3.5 w-3.5" /> },
+                { id: "caretaker", label: "Caretaker Desk", icon: <Shield className="h-3.5 w-3.5" /> },
                 { id: "admin", label: "Admin Logs", icon: <Users className="h-3.5 w-3.5" /> }
               ].map(btn => (
                 <button
@@ -299,7 +299,6 @@ export default function Simulator() {
                       <input
                         type="text"
                         required
-                        placeholder="e.g., Local Market or Delhi Central Rly Station"
                         value={newRequest.destination}
                         onChange={(e) => setNewRequest(prev => ({ ...prev, destination: e.target.value }))}
                         className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-600 rounded-xl text-sm focus:border-indigo-500 dark:focus:border-indigo-500 outline-none font-medium transition-colors"
@@ -326,7 +325,7 @@ export default function Simulator() {
                         <Smartphone className="h-4 w-4" />
                       </div>
                       <p className="text-[11px] text-indigo-700 dark:text-indigo-300 font-medium leading-relaxed">
-                        After warden approval, go to <span className="font-bold">Generate Ticket</span> in your dashboard to get your digital QR exit pass for gate scanning.
+                        After caretaker approval, go to <span className="font-bold">Generate Ticket</span> in your dashboard to get your digital QR exit pass for gate scanning.
                       </p>
                     </div>
 
@@ -359,7 +358,7 @@ export default function Simulator() {
                     </div>
 
                     <p className={`text-xs mb-4 leading-relaxed font-medium ${sosActive ? "text-rose-800 dark:text-rose-200" : "text-slate-600 dark:text-slate-300"}`}>
-                      If you feel unsafe outside campus or face harassment, trigger SOS. System logs location and dispatches immediate notification alerts to wardens.
+                      If you feel unsafe outside campus or face harassment, trigger SOS. System logs location and dispatches immediate notification alerts to caretakers.
                     </p>
 
                     <button
@@ -506,7 +505,7 @@ export default function Simulator() {
                             ) : (
                               <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-400 text-xs font-bold rounded-lg animate-pulse transition-colors">
                                 <AlertTriangle className="h-3.5 w-3.5" />
-                                Pending Warden Approval
+                                Pending Caretaker Approval
                               </span>
                             )}
                           </div>
@@ -563,8 +562,8 @@ export default function Simulator() {
               </div>
             )}
 
-            {/* 3. WARDEN VIEW */}
-            {role === "warden" && (
+            {/* 3. CARETAKER VIEW */}
+            {role === "caretaker" && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
 
                 {/* Outing Approvals Queue */}
@@ -612,13 +611,13 @@ export default function Simulator() {
                             {req.status === "Pending" ? (
                               <>
                                 <button
-                                  onClick={() => handleWardenApproval(req.id, false)}
+                                  onClick={() => handleCaretakerApproval(req.id, false)}
                                   className="flex-1 sm:flex-none px-3.5 py-2 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold rounded-lg transition-colors cursor-pointer"
                                 >
                                   Reject
                                 </button>
                                 <button
-                                  onClick={() => handleWardenApproval(req.id, true)}
+                                  onClick={() => handleCaretakerApproval(req.id, true)}
                                   className="flex-1 sm:flex-none px-3.5 py-2 bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold rounded-lg transition-all active:scale-95 shadow shadow-indigo-600/10 cursor-pointer"
                                 >
                                   Approve
@@ -640,7 +639,7 @@ export default function Simulator() {
                   </div>
                 </div>
 
-                {/* Warden Alerts & Misconduct reports */}
+                {/* Caretaker Alerts & Misconduct reports */}
                 <div className="lg:col-span-5 space-y-6">
 
                   {/* Active SOS Warning Feed */}
@@ -704,7 +703,7 @@ export default function Simulator() {
                             <button
                               onClick={() => {
                                 setComplaints(prev => prev.map(c => c.id === comp.id ? { ...c, status: "Resolved" } : c));
-                                addLog("Warden", `Marked complaint ${comp.id} as resolved.`, "success");
+                                addLog("Caretaker", `Marked complaint ${comp.id} as resolved.`, "success");
                               }}
                               disabled={comp.status === "Resolved"}
                               className={`text-[10px] font-bold cursor-pointer ${
@@ -737,7 +736,7 @@ export default function Simulator() {
                       Gate Movement &amp; Activity Log
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                      Records every outing request, warden decision, guard gate scan, and SOS event.
+                      Records every outing request, caretaker decision, guard gate scan, and SOS event.
                     </p>
                   </div>
                   <button

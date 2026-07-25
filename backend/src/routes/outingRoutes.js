@@ -18,14 +18,14 @@ router.route('/')
 
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyOutingRequests);
 
-router.get('/pending', protect, authorizeRoles('Warden', 'Guard'), getPendingRequests);
+router.get('/pending', protect, authorizeRoles('Caretaker', 'Guard'), getPendingRequests);
 
-router.get('/overdue', protect, authorizeRoles('Warden', 'Guard'), getOverdueOutings);
+router.get('/overdue', protect, authorizeRoles('Caretaker', 'Guard'), getOverdueOutings);
 
-router.get('/stream', protect, authorizeRoles('Warden', 'Guard'), streamOutingEvents);
+router.get('/stream', protect, authorizeRoles('Caretaker', 'Guard'), streamOutingEvents);
 
 router.patch('/:id/cancel', protect, authorizeRoles('Student'), cancelOutingRequest);
 
-router.patch('/:id/status', protect, authorizeRoles('Warden', 'Guard'), updateRequestStatus);
+router.patch('/:id/status', protect, authorizeRoles('Caretaker', 'Guard'), updateRequestStatus);
 
 module.exports = router;

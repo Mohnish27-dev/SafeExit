@@ -86,7 +86,7 @@ self.addEventListener('push', (event) => {
     renotify: true,
     requireInteraction: data.urgency === 'high',
     data: {
-      url: data.url || '/dashboard/warden',
+      url: data.url || '/dashboard/caretaker',
     },
   };
 
@@ -99,7 +99,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || '/dashboard/warden';
+  const targetUrl = event.notification.data?.url || '/dashboard/caretaker';
 
   event.waitUntil(
     clients

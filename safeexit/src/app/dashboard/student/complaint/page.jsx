@@ -30,7 +30,7 @@ import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
-import WardenSelect from "@/app/components/student/WardenSelect";
+import CaretakerSelect from "@/app/components/student/CaretakerSelect";
 
 const categories = [
   {
@@ -116,7 +116,7 @@ export default function StudentComplaintPage() {
   const [tab, setTab] = useState("new");
   const [category, setCategory] = useState(null);
   const [description, setDescription] = useState("");
-  const [targetWardenId, setTargetWardenId] = useState("");
+  const [targetCaretakerId, setTargetCaretakerId] = useState("");
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
@@ -181,7 +181,7 @@ export default function StudentComplaintPage() {
         body: JSON.stringify({
           category,
           description: description.trim(),
-          ...(targetWardenId ? { targetWardenId } : {}),
+          ...(targetCaretakerId ? { targetCaretakerId } : {}),
         }),
       });
       setCreated(data);
@@ -197,7 +197,7 @@ export default function StudentComplaintPage() {
     setCreated(null);
     setCategory(null);
     setDescription("");
-    setTargetWardenId("");
+    setTargetCaretakerId("");
     setErrors({});
   };
 
@@ -238,7 +238,7 @@ export default function StudentComplaintPage() {
           <p className="sf-eyebrow mb-1">Complaint Filed</p>
           <h2 className="font-sora text-2xl font-bold text-slate-800 mb-1">We&rsquo;ve got it</h2>
           <p className="text-slate-500 text-sm mb-6">
-            Your complaint has been sent to the warden for review.
+            Your complaint has been sent to the caretaker for review.
           </p>
 
           <div className="rounded-2xl p-6 mb-6 text-left space-y-3 bg-linear-to-br from-slate-50 to-orange-50/50 border border-slate-100 shadow-sm">
@@ -273,7 +273,7 @@ export default function StudentComplaintPage() {
           <div className="sf-notice mb-6 text-left">
             <AlertCircle size={14} className="text-sky-600 shrink-0 mt-0.5" />
             <p className="text-xs text-slate-600">
-              Your warden will review this shortly. Track its progress under &ldquo;My Complaints&rdquo;.
+              Your caretaker will review this shortly. Track its progress under &ldquo;My Complaints&rdquo;.
             </p>
           </div>
 
@@ -312,7 +312,7 @@ export default function StudentComplaintPage() {
         variant="complaint"
         icon={MessageSquareWarning}
         title="Raise a complaint"
-        description="Report maintenance and hostel issues directly to your warden, tracked until resolved."
+        description="Report maintenance and hostel issues directly to your caretaker, tracked until resolved."
       />
 
       {hydrated && <StudentProfileBanner display={display} compact />}
@@ -385,7 +385,7 @@ export default function StudentComplaintPage() {
               </p>
             )}
             <div className="mt-4">
-              <WardenSelect value={targetWardenId} onChange={setTargetWardenId} />
+              <CaretakerSelect value={targetCaretakerId} onChange={setTargetCaretakerId} />
             </div>
           </StudentFeaturePanel>
 
@@ -402,7 +402,7 @@ export default function StudentComplaintPage() {
           <div className="sf-notice sf-rise sf-stagger-3">
             <Shield size={15} className="text-orange-600 shrink-0 mt-0.5" />
             <p className="text-xs text-slate-600 leading-relaxed">
-              Complaints are visible only to your warden and hostel admin, and are tracked until resolved.
+              Complaints are visible only to your caretaker and hostel admin, and are tracked until resolved.
             </p>
           </div>
 
@@ -511,7 +511,7 @@ export default function StudentComplaintPage() {
                       <div className="mt-4 pt-3 border-t border-slate-100 flex items-start gap-2.5">
                         <CheckCircle2 size={14} className="text-emerald-500 shrink-0 mt-0.5" />
                         <p className="text-xs text-slate-600">
-                          <span className="font-bold text-slate-700">Warden&rsquo;s note: </span>
+                          <span className="font-bold text-slate-700">Caretaker&rsquo;s note: </span>
                           {c.resolutionComments}
                         </p>
                       </div>

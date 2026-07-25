@@ -19,26 +19,26 @@ import { startRegistration, startAuthentication } from "@simplewebauthn/browser"
 import { setStoredUser } from "@/app/lib/userProfile";
 import { makeQuickLogin } from "@/app/lib/quickLogin";
 
-// Wardens have no email — the normalized Warden ID IS the backend loginId
-const buildWardenLoginId = (wardenId) =>
-  wardenId.trim().toLowerCase().replace(/\s+/g, "");
+// Caretakers have no email — the normalized Caretaker ID IS the backend loginId
+const buildCaretakerLoginId = (caretakerId) =>
+  caretakerId.trim().toLowerCase().replace(/\s+/g, "");
 
 // Own localStorage namespace so it never collides with student/guard logins
 const quick = makeQuickLogin({
-  pinKey: "safeexit_quick_pin_warden",
-  labelKey: "safeexit_quick_label_warden",
-  profileKey: "safeexit_warden_profile",
-  webauthnKey: "safeexit_webauthn_registered_warden",
+  pinKey: "safeexit_quick_pin_caretaker",
+  labelKey: "safeexit_quick_label_caretaker",
+  profileKey: "safeexit_caretaker_profile",
+  webauthnKey: "safeexit_webauthn_registered_caretaker",
 });
 
-export default function WardenLoginPage() {
+export default function CaretakerLoginPage() {
   const router = useRouter();
 
   const [appState, setAppState] = useState("LOADING"); // LOADING, RETURNING_USER, ONBOARDING
   const [onboardingStep, setOnboardingStep] = useState(1); // 1: Details, 2: Quick Login setup
   const [storedProfile, setStoredProfile] = useState(null);
 
-  const [formData, setFormData] = useState({ wardenId: "", pin: "" });
+  const [formData, setFormData] = useState({ caretakerId: "", pin: "" });
 
   const [errorMsg, setErrorMsg] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -57,7 +57,7 @@ export default function WardenLoginPage() {
   const [quickLabel, setQuickLabel] = useState("");
 
   useEffect(() => {
-    const profileRaw = localStorage.getItem("safeexit_warden_profile");
+    const profileRaw = localStorage.getItem("safeexit_caretaker_profile");
     if (profileRaw && quick.hasQuickPin()) {
       try {
         setStoredProfile(JSON.parse(profileRaw));
@@ -78,16 +78,16 @@ export default function WardenLoginPage() {
   };
 
   const validateStep1 = () => {
-    if (!formData.wardenId.trim() || formData.pin.trim().length < 4) {
-      setErrorMsg("Please enter your Warden ID and PIN.");
+    if (!formData.caretakerId.trim() || formData.pin.trim().length < 4) {
+      setErrorMsg("Please enter your Caretaker ID and PIN.");
       return false;
     }
     setErrorMsg("");
     return true;
   };
 
-  // Wardens are admin-provisioned, not self-registered
-  const loginWardenAccount = async (loginId, pin) => {
+  // Caretakers are admin-provisioned, not self-registered
+  const loginCaretakerAccount = async (loginId, pin) => {
     const res = await fetch("/api/backend/auth/login", {
       method: "POST",
       credentials: "include",
@@ -98,23 +98,23 @@ export default function WardenLoginPage() {
     if (!res.ok) {
       throw new Error(
         res.status === 401
-          ? "Account not found or PIN incorrect. Ask your administrator to provision or reset your warden account."
+          ? "Account not found or PIN incorrect. Ask your administrator to provision or reset your caretaker account."
           : data.message || "Login failed."
       );
     }
-    // Defence in depth: keep non-warden accounts off the warden dashboard
-    if (data.role !== "Warden") {
-      throw new Error("This account is not authorized for warden access.");
+    // Defence in depth: keep non-caretaker accounts off the caretaker dashboard
+    if (data.role !== "Caretaker") {
+      throw new Error("This account is not authorized for caretaker access.");
     }
     return data;
   };
 
-  const persistWardenSession = (profile) => {
+  const persistCaretakerSession = (profile) => {
     setStoredUser({
       name: profile.fullName,
-      role: "warden",
-      roleLabel: "Warden",
-      id: profile.wardenId,
+      role: "caretaker",
+      roleLabel: "Caretaker",
+      id: profile.caretakerId,
       // Staff are identified by ID, not email
     });
   };
@@ -144,7 +144,7 @@ export default function WardenLoginPage() {
     if (!verifyRes.ok || !verifyData.verified) {
       throw new Error(verifyData.message || "Passkey verification failed");
     }
-    localStorage.setItem("safeexit_webauthn_registered_warden", "true");
+    localStorage.setItem("safeexit_webauthn_registered_caretaker", "true");
   };
 
   // STEP 1: authenticate with ID + admin PIN, then move to Quick Login setup.
@@ -154,15 +154,15 @@ export default function WardenLoginPage() {
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      const loginId = buildWardenLoginId(formData.wardenId);
-      const data = await loginWardenAccount(loginId, formData.pin);
+      const loginId = buildCaretakerLoginId(formData.caretakerId);
+      const data = await loginCaretakerAccount(loginId, formData.pin);
       sessionStorage.setItem("safeexit_token", data.token);
 
       // Persist the ID for the returning-user path — never the admin PIN in plaintext
-      const profile = { wardenId: formData.wardenId, fullName: data.name };
-      localStorage.setItem("safeexit_warden_profile", JSON.stringify(profile));
+      const profile = { caretakerId: formData.caretakerId, fullName: data.name };
+      localStorage.setItem("safeexit_caretaker_profile", JSON.stringify(profile));
       setStoredProfile(profile);
-      persistWardenSession(profile);
+      persistCaretakerSession(profile);
 
       setPendingSecret(formData.pin);
       setSessionToken(data.token);
@@ -190,16 +190,16 @@ export default function WardenLoginPage() {
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      const profile = JSON.parse(localStorage.getItem("safeexit_warden_profile"));
+      const profile = JSON.parse(localStorage.getItem("safeexit_caretaker_profile"));
       // Lock the admin PIN behind the Quick Login PIN
-      await quick.setQuickPin(quickPin, pendingSecret, profile.wardenId);
+      await quick.setQuickPin(quickPin, pendingSecret, profile.caretakerId);
 
       if (enableBiometric && !quick.hasBiometric()) {
         await enrollBiometric(sessionToken);
       }
 
-      persistWardenSession(profile);
-      router.push("/dashboard/warden");
+      persistCaretakerSession(profile);
+      router.push("/dashboard/caretaker");
     } catch (err) {
       if (err?.name === "NotAllowedError") {
         setErrorMsg("Biometric setup was cancelled. Your PIN is saved — press Enable again to finish, or turn off biometrics.");
@@ -226,12 +226,12 @@ export default function WardenLoginPage() {
       const secret = await quick.verifyQuickPin(loginPin);
       if (!secret) throw new Error("Incorrect PIN. Please try again.");
 
-      const loginId = buildWardenLoginId(storedProfile.wardenId);
-      const data = await loginWardenAccount(loginId, secret);
+      const loginId = buildCaretakerLoginId(storedProfile.caretakerId);
+      const data = await loginCaretakerAccount(loginId, secret);
       sessionStorage.setItem("safeexit_token", data.token);
 
-      persistWardenSession(storedProfile);
-      router.push("/dashboard/warden");
+      persistCaretakerSession(storedProfile);
+      router.push("/dashboard/caretaker");
     } catch (err) {
       setErrorMsg(err?.message || "Login failed.");
     } finally {
@@ -243,7 +243,7 @@ export default function WardenLoginPage() {
     setIsProcessing(true);
     setErrorMsg("");
     try {
-      const loginId = buildWardenLoginId(storedProfile.wardenId);
+      const loginId = buildCaretakerLoginId(storedProfile.caretakerId);
 
       const optionsRes = await fetch("/api/backend/auth/webauthn/login/options", {
         method: "POST",
@@ -270,8 +270,8 @@ export default function WardenLoginPage() {
       }
       sessionStorage.setItem("safeexit_token", data.token);
 
-      persistWardenSession(storedProfile);
-      router.push("/dashboard/warden");
+      persistCaretakerSession(storedProfile);
+      router.push("/dashboard/caretaker");
     } catch (err) {
       if (err?.name === "NotAllowedError") {
         setErrorMsg("Login was cancelled or timed out. Please try again.");
@@ -306,7 +306,7 @@ export default function WardenLoginPage() {
         </Link>
 
         {appState === "RETURNING_USER" ? (
-          // RETURNING WARDEN
+          // RETURNING CARETAKER
           <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
             <div className="relative w-24 h-24 mb-6">
                <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 animate-pulse opacity-20"></div>
@@ -314,7 +314,7 @@ export default function WardenLoginPage() {
                   <User className="w-10 h-10" />
                </div>
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back, Warden 👋</h1>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back, Caretaker 👋</h1>
             <p className="text-sm text-slate-500 mb-6">
               Enter your 4-digit login PIN{quickLabel ? <> for <span className="font-semibold text-slate-700">{quickLabel}</span></> : null}.
             </p>
@@ -393,16 +393,16 @@ export default function WardenLoginPage() {
               {onboardingStep === 1 && (
                 <form onSubmit={submitStep1} className="space-y-4 animate-fade-in-up">
                   <div className="text-center mb-6">
-                    <h2 className="text-2xl font-bold text-slate-900">Warden Login</h2>
-                    <p className="text-sm text-slate-500 mt-1">Sign in with the Warden ID and PIN issued by your administrator.</p>
+                    <h2 className="text-2xl font-bold text-slate-900">Caretaker Login</h2>
+                    <p className="text-sm text-slate-500 mt-1">Sign in with the Caretaker ID and PIN issued by your administrator.</p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Warden ID</label>
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Caretaker ID</label>
                       <div className="relative">
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><ShieldCheck className="w-4 h-4" /></div>
-                        <input type="text" name="wardenId" value={formData.wardenId} onChange={handleInputChange} placeholder="E.g. WDN001" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
+                        <input type="text" name="caretakerId" value={formData.caretakerId} onChange={handleInputChange}  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
                       </div>
                     </div>
 

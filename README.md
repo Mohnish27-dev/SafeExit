@@ -1,13 +1,13 @@
 # SafeExit 🚀
 
-SafeExit is a comprehensive student outing and complaint management system designed for hostels/universities. It streamlines the process of requesting outings, approving them by wardens, and verifying student exits/entries at the security gate using QR codes. It also features a complaint management system for students to report issues.
+SafeExit is a comprehensive student outing and complaint management system designed for hostels/universities. It streamlines the process of requesting outings, approving them by caretakers, and verifying student exits/entries at the security gate using QR codes. It also features a complaint management system for students to report issues.
 
 ## 📋 Features
 
-- **Role-Based Access Control**: Different dashboards for Students, Wardens, and Security Guards.
+- **Role-Based Access Control**: Different dashboards for Students, Caretakers, and Security Guards.
 - **Outing Management**:
   - Students can raise outing requests (destination, purpose, out/in time).
-  - Wardens can approve or reject these requests.
+  - Caretakers can approve or reject these requests.
 - **QR Code Verification**:
   - Approved requests generate a unique QR code for the student.
   - Security guards scan the QR code to mark students as "Out" or "Returned" at the gate.
@@ -50,7 +50,7 @@ SafeExit/
 └── safeexit/                 # Next.js Frontend
     ├── src/
     │   └── app/
-    │       ├── dashboard/    # Role-based dashboards (student, warden, security)
+    │       ├── dashboard/    # Role-based dashboards (student, caretaker, security)
     │       ├── components/   # Reusable UI components
     │       ├── lib/          # Utilities and API helpers
     │       ├── hooks/        # Custom React hooks
@@ -124,8 +124,8 @@ cd SafeExit
    - Submits a new Outing Request.
    - Once approved, views the generated QR code.
    - Shows the QR code to security while leaving and returning.
-2. **Warden**:
-   - Logs in to the Warden Dashboard.
+2. **Caretaker**:
+   - Logs in to the Caretaker Dashboard.
    - Reviews pending outing requests.
    - Approves or Rejects requests with remarks.
 3. **Security (Guard)**:

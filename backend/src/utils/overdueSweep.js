@@ -1,6 +1,6 @@
 const OutingRequest = require('../models/OutingRequest');
 const { isReturnLate } = require('./outingRules');
-const { notifyWardens } = require('./pushService');
+const { notifyCaretakers } = require('./pushService');
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
@@ -8,19 +8,19 @@ const runOverdueSweep = async () => {
   try {
     const outings = await OutingRequest.find({ status: 'Out', overdueNotifiedAt: null })
       .populate('student', 'name hostelName gender')
-      .select('student inTime targetWarden overdueNotifiedAt status');
+      .select('student inTime targetCaretaker overdueNotifiedAt status');
 
     for (const o of outings) {
       if (!o.student || !isReturnLate(o.inTime)) continue;
 
-      const scope = o.targetWarden
-        ? { wardenId: o.targetWarden }
+      const scope = o.targetCaretaker
+        ? { caretakerId: o.targetCaretaker }
         : { hostelName: o.student.hostelName, gender: o.student.gender };
 
-      await notifyWardens(scope, {
+      await notifyCaretakers(scope, {
         title: '⏰ Student Overdue',
         body: `${o.student.name} has missed their outing return time.`,
-        url: '/dashboard/warden?view=overdue',
+        url: '/dashboard/caretaker?view=overdue',
         urgency: 'high',
       });
 

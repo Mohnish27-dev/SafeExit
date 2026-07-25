@@ -7,11 +7,11 @@ const getInitials = (name = "") =>
   name.split(" ").map((part) => part[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "W";
 
 export default function ProfileView({ user, displayName, onLogout }) {
-  const { t } = useTranslation("warden");
+  const { t } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
-  const profileName = displayName || t("chiefWarden");
-  const role = user?.roleLabel || user?.role || t("chiefWarden");
-  const wardenId = user?.wardenId || user?.staffId || user?.employeeId || user?.studentId;
+  const profileName = displayName || t("chiefCaretaker");
+  const role = user?.roleLabel || user?.role || t("chiefCaretaker");
+  const caretakerId = user?.caretakerId || user?.staffId || user?.employeeId || user?.studentId;
 
   return (
     <section className="sd-luxe-panel sd-enter mx-auto mt-6 w-full max-w-3xl rounded-[2.5rem] p-6 shadow-xl" style={{ animationDelay: "0.12s" }}>
@@ -38,10 +38,10 @@ export default function ProfileView({ user, displayName, onLogout }) {
             <div className="flex items-center gap-3"><Phone className="h-4 w-4 text-slate-400" /><span className="sd-card-title text-[0.88rem]">{user.phoneNumber}</span></div>
           </div>
         )}
-        {wardenId && (
+        {caretakerId && (
           <div className="sd-row" style={{ "--accent": "#2dd4bf" }}>
             <span className="sd-row__accent" aria-hidden="true" />
-            <div className="flex items-center gap-3"><Building2 className="h-4 w-4 text-slate-400" /><span className="sd-card-title text-[0.88rem]">{t("wardenId")} {wardenId}</span></div>
+            <div className="flex items-center gap-3"><Building2 className="h-4 w-4 text-slate-400" /><span className="sd-card-title text-[0.88rem]">{t("caretakerId")} {caretakerId}</span></div>
           </div>
         )}
       </div>

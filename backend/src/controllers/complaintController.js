@@ -1,22 +1,22 @@
 const Complaint = require('../models/Complaint');
 const User = require('../models/User');
 const sseHub = require('../utils/sseHub');
-const { notifyWardens, notifyDepartment } = require('../utils/pushService');
-const { scopedStudentFilter, resolveTargetWarden } = require('../utils/wardenScope');
+const { notifyCaretakers, notifyDepartment } = require('../utils/pushService');
+const { scopedStudentFilter, resolveTargetCaretaker } = require('../utils/caretakerScope');
 
 // Categories that route to a maintenance department (i.e. everything except 'Other').
 const DEPARTMENT_CATEGORIES = ['Electrical', 'Plumbing', 'Cleaning', 'Wifi', 'Furniture'];
 
 // POST /api/complaint — private (Student)
 const createComplaint = async (req, res) => {
-  const { category, description, targetWardenId } = req.body;
+  const { category, description, targetCaretakerId } = req.body;
 
   try {
-    // Resolve the routed warden (default = own-hostel warden); enforces the
+    // Resolve the routed caretaker (default = own-hostel caretaker); enforces the
     // same-gender fence server-side before we persist the complaint.
-    let targetWarden;
+    let targetCaretaker;
     try {
-      targetWarden = await resolveTargetWarden(req.user, targetWardenId);
+      targetCaretaker = await resolveTargetCaretaker(req.user, targetCaretakerId);
     } catch (err) {
       return res.status(err.statusCode || 400).json({ message: err.message });
     }
@@ -28,24 +28,24 @@ const createComplaint = async (req, res) => {
       description,
       // Route to the matching maintenance department (unset for 'Other').
       targetCategory: DEPARTMENT_CATEGORIES.includes(category) ? category : undefined,
-      targetWarden: targetWarden ? targetWarden._id : undefined,
+      targetCaretaker: targetCaretaker ? targetCaretaker._id : undefined,
     });
 
-    // No student PII in the broadcast — the SSE hub reaches out-of-hostel wardens too.
+    // No student PII in the broadcast — the SSE hub reaches out-of-hostel caretakers too.
     sseHub.broadcast('complaint:created', {
       id: complaint._id,
       category: complaint.category,
       status: complaint.status,
     });
 
-    const scope = targetWarden
-      ? { wardenId: targetWarden._id }
+    const scope = targetCaretaker
+      ? { caretakerId: targetCaretaker._id }
       : { hostelName: req.user.hostelName, gender: req.user.gender };
-    // Wardens keep an oversight notification.
-    notifyWardens(scope, {
+    // Caretakers keep an oversight notification.
+    notifyCaretakers(scope, {
       title: '📝 New Complaint',
       body: `A ${category || 'general'} complaint has been filed${req.user.roomNumber ? ` (Room ${req.user.roomNumber})` : ''}.`,
-      url: '/dashboard/warden?view=complaints',
+      url: '/dashboard/caretaker?view=complaints',
     });
     // The servicing department is notified directly.
     if (DEPARTMENT_CATEGORIES.includes(category)) {
@@ -72,10 +72,10 @@ const getMyComplaints = async (req, res) => {
   }
 };
 
-// GET /api/complaint — private (Warden/Admin/Department)
+// GET /api/complaint — private (Caretaker/Admin/Department)
 const getComplaints = async (req, res) => {
   try {
-    // Department accounts see only their category; wardens/admins keep hostel scope.
+    // Department accounts see only their category; caretakers/admins keep hostel scope.
     const filter = req.user.role === 'Department'
       ? { category: req.user.managedDepartment }
       : { ...(await scopedStudentFilter(req.user)) };
@@ -85,7 +85,7 @@ const getComplaints = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Warden/Admin oversight cards show which department is on the hook and how to
+    // Caretaker/Admin oversight cards show which department is on the hook and how to
     // reach them. Look up the one account per department once, then map by category.
     if (req.user.role !== 'Department') {
       const departments = await User.find({ role: 'Department' })
@@ -179,7 +179,7 @@ const resolveMyComplaint = async (req, res) => {
   }
 };
 
-// GET /api/complaint/stream — private (Warden/Admin), SSE
+// GET /api/complaint/stream — private (Caretaker/Admin), SSE
 const streamComplaintEvents = (req, res) => {
   req.socket.setTimeout(0);
 

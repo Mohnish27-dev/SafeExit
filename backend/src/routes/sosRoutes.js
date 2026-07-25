@@ -13,12 +13,12 @@ const { sosLimiter } = require('../middlewares/rateLimit');
 
 router.route('/')
   .post(protect, authorizeRoles('Student'), sosLimiter, createSOSAlert)
-  .get(protect, authorizeRoles('Admin', 'Warden', 'Guard'), getSOSAlerts);
+  .get(protect, authorizeRoles('Admin', 'Caretaker', 'Guard'), getSOSAlerts);
 
 router.get('/mine', protect, authorizeRoles('Student'), getMySOSAlerts);
 
-router.get('/stream', protect, authorizeRoles('Admin', 'Warden', 'Guard'), streamSOSEvents);
+router.get('/stream', protect, authorizeRoles('Admin', 'Caretaker', 'Guard'), streamSOSEvents);
 
-router.patch('/:id/status', protect, authorizeRoles('Admin', 'Warden'), updateSOSStatus);
+router.patch('/:id/status', protect, authorizeRoles('Admin', 'Caretaker'), updateSOSStatus);
 
 module.exports = router;

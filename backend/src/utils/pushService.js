@@ -35,7 +35,7 @@ const notifyUsers = async (userFilter, payload) => {
     const message = JSON.stringify({
       title: payload.title || 'SafeExit',
       body: payload.body || '',
-      url: payload.url || '/dashboard/warden',
+      url: payload.url || '/dashboard/caretaker',
       urgency: payload.urgency || 'normal',
     });
 
@@ -68,28 +68,28 @@ const notifyUsers = async (userFilter, payload) => {
   }
 };
 
-// Notify the warden(s) responsible for a student. `scope` may be:
+// Notify the caretaker(s) responsible for a student. `scope` may be:
 //   - a bare gender string (legacy callers) — routes by managedGender.
-//   - falsy — notifies every warden.
-const wardenFilterForScope = (scope) => {
-  if (!scope) return { role: 'Warden' };
-  if (typeof scope === 'string') return { role: 'Warden', managedGender: scope };
+//   - falsy — notifies every caretaker.
+const caretakerFilterForScope = (scope) => {
+  if (!scope) return { role: 'Caretaker' };
+  if (typeof scope === 'string') return { role: 'Caretaker', managedGender: scope };
 
-  const { wardenId, hostelName, gender } = scope;
-  if (wardenId) return { role: 'Warden', _id: wardenId };
+  const { caretakerId, hostelName, gender } = scope;
+  if (caretakerId) return { role: 'Caretaker', _id: caretakerId };
 
   if (hostelName) {
     const or = [{ managedHostel: hostelName }];
-    // Wardens not yet migrated to a specific hostel still catch by gender.
+    // Caretakers not yet migrated to a specific hostel still catch by gender.
     if (gender) or.push({ managedHostel: { $exists: false }, managedGender: gender });
-    return { role: 'Warden', $or: or };
+    return { role: 'Caretaker', $or: or };
   }
-  if (gender) return { role: 'Warden', managedGender: gender };
-  return { role: 'Warden' };
+  if (gender) return { role: 'Caretaker', managedGender: gender };
+  return { role: 'Caretaker' };
 };
 
-const notifyWardens = (scope, payload) =>
-  notifyUsers(wardenFilterForScope(scope), payload);
+const notifyCaretakers = (scope, payload) =>
+  notifyUsers(caretakerFilterForScope(scope), payload);
 
 const notifyAdmins = (payload) =>
   notifyUsers({ role: 'Admin' }, payload);
@@ -98,18 +98,18 @@ const notifyAdmins = (payload) =>
 const notifyDepartment = (category, payload) =>
   notifyUsers({ role: 'Department', managedDepartment: category }, payload);
 
-// Wardens + admins together (SOS); each role deep-links to its own dashboard.
-// `scope` accepts the same forms as notifyWardens (hostel object or gender string).
-const notifyWardensAndAdmins = async (scope, payload) => {
+// Caretakers + admins together (SOS); each role deep-links to its own dashboard.
+// `scope` accepts the same forms as notifyCaretakers (hostel object or gender string).
+const notifyCaretakersAndAdmins = async (scope, payload) => {
   await Promise.allSettled([
-    notifyWardens(scope, payload),
+    notifyCaretakers(scope, payload),
     notifyAdmins({ ...payload, url: payload.adminUrl || payload.url }),
   ]);
 };
 
 module.exports = {
-  notifyWardens,
-  notifyWardensAndAdmins,
+  notifyCaretakers,
+  notifyCaretakersAndAdmins,
   notifyDepartment,
   VAPID_PUBLIC_KEY,
 };

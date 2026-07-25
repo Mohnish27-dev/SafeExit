@@ -8,6 +8,6 @@ router.get('/preview', protect, authorizeRoles('Guard', 'Admin'), previewScan);
 
 router.route('/')
   .post(protect, authorizeRoles('Guard', 'Admin'), createScanLog)
-  .get(protect, authorizeRoles('Admin', 'Warden', 'Guard'), getScanLogs);
+  .get(protect, authorizeRoles('Admin', 'Caretaker', 'Guard'), getScanLogs);
 
 module.exports = router;
