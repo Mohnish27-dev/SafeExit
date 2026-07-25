@@ -80,7 +80,7 @@ export default function SOSAlert() {
 
   const [sendError, setSendError] = useState("");
 
-  // GPS snapshot for the warden; the alert is NEVER blocked on location.
+  // GPS snapshot for the caretaker; the alert is NEVER blocked on location.
   const [locStatus, setLocStatus] = useState("idle");
   const coordsRef = useRef(null); // ref (not state) so handleSend reads the latest fix without re-render races
   const locPromiseRef = useRef(null);
@@ -124,7 +124,7 @@ export default function SOSAlert() {
       ]);
     }
     try {
-      // Persist the alert so wardens / admins see it live in their console.
+      // Persist the alert so caretakers / admins see it live in their console.
       const alert = await apiFetch("/sos", {
         method: "POST",
         body: JSON.stringify({ type: selected, note, coords: coordsRef.current || undefined }),
@@ -161,7 +161,7 @@ export default function SOSAlert() {
               { label: "Type", value: alertTypes.find((a) => a.type === selected)?.label },
               { label: "Time", value: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) },
               { label: "Location", value: locStatus === "captured" ? "Shared" : "Not available", success: locStatus === "captured" },
-              { label: "Notified", value: "Warden + Security", success: true },
+              { label: "Notified", value: "Caretaker + Security", success: true },
             ].map(({ label, value, highlight, success }) => (
               <div key={label} className="flex justify-between">
                 <span className="text-xs text-slate-400 font-semibold">{label}</span>
@@ -178,7 +178,7 @@ export default function SOSAlert() {
 
           <div className="sf-notice sf-notice--warn mb-6 text-left">
             <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800">Stay in a safe location. Warden and security will reach you shortly.</p>
+            <p className="text-xs text-amber-800">Stay in a safe location. Caretaker and security will reach you shortly.</p>
           </div>
 
           {sendError && (
@@ -208,7 +208,7 @@ export default function SOSAlert() {
             </div>
           </div>
           <h2 className="font-sora text-xl font-bold text-slate-800 mb-2">Confirm SOS Alert</h2>
-          <p className="text-sm text-slate-500 mb-4">This will immediately notify your warden and campus security.</p>
+          <p className="text-sm text-slate-500 mb-4">This will immediately notify your caretaker and campus security.</p>
           <div className="rounded-xl p-3 mb-4 border border-rose-200 bg-linear-to-br from-rose-50 to-pink-50">
             <p className="text-sm font-semibold text-rose-700">
               {alertTypes.find((a) => a.type === selected)?.label}
@@ -227,7 +227,7 @@ export default function SOSAlert() {
             {locStatus === "captured" && (
               <>
                 <MapPin size={14} className="text-emerald-600 shrink-0" />
-                <span className="text-emerald-700">Your current location will be shared with the warden</span>
+                <span className="text-emerald-700">Your current location will be shared with the caretaker</span>
               </>
             )}
             {locStatus === "unavailable" && (
@@ -263,7 +263,7 @@ export default function SOSAlert() {
             </div>
           </div>
           <h2 className="font-sora text-xl font-bold text-slate-800 mb-2">Sending Alert...</h2>
-          <p className="text-sm text-slate-500">Notifying warden and security personnel</p>
+          <p className="text-sm text-slate-500">Notifying caretaker and security personnel</p>
           <div className="flex items-center justify-center gap-2 mt-4">
             <Loader2 size={16} className="animate-spin text-rose-500" />
             <span className="text-sm text-slate-500">Please wait</span>
@@ -287,7 +287,7 @@ export default function SOSAlert() {
         variant="emergency"
         icon={Siren}
         title="Emergency SOS System"
-        description="Your alert instantly notifies warden and campus security with your profile details."
+        description="Your alert instantly notifies caretaker and campus security with your profile details."
       />
 
       {hydrated && <StudentProfileBanner display={display} compact />}
@@ -333,7 +333,7 @@ export default function SOSAlert() {
       <div className="sf-notice sf-rise sf-stagger-3 p-4.5 border-sky-200/80 bg-linear-to-br from-sky-50 to-indigo-50/50">
         <Lock size={15} className="text-sky-600 shrink-0 mt-0.5" />
         <p className="text-xs sm:text-sm text-slate-650 leading-relaxed">
-          SOS alerts include your name, room number, timestamp, and your current device location (if you allow it) so the warden can reach you fast. No personal contact details are exposed to guards.
+          SOS alerts include your name, room number, timestamp, and your current device location (if you allow it) so the caretaker can reach you fast. No personal contact details are exposed to guards.
         </p>
       </div>
 

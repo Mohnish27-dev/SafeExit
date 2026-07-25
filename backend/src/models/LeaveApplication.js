@@ -41,14 +41,14 @@ const leaveApplicationSchema = new mongoose.Schema({
   studentSignature: {
     type: String
   },
-  wardenSignature: {
+  caretakerSignature: {
     type: String
   },
   approvedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  targetWarden: {
+  targetCaretaker: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }

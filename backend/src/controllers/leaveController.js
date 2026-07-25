@@ -1,8 +1,8 @@
 const LeaveApplication = require('../models/LeaveApplication');
 const sseHub = require('../utils/sseHub');
-const { notifyWardens } = require('../utils/pushService');
+const { notifyCaretakers } = require('../utils/pushService');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
-const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
+const { scopedStudentFilter, requestInScope, resolveTargetCaretaker } = require('../utils/caretakerScope');
 const { isSignatureDataUrl } = require('../utils/signature');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
@@ -36,7 +36,7 @@ const expireStaleApplications = async (applications) => {
 
 // POST /api/leave — private (Student)
 const createLeaveApplication = async (req, res) => {
-  const { destination, reason, leaveDate, returnDate, acknowledgement, targetWardenId, studentSignature } = req.body;
+  const { destination, reason, leaveDate, returnDate, acknowledgement, targetCaretakerId, studentSignature } = req.body;
 
   try {
     if (!destination || !reason || !leaveDate || !returnDate) {
@@ -106,11 +106,11 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
-    // Resolve the routed warden (default = own-hostel warden); enforces the
+    // Resolve the routed caretaker (default = own-hostel caretaker); enforces the
     // same-gender fence server-side before we persist the application.
-    let targetWarden;
+    let targetCaretaker;
     try {
-      targetWarden = await resolveTargetWarden(req.user, targetWardenId);
+      targetCaretaker = await resolveTargetCaretaker(req.user, targetCaretakerId);
     } catch (err) {
       return res.status(err.statusCode || 400).json({ message: err.message });
     }
@@ -124,7 +124,7 @@ const createLeaveApplication = async (req, res) => {
       acknowledgement: true,
       status: 'Pending',
       studentSignature,
-      targetWarden: targetWarden ? targetWarden._id : undefined,
+      targetCaretaker: targetCaretaker ? targetCaretaker._id : undefined,
     });
 
     sseHub.broadcast('leave:changed', {
@@ -133,13 +133,13 @@ const createLeaveApplication = async (req, res) => {
       status: application.status,
     });
 
-    const scope = targetWarden
-      ? { wardenId: targetWarden._id }
+    const scope = targetCaretaker
+      ? { caretakerId: targetCaretaker._id }
       : { hostelName: req.user.hostelName, gender: req.user.gender };
-    notifyWardens(scope, {
+    notifyCaretakers(scope, {
       title: '📋 New Leave Application',
       body: `${req.user.name} has applied for leave from ${leaveDateObj.toLocaleDateString()} to ${returnDateObj.toLocaleDateString()}.`,
-      url: '/dashboard/warden?view=leave',
+      url: '/dashboard/caretaker?view=leave',
     });
 
     res.status(201).json(application);
@@ -159,7 +159,7 @@ const getMyLeaveApplications = async (req, res) => {
   }
 };
 
-// GET /api/leave/pending — private (Warden)
+// GET /api/leave/pending — private (Caretaker)
 const getPendingLeaveApplications = async (req, res) => {
   try {
     const applications = await LeaveApplication.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
@@ -175,7 +175,7 @@ const getPendingLeaveApplications = async (req, res) => {
   }
 };
 
-// GET /api/leave/history — private (Warden); warden-actioned outcomes only, scoped to their hostel.
+// GET /api/leave/history — private (Caretaker); caretaker-actioned outcomes only, scoped to their hostel.
 const getLeaveHistory = async (req, res) => {
   try {
     const applications = await LeaveApplication.find({
@@ -191,19 +191,19 @@ const getLeaveHistory = async (req, res) => {
   }
 };
 
-// PATCH /api/leave/:id/status — private (Warden)
+// PATCH /api/leave/:id/status — private (Caretaker)
 const updateLeaveStatus = async (req, res) => {
-  const { status, remarks, wardenSignature } = req.body;
+  const { status, remarks, caretakerSignature } = req.body;
 
-  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a warden.
+  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a caretaker.
   if (!['Approved', 'Rejected'].includes(status)) {
     return res.status(400).json({
       message: 'Status can only be set to Approved or Rejected.',
     });
   }
 
-  // Approving mints a pass — the warden must sign it. (Rejection needs no signature.)
-  if (status === 'Approved' && !isSignatureDataUrl(wardenSignature)) {
+  // Approving mints a pass — the caretaker must sign it. (Rejection needs no signature.)
+  if (status === 'Approved' && !isSignatureDataUrl(caretakerSignature)) {
     return res.status(400).json({ message: 'Your signature is required to approve this application.' });
   }
 
@@ -214,7 +214,7 @@ const updateLeaveStatus = async (req, res) => {
       return res.status(404).json({ message: 'Leave application not found' });
     }
 
-    // Server-side scope re-check: the warden must be the routed target (or, for
+    // Server-side scope re-check: the caretaker must be the routed target (or, for
     // legacy untargeted applications, own this student's hostel).
     if (!requestInScope(req.user, application, application.student)) {
       return res.status(403).json({
@@ -263,7 +263,7 @@ const updateLeaveStatus = async (req, res) => {
     }
 
     if (status === 'Approved') {
-      application.wardenSignature = wardenSignature;
+      application.caretakerSignature = caretakerSignature;
     }
 
     const updatedApplication = await application.save();
@@ -315,7 +315,7 @@ const cancelLeaveApplication = async (req, res) => {
   }
 };
 
-// GET /api/leave/stream — private (Warden), SSE
+// GET /api/leave/stream — private (Caretaker), SSE
 const streamLeaveEvents = (req, res) => {
   req.socket.setTimeout(0);
 

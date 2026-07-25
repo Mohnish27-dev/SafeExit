@@ -18,14 +18,14 @@ router.route('/')
 
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyLeaveApplications);
 
-router.get('/pending', protect, authorizeRoles('Warden'), getPendingLeaveApplications);
+router.get('/pending', protect, authorizeRoles('Caretaker'), getPendingLeaveApplications);
 
-router.get('/history', protect, authorizeRoles('Warden'), getLeaveHistory);
+router.get('/history', protect, authorizeRoles('Caretaker'), getLeaveHistory);
 
-router.get('/stream', protect, authorizeRoles('Warden'), streamLeaveEvents);
+router.get('/stream', protect, authorizeRoles('Caretaker'), streamLeaveEvents);
 
 router.patch('/:id/cancel', protect, authorizeRoles('Student'), cancelLeaveApplication);
 
-router.patch('/:id/status', protect, authorizeRoles('Warden'), updateLeaveStatus);
+router.patch('/:id/status', protect, authorizeRoles('Caretaker'), updateLeaveStatus);
 
 module.exports = router;

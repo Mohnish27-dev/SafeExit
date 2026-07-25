@@ -11,7 +11,7 @@ export default function ComplaintsView({
   error = "",
   onRefresh = () => {},
 }) {
-  const { t } = useTranslation("warden");
+  const { t } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const [tab, setTab] = useState("open");
 

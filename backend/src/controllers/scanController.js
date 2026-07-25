@@ -107,7 +107,7 @@ const createScanLog = async (req, res) => {
       if (!linkedPass) {
         return res.status(403).json({
           message:
-            'This student has no warden-approved outing or leave pass. Exit denied until a request is approved.',
+            'This student has no caretaker-approved outing or leave pass. Exit denied until a request is approved.',
           campusStatus: studentDoc.campusStatus,
         });
       }
@@ -292,14 +292,14 @@ const previewScan = async (req, res) => {
   }
 };
 
-// GET /api/scan — private (Admin/Warden/Guard)
+// GET /api/scan — private (Admin/Caretaker/Guard)
 const getScanLogs = async (req, res) => {
   try {
     const filter = {};
     if (req.query.direction) filter.direction = req.query.direction;
 
-    // Wardens only see logs for students in their managed hostel.
-    if (req.user.role === 'Warden') {
+    // Caretakers only see logs for students in their managed hostel.
+    if (req.user.role === 'Caretaker') {
       const hostelFilter = req.user.managedHostel
         ? { hostelName: req.user.managedHostel }
         : req.user.managedGender

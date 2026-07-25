@@ -2034,7 +2034,7 @@ body {
   }
 }
 
-/* Warden micro-animations */
+/* Caretaker micro-animations */
 @keyframes sd-fade-up {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -3697,7 +3697,7 @@ body {
   }
 }
 
-/* Warden needs-attention chips */
+/* Caretaker needs-attention chips */
 .wd-attn {
   min-width: 0;
   border: 1px solid var(--attn-border, rgba(148, 163, 184, 0.4));

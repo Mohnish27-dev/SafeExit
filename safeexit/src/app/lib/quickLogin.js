@@ -1,6 +1,6 @@
 // Quick Login: password encrypted under a PIN-derived key (PBKDF2 → AES-GCM); convenience, not the security boundary.
 
-// Per-role localStorage keys so student/guard/warden never clobber each other
+// Per-role localStorage keys so student/guard/caretaker never clobber each other
 const STUDENT_KEYS = {
   pinKey: "safeexit_quick_pin",           // encrypted secret blob
   labelKey: "safeexit_quick_label",       // display name for the PIN screen

@@ -15,5 +15,5 @@ export const hostelsForGender = (gender) => HOSTELS.filter((h) => h.gender === g
 export const genderForHostel = (name) =>
   HOSTELS.find((h) => h.name === name)?.gender || "";
 
-// Human labels for the two hostel genders, reused across warden/admin UI.
+// Human labels for the two hostel genders, reused across caretaker/admin UI.
 export const HOSTEL_GENDER_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };

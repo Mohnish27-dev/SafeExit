@@ -1,7 +1,7 @@
 const SOSAlert = require('../models/SOSAlert');
 const sseHub = require('../utils/sseHub');
-const { notifyWardensAndAdmins } = require('../utils/pushService');
-const { genderScopedStudentFilter, studentInGenderScope } = require('../utils/wardenScope');
+const { notifyCaretakersAndAdmins } = require('../utils/pushService');
+const { genderScopedStudentFilter, studentInGenderScope } = require('../utils/caretakerScope');
 
 // POST /api/sos — private (Student)
 const createSOSAlert = async (req, res) => {
@@ -32,19 +32,19 @@ const createSOSAlert = async (req, res) => {
 
     const populated = await alert.populate('student', 'name studentId roomNumber hostelName phoneNumber department year');
 
-    // No student PII in the broadcast — the SSE hub reaches out-of-hostel wardens too.
+    // No student PII in the broadcast — the SSE hub reaches out-of-hostel caretakers too.
     sseHub.broadcast('sos:created', {
       id: populated._id,
       type: populated.type,
       status: populated.status,
     });
 
-    // SOS is never fenced to one hostel — broadcast to EVERY warden of the student's
-    // gender scope, plus all admins, so an away hostel warden can never bottleneck it.
-    notifyWardensAndAdmins(req.user.gender, {
+    // SOS is never fenced to one hostel — broadcast to EVERY caretaker of the student's
+    // gender scope, plus all admins, so an away hostel caretaker can never bottleneck it.
+    notifyCaretakersAndAdmins(req.user.gender, {
       title: '🚨 SOS ALERT',
       body: `${req.user.name} has raised an emergency${type ? ` (${type})` : ''}!${safeCoords ? ' 📍 Location attached' : ''}`,
-      url: '/dashboard/warden?view=sos',
+      url: '/dashboard/caretaker?view=sos',
       adminUrl: '/dashboard/admin?view=sos',
       urgency: 'high',
     });
@@ -65,7 +65,7 @@ const getMySOSAlerts = async (req, res) => {
   }
 };
 
-// GET /api/sos — private (Admin/Warden/Guard)
+// GET /api/sos — private (Admin/Caretaker/Guard)
 const getSOSAlerts = async (req, res) => {
   try {
     const filter = {};
@@ -83,7 +83,7 @@ const getSOSAlerts = async (req, res) => {
   }
 };
 
-// PATCH /api/sos/:id/status — private (Admin/Warden)
+// PATCH /api/sos/:id/status — private (Admin/Caretaker)
 const updateSOSStatus = async (req, res) => {
   const { status, resolutionNote } = req.body;
 
@@ -93,7 +93,7 @@ const updateSOSStatus = async (req, res) => {
       return res.status(404).json({ message: 'SOS alert not found' });
     }
 
-    // SOS is gender-scoped, not hostel-fenced: any warden of the student's gender may act.
+    // SOS is gender-scoped, not hostel-fenced: any caretaker of the student's gender may act.
     if (!studentInGenderScope(req.user, alert.student)) {
       return res.status(403).json({
         message: 'This alert is outside your scope.',
@@ -119,7 +119,7 @@ const updateSOSStatus = async (req, res) => {
   }
 };
 
-// GET /api/sos/stream — private (Admin/Warden/Guard), SSE
+// GET /api/sos/stream — private (Admin/Caretaker/Guard), SSE
 const streamSOSEvents = (req, res) => {
   req.socket.setTimeout(0);
 

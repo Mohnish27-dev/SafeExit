@@ -2,7 +2,7 @@
   "id": "/login",
   "name": "SafeExit",
   "short_name": "SafeExit",
-  "description": "Privacy-First Smart Hostel Access — secure digital outing system for students and wardens.",
+  "description": "Privacy-First Smart Hostel Access — secure digital outing system for students and caretakers.",
   "start_url": "/login",
   "display": "standalone",
   "orientation": "portrait",

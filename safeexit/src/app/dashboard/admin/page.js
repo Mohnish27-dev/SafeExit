@@ -129,7 +129,7 @@ export default function AdminDashboardPage() {
     { icon: Clock3, label: "Overdue", value: s.overdue ?? "—", note: "Not returned in time", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: Siren, label: "Active SOS", value: overview?.activeSOS ?? "—", note: "Awaiting response", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: ShieldCheck, label: "Guards On Duty", value: overview ? `${overview.guards.onDuty}/${overview.guards.total}` : "—", note: "Active security staff", tone: "border-indigo-200 bg-indigo-50 text-indigo-700" },
-    { icon: CalendarDays, label: "Pending Outings", value: overview?.pendingOutings ?? "—", note: "Awaiting warden approval", tone: "border-sky-200 bg-sky-50 text-sky-700" },
+    { icon: CalendarDays, label: "Pending Outings", value: overview?.pendingOutings ?? "—", note: "Awaiting caretaker approval", tone: "border-sky-200 bg-sky-50 text-sky-700" },
     // Counts OutingRequest.status === 'Out' (pass-level), distinct from campusStatus 'Outside'.
     { icon: DoorOpen, label: "Gate: Out", value: overview?.studentsOut ?? "—", note: "Outing passes currently 'Out'", tone: "border-cyan-200 bg-cyan-50 text-cyan-700" },
     { icon: MessageSquareWarning, label: "Open Complaints", value: overview?.openComplaints ?? "—", note: "Unresolved reports", tone: "border-orange-200 bg-orange-50 text-orange-700" },

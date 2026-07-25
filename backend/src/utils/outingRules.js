@@ -68,9 +68,9 @@ const isAfterLeaveCurfew = (leaveDate, at = Date.now()) => {
 };
 
 // Same-day outing policy (gender x outing type), minutes since campus midnight:
-//   Female Nearby: no warden; depart 6:00 AM–6:30 PM; return by 8:00 PM.
-//   Female Market: warden required; depart 6:00 AM–2:30 PM; return by 5:30 PM.
-//   Male/Other -> 'General': no warden; depart 6:00 AM–7:59 PM; return by 8:00 PM.
+//   Female Nearby: no caretaker; depart 6:00 AM–6:30 PM; return by 8:00 PM.
+//   Female Market: caretaker required; depart 6:00 AM–2:30 PM; return by 5:30 PM.
+//   Male/Other -> 'General': no caretaker; depart 6:00 AM–7:59 PM; return by 8:00 PM.
 const NIGHT_RETURN_MINUTES = 20 * 60; // 8:00 PM
 const MARKET_RETURN_MINUTES = 17 * 60 + 30; // 5:30 PM
 
@@ -93,7 +93,7 @@ const resolveOutingPolicy = (gender, outingType) => {
   if (gender === 'Female' && type === 'Nearby') {
     return {
       type,
-      requiresWarden: false,
+      requiresCaretaker: false,
       departStartMinutes: GIRL_NEARBY_DEPART_START_MINUTES,
       departEndMinutes: GIRL_NEARBY_DEPART_END_MINUTES,
       returnDeadlineMinutes: NIGHT_RETURN_MINUTES,
@@ -103,7 +103,7 @@ const resolveOutingPolicy = (gender, outingType) => {
   if (gender === 'Female' && type === 'Market') {
     return {
       type,
-      requiresWarden: true,
+      requiresCaretaker: true,
       departStartMinutes: GIRL_MARKET_DEPART_START_MINUTES,
       departEndMinutes: GIRL_MARKET_DEPART_END_MINUTES,
       returnDeadlineMinutes: MARKET_RETURN_MINUTES,
@@ -112,7 +112,7 @@ const resolveOutingPolicy = (gender, outingType) => {
 
   return {
     type: 'General',
-    requiresWarden: false,
+    requiresCaretaker: false,
     departStartMinutes: MALE_DEPART_START_MINUTES,
     departEndMinutes: MALE_DEPART_END_MINUTES,
     returnDeadlineMinutes: NIGHT_RETURN_MINUTES,

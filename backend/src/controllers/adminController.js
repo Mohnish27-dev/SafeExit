@@ -15,7 +15,7 @@ const getOverview = async (req, res) => {
       overdueIds,
       totalGuards,
       guardsOnDuty,
-      totalWardens,
+      totalCaretakers,
       activeSOS,
       pendingOutings,
       studentsOut,
@@ -28,7 +28,7 @@ const getOverview = async (req, res) => {
       getOverdueStudentIds(),
       User.countDocuments({ role: 'Guard' }),
       User.countDocuments({ role: 'Guard', onDuty: true }),
-      User.countDocuments({ role: 'Warden' }),
+      User.countDocuments({ role: 'Caretaker' }),
       SOSAlert.countDocuments({ status: 'Active' }),
       OutingRequest.countDocuments({ status: 'Pending' }),
       OutingRequest.countDocuments({ status: 'Out' }),
@@ -47,7 +47,7 @@ const getOverview = async (req, res) => {
         overdue: studentsOverdue
       },
       guards: { total: totalGuards, onDuty: guardsOnDuty },
-      wardens: { total: totalWardens },
+      caretakers: { total: totalCaretakers },
       activeSOS,
       pendingOutings,
       studentsOut,
@@ -92,9 +92,9 @@ const buildStaffLoginId = (id) => (id || '').trim().toLowerCase().replace(/\s+/g
 // Maintenance departments a Department account can service (mirrors Complaint.category).
 const DEPARTMENT_CATEGORIES = ['Electrical', 'Plumbing', 'Cleaning', 'Wifi', 'Furniture'];
 
-// One warden account per hostel; exceptId lets a warden re-save its own hostel without a duplicate conflict.
-const findWardenForHostel = (managedHostel, exceptId) => {
-  const filter = { role: 'Warden', managedHostel };
+// One caretaker account per hostel; exceptId lets a caretaker re-save its own hostel without a duplicate conflict.
+const findCaretakerForHostel = (managedHostel, exceptId) => {
+  const filter = { role: 'Caretaker', managedHostel };
   if (exceptId) filter._id = { $ne: exceptId };
   return User.findOne(filter);
 };
@@ -118,22 +118,22 @@ const createStaff = async (req, res) => {
       return res.status(400).json({ message: 'A staff ID is required.' });
     }
     // Admins come only from the .env allowlist — this endpoint can't mint one.
-    if (!['Warden', 'Guard', 'Department'].includes(role)) {
-      return res.status(400).json({ message: 'Role must be Warden, Guard, or Department.' });
+    if (!['Caretaker', 'Guard', 'Department'].includes(role)) {
+      return res.status(400).json({ message: 'Role must be Caretaker, Guard, or Department.' });
     }
     if (!pin || String(pin).trim().length < 4) {
       return res.status(400).json({ message: 'An initial PIN of at least 4 characters is required.' });
     }
-    // A warden must be tied to exactly one hostel for request routing and privacy.
-    if (role === 'Warden' && !isValidHostel(managedHostel)) {
-      return res.status(400).json({ message: "Select the warden's hostel." });
+    // A caretaker must be tied to exactly one hostel for request routing and privacy.
+    if (role === 'Caretaker' && !isValidHostel(managedHostel)) {
+      return res.status(400).json({ message: "Select the caretaker's hostel." });
     }
-    if (role === 'Warden') {
+    if (role === 'Caretaker') {
       const hostel = canonicalHostelName(managedHostel);
-      const existing = await findWardenForHostel(hostel);
+      const existing = await findCaretakerForHostel(hostel);
       if (existing) {
         return res.status(409).json({
-          message: `${hostel} hostel already has a warden account (${existing.loginId}). Share that ID with the new warden, or reset its PIN — don't create a second one.`,
+          message: `${hostel} hostel already has a caretaker account (${existing.loginId}). Share that ID with the new caretaker, or reset its PIN — don't create a second one.`,
         });
       }
     }
@@ -163,9 +163,9 @@ const createStaff = async (req, res) => {
       role,
       studentId: staffId.trim(),
       phoneNumber,
-      // Wardens carry a specific hostel; managedGender is derived for the auto-approval rules.
-      managedHostel: role === 'Warden' ? canonicalHostelName(managedHostel) : undefined,
-      managedGender: role === 'Warden' ? genderForHostel(managedHostel) : undefined,
+      // Caretakers carry a specific hostel; managedGender is derived for the auto-approval rules.
+      managedHostel: role === 'Caretaker' ? canonicalHostelName(managedHostel) : undefined,
+      managedGender: role === 'Caretaker' ? genderForHostel(managedHostel) : undefined,
       // Department accounts carry the maintenance category they service.
       managedDepartment: role === 'Department' ? managedDepartment : undefined,
     });
@@ -197,7 +197,7 @@ const resetStaffPin = async (req, res) => {
 
     const user = await User.findById(req.params.id);
     // Staff only — never resets a student's or another admin's credentials.
-    if (!user || !['Warden', 'Guard', 'Department'].includes(user.role)) {
+    if (!user || !['Caretaker', 'Guard', 'Department'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 
@@ -213,12 +213,12 @@ const resetStaffPin = async (req, res) => {
   }
 };
 
-// PATCH /api/admin/staff/:id/scope — private (Admin); an unassigned warden sees no students until scoped.
+// PATCH /api/admin/staff/:id/scope — private (Admin); an unassigned caretaker sees no students until scoped.
 const updateStaffScope = async (req, res) => {
   try {
     const { managedHostel, managedDepartment } = req.body;
     const user = await User.findById(req.params.id);
-    if (!user || !['Warden', 'Department'].includes(user.role)) {
+    if (!user || !['Caretaker', 'Department'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 
@@ -249,11 +249,11 @@ const updateStaffScope = async (req, res) => {
     }
     const hostel = canonicalHostelName(managedHostel);
 
-    // Preserve the one-warden-per-hostel invariant.
-    const clash = await findWardenForHostel(hostel, user._id);
+    // Preserve the one-caretaker-per-hostel invariant.
+    const clash = await findCaretakerForHostel(hostel, user._id);
     if (clash) {
       return res.status(409).json({
-        message: `${hostel} hostel already has a warden account (${clash.loginId}). Remove or reassign that one first.`,
+        message: `${hostel} hostel already has a caretaker account (${clash.loginId}). Remove or reassign that one first.`,
       });
     }
 
@@ -279,7 +279,7 @@ const updateStaffScope = async (req, res) => {
 const removeStaff = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user || !['Warden', 'Guard', 'Department'].includes(user.role)) {
+    if (!user || !['Caretaker', 'Guard', 'Department'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 

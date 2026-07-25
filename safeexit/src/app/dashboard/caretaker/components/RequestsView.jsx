@@ -41,7 +41,7 @@ export default function RequestsView({
   error = "",
   onRefresh = () => {},
 }) {
-  const { t } = useTranslation("warden");
+  const { t } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
 
   return (

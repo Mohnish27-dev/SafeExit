@@ -88,7 +88,7 @@ export default function LeaveApplicationsView({
   error = "",
   onRefresh = () => {},
 }) {
-  const { t } = useTranslation("warden");
+  const { t } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const [rejectingId, setRejectingId] = useState(null);
   const [reason, setReason] = useState("");
@@ -410,7 +410,7 @@ export default function LeaveApplicationsView({
             <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
               <div className="sf-letter-paper">
                 <p>To,</p>
-                <p>The Warden,</p>
+                <p>The Caretaker,</p>
                 <p>{viewing.hostelName || "Hostel Administration"}</p>
                 <p className="mt-4 font-bold">Subject: Application for Leave — {viewing.destination}</p>
                 <p className="mt-4">Respected Sir/Madam,</p>
@@ -461,13 +461,13 @@ export default function LeaveApplicationsView({
                     {t("rejectionReason")} {viewing.remarks}
                   </p>
                 )}
-                {viewing.status === "Approved" && viewing.wardenSignature && (
+                {viewing.status === "Approved" && viewing.caretakerSignature && (
                   <div className="mt-3">
-                    <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Signed by warden</p>
+                    <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Signed by caretaker</p>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={viewing.wardenSignature}
-                      alt="Warden signature"
+                      src={viewing.caretakerSignature}
+                      alt="Caretaker signature"
                       className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
                     />
                   </div>

@@ -10,7 +10,7 @@ import { autoSubscribeIfGranted } from "./pushManager";
 // Logout deliberately keeps each role's device-local Quick Login (PIN/passkey)
 const ROLE_CONFIG = {
   student: { loginPath: "/login/student" },
-  warden: { loginPath: "/login/warden" },
+  caretaker: { loginPath: "/login/caretaker" },
   security: { loginPath: "/login/security" },
   admin: { loginPath: "/login/admin" },
   department: { loginPath: "/login/department" },
@@ -21,7 +21,7 @@ const loginPathFor = (role) => ROLE_CONFIG[role]?.loginPath || "/login";
 // Backend role enum → frontend role slugs
 const BACKEND_ROLE_TO_SLUG = {
   Student: "student",
-  Warden: "warden",
+  Caretaker: "caretaker",
   Guard: "security",
   Admin: "admin",
   Department: "department",
@@ -29,7 +29,7 @@ const BACKEND_ROLE_TO_SLUG = {
 
 const ROLE_LABELS = {
   student: "Student",
-  warden: "Warden",
+  caretaker: "Caretaker",
   security: "Security Guard",
   admin: "Administrator",
   department: "Department",
@@ -133,10 +133,10 @@ export const logout = async (router, { role } = {}) => {
   }
 
   // Deliberately DON'T unsubscribe push on logout: this is a safety app, so a
-  // warden's device must keep receiving SOS/outing alerts even when no one is
+  // caretaker's device must keep receiving SOS/outing alerts even when no one is
   // logged in. Tapping the notification opens the login page. The subscription
-  // is re-associated to whichever warden next logs in on this browser (the
-  // /push/subscribe upsert keys on endpoint). To fully stop alerts, a warden
+  // is re-associated to whichever caretaker next logs in on this browser (the
+  // /push/subscribe upsert keys on endpoint). To fully stop alerts, a caretaker
   // disables notifications in their browser's site settings.
 
   if (typeof window !== "undefined") {

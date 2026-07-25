@@ -31,7 +31,7 @@ import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
-import WardenSelect from "@/app/components/student/WardenSelect";
+import CaretakerSelect from "@/app/components/student/CaretakerSelect";
 import SignaturePad from "@/app/components/SignaturePad";
 
 const MIN_LEAD_HOURS = 24;
@@ -115,7 +115,7 @@ export default function LeaveApplicationPage() {
   const [form, setForm] = useState({ destination: "", reason: "", leaveDate: "", returnDate: "" });
   const [acknowledged, setAcknowledged] = useState(false);
   const [signature, setSignature] = useState(null);
-  const [targetWardenId, setTargetWardenId] = useState("");
+  const [targetCaretakerId, setTargetCaretakerId] = useState("");
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
@@ -226,7 +226,7 @@ export default function LeaveApplicationPage() {
           returnDate: returnDateObj.toISOString(),
           acknowledgement: true,
           studentSignature: signature,
-          ...(targetWardenId ? { targetWardenId } : {}),
+          ...(targetCaretakerId ? { targetCaretakerId } : {}),
         }),
       });
       setCreated(data);
@@ -244,7 +244,7 @@ export default function LeaveApplicationPage() {
     setForm({ destination: "", reason: "", leaveDate: "", returnDate: "" });
     setAcknowledged(false);
     setSignature(null);
-    setTargetWardenId("");
+    setTargetCaretakerId("");
     setErrors({});
     setStep("form");
   };
@@ -283,7 +283,7 @@ export default function LeaveApplicationPage() {
             </div>
           </div>
           <p className="sf-eyebrow mb-1">Application Submitted</p>
-          <h2 className="font-sora text-2xl font-bold text-slate-800 mb-1">Sent to your warden</h2>
+          <h2 className="font-sora text-2xl font-bold text-slate-800 mb-1">Sent to your caretaker</h2>
           <p className="text-slate-500 text-sm mb-6">
             Your leave application has been sent for approval. Please wait for confirmation before making travel plans.
           </p>
@@ -360,7 +360,7 @@ export default function LeaveApplicationPage() {
         <StudentFeaturePanel className="p-0 overflow-hidden animate-scale-in" delay={60}>
           <div className="sf-letter-paper">
             <p>To,</p>
-            <p>The Warden,</p>
+            <p>The Caretaker,</p>
             <p>{display.hostel || "Hostel Administration"}</p>
             <p className="mt-4 font-bold">Subject: Application for Leave — {form.destination}</p>
             <p className="mt-4">Respected Sir/Madam,</p>
@@ -452,7 +452,7 @@ export default function LeaveApplicationPage() {
         variant="leave"
         icon={CalendarDays}
         title="Apply for leave"
-        description="Festivals, home visits, or multi-day trips — send a formal application to your warden at least 24 hours ahead."
+        description="Festivals, home visits, or multi-day trips — send a formal application to your caretaker at least 24 hours ahead."
       />
 
       {hydrated && <StudentProfileBanner display={display} compact />}
@@ -487,7 +487,7 @@ export default function LeaveApplicationPage() {
               ? "You're currently on leave. Once you return and get scanned back in at the gate, you can apply for new leave."
               : activeLeave.status === "Approved"
               ? "Your leave pass is approved. Complete that trip and return to campus — or cancel it — before applying again."
-              : "Your leave application is awaiting your warden's decision. Wait for the outcome, or cancel it, before applying again."}
+              : "Your leave application is awaiting your caretaker's decision. Wait for the outcome, or cancel it, before applying again."}
           </p>
           <div className="rounded-2xl p-4 mb-5 text-left bg-slate-50 border border-slate-100 space-y-1.5">
             <div className="flex justify-between gap-3">
@@ -518,7 +518,7 @@ export default function LeaveApplicationPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Bihta — Home, or Patna for temple visit"
+                  placeholder="e.g. Bihta — Home, or Patna"
                   value={form.destination}
                   onChange={set("destination")}
                   className={`sf-input ${errors.destination ? "sf-input--error" : ""}`}
@@ -541,7 +541,7 @@ export default function LeaveApplicationPage() {
                 {errors.reason && <p className="text-xs text-rose-500 mt-1">{errors.reason}</p>}
               </div>
 
-              <WardenSelect value={targetWardenId} onChange={setTargetWardenId} />
+              <CaretakerSelect value={targetCaretakerId} onChange={setTargetCaretakerId} />
             </div>
           </StudentFeaturePanel>
 
@@ -618,7 +618,7 @@ export default function LeaveApplicationPage() {
           <div className="sf-notice sf-rise sf-stagger-3">
             <ShieldAlert size={15} className="text-violet-600 shrink-0 mt-0.5" />
             <p className="text-xs text-slate-600 leading-relaxed">
-              This application is reviewed by your warden and never auto-approved — submit early so there is
+              This application is reviewed by your caretaker and never auto-approved — submit early so there is
               time to review it.
             </p>
           </div>
@@ -746,20 +746,20 @@ export default function LeaveApplicationPage() {
                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-start gap-2.5">
                               <AlertCircle size={14} className="text-slate-500 shrink-0 mt-0.5" />
                               <p className="text-xs text-slate-600">
-                                <span className="font-bold text-slate-700">Warden&rsquo;s note: </span>
+                                <span className="font-bold text-slate-700">Caretaker&rsquo;s note: </span>
                                 {a.remarks}
                               </p>
                             </div>
                           )}
-                          {a.wardenSignature && (
+                          {a.caretakerSignature && (
                             <div className="mt-3 pt-3 border-t border-emerald-100">
                               <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-                                <CheckCircle2 size={12} /> Approved &amp; signed by warden
+                                <CheckCircle2 size={12} /> Approved &amp; signed by caretaker
                               </p>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={a.wardenSignature}
-                                alt="Warden signature"
+                                src={a.caretakerSignature}
+                                alt="Caretaker signature"
                                 className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
                               />
                             </div>
@@ -767,7 +767,7 @@ export default function LeaveApplicationPage() {
                           {statusKey === "pending" && (
                             <div className="mt-3 pt-3 border-t border-amber-100 flex items-start gap-2.5">
                               <Loader2 size={15} className="text-amber-500 shrink-0 mt-0.5 animate-spin" />
-                              <p className="text-xs font-semibold text-amber-705">Awaiting warden approval. You will be notified.</p>
+                              <p className="text-xs font-semibold text-amber-705">Awaiting caretaker approval. You will be notified.</p>
                             </div>
                           )}
                           {statusKey === "expired" && (

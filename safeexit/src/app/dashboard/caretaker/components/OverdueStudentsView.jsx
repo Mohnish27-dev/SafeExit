@@ -26,7 +26,7 @@ const overdueDuration = (inTime, now) => {
 };
 
 export default function OverdueStudentsView({ onCountChange }) {
-  const { t } = useTranslation("warden");
+  const { t } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
 

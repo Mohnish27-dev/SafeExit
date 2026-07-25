@@ -154,7 +154,7 @@ const actions = [
   },
   {
     title: "SOS Alert",
-    description: "Instantly share your live location and details with warden and security.",
+    description: "Instantly share your live location and details with caretaker and security.",
     icon: Siren,
     href: "/dashboard/student/sos",
     badge: "linear-gradient(145deg, #fb7185 0%, #f43f5e 48%, #e11d48 100%)",
@@ -164,7 +164,7 @@ const actions = [
   },
   {
     title: "Register Complaint",
-    description: "Report a hostel issue and track it until your warden marks it resolved.",
+    description: "Report a hostel issue and track it until your caretaker marks it resolved.",
     icon: MessageSquareWarning,
     href: "/dashboard/student/complaint",
     badge: "linear-gradient(145deg, #b45309 0%, #f97316 55%, #fbbf24 100%)",
@@ -174,7 +174,7 @@ const actions = [
   },
   {
     title: "Leave Application",
-    description: "Send your warden a formal multi-day leave request for festivals or home visits.",
+    description: "Send your caretaker a formal multi-day leave request for festivals or home visits.",
     icon: CalendarDays,
     href: "/dashboard/student/leave-application",
     badge: "linear-gradient(145deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%)",
@@ -918,7 +918,7 @@ export default function StudentDashboardPage() {
               <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-rose-500 animate-bounce" />
               <div className="min-w-0 flex-1">
                 <p className="font-bold">Enable location for SOS</p>
-                <p className="text-sm text-rose-700">Allow location access now so that in an emergency your exact spot reaches the warden instantly</p>
+                <p className="text-sm text-rose-700">Allow location access now so that in an emergency your exact spot reaches the caretaker instantly</p>
               </div>
               <button
                 onClick={handleEnableLocation}

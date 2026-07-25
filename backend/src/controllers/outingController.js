@@ -1,5 +1,5 @@
 const OutingRequest = require('../models/OutingRequest');
-const { notifyWardens } = require('../utils/pushService');
+const { notifyCaretakers } = require('../utils/pushService');
 const {
   isDeparturePassed,
   resolveOutingPolicy,
@@ -9,7 +9,7 @@ const {
   isReturnLate,
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
-const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
+const { scopedStudentFilter, requestInScope, resolveTargetCaretaker } = require('../utils/caretakerScope');
 const { isSignatureDataUrl } = require('../utils/signature');
 
 const clockLabel = (minutes) => {
@@ -41,7 +41,7 @@ const expireStaleRequests = async (requests) => {
 
 // POST /api/outing — private (Student)
 const createOutingRequest = async (req, res) => {
-  const { destination, purpose, outTime, outingType, targetWardenId, studentSignature } = req.body;
+  const { destination, purpose, outTime, outingType, targetCaretakerId, studentSignature } = req.body;
 
   try {
     // The student's drawn signature is required to file a request.
@@ -103,15 +103,15 @@ const createOutingRequest = async (req, res) => {
     // Return time is fixed by college rule (8:00 PM, or 5:30 PM for market), never student-chosen.
     const inTime = computeReturnDeadline(gender, resolvedType, departure);
 
-    // Male general and female nearby outings are auto-approved (no warden step).
-    const autoApproved = !policy.requiresWarden;
+    // Male general and female nearby outings are auto-approved (no caretaker step).
+    const autoApproved = !policy.requiresCaretaker;
 
-    // Only warden-gated outings carry a routed target. Resolve it (default = own-hostel
-    // warden) and enforce the same-gender fence server-side before storing.
-    let targetWarden = null;
+    // Only caretaker-gated outings carry a routed target. Resolve it (default = own-hostel
+    // caretaker) and enforce the same-gender fence server-side before storing.
+    let targetCaretaker = null;
     if (!autoApproved) {
       try {
-        targetWarden = await resolveTargetWarden(req.user, targetWardenId);
+        targetCaretaker = await resolveTargetCaretaker(req.user, targetCaretakerId);
       } catch (err) {
         return res.status(err.statusCode || 400).json({ message: err.message });
       }
@@ -127,7 +127,7 @@ const createOutingRequest = async (req, res) => {
       status: autoApproved ? 'Approved' : 'Pending',
       autoApproved,
       studentSignature,
-      targetWarden: targetWarden ? targetWarden._id : undefined,
+      targetCaretaker: targetCaretaker ? targetCaretaker._id : undefined,
     });
 
     sseHub.broadcast('outing:changed', {
@@ -137,14 +137,14 @@ const createOutingRequest = async (req, res) => {
     });
 
     if (!autoApproved) {
-      // Route to the chosen warden when resolved; else fall back to hostel routing.
-      const scope = targetWarden
-        ? { wardenId: targetWarden._id }
+      // Route to the chosen caretaker when resolved; else fall back to hostel routing.
+      const scope = targetCaretaker
+        ? { caretakerId: targetCaretaker._id }
         : { hostelName: req.user.hostelName, gender };
-      notifyWardens(scope, {
+      notifyCaretakers(scope, {
         title: '🔔 New Outing Request',
         body: `${req.user.name} has requested a ${resolvedType} outing to ${destination}.`,
-        url: '/dashboard/warden?view=requests',
+        url: '/dashboard/caretaker?view=requests',
       });
     }
 
@@ -165,7 +165,7 @@ const getMyOutingRequests = async (req, res) => {
   }
 };
 
-// GET /api/outing/pending — private (Warden/Guard)
+// GET /api/outing/pending — private (Caretaker/Guard)
 const getPendingRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
@@ -195,19 +195,19 @@ const getOverdueOutings = async (req, res) => {
   }
 };
 
-// PATCH /api/outing/:id/status — private (Warden/Guard)
+// PATCH /api/outing/:id/status — private (Caretaker/Guard)
 const updateRequestStatus = async (req, res) => {
-  const { status, remarks, wardenSignature } = req.body;
+  const { status, remarks, caretakerSignature } = req.body;
 
-  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a warden.
+  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a caretaker.
   if (!['Approved', 'Rejected'].includes(status)) {
     return res.status(400).json({
       message: 'Status can only be set to Approved or Rejected.',
     });
   }
 
-  // Approving mints a pass — the warden must sign it. (Rejection needs no signature.)
-  if (status === 'Approved' && !isSignatureDataUrl(wardenSignature)) {
+  // Approving mints a pass — the caretaker must sign it. (Rejection needs no signature.)
+  if (status === 'Approved' && !isSignatureDataUrl(caretakerSignature)) {
     return res.status(400).json({ message: 'Your signature is required to approve this request.' });
   }
 
@@ -215,7 +215,7 @@ const updateRequestStatus = async (req, res) => {
     const request = await OutingRequest.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (request) {
-      // Server-side scope re-check: the warden must be the routed target (or, for
+      // Server-side scope re-check: the caretaker must be the routed target (or, for
       // legacy untargeted requests, own this student's hostel).
       if (!requestInScope(req.user, request, request.student)) {
         return res.status(403).json({
@@ -257,7 +257,7 @@ const updateRequestStatus = async (req, res) => {
       }
 
       if (status === 'Approved') {
-        request.wardenSignature = wardenSignature;
+        request.caretakerSignature = caretakerSignature;
       }
 
       const updatedRequest = await request.save();
@@ -313,7 +313,7 @@ const cancelOutingRequest = async (req, res) => {
   }
 };
 
-// GET /api/outing/stream — private (Warden/Guard), SSE
+// GET /api/outing/stream — private (Caretaker/Guard), SSE
 const streamOutingEvents = (req, res) => {
   req.socket.setTimeout(0);
 

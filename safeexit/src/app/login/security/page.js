@@ -24,7 +24,7 @@ import { makeQuickLogin } from "@/app/lib/quickLogin";
 const buildGuardLoginId = (guardId) =>
   guardId.trim().toLowerCase().replace(/\s+/g, "");
 
-// Own localStorage namespace so it never collides with student/warden logins
+// Own localStorage namespace so it never collides with student/caretaker logins
 const quick = makeQuickLogin({
   pinKey: "safeexit_quick_pin_guard",
   labelKey: "safeexit_quick_label_guard",
@@ -621,7 +621,7 @@ export default function SecurityLoginPage() {
             <div>
               <p className="text-sm font-bold text-slate-800">Facing issues logging in?</p>
               <p className="text-xs text-slate-500 mt-0.5">
-                Contact your administrator or warden for assistance.
+                Contact your administrator or caretaker for assistance.
               </p>
             </div>
           </div>

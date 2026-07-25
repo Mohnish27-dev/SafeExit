@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "@/app/lib/i18n";
 
 export default function AutoApprovedView({ approved = [], compact = true, onViewAll, onBack, onClear, pageSize = 8 }) {
-  const { t } = useTranslation("warden");
+  const { t } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const [page, setPage] = useState(1);
 

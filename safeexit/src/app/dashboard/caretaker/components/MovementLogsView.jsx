@@ -13,7 +13,7 @@ const PUNCT_TONE = {
 };
 
 export default function MovementLogsView() {
-  const { t } = useTranslation("warden");
+  const { t } = useTranslation("caretaker");
   const dateLocale = useDateLocale();
 
   const FILTERS = [

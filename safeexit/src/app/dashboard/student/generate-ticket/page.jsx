@@ -26,7 +26,7 @@ import StudentFeatureShell, {
   StudentFeatureCentered,
 } from "@/app/components/student/StudentFeatureShell";
 import { apiFetch } from "@/app/lib/api";
-import WardenSelect from "@/app/components/student/WardenSelect";
+import CaretakerSelect from "@/app/components/student/CaretakerSelect";
 import SignaturePad from "@/app/components/SignaturePad";
 
 const STEPS = ["form", "review", "success"];
@@ -49,9 +49,9 @@ const nowMinutesInCampusTZ = () => {
 
 // UX-only mirror of backend outingRules policies — keep values in sync. Minutes since midnight.
 const OUTING_POLICIES = {
-  femaleNearby: { departStart: 6 * 60, departEnd: 18 * 60 + 30, returnDeadline: 20 * 60, requiresWarden: false },
-  femaleMarket: { departStart: 6 * 60, departEnd: 14 * 60 + 30, returnDeadline: 17 * 60 + 30, requiresWarden: true },
-  general: { departStart: 6 * 60, departEnd: 20 * 60 - 1, returnDeadline: 20 * 60, requiresWarden: false },
+  femaleNearby: { departStart: 6 * 60, departEnd: 18 * 60 + 30, returnDeadline: 20 * 60, requiresCaretaker: false },
+  femaleMarket: { departStart: 6 * 60, departEnd: 14 * 60 + 30, returnDeadline: 17 * 60 + 30, requiresCaretaker: true },
+  general: { departStart: 6 * 60, departEnd: 20 * 60 - 1, returnDeadline: 20 * 60, requiresCaretaker: false },
 };
 
 // Females: Nearby/Market; everyone else: 'General'. Mirrors backend normalizeOutingType.
@@ -126,7 +126,7 @@ export default function GenerateTicket() {
   });
   const [errors, setErrors] = useState({});
   const [createdOuting, setCreatedOuting] = useState(null);
-  const [targetWardenId, setTargetWardenId] = useState("");
+  const [targetCaretakerId, setTargetCaretakerId] = useState("");
   const [signature, setSignature] = useState(null);
 
   const [activeOuting, setActiveOuting] = useState(null);
@@ -267,8 +267,8 @@ export default function GenerateTicket() {
         outingType: isFemale ? form.outingType : "General",
         outTime: buildTodayISO(form.timeOut),
         studentSignature: signature,
-        // Only warden-gated outings route to a chosen warden; server ignores it otherwise.
-        ...(activePolicy.requiresWarden && targetWardenId ? { targetWardenId } : {}),
+        // Only caretaker-gated outings route to a chosen caretaker; server ignores it otherwise.
+        ...(activePolicy.requiresCaretaker && targetCaretakerId ? { targetCaretakerId } : {}),
       };
 
       const data = await apiFetch("/outing", {
@@ -453,12 +453,12 @@ export default function GenerateTicket() {
             {isAutoApproved ? (
               <>
                 <CheckCircle2 size={14} className="text-emerald-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-slate-600">Your ticket is auto-approved — this outing type doesn&rsquo;t need warden approval. Show your pass at the gate to log your exit.</p>
+                <p className="text-xs text-slate-600">Your ticket is auto-approved — this outing type doesn&rsquo;t need caretaker approval. Show your pass at the gate to log your exit.</p>
               </>
             ) : (
               <>
                 <AlertCircle size={14} className="text-sky-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-slate-600">Local market outings need warden approval. You will be notified once approved.</p>
+                <p className="text-xs text-slate-600">Local market outings need caretaker approval. You will be notified once approved.</p>
               </>
             )}
           </div>
@@ -542,7 +542,7 @@ export default function GenerateTicket() {
 
             {form.note && (
               <div className="pt-4 border-t border-slate-100/80">
-                <span className="sf-section-label block mb-2">Additional Note to Warden</span>
+                <span className="sf-section-label block mb-2">Additional Note to Caretaker</span>
                 <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3.5 border border-slate-100/60 leading-relaxed">{form.note}</p>
               </div>
             )}
@@ -623,7 +623,7 @@ export default function GenerateTicket() {
           variant="ticket"
           icon={Ticket}
           title="Digital outing pass"
-          description="Fill in your trip details — warden approval follows after submit."
+          description="Fill in your trip details — caretaker approval follows after submit."
         />
       </div>
 
@@ -692,7 +692,7 @@ export default function GenerateTicket() {
               <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
               <p className="text-[11px] text-amber-800 leading-relaxed">
                 {form.outingType === "Market"
-                  ? "Local market outings need warden approval. Leave between 6:00 AM and 2:30 PM; you must return by 5:30 PM."
+                  ? "Local market outings need caretaker approval. Leave between 6:00 AM and 2:30 PM; you must return by 5:30 PM."
                   : "Nearby outings are auto-approved. Leave between 6:00 AM and 6:30 PM; you must return by 8:00 PM."}
               </p>
             </div>
@@ -715,8 +715,8 @@ export default function GenerateTicket() {
           {errors.destination && <p className="text-xs text-rose-500 mt-1">{errors.destination}</p>}
         </div>
 
-        {activePolicy.requiresWarden && (
-          <WardenSelect value={targetWardenId} onChange={setTargetWardenId} />
+        {activePolicy.requiresCaretaker && (
+          <CaretakerSelect value={targetCaretakerId} onChange={setTargetCaretakerId} />
         )}
 
       </StudentFeaturePanel>
@@ -751,7 +751,7 @@ export default function GenerateTicket() {
               {clockLabel(activePolicy.returnDeadline)}
             </div>
             <p className="text-[11px] text-slate-400 font-medium mt-1">
-              Warden is alerted if you are not back by this time.
+              Caretaker is alerted if you are not back by this time.
             </p>
           </div>
         </div>
@@ -796,7 +796,7 @@ export default function GenerateTicket() {
           <label className="text-xs font-semibold text-slate-600 block mb-1.5">Additional Note</label>
           <textarea
             rows={2}
-            placeholder="Any special information for the warden..."
+            placeholder="Any special information for the caretaker..."
             value={form.note}
             onChange={set("note")}
             className="sf-input resize-none"

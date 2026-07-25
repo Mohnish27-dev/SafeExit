@@ -27,7 +27,7 @@ const complaintSchema = new mongoose.Schema({
   resolutionComments: {
     type: String
   },
-  targetWarden: {
+  targetCaretaker: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }

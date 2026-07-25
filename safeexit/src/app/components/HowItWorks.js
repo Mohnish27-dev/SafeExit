@@ -21,7 +21,7 @@ const STEPS = [
     num: "02",
     icon: CheckSquare,
     title: "Smart Approval Routing",
-    description: "Wardens review and approve outing requests through their dashboard; students are notified once approved.",
+    description: "Caretakers review and approve outing requests through their dashboard; students are notified once approved.",
     accent: "from-violet-500 to-violet-600",
     tint: "text-violet-600 dark:text-violet-400",
   },
@@ -37,7 +37,7 @@ const STEPS = [
     num: "04",
     icon: ShieldCheck,
     title: "Activity Logging",
-    description: "Every outing request, warden decision, gate scan, and SOS event is logged and available to administrators in real time.",
+    description: "Every outing request, caretaker decision, gate scan, and SOS event is logged and available to administrators in real time.",
     accent: "from-cyan-500 to-cyan-600",
     tint: "text-cyan-600 dark:text-cyan-400",
   },
@@ -82,7 +82,7 @@ function StageApproval() {
       </div>
       <div className="approve-bar h-2 w-full"></div>
       <div className="space-y-2 pt-1">
-        {["Policy check passed", "Warden reviewed & approved", "QR pass issued to student"].map((t, i) => (
+        {["Policy check passed", "Caretaker reviewed & approved", "QR pass issued to student"].map((t, i) => (
           <div key={i} className="flex items-center gap-2 text-xs text-slate-300 font-medium">
             <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300">
               <CheckSquare className="h-2.5 w-2.5" />
@@ -120,7 +120,7 @@ function StageQR() {
 function StageLog() {
   const rows = [
     { t: "21:32:04", a: "QR scanned · Gate 1 · Exit OUT", c: "text-cyan-300" },
-    { t: "21:32:05", a: "Warden decision recorded", c: "text-emerald-300" },
+    { t: "21:32:05", a: "Caretaker decision recorded", c: "text-emerald-300" },
     { t: "21:32:06", a: "Admin log updated", c: "text-emerald-300" },
   ];
   return (
