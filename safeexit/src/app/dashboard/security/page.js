@@ -285,8 +285,8 @@ export default function SecurityDashboardPage() {
               </span>
               <div className="min-w-0">
                 <span className="sd-kicker">{t("liveCommand")}</span>
-                <h1 className="sd-title sd-title-md mt-1">{t("controlTitle")}</h1>
-                <p className="sd-body mt-0.5 text-sm">{t("guardOps")}</p>
+                <h1 className="sd-title sd-title-md mt-0.5 leading-tight">{t("controlTitle")}</h1>
+                <p className="sd-micro mt-1">{t("guardOps")}</p>
               </div>
             </div>
 
@@ -335,7 +335,7 @@ export default function SecurityDashboardPage() {
                 </div>
                 <div className="min-w-0">
                   <span className="sd-kicker">{t("shiftPulse")}</span>
-                  <h2 className="sd-title sd-reveal sd-stagger-2 mt-0.5 text-base sm:text-lg">
+                  <h2 className="sd-title sd-title-sm sd-reveal sd-stagger-2 mt-0.5">
                     {t(timeVisual.greetingKey)}, <span className="sd-name-live">{greetingName}</span>.
                   </h2>
                 </div>
@@ -354,8 +354,8 @@ export default function SecurityDashboardPage() {
             </div>
           </section>
 
-          <section className="order-3 lg:order-0 mt-4 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-start">
-            <div className="sd-luxe-panel sd-enter min-w-0 rounded-4xl p-4 sm:p-6" style={{ animationDelay: "0.2s" }}>
+          <section className="order-3 lg:order-0 mt-4 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-stretch">
+            <div className="sd-luxe-panel sd-enter min-w-0 rounded-4xl p-4 sm:p-6 flex flex-col" style={{ animationDelay: "0.2s" }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="sd-kicker">{t("quickScan")}</span>
@@ -366,11 +366,11 @@ export default function SecurityDashboardPage() {
                   {t("realtime")}
                 </span>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-4 grid grid-cols-2 gap-4 flex-1">
                 <div
                   onPointerMove={handleTilePointerMove}
                   onPointerLeave={handleTilePointerLeave}
-                  className="sd-tile sd-luxe-rise"
+                  className="sd-tile sd-luxe-rise h-full"
                   style={{
                     animationDelay: "0.24s",
                     "--tint": "linear-gradient(160deg, rgba(14,165,233,0.13) 0%, rgba(99,102,241,0.09) 100%)",
@@ -378,22 +378,22 @@ export default function SecurityDashboardPage() {
                     "--tile-border": "rgba(56,189,248,0.5)",
                   }}
                 >
-                  <div onClick={() => { setScanMode('exit'); setIsScanning(true); }} className="sd-tile__inner flex flex-col items-center p-4 text-center cursor-pointer">
+                  <div onClick={() => { setScanMode('exit'); setIsScanning(true); }} className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center cursor-pointer">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
-                      className="sd-lift-lg flex h-14 w-14 items-center justify-center rounded-full text-white"
+                      className="sd-lift-lg flex h-16 w-16 items-center justify-center rounded-full text-white"
                       style={{
                         background: "linear-gradient(145deg, #0369a1 0%, #38bdf8 55%, #6366f1 100%)",
                         boxShadow: "0 12px 24px -10px rgba(14,165,233,0.55)",
                       }}
                     >
-                      <LogOut className="h-7 w-7" />
+                      <LogOut className="h-8 w-8" />
                     </span>
                     <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanExit")}</h3>
-                    <p className="sd-lift-md sd-body mt-1 text-xs leading-snug">{t("scanExitDesc")}</p>
+                    <p className="sd-lift-md sd-body mt-1.5 text-xs leading-snug">{t("scanExitDesc")}</p>
                     <button
                       onClick={() => { setScanMode('exit'); setIsScanning(true); }}
-                      className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
+                      className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
                       style={{ background: "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)" }}
                       onPointerMove={(e) => {
                         const el = e.currentTarget;
@@ -415,7 +415,7 @@ export default function SecurityDashboardPage() {
                 <div
                   onPointerMove={handleTilePointerMove}
                   onPointerLeave={handleTilePointerLeave}
-                  className="sd-tile sd-luxe-rise"
+                  className="sd-tile sd-luxe-rise h-full"
                   style={{
                     animationDelay: "0.3s",
                     "--tint": "linear-gradient(160deg, rgba(16,185,129,0.13) 0%, rgba(45,212,191,0.09) 100%)",
@@ -423,22 +423,22 @@ export default function SecurityDashboardPage() {
                     "--tile-border": "rgba(45,212,191,0.5)",
                   }}
                 >
-                  <div onClick={() => { setScanMode('entry'); setIsScanning(true); }} className="sd-tile__inner flex flex-col items-center p-4 text-center cursor-pointer">
+                  <div onClick={() => { setScanMode('entry'); setIsScanning(true); }} className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center cursor-pointer">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
-                      className="sd-lift-lg flex h-14 w-14 items-center justify-center rounded-full text-white"
+                      className="sd-lift-lg flex h-16 w-16 items-center justify-center rounded-full text-white"
                       style={{
                         background: "linear-gradient(145deg, #047857 0%, #10b981 55%, #2dd4bf 100%)",
                         boxShadow: "0 12px 24px -10px rgba(16,185,129,0.55)",
                       }}
                     >
-                      <LogIn className="h-7 w-7" />
+                      <LogIn className="h-8 w-8" />
                     </span>
                     <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanEntry")}</h3>
-                    <p className="sd-lift-md sd-body mt-1 text-xs leading-snug">{t("scanEntryDesc")}</p>
+                    <p className="sd-lift-md sd-body mt-1.5 text-xs leading-snug">{t("scanEntryDesc")}</p>
                     <button
                       onClick={() => { setScanMode('entry'); setIsScanning(true); }}
-                      className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
+                      className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
                       style={{ background: "linear-gradient(135deg, #10b981 0%, #0d9488 100%)" }}
                       onPointerMove={(e) => {
                         const el = e.currentTarget;
@@ -460,97 +460,134 @@ export default function SecurityDashboardPage() {
             </div>
 
             <aside className="sd-luxe-panel sd-luxe-rise mt-0 min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.34s" }}>
-              <span className="sd-kicker">{t("shiftSignal")}</span>
-              <h3 className="sd-title sd-title-sm mt-2">{t("zoneReadiness")}</h3>
-              <p className="sd-body mt-2 text-[0.9rem]">{t("zoneReadinessDesc")}</p>
-              <div className="mt-5 space-y-3">
-                {[
-                  { label: t("mainGate"), status: tc("online"), online: true },
-                  { label: t("hostelBlockA"), status: tc("online"), online: true },
-                  { label: t("hostelBlockB"), status: tc("offline"), online: false },
-                ].map((item) => (
-                  <div key={item.label} className="sd-row" style={{ "--accent": item.online ? "#10b981" : "#f43f5e" }}>
-                    <span className="sd-row__accent" aria-hidden="true" />
-                    <span className="sd-card-title text-[0.85rem]">{item.label}</span>
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                        item.online ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                      }`}
-                    >
-                      {item.online && <span className="sd-tag-dot" aria-hidden="true" />}
-                      {item.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </aside>
-          </section>
-
-          <section className="order-5 lg:order-0 mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-            <div className="sd-luxe-panel sd-enter min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.38s" }}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <span className="sd-kicker">{t("shiftPulse")}</span>
-                  <h2 className="sd-title sd-title-sm mt-1">{t("studentsStatus")}</h2>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="sd-kicker">{t("shiftSignal")}</span>
+                  <h3 className="sd-title sd-title-sm mt-2">{t("studentsStatus")}</h3>
+                  <p className="sd-micro mt-1.5">{t("gatesSynced")}</p>
                 </div>
                 <Link href="/dashboard/security/students" className="sd-tag shrink-0 whitespace-nowrap">
                   {tc("viewAll")}
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
-              <div className="mt-5 space-y-3">
-                {statusCards.map((card) => (
-                  <GuardStatCard key={card.key} card={card} value={counts[card.key]} total={totalTracked} />
-                ))}
-              </div>
-            </div>
 
+              <div className="mt-5 space-y-3">
+                {[
+                  {
+                    label: t("insideCampus"),
+                    note: t("insideCampusNote"),
+                    count: counts.inside,
+                    chip: "linear-gradient(145deg,#047857 0%,#10b981 100%)",
+                    fill: "linear-gradient(90deg,#10b981,#2dd4bf)",
+                    glow: "rgba(16,185,129,0.45)",
+                    Icon: UserCheck,
+                  },
+                  {
+                    label: t("outsideCampus"),
+                    note: t("outsideCampusNote"),
+                    count: counts.outside,
+                    chip: "linear-gradient(145deg,#b45309 0%,#f59e0b 100%)",
+                    fill: "linear-gradient(90deg,#f59e0b,#fbbf24)",
+                    glow: "rgba(245,158,11,0.45)",
+                    Icon: UserRound,
+                  },
+                  {
+                    label: t("overdue"),
+                    note: t("overdueNote"),
+                    count: counts.overdue,
+                    chip: "linear-gradient(145deg,#be123c 0%,#f43f5e 100%)",
+                    fill: "linear-gradient(90deg,#f43f5e,#fb7185)",
+                    glow: "rgba(244,63,94,0.45)",
+                    Icon: Clock3,
+                  },
+                ].map((item) => {
+                  const barW = totalTracked > 0 ? Math.min(100, Math.max(4, (item.count / totalTracked) * 100)) : 4;
+                  return (
+                    <div key={item.label} className="sd-stat px-4 py-3.5" style={{ "--stat-glow": item.glow }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          <span
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-md"
+                            style={{ background: item.chip, boxShadow: `0 10px 20px -10px ${item.glow}` }}
+                          >
+                            <item.Icon className="h-[1.1rem] w-[1.1rem]" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="sd-card-title leading-snug" style={{ fontSize: "0.88rem" }}>{item.label}</p>
+                            <p className="sd-micro mt-0.5" style={{ fontSize: "0.74rem" }}>{item.note}</p>
+                          </div>
+                        </div>
+                        <p
+                          className="grd-mono shrink-0 text-2xl font-bold tracking-tight text-transparent bg-clip-text"
+                          style={{ backgroundImage: item.fill }}
+                        >
+                          {item.count}
+                        </p>
+                      </div>
+                      <div className="sd-bar mt-3">
+                        <div className="sd-bar__fill" style={{ width: `${barW}%`, background: item.fill, boxShadow: `0 0 10px ${item.glow}` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50/70 px-4 py-2.5 border border-slate-100">
+                <span className="sd-micro text-xs">Total tracked</span>
+                <span className="sd-card-title text-sm grd-mono">{totalTracked}</span>
+              </div>
+            </aside>
+          </section>
+
+          <section className="order-5 lg:order-0 mt-6">
             <div className="sd-luxe-panel sd-enter min-w-0 rounded-[2.5rem] p-5 sm:p-6" style={{ animationDelay: "0.44s" }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="sd-kicker">{t("realtime")}</span>
                   <h2 className="sd-title sd-title-sm mt-1">{t("recentScans")}</h2>
+                  <p className="sd-micro mt-0.5">{t("gateLog")}</p>
                 </div>
                 <Link href="/dashboard/security/history" className="sd-tag shrink-0 whitespace-nowrap">
                   {tc("viewAll")}
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
                 {recentScans.length === 0 && (
-                  <div className="sd-empty">
+                  <div className="sd-empty sm:col-span-2">
                     <span className="relative mx-auto flex h-12 w-12 items-center justify-center">
                       <span className="sd-ring" aria-hidden="true" />
                       <span className="sd-ring sd-ring--2" aria-hidden="true" />
                       <ScanLine className="h-5 w-5 text-slate-400" />
                     </span>
-                    <p className="mt-3 text-sm text-slate-400">{t("noScansYet")}</p>
+                    <p className="mt-3 sd-micro">{t("noScansYet")}</p>
                   </div>
                 )}
                 {recentScans.map((scan) => (
                   <div key={scan.id} className="sd-row flex-wrap" style={{ "--accent": scan.type === "in" ? "#10b981" : "#38bdf8" }}>
                     <span className="sd-row__accent" aria-hidden="true" />
-                    <div className="flex min-w-0 flex-1 items-center gap-3.5">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
                       <span
                         className="sd-profile-avatar shrink-0"
-                        style={{ height: "2.5rem", width: "2.5rem", fontSize: "0.78rem" }}
+                        style={{ height: "2.25rem", width: "2.25rem", fontSize: "0.72rem" }}
                       >
                         {scan.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
                       </span>
                       <div className="min-w-0">
-                        <p className="sd-card-title truncate text-[0.88rem]">{scan.name}</p>
-                        <p className="sd-micro truncate text-[0.72rem]">{scan.meta}</p>
+                        <p className="sd-card-title truncate" style={{ fontSize: "0.9rem" }}>{scan.name}</p>
+                        <p className="sd-micro truncate mt-0.5">{scan.meta}</p>
                       </div>
                     </div>
-                    <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
                       <span
-                        className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide sm:px-3 ${
+                        className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.7rem] font-bold uppercase tracking-wide ${
                           scan.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
                         }`}
                       >
                         {scan.tag}
                       </span>
-                      <span className="sd-micro grd-mono whitespace-nowrap text-[0.72rem]">{scan.time}</span>
+                      <span className="sd-micro grd-mono whitespace-nowrap">{scan.time}</span>
                     </div>
                   </div>
                 ))}
@@ -591,7 +628,8 @@ export default function SecurityDashboardPage() {
 
         </div>
       </div>
-    <SecurityBottomNav active="Home" />
+
+      <SecurityBottomNav active="Home" />
 
       {isScanning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
@@ -829,16 +867,16 @@ function GuardStatCard({ card, value, total }) {
   return (
     <div ref={ref} className="sd-stat px-4 py-4" style={{ "--stat-glow": palette.glow }}>
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <span
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-md"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-md"
             style={{ background: palette.chip, boxShadow: `0 10px 20px -10px ${palette.glow}` }}
           >
-            <Icon className="h-[1.05rem] w-[1.05rem]" />
+            <Icon className="h-[1.1rem] w-[1.1rem]" />
           </span>
           <div className="min-w-0">
-            <p className="sd-micro text-[0.8rem]">{card.label}</p>
-            <p className="text-[0.7rem] font-medium text-slate-400">{card.note}</p>
+            <p className="sd-card-title" style={{ fontSize: "0.88rem" }}>{card.label}</p>
+            <p className="sd-micro mt-0.5" style={{ fontSize: "0.75rem" }}>{card.note}</p>
           </div>
         </div>
         <p
@@ -848,7 +886,7 @@ function GuardStatCard({ card, value, total }) {
           {display}
         </p>
       </div>
-      <div className="sd-bar mt-3.5">
+      <div className="sd-bar mt-4">
         <div
           className="sd-bar__fill"
           style={{ width: `${width}%`, background: palette.fill, boxShadow: `0 0 12px ${palette.glow}` }}
