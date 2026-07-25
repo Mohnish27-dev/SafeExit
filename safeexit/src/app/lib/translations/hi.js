@@ -144,6 +144,51 @@ const hi = {
     rejectedTab: "रिजेक्ट",
     noHistoryYet: "यहाँ अभी कोई एप्लीकेशन नहीं है।",
     rejectionReason: "कारण:",
+    room: "कमरा",
+    noDeptPhone: "विभाग का नंबर नहीं",
+  },
+
+  // ─── Department Dashboard ───
+  department: {
+    desk: "विभाग डेस्क",
+    complaints: "शिकायतें",
+    complaintsFor: "{department} शिकायतें",
+    pendingComplaints: "लंबित शिकायतें",
+    loadingComplaints: "शिकायतें लोड हो रही हैं…",
+    allClear: "सब ठीक है",
+    noPending: "अभी कोई लंबित शिकायत नहीं है।",
+    couldNotLoad: "शिकायतें लोड नहीं हो पाईं।",
+    couldNotUpdate: "शिकायत अपडेट नहीं हो पाई।",
+    acknowledge: "स्वीकार करें",
+    markInProgress: "काम शुरू किया",
+    unknownStudent: "अज्ञात छात्र",
+    room: "कमरा",
+    noDepartment: "अभी कोई विभाग नहीं सौंपा गया",
+    noDepartmentHint:
+      "जब तक एडमिन आपके अकाउंट को किसी विभाग से नहीं जोड़ता, आपको कोई शिकायत नहीं दिखेगी। कृपया एडमिन से संपर्क करें।",
+    enablePush: "पुश नोटिफिकेशन चालू करें",
+    enablePushHint:
+      "आपके विभाग की नई शिकायत आते ही तुरंत अलर्ट पाएं — ऐप बंद होने पर भी।",
+    enable: "चालू करें",
+    enabling: "चालू हो रहा है…",
+    notificationsBlocked: "नोटिफिकेशन ब्लॉक हैं",
+    notificationsBlockedHint:
+      "नई शिकायतों के अलर्ट पाने के लिए ब्राउज़र सेटिंग्स में इस साइट के लिए नोटिफिकेशन की अनुमति दें।",
+    dismiss: "बंद करें",
+    departmentFallback: "विभाग",
+    // Category names
+    Electrical: "बिजली",
+    Plumbing: "प्लंबिंग",
+    Cleaning: "साफ़-सफ़ाई",
+    Wifi: "वाई-फाई",
+    Furniture: "फर्नीचर",
+    Other: "अन्य",
+    // Status labels
+    Open: "खुली",
+    Acknowledged: "स्वीकृत",
+    "In Progress": "काम चल रहा है",
+    Resolved: "हल हुई",
+    Rejected: "रिजेक्ट",
   },
 
   // ─── Security Dashboard ───

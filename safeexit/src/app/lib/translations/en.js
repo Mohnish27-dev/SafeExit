@@ -144,6 +144,51 @@ const en = {
     rejectedTab: "Rejected",
     noHistoryYet: "No applications here yet.",
     rejectionReason: "Reason:",
+    room: "Room",
+    noDeptPhone: "No dept. phone",
+  },
+
+  // ─── Department Dashboard ───
+  department: {
+    desk: "Department Desk",
+    complaints: "Complaints",
+    complaintsFor: "{department} Complaints",
+    pendingComplaints: "Pending complaints",
+    loadingComplaints: "Loading complaints…",
+    allClear: "All clear",
+    noPending: "No pending complaints right now.",
+    couldNotLoad: "Could not load complaints.",
+    couldNotUpdate: "Could not update the complaint.",
+    acknowledge: "Acknowledge",
+    markInProgress: "Mark In Progress",
+    unknownStudent: "Unknown student",
+    room: "Room",
+    noDepartment: "No department assigned yet",
+    noDepartmentHint:
+      "Until an admin assigns your account to a department, you won't see any complaints. Please contact the admin.",
+    enablePush: "Enable push notifications",
+    enablePushHint:
+      "Get instant alerts when a new complaint is filed for your department — even when this app is closed.",
+    enable: "Enable",
+    enabling: "Enabling…",
+    notificationsBlocked: "Notifications blocked",
+    notificationsBlockedHint:
+      "To enable alerts for new complaints, allow notifications for this site in your browser settings.",
+    dismiss: "Dismiss",
+    departmentFallback: "Department",
+    // Category names
+    Electrical: "Electrical",
+    Plumbing: "Plumbing",
+    Cleaning: "Cleaning",
+    Wifi: "Wifi",
+    Furniture: "Furniture",
+    Other: "Other",
+    // Status labels
+    Open: "Open",
+    Acknowledged: "Acknowledged",
+    "In Progress": "In Progress",
+    Resolved: "Resolved",
+    Rejected: "Rejected",
   },
 
   // ─── Security Dashboard ───

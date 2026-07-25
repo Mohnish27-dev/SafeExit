@@ -13,6 +13,7 @@ const ROLE_CONFIG = {
   warden: { loginPath: "/login/warden" },
   security: { loginPath: "/login/security" },
   admin: { loginPath: "/login/admin" },
+  department: { loginPath: "/login/department" },
 };
 
 const loginPathFor = (role) => ROLE_CONFIG[role]?.loginPath || "/login";
@@ -23,6 +24,7 @@ const BACKEND_ROLE_TO_SLUG = {
   Warden: "warden",
   Guard: "security",
   Admin: "admin",
+  Department: "department",
 };
 
 const ROLE_LABELS = {
@@ -30,6 +32,7 @@ const ROLE_LABELS = {
   warden: "Warden",
   security: "Security Guard",
   admin: "Administrator",
+  department: "Department",
 };
 
 // Silent session restore via the httpOnly `jwt` cookie; returns role slug or null.
@@ -62,6 +65,7 @@ const tryRestoreSession = async () => {
         : {}),
       ...(data.managedGender ? { managedGender: data.managedGender } : {}),
       ...(data.managedHostel ? { managedHostel: data.managedHostel } : {}),
+      ...(data.managedDepartment ? { managedDepartment: data.managedDepartment } : {}),
     });
 
     // Re-sync the push subscription under the fresh token. Best-effort.

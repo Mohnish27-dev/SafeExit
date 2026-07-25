@@ -1,7 +1,11 @@
 const Complaint = require('../models/Complaint');
+const User = require('../models/User');
 const sseHub = require('../utils/sseHub');
-const { notifyWardens } = require('../utils/pushService');
-const { scopedStudentFilter, requestInScope, resolveTargetWarden } = require('../utils/wardenScope');
+const { notifyWardens, notifyDepartment } = require('../utils/pushService');
+const { scopedStudentFilter, resolveTargetWarden } = require('../utils/wardenScope');
+
+// Categories that route to a maintenance department (i.e. everything except 'Other').
+const DEPARTMENT_CATEGORIES = ['Electrical', 'Plumbing', 'Cleaning', 'Wifi', 'Furniture'];
 
 // POST /api/complaint — private (Student)
 const createComplaint = async (req, res) => {
@@ -22,6 +26,8 @@ const createComplaint = async (req, res) => {
       roomNumber: req.user.roomNumber,
       category,
       description,
+      // Route to the matching maintenance department (unset for 'Other').
+      targetCategory: DEPARTMENT_CATEGORIES.includes(category) ? category : undefined,
       targetWarden: targetWarden ? targetWarden._id : undefined,
     });
 
@@ -35,11 +41,20 @@ const createComplaint = async (req, res) => {
     const scope = targetWarden
       ? { wardenId: targetWarden._id }
       : { hostelName: req.user.hostelName, gender: req.user.gender };
+    // Wardens keep an oversight notification.
     notifyWardens(scope, {
       title: '📝 New Complaint',
       body: `A ${category || 'general'} complaint has been filed${req.user.roomNumber ? ` (Room ${req.user.roomNumber})` : ''}.`,
       url: '/dashboard/warden?view=complaints',
     });
+    // The servicing department is notified directly.
+    if (DEPARTMENT_CATEGORIES.includes(category)) {
+      notifyDepartment(category, {
+        title: `📝 New ${category} Complaint`,
+        body: `A ${category} complaint has been filed${req.user.roomNumber ? ` (Room ${req.user.roomNumber})` : ''}.`,
+        url: '/dashboard/department?view=complaints',
+      });
+    }
 
     res.status(201).json(complaint);
   } catch (error) {
@@ -57,48 +72,108 @@ const getMyComplaints = async (req, res) => {
   }
 };
 
-// GET /api/complaint — private (Warden/Admin)
+// GET /api/complaint — private (Warden/Admin/Department)
 const getComplaints = async (req, res) => {
   try {
-    const complaints = await Complaint.find({ ...(await scopedStudentFilter(req.user)) })
-      .populate('student', 'name studentId roomNumber')
-      .sort({ createdAt: -1 });
+    // Department accounts see only their category; wardens/admins keep hostel scope.
+    const filter = req.user.role === 'Department'
+      ? { category: req.user.managedDepartment }
+      : { ...(await scopedStudentFilter(req.user)) };
+
+    const complaints = await Complaint.find(filter)
+      .populate('student', 'name studentId roomNumber hostelName')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Warden/Admin oversight cards show which department is on the hook and how to
+    // reach them. Look up the one account per department once, then map by category.
+    if (req.user.role !== 'Department') {
+      const departments = await User.find({ role: 'Department' })
+        .select('managedDepartment name phoneNumber')
+        .lean();
+      const byCategory = {};
+      for (const d of departments) {
+        if (d.managedDepartment) byCategory[d.managedDepartment] = d;
+      }
+      for (const c of complaints) {
+        const dept = byCategory[c.category];
+        c.department = dept
+          ? { name: dept.name, phoneNumber: dept.phoneNumber || null }
+          : null;
+      }
+    }
+
     res.json(complaints);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// PATCH /api/complaint/:id/status — private (Warden/Admin)
+// PATCH /api/complaint/:id/status — private (Department/Admin)
 const updateComplaintStatus = async (req, res) => {
   const { status, resolutionComments } = req.body;
 
   try {
     const complaint = await Complaint.findById(req.params.id).populate('student', 'gender hostelName');
 
-    if (complaint) {
-      // The warden must be the routed target (or, for legacy untargeted complaints,
-      // own this student's hostel).
-      if (!requestInScope(req.user, complaint, complaint.student)) {
+    if (!complaint) {
+      return res.status(404).json({ message: 'Complaint not found' });
+    }
+
+    if (req.user.role === 'Department') {
+      // A department may only touch complaints of its own category…
+      if (complaint.category !== req.user.managedDepartment) {
+        return res.status(403).json({ message: 'This complaint is not routed to your department.' });
+      }
+      // …and may only progress it, never resolve or reject it.
+      if (!['Acknowledged', 'In Progress'].includes(status)) {
         return res.status(403).json({
-          message: 'This complaint is not routed to you.',
+          message: 'Departments can only mark a complaint Acknowledged or In Progress.',
         });
       }
-
-      complaint.status = status;
-      if (resolutionComments) complaint.resolutionComments = resolutionComments;
-
-      const updatedComplaint = await complaint.save();
-
-      sseHub.broadcast('complaint:updated', {
-        id: updatedComplaint._id,
-        status: updatedComplaint.status,
-      });
-
-      res.json(updatedComplaint);
-    } else {
-      res.status(404).json({ message: 'Complaint not found' });
     }
+
+    complaint.status = status;
+    if (resolutionComments) complaint.resolutionComments = resolutionComments;
+
+    const updatedComplaint = await complaint.save();
+
+    sseHub.broadcast('complaint:updated', {
+      id: updatedComplaint._id,
+      status: updatedComplaint.status,
+    });
+
+    res.json(updatedComplaint);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// PATCH /api/complaint/:id/resolve — private (Student); the student closes their own complaint.
+const resolveMyComplaint = async (req, res) => {
+  try {
+    const complaint = await Complaint.findById(req.params.id);
+
+    if (!complaint) {
+      return res.status(404).json({ message: 'Complaint not found' });
+    }
+    // Owner-only: a student can only resolve a complaint they filed.
+    if (String(complaint.student) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'This is not your complaint.' });
+    }
+    if (complaint.status === 'Resolved') {
+      return res.status(409).json({ message: 'This complaint is already resolved.' });
+    }
+
+    complaint.status = 'Resolved';
+    const updatedComplaint = await complaint.save();
+
+    sseHub.broadcast('complaint:updated', {
+      id: updatedComplaint._id,
+      status: updatedComplaint.status,
+    });
+
+    res.json(updatedComplaint);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -132,5 +207,6 @@ module.exports = {
   getMyComplaints,
   getComplaints,
   updateComplaintStatus,
+  resolveMyComplaint,
   streamComplaintEvents
 };
