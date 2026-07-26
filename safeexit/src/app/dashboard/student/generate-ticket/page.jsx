@@ -140,7 +140,7 @@ export default function GenerateTicket() {
         const data = await apiFetch("/outing/myrequests");
         if (cancelled) return;
         const active = Array.isArray(data)
-          ? data.find((o) => ["Pending", "Approved", "Out"].includes(o.status))
+          ? data.find((o) => ["Pending", "Forwarded", "Approved", "Out"].includes(o.status))
           : null;
         setActiveOuting(active || null);
       } catch {
@@ -300,7 +300,8 @@ export default function GenerateTicket() {
   if (activeOuting && step !== "success") {
     const activeTicketId = `SE-${String(activeOuting._id).slice(-6).toUpperCase()}`;
     const isOut = activeOuting.status === "Out";
-    const statusLabel = isOut ? "Outside" : activeOuting.status;
+    const isForwarded = activeOuting.status === "Forwarded";
+    const statusLabel = isOut ? "Outside" : isForwarded ? "With warden" : activeOuting.status;
 
     return (
       <StudentFeatureCentered>
@@ -315,6 +316,8 @@ export default function GenerateTicket() {
           <p className="text-slate-500 text-sm mb-6">
             {isOut
               ? "You're currently marked outside campus. Log your entry at the gate before requesting a new outing."
+              : isForwarded
+              ? "Your request is with the warden for a decision. Wait for the outcome or cancel it before generating a new outing ticket."
               : "Complete that journey or cancel your current request before generating a new outing ticket."}
           </p>
 

@@ -14,7 +14,9 @@ const { isSignatureDataUrl } = require('../utils/signature');
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
 
-const ACTIVE_LEAVE_STATUSES = ['Pending', 'Approved', 'Out'];
+// 'Forwarded' counts as live too — an application sitting with the warden must block a
+// second one just like a Pending one does, or a student could stack approvals.
+const ACTIVE_LEAVE_STATUSES = ['Pending', 'Approved', 'Forwarded', 'Out'];
 
 // A row counts as "decided" if it carries a frozen verdict, or — for rows written before
 // `decision` existed — if its status still happens to be the verdict. The second clause is
@@ -39,20 +41,20 @@ const withDecisionMeta = (doc) => {
   return obj;
 };
 
-// Lazy read-time expiry of Pending/Approved passes whose leaveDate passed; Out/Returned/Rejected/Cancelled are never touched. Saves are best-effort per doc.
+// Lazy read-time expiry of Pending/Forwarded/Approved passes whose leaveDate passed;
+// Out/Returned/Rejected/Cancelled are never touched. Saves are best-effort per doc.
+// Forwarded must expire here too: it blocks new applications, so a stale one sitting
+// with the warden would otherwise lock the student out indefinitely.
+const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
 const expireStaleApplications = async (applications) => {
   const list = Array.isArray(applications) ? applications : [applications];
   const now = Date.now();
   await Promise.all(
     list.map(async (appDoc) => {
       if (!appDoc) return;
-      if (appDoc.status === 'Pending' && now > new Date(appDoc.leaveDate).getTime()) {
-        appDoc.status = 'Expired';
-      } else if (appDoc.status === 'Approved' && now > new Date(appDoc.leaveDate).getTime()) {
-        appDoc.status = 'Expired';
-      } else {
-        return;
-      }
+      if (!EXPIRABLE_STATUSES.includes(appDoc.status)) return;
+      if (now <= new Date(appDoc.leaveDate).getTime()) return;
+      appDoc.status = 'Expired';
       try {
         await appDoc.save();
       } catch (err) {
@@ -126,6 +128,8 @@ const createLeaveApplication = async (req, res) => {
           ? 'You are currently on leave. Return to campus and get scanned back in at the gate before applying for new leave.'
           : blockingLeave.status === 'Approved'
           ? 'You already have an approved leave pass. Complete or cancel that leave before applying again.'
+          : blockingLeave.status === 'Forwarded'
+          ? 'Your leave application is with the warden for a decision. Wait for the outcome or cancel it before applying again.'
           : 'You already have a leave application awaiting approval. Wait for a decision or cancel it before applying again.';
 
       return res.status(409).json({
@@ -529,7 +533,11 @@ const cancelLeaveApplication = async (req, res) => {
       return res.status(403).json({ message: 'You can only cancel your own leave applications.' });
     }
 
-    if (application.status !== 'Pending' && application.status !== 'Approved') {
+    // Forwarded is cancellable too — it's still undecided, and since it now blocks new
+    // applications the student needs a way out while the warden holds it. The warden's
+    // decision endpoint re-checks for 'Forwarded', so a cancel won during the race just
+    // turns their action into a 409.
+    if (!['Pending', 'Approved', 'Forwarded'].includes(application.status)) {
       return res.status(409).json({
         message: `Cannot cancel an application that is already ${application.status.toLowerCase()}.`,
         status: application.status,

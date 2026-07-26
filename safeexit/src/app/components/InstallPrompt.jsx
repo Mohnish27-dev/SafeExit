@@ -6,6 +6,8 @@ import { useTranslation } from "@/app/lib/i18n";
 const DISMISS_KEY = "safeexit:installPromptDismissedAt";
 // Re-show the banner after 7 days if the user dismissed it earlier
 const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Small delay so the banner doesn't ambush the user the instant the page paints
+const SHOW_DELAY_MS = 500;
 
 /**
  * Bottom install banner shown to visitors who haven't installed the PWA yet.
@@ -46,7 +48,7 @@ export default function InstallPrompt() {
       // Stop Chrome's mini-infobar; we render our own banner instead
       e.preventDefault();
       setDeferredPrompt(e);
-      showTimer = setTimeout(() => setVisible(true), 2000);
+      showTimer = setTimeout(() => setVisible(true), SHOW_DELAY_MS);
     };
 
     const onInstalled = () => {
@@ -62,12 +64,12 @@ export default function InstallPrompt() {
     if (window.__deferredInstallPrompt) {
       setDeferredPrompt(window.__deferredInstallPrompt);
       window.__deferredInstallPrompt = null;
-      showTimer = setTimeout(() => setVisible(true), 2000);
+      showTimer = setTimeout(() => setVisible(true), SHOW_DELAY_MS);
     }
 
     // iOS never fires beforeinstallprompt — show the manual instructions
     if (iOS) {
-      showTimer = setTimeout(() => setVisible(true), 2000);
+      showTimer = setTimeout(() => setVisible(true), SHOW_DELAY_MS);
     }
 
     return () => {

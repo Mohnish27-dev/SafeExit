@@ -48,13 +48,21 @@ const withDecisionMeta = (doc) => {
   return obj;
 };
 
-// Lazy read-time expiry of Approved-but-unused and Pending-and-missed passes; Out/Returned/Rejected are never touched. Saves are best-effort per doc.
+// 'Forwarded' counts as live too — a request sitting with the warden must block a second
+// one just like a Pending one does, or a student could stack approvals.
+const ACTIVE_STATUSES = ['Pending', 'Approved', 'Forwarded', 'Out'];
+
+// Lazy read-time expiry of Pending/Forwarded/Approved passes whose departure window
+// closed; Out/Returned/Rejected are never touched. Saves are best-effort per doc.
+// Forwarded must expire here too: it blocks new requests, so a stale one sitting with
+// the warden would otherwise lock the student out indefinitely.
+const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
 const expireStaleRequests = async (requests) => {
   const list = Array.isArray(requests) ? requests : [requests];
   await Promise.all(
     list.map(async (reqDoc) => {
       if (!reqDoc) return;
-      if (reqDoc.status !== 'Approved' && reqDoc.status !== 'Pending') return;
+      if (!EXPIRABLE_STATUSES.includes(reqDoc.status)) return;
       if (!isDeparturePassed(reqDoc.outTime)) return;
       reqDoc.status = 'Expired';
       try {
@@ -86,7 +94,6 @@ const createOutingRequest = async (req, res) => {
       });
     }
 
-    const ACTIVE_STATUSES = ['Pending', 'Approved', 'Out'];
     const activeRequests = await OutingRequest.find({
       student: req.user._id,
       status: { $in: ACTIVE_STATUSES },
@@ -99,6 +106,8 @@ const createOutingRequest = async (req, res) => {
         message:
           blocking.status === 'Out'
             ? 'You already have an outing in progress. Log your entry at the gate before creating a new request.'
+            : blocking.status === 'Forwarded'
+            ? 'Your outing request is with the warden for a decision. Wait for the outcome or cancel it before creating a new one.'
             : `You already have a ${blocking.status.toLowerCase()} outing request. Complete that journey or cancel it before creating a new one.`,
         status: blocking.status,
         activeRequestId: blocking._id,
@@ -525,8 +534,12 @@ const cancelOutingRequest = async (req, res) => {
       return res.status(403).json({ message: 'You can only cancel your own outing requests.' });
     }
 
-    // Once scanned out, the trip is live and must close via the gate.
-    if (request.status !== 'Pending' && request.status !== 'Approved') {
+    // Once scanned out, the trip is live and must close via the gate. Forwarded is
+    // cancellable — it's still undecided, and since it now blocks new requests the
+    // student needs a way out while the warden holds it. The warden's decision endpoint
+    // re-checks for 'Forwarded', so a cancel won during the race turns their action
+    // into a 409.
+    if (!['Pending', 'Approved', 'Forwarded'].includes(request.status)) {
       return res.status(409).json({
         message: `Cannot cancel a request that is already ${request.status.toLowerCase()}.`,
         status: request.status,

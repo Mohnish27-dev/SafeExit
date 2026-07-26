@@ -352,6 +352,12 @@ export default function MyOutings() {
                           <p className="text-xs font-semibold text-amber-705">Awaiting caretaker approval. You will be notified.</p>
                         </div>
                       )}
+                      {outing.status === "forwarded" && (
+                        <div className="mt-3 pt-3 border-t border-teal-100 flex items-start gap-2.5">
+                          <ArrowUpRight size={15} className="text-teal-600 shrink-0 mt-0.5" />
+                          <p className="text-xs font-semibold text-teal-700">Escalated to the warden for a decision. You will be notified.</p>
+                        </div>
+                      )}
                       {outing.status === "expired" && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
                           <TimerOff size={15} className="text-rose-500 shrink-0 mt-0.5" />
@@ -364,7 +370,7 @@ export default function MyOutings() {
                           <p className="text-xs font-semibold text-slate-500">You cancelled this outing request.</p>
                         </div>
                       )}
-                      {(outing.status === "approved" || outing.status === "pending") && (
+                      {(outing.status === "approved" || outing.status === "pending" || outing.status === "forwarded") && (
                         <div className="mt-4 pt-3 border-t border-slate-100">
                           {confirmCancel === outing._id ? (
                             <div className="flex flex-col gap-2">
