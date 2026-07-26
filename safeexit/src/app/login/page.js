@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, LogIn, Headphones, ShieldCheck, GraduationCap, UserCog, Lock, CheckCircle, ArrowLeft } from "lucide-react";
+import { Shield, LogIn, Headphones, ShieldCheck, GraduationCap, UserCog, UserCheck, Lock, CheckCircle, ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { getToken } from "@/app/lib/auth";
@@ -13,11 +13,13 @@ const ROLE_PIN_KEYS = {
   security: "safeexit_quick_pin_guard",
   student: "safeexit_quick_pin",
   caretaker: "safeexit_quick_pin_caretaker",
+  warden: "safeexit_quick_pin_warden",
 };
 
 const ROLE_DASHBOARD = {
   student: "/dashboard/student",
   caretaker: "/dashboard/caretaker",
+  warden: "/dashboard/warden",
   security: "/dashboard/security",
   admin: "/dashboard/admin",
 };
@@ -55,6 +57,17 @@ const allRoles = [
     href: "/login/caretaker",
     color: "from-purple-500 to-purple-700",
     iconBg: "bg-purple-100 text-purple-600",
+  },
+  {
+    id: "warden",
+    title: "Warden",
+    icon: UserCheck,
+    image: "/images/login/caretaker.png",
+    description: "Login to decide the requests caretakers forward up to you",
+    buttonText: "Login as Warden",
+    href: "/login/warden",
+    color: "from-teal-500 to-teal-700",
+    iconBg: "bg-teal-100 text-teal-600",
   },
 ];
 
@@ -223,7 +236,9 @@ export default function LoginRoleSelect() {
               ? "max-w-xs"
               : visibleRoles.length === 2
               ? "md:grid-cols-2 max-w-2xl"
-              : "md:grid-cols-3 max-w-4xl"
+              : visibleRoles.length === 3
+              ? "md:grid-cols-3 max-w-4xl"
+              : "md:grid-cols-2 xl:grid-cols-4 max-w-6xl"
           } gap-4 sm:gap-6 lg:gap-8 w-full`}
         >
           {visibleRoles.map((role, index) => (

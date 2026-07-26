@@ -18,6 +18,7 @@ import {
   LogOut,
   TimerOff,
   Ban,
+  ArrowUpRight,
 } from "lucide-react";
 import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
@@ -32,6 +33,8 @@ const statusConfig = {
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
   out: { label: "Outside", color: "text-sky-700", bg: "bg-sky-100", icon: LogOut },
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
+  // Caretaker escalated it — the hostel warden decides this one.
+  forwarded: { label: "With warden", color: "text-teal-700", bg: "bg-teal-100", icon: ArrowUpRight },
   returned: { label: "Returned", color: "text-slate-600", bg: "bg-slate-100", icon: RotateCcw },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
   expired: { label: "Expired", color: "text-rose-700", bg: "bg-rose-100", icon: TimerOff },
@@ -51,6 +54,7 @@ const filters = [
   { key: "approved", label: "Approved" },
   { key: "out", label: "Outside" },
   { key: "pending", label: "Pending" },
+  { key: "forwarded", label: "With warden" },
   { key: "returned", label: "Returned" },
   { key: "rejected", label: "Rejected" },
   { key: "expired", label: "Expired" },
@@ -101,6 +105,7 @@ export default function MyOutings() {
           actualOutTime: fmtTime(o.actualOutTime),
           actualInTime: fmtTime(o.actualInTime),
           caretakerSignature: o.caretakerSignature || null,
+          wardenSignature: o.wardenSignature || null,
         }));
         setOutings(mapped);
       } catch (err) {
@@ -322,15 +327,15 @@ export default function MyOutings() {
                           )}
                         </div>
                       )}
-                      {outing.caretakerSignature && (
+                      {(outing.wardenSignature || outing.caretakerSignature) && (
                         <div className="pt-3 mt-1 border-t border-emerald-100">
                           <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-                            <CheckCircle2 size={12} /> Approved &amp; signed by caretaker
+                            <CheckCircle2 size={12} /> Approved &amp; signed by {outing.wardenSignature ? "warden" : "caretaker"}
                           </p>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={outing.caretakerSignature}
-                            alt="Caretaker signature"
+                            src={outing.wardenSignature || outing.caretakerSignature}
+                            alt={outing.wardenSignature ? "Warden signature" : "Caretaker signature"}
                             className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
                           />
                         </div>
@@ -347,6 +352,12 @@ export default function MyOutings() {
                           <p className="text-xs font-semibold text-amber-705">Awaiting caretaker approval. You will be notified.</p>
                         </div>
                       )}
+                      {outing.status === "forwarded" && (
+                        <div className="mt-3 pt-3 border-t border-teal-100 flex items-start gap-2.5">
+                          <ArrowUpRight size={15} className="text-teal-600 shrink-0 mt-0.5" />
+                          <p className="text-xs font-semibold text-teal-700">Escalated to the warden for a decision. You will be notified.</p>
+                        </div>
+                      )}
                       {outing.status === "expired" && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
                           <TimerOff size={15} className="text-rose-500 shrink-0 mt-0.5" />
@@ -359,7 +370,7 @@ export default function MyOutings() {
                           <p className="text-xs font-semibold text-slate-500">You cancelled this outing request.</p>
                         </div>
                       )}
-                      {(outing.status === "approved" || outing.status === "pending") && (
+                      {(outing.status === "approved" || outing.status === "pending" || outing.status === "forwarded") && (
                         <div className="mt-4 pt-3 border-t border-slate-100">
                           {confirmCancel === outing._id ? (
                             <div className="flex flex-col gap-2">

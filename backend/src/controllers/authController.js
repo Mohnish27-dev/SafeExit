@@ -131,7 +131,7 @@ const authUser = async (req, res) => {
 
       const token = generateToken(res, user._id);
 
-      if (['Guard', 'Caretaker', 'Admin'].includes(user.role)) {
+      if (['Guard', 'Caretaker', 'Admin', 'Warden'].includes(user.role)) {
         user.lastActiveAt = new Date();
         if (user.role === 'Guard') user.onDuty = true;
         await user.save();
@@ -270,7 +270,7 @@ const refreshSession = async (req, res) => {
 
     const token = generateToken(res, user._id);
 
-    if (['Guard', 'Caretaker', 'Admin'].includes(user.role)) {
+    if (['Guard', 'Caretaker', 'Admin', 'Warden'].includes(user.role)) {
       user.lastActiveAt = new Date();
       if (user.role === 'Guard') user.onDuty = true;
       await user.save();
@@ -456,7 +456,7 @@ const verifyAuthentication = async (req, res) => {
     // Replay protection: persist the authenticator's monotonic counter.
     cred.counter = authenticationInfo.newCounter;
     user.currentChallenge = undefined;
-    if (['Guard', 'Caretaker', 'Admin'].includes(user.role)) {
+    if (['Guard', 'Caretaker', 'Admin', 'Warden'].includes(user.role)) {
       user.lastActiveAt = new Date();
       if (user.role === 'Guard') user.onDuty = true;
     }

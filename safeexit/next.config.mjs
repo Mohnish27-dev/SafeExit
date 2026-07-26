@@ -23,16 +23,7 @@ const nextConfig = {
       },
     ];
   },
-  async redirects() {
-    // The warden designation was renamed to caretaker (same person, same routing).
-    // Keeps old bookmarks, installed-PWA shortcuts and — most importantly — already
-    // delivered push notifications working; their ?view= query is carried over.
-    return [
-      { source: '/dashboard/warden', destination: '/dashboard/caretaker', permanent: true },
-      { source: '/dashboard/warden/:path*', destination: '/dashboard/caretaker/:path*', permanent: true },
-      { source: '/login/warden', destination: '/login/caretaker', permanent: true },
-    ];
-  },
+
 };
 
 export default nextConfig;

@@ -14,11 +14,12 @@ const { createLimiter } = require('../middlewares/rateLimit');
 
 router.route('/')
   .post(protect, authorizeRoles('Student'), createLimiter, createComplaint)
-  .get(protect, authorizeRoles('Caretaker', 'Admin', 'Department'), getComplaints);
+  // Wardens get read-only oversight of their hostel's complaints (no status mutation).
+  .get(protect, authorizeRoles('Caretaker', 'Admin', 'Department', 'Warden'), getComplaints);
 
 router.get('/mycomplaints', protect, authorizeRoles('Student'), getMyComplaints);
 
-router.get('/stream', protect, authorizeRoles('Caretaker', 'Admin', 'Department'), streamComplaintEvents);
+router.get('/stream', protect, authorizeRoles('Caretaker', 'Admin', 'Department', 'Warden'), streamComplaintEvents);
 
 // Departments/admins progress a complaint; students close their own via /resolve.
 router.patch('/:id/status', protect, authorizeRoles('Department', 'Admin'), updateComplaintStatus);

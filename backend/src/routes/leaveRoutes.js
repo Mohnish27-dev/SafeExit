@@ -6,6 +6,10 @@ const {
   getPendingLeaveApplications,
   getLeaveHistory,
   updateLeaveStatus,
+  forwardLeaveApplication,
+  getForwardedLeaveApplications,
+  getWardenLeaveHistory,
+  updateWardenLeaveStatus,
   cancelLeaveApplication,
   streamLeaveEvents
 } = require('../controllers/leaveController');
@@ -22,10 +26,21 @@ router.get('/pending', protect, authorizeRoles('Caretaker'), getPendingLeaveAppl
 
 router.get('/history', protect, authorizeRoles('Caretaker'), getLeaveHistory);
 
-router.get('/stream', protect, authorizeRoles('Caretaker'), streamLeaveEvents);
+// Warden action queue + their own decision history.
+router.get('/forwarded', protect, authorizeRoles('Warden'), getForwardedLeaveApplications);
+
+router.get('/warden-history', protect, authorizeRoles('Warden'), getWardenLeaveHistory);
+
+// Stream is shared by both staff dashboards (caretaker + warden).
+router.get('/stream', protect, authorizeRoles('Caretaker', 'Warden'), streamLeaveEvents);
 
 router.patch('/:id/cancel', protect, authorizeRoles('Student'), cancelLeaveApplication);
 
 router.patch('/:id/status', protect, authorizeRoles('Caretaker'), updateLeaveStatus);
+
+// Caretaker escalates up; warden decides.
+router.patch('/:id/forward', protect, authorizeRoles('Caretaker'), forwardLeaveApplication);
+
+router.patch('/:id/warden-status', protect, authorizeRoles('Warden'), updateWardenLeaveStatus);
 
 module.exports = router;
