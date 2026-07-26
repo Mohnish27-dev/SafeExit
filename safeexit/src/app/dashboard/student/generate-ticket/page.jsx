@@ -20,6 +20,7 @@ import {
   Shield,
   AlertCircle,
   Loader2,
+  XCircle,
 } from "lucide-react";
 import StudentFeatureShell, {
   StudentFeaturePanel,
@@ -131,6 +132,7 @@ export default function GenerateTicket() {
 
   const [activeOuting, setActiveOuting] = useState(null);
   const [checkingActive, setCheckingActive] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
   const submitErrorRef = useRef(null);
 
   useEffect(() => {
@@ -153,6 +155,32 @@ export default function GenerateTicket() {
       cancelled = true;
     };
   }, []);
+
+  const handleCancelActive = async () => {
+    if (!activeOuting || cancelling) return;
+    setCancelling(true);
+    try {
+      await apiFetch(`/outing/${activeOuting._id}/cancel`, { method: "PATCH" });
+      setActiveOuting(null);
+    } catch {
+      // leave the block visible; user can navigate to My Outings
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleCancelCreated = async () => {
+    if (!createdOuting || cancelling) return;
+    setCancelling(true);
+    try {
+      await apiFetch(`/outing/${createdOuting._id}/cancel`, { method: "PATCH" });
+      router.push("/dashboard/student/my-outings");
+    } catch {
+      // stay on the success screen; user can retry or view My Outings
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   useEffect(() => {
     if (!hydrated) return;
@@ -343,6 +371,17 @@ export default function GenerateTicket() {
           >
             View My Outings
           </button>
+          {!isOut && (
+            <button
+              type="button"
+              onClick={handleCancelActive}
+              disabled={cancelling}
+              className="sf-btn-danger w-full mb-3 disabled:opacity-45 disabled:cursor-not-allowed"
+            >
+              {cancelling ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+              {cancelling ? "Cancelling…" : "Cancel Outing"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => router.push("/dashboard/student")}
@@ -463,6 +502,15 @@ export default function GenerateTicket() {
             )}
           </div>
 
+          <button
+            type="button"
+            onClick={handleCancelCreated}
+            disabled={cancelling}
+            className="sf-btn-danger w-full mb-3 disabled:opacity-45 disabled:cursor-not-allowed"
+          >
+            {cancelling ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+            {cancelling ? "Cancelling…" : "Cancel Outing"}
+          </button>
           <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full">
             Back to Dashboard
           </button>

@@ -544,11 +544,6 @@ export default function CaretakerDashboardPage() {
     }
   }
 
-  function toggleAutoRule() {
-    // demo placeholder
-    alert('Toggled auto-approval rule (demo)');
-  }
-
   const displayName = (user && (user.name || user.displayName)) || t("chiefCaretaker");
 
   // Unset scope means no students; show the "not configured" banner.
@@ -823,10 +818,6 @@ export default function CaretakerDashboardPage() {
                 <p className="sd-kicker">{t("quickActions")}</p>
                 <h2 className="sd-title sd-title-sm mt-2">{t("respondFaster")}</h2>
               </div>
-              <span className="sd-tag">
-                <span className="sd-tag-dot" />
-                {t("autoRulesOn")}
-              </span>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-4">
               {(() => {
@@ -862,16 +853,6 @@ export default function CaretakerDashboardPage() {
                   badge: leavePending.length,
                   onClick: () => setView('leave'),
                 };
-                const autoAction = {
-                  title: t("autoApprovals"),
-                  desc: t("autoApprovalsDesc"),
-                  icon: Sparkles,
-                  badgeBg: "linear-gradient(145deg, #0369a1 0%, #2dd4bf 100%)",
-                  tint: "linear-gradient(160deg, rgba(14,165,233,0.14) 0%, rgba(45,212,191,0.08) 100%)",
-                  glow: "rgba(14,165,233,0.45)",
-                  border: "rgba(56,189,248,0.5)",
-                  onClick: () => openPanel('auto'),
-                };
                 const logsAction = {
                   title: t("movementLogs"),
                   desc: t("movementLogsDesc"),
@@ -895,8 +876,8 @@ export default function CaretakerDashboardPage() {
                 };
                 // Boys' caretaker has no outing approvals: lead with Leave.
                 return isBoysCaretaker
-                  ? [leaveAction, safetyAction, overdueAction, logsAction, autoAction]
-                  : [manageAction, safetyAction, overdueAction, leaveAction, logsAction, autoAction];
+                  ? [leaveAction, safetyAction, overdueAction, logsAction]
+                  : [manageAction, safetyAction, overdueAction, leaveAction, logsAction];
               })().map((a, idx) => (
                 <button
                   key={idx}
@@ -1196,7 +1177,7 @@ export default function CaretakerDashboardPage() {
           <div onClick={closePanel} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <aside className="sd-luxe-panel sd-glow-border sd-enter relative ml-auto h-full w-full max-w-md overflow-y-auto rounded-l-[2.25rem] p-6">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="sd-title sd-title-sm">{activePanel === 'manage' ? t("manageRequests") : activePanel === 'alerts' ? t("safetyAlerts") : t("autoApprovals")}</h3>
+              <h3 className="sd-title sd-title-sm">{activePanel === 'manage' ? t("manageRequests") : t("safetyAlerts")}</h3>
               <button onClick={closePanel} className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors"><X className="h-5 w-5" /></button>
             </div>
 
@@ -1233,35 +1214,6 @@ export default function CaretakerDashboardPage() {
               </div>
             )}
 
-            {activePanel === 'auto' && (
-              <div className="space-y-4">
-                <p className="sd-body text-sm">{t("autoApprovalRules")}</p>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={toggleAutoRule}
-                    onPointerMove={handleMagneticMove}
-                    onPointerLeave={handleMagneticLeave}
-                    className="sd-magnetic rounded-2xl px-4 py-2 text-sm font-bold text-white bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500"
-                  >
-                    {t("toggleRule")}
-                  </button>
-                </div>
-                <div className="mt-4">
-                  <h4 className="sd-card-title text-[0.9rem]">{t("recentlyAutoApproved")}</h4>
-                  <div className="mt-3 space-y-2">
-                    {approved.map((s, i) => (
-                      <div key={s.id} className="sd-row sd-luxe-rise" style={{ "--accent": "#10b981", animationDelay: `${0.05 + i * 0.05}s` }}>
-                        <span className="sd-row__accent" aria-hidden="true" />
-                        <div>
-                          <p className="sd-card-title text-[0.85rem]">{s.name}</p>
-                          <p className="sd-micro">{s.outSince}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </aside>
         </div>
       )}
