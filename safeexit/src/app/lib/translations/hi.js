@@ -336,6 +336,16 @@ const hi = {
     statusAcknowledged: "नोट किया",
     statusResolved: "हल हुआ",
   },
+
+  // ─── PWA Install Prompt ───
+  install: {
+    ariaLabel: "SafeExit ऐप इंस्टॉल करें",
+    message: "SafeExit को अपने फ़ोन में इंस्टॉल करें — बिना इंटरनेट के भी इस्तेमाल करें!",
+    button: "इंस्टॉल करें",
+    dismiss: "बंद करें",
+    iosHint: "शेयर बटन दबाएं",
+    iosHint2: "फिर \"होम स्क्रीन पर जोड़ें\" चुनें।",
+  },
 };
 
 export default hi;

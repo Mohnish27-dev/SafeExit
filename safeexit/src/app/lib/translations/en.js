@@ -336,6 +336,16 @@ const en = {
     statusAcknowledged: "Acknowledged",
     statusResolved: "Resolved",
   },
+
+  // ─── PWA Install Prompt ───
+  install: {
+    ariaLabel: "Install SafeExit app",
+    message: "Install SafeExit on your phone — quick access, even offline!",
+    button: "Install",
+    dismiss: "Dismiss",
+    iosHint: "Tap the Share button",
+    iosHint2: "then \"Add to Home Screen\".",
+  },
 };
 
 export default en;
