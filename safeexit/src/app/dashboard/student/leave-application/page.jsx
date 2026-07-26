@@ -20,6 +20,7 @@ import {
   FileSignature,
   Home,
   PenLine,
+  ArrowUpRight,
 } from "lucide-react";
 import StudentFeatureShell, {
   StudentFeaturePanel,
@@ -45,6 +46,8 @@ const isBeforeEveningCurfew = (date) =>
 
 const statusConfig = {
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
+  // Caretaker escalated it — the hostel warden decides this one.
+  forwarded: { label: "With warden", color: "text-teal-700", bg: "bg-teal-100", icon: ArrowUpRight },
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
   out: { label: "On Leave", color: "text-sky-700", bg: "bg-sky-100", icon: MapPin },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
@@ -56,6 +59,7 @@ const statusConfig = {
 const filters = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
+  { key: "forwarded", label: "With warden" },
   { key: "approved", label: "Approved" },
   { key: "out", label: "On Leave" },
   { key: "rejected", label: "Rejected" },
@@ -360,7 +364,7 @@ export default function LeaveApplicationPage() {
         <StudentFeaturePanel className="p-0 overflow-hidden animate-scale-in" delay={60}>
           <div className="sf-letter-paper">
             <p>To,</p>
-            <p>The Caretaker,</p>
+            <p>The Warden,</p>
             <p>{display.hostel || "Hostel Administration"}</p>
             <p className="mt-4 font-bold">Subject: Application for Leave — {form.destination}</p>
             <p className="mt-4">Respected Sir/Madam,</p>
@@ -746,20 +750,23 @@ export default function LeaveApplicationPage() {
                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-start gap-2.5">
                               <AlertCircle size={14} className="text-slate-500 shrink-0 mt-0.5" />
                               <p className="text-xs text-slate-600">
-                                <span className="font-bold text-slate-700">Caretaker&rsquo;s note: </span>
+                                <span className="font-bold text-slate-700">
+                                  {a.forwardedTo ? "Warden" : "Caretaker"}&rsquo;s note:{" "}
+                                </span>
                                 {a.remarks}
                               </p>
                             </div>
                           )}
-                          {a.caretakerSignature && (
+                   
+                          {(a.wardenSignature || a.caretakerSignature) && (
                             <div className="mt-3 pt-3 border-t border-emerald-100">
                               <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-                                <CheckCircle2 size={12} /> Approved &amp; signed by caretaker
+                                <CheckCircle2 size={12} /> Approved &amp; signed by {a.wardenSignature ? "warden" : "caretaker"}
                               </p>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={a.caretakerSignature}
-                                alt="Caretaker signature"
+                                src={a.wardenSignature || a.caretakerSignature}
+                                alt={a.wardenSignature ? "Warden signature" : "Caretaker signature"}
                                 className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
                               />
                             </div>

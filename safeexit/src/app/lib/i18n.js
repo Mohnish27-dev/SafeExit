@@ -44,20 +44,28 @@ export function LanguageProvider({ children }) {
   );
 }
 
-/** `t(key)` looks up `namespace.key` in the active locale, falling back to English. */
+
 export function useTranslation(namespace) {
   const { locale, setLocale } = useContext(LanguageContext);
 
   const t = useCallback(
-    (key) => {
+    (key, params) => {
       const nsObj = translations[locale]?.[namespace];
-      if (nsObj && key in nsObj) return nsObj[key];
-
       const fallback = translations.en?.[namespace];
-      if (fallback && key in fallback) return fallback[key];
 
-      // Return the key itself so missing keys are obvious in the UI
-      return key;
+      const str =
+        nsObj && key in nsObj
+          ? nsObj[key]
+          : fallback && key in fallback
+          ? fallback[key]
+          // Return the key itself so missing keys are obvious in the UI
+          : key;
+
+      if (!params) return str;
+      // Unknown placeholders are left as-is — a visible `{name}` beats silently dropping it.
+      return str.replace(/\{(\w+)\}/g, (match, slot) =>
+        slot in params ? params[slot] : match
+      );
     },
     [locale, namespace]
   );

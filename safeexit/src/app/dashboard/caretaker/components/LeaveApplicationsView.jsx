@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, X, CalendarDays, Loader2, RefreshCcw, MapPin, Clock3, AlertTriangle, FileText, CheckCircle2, XCircle } from "lucide-react";
+import { Check, X, CalendarDays, Loader2, RefreshCcw, MapPin, Clock3, AlertTriangle, FileText, CheckCircle2, XCircle, ArrowUpRight } from "lucide-react";
 import { useTranslation } from "@/app/lib/i18n";
 
 const handleTilePointerMove = (e) => {
@@ -83,6 +83,7 @@ export default function LeaveApplicationsView({
   history = [],
   approveLeave = () => {},
   rejectLeave = () => {},
+  forwardLeave = () => {},
   loading = false,
   loadingHistory = false,
   error = "",
@@ -99,20 +100,38 @@ export default function LeaveApplicationsView({
   // Viewer can open from any tab, so search both lists.
   const viewing = [...pending, ...history].find((r) => r.id === viewingId) || null;
 
-  const historyFor = (status) => history.filter((r) => r.status === status);
+  // Tabs key off the frozen `decision`, not `status` — a pass the student cancelled after
+  // approval keeps its Approved verdict and stays in that tab.
+  const historyFor = (decision) => history.filter((r) => r.decision === decision);
+  const forwardedList = history.filter((r) => r.status === "Forwarded" && !r.decision);
 
   const tabs = [
     { key: "pending", label: t("pendingTab"), count: pending.length },
+    { key: "forwarded", label: t("forwardedTab"), count: forwardedList.length },
     { key: "approved", label: t("approvedTab"), count: historyFor("Approved").length },
     { key: "rejected", label: t("rejectedTab"), count: historyFor("Rejected").length },
   ];
 
-  const historyList = tab === "approved" ? historyFor("Approved") : tab === "rejected" ? historyFor("Rejected") : [];
+  const historyList =
+    tab === "approved" ? historyFor("Approved")
+    : tab === "rejected" ? historyFor("Rejected")
+    : tab === "forwarded" ? forwardedList
+    : [];
 
-  const statusBadge = (status) =>
-    status === "Approved"
+  const statusBadge = (decision) =>
+    decision === "Approved"
       ? { label: tc("approved"), tone: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 }
-      : { label: tc("rejected"), tone: "bg-rose-100 text-rose-700", icon: XCircle };
+      : decision === "Rejected"
+      ? { label: tc("rejected"), tone: "bg-rose-100 text-rose-700", icon: XCircle }
+      : { label: t("awaitingWarden"), tone: "bg-teal-100 text-teal-700", icon: ArrowUpRight };
+
+  // Who signed it off — only worth showing once a verdict exists.
+  const decidedByLabel = (req) => {
+    if (!req.decision) return "";
+    if (req.decidedByRole === "Warden") return t("decidedByWarden", { name: req.decidedByName });
+    if (req.decidedByName) return t("decidedBy", { name: req.decidedByName });
+    return "";
+  };
 
   function closeViewer() {
     if (rejectingId === viewingId) cancelReject();
@@ -278,6 +297,13 @@ export default function LeaveApplicationsView({
                       >
                         <X className="h-4 w-4" /> {tc("reject")}
                       </button>
+                      <button
+                        onClick={() => forwardLeave(req.id)}
+                        title={t("forwardToWarden")}
+                        className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-teal-300 text-teal-700 font-bold hover:bg-teal-50 transition-colors"
+                      >
+                        <ArrowUpRight className="h-4 w-4" /> {t("forward")}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -331,8 +357,9 @@ export default function LeaveApplicationsView({
           </div>
         ) : (
           historyList.map((req, i) => {
-            const badge = statusBadge(req.status);
+            const badge = statusBadge(req.decision);
             const BadgeIcon = badge.icon;
+            const decidedBy = decidedByLabel(req);
             return (
               <div
                 key={req.id}
@@ -374,11 +401,24 @@ export default function LeaveApplicationsView({
                           {t("duration")} {getDurationLabel(req.leaveDate, req.returnDate)}
                         </span>
                       </div>
-                      {req.status === "Rejected" && req.remarks && (
+                      {req.decision === "Rejected" && req.remarks && (
                         <p className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">
                           {t("rejectionReason")} {req.remarks}
                         </p>
                       )}
+                      {req.status === "Forwarded" && !req.decision && req.forwardedToName && (
+                        <p className="mt-2 rounded-xl bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700">
+                          {t("forwardedToName", { name: req.forwardedToName })}
+                        </p>
+                      )}
+                      {/* The verdict stands, but the pass never got used as decided. */}
+                      {req.lapsed && (
+                        <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600">
+                          <AlertTriangle className="h-3 w-3" />
+                          {req.lapsed === "Cancelled" ? t("cancelledByStudent") : t("expiredUnused")}
+                        </p>
+                      )}
+                      {decidedBy && <p className="sd-micro mt-1.5 text-slate-400">{decidedBy}</p>}
                     </div>
                   </div>
                   <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${badge.tone}`}>
@@ -410,7 +450,7 @@ export default function LeaveApplicationsView({
             <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
               <div className="sf-letter-paper">
                 <p>To,</p>
-                <p>The Caretaker,</p>
+                <p>The Warden,</p>
                 <p>{viewing.hostelName || "Hostel Administration"}</p>
                 <p className="mt-4 font-bold">Subject: Application for Leave — {viewing.destination}</p>
                 <p className="mt-4">Respected Sir/Madam,</p>
@@ -449,25 +489,37 @@ export default function LeaveApplicationsView({
               {t("duration")} {getDurationLabel(viewing.leaveDate, viewing.returnDate)}
             </div>
 
-            {/* Decided applications are read-only */}
+            {/* Anything already out of the caretaker's hands — decided or forwarded — is read-only */}
             {viewing.status ? (
               <div className="mt-6">
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${statusBadge(viewing.status).tone}`}>
-                  {(() => { const I = statusBadge(viewing.status).icon; return <I className="h-3.5 w-3.5" />; })()}
-                  {statusBadge(viewing.status).label}
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${statusBadge(viewing.decision).tone}`}>
+                  {(() => { const I = statusBadge(viewing.decision).icon; return <I className="h-3.5 w-3.5" />; })()}
+                  {statusBadge(viewing.decision).label}
                 </span>
-                {viewing.status === "Rejected" && viewing.remarks && (
+                {viewing.lapsed && (
+                  <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600">
+                    <AlertTriangle className="h-3 w-3" />
+                    {viewing.lapsed === "Cancelled" ? t("cancelledByStudent") : t("expiredUnused")}
+                  </span>
+                )}
+                {viewing.decision === "Rejected" && viewing.remarks && (
                   <p className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">
                     {t("rejectionReason")} {viewing.remarks}
                   </p>
                 )}
-                {viewing.status === "Approved" && viewing.caretakerSignature && (
+                {decidedByLabel(viewing) && (
+                  <p className="sd-micro mt-2 text-slate-400">{decidedByLabel(viewing)}</p>
+                )}
+
+                {viewing.decision === "Approved" && (viewing.wardenSignature || viewing.caretakerSignature) && (
                   <div className="mt-3">
-                    <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Signed by caretaker</p>
+                    <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                      {viewing.wardenSignature ? t("signedByWarden") : t("signedByCaretaker")}
+                    </p>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={viewing.caretakerSignature}
-                      alt="Caretaker signature"
+                      src={viewing.wardenSignature || viewing.caretakerSignature}
+                      alt={viewing.wardenSignature ? "Warden signature" : "Caretaker signature"}
                       className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
                     />
                   </div>

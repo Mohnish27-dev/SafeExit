@@ -30,8 +30,9 @@ const outingRequestSchema = new mongoose.Schema({
   },
   status: {
     // Approved -> Expired happens lazily at read time when outTime passes unused.
+    // 'Forwarded' = a caretaker escalated it to the hostel warden 
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned', 'Expired', 'Cancelled'],
+    enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned', 'Expired', 'Cancelled', 'Forwarded'],
     default: 'Pending'
   },
   // True when approved by the system rule, not a caretaker (approvedBy stays null).
@@ -59,6 +60,20 @@ const outingRequestSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  decision: {
+    type: String,
+    enum: ['Approved', 'Rejected'],
+    default: undefined
+  },
+  decidedAt: {
+    type: Date,
+    default: null
+  },
+  decidedByRole: {
+    type: String,
+    enum: ['Caretaker', 'Warden'],
+    default: undefined
+  },
   remarks: {
     type: String
   },
@@ -69,6 +84,10 @@ const outingRequestSchema = new mongoose.Schema({
   caretakerSignature: {
     type: String
   },
+  // The warden's own signature, stamped when a forwarded request is warden-approved.
+  wardenSignature: {
+    type: String
+  },
   approvedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -76,6 +95,22 @@ const outingRequestSchema = new mongoose.Schema({
   targetCaretaker: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+
+  forwardedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  forwardedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  forwardedNote: {
+    type: String
+  },
+  forwardedAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true

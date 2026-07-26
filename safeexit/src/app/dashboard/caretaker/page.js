@@ -15,6 +15,7 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowRight,
+  ArrowUpRight,
   ShieldAlert,
   Siren,
   Sparkles,
@@ -116,14 +117,25 @@ const mapLeavePending = (l) => ({
   submittedAt: l.createdAt,
   studentSignature: l.studentSignature || null,
   caretakerSignature: l.caretakerSignature || null,
+  // Present only when a warden decided the escalation — it's what distinguishes a
+  // warden-signed pass from a caretaker-signed one in the viewer.
+  wardenSignature: l.wardenSignature || null,
   initials: initials(l.student?.name),
 });
 
 const mapLeaveHistory = (l) => ({
   ...mapLeavePending(l),
   status: l.status || "",
+  // The frozen verdict. `status` moves on (Out/Returned/Cancelled/Expired) but this doesn't,
+  // so a cancelled-after-approval pass still files under Approved.
+  decision: l.decision || "",
+  // Set when the pass never played out as decided — "Cancelled" or "Expired".
+  lapsed: l.lapsed || "",
+  decidedByName: l.approvedBy?.name || "",
+  decidedByRole: l.decidedByRole || l.approvedBy?.role || "",
+  forwardedToName: l.forwardedTo?.name || "",
   remarks: l.remarks || "",
-  decidedAt: l.updatedAt,
+  decidedAt: l.decidedAt || l.updatedAt,
 });
 
 const mapReport = (c) => {
@@ -450,6 +462,74 @@ export default function CaretakerDashboardPage() {
     setApprovalTarget(null);
     setApprovalSignature(null);
   };
+
+  const [forwardTarget, setForwardTarget] = useState(null);
+  const [forwardNote, setForwardNote] = useState("");
+  const [forwarding, setForwarding] = useState(false);
+
+  const openOutingForward = (id) => {
+    const req = pending.find((p) => p.id === id);
+    setForwardNote("");
+    setForwardTarget({ kind: "outing", id, name: req?.name || "" });
+  };
+
+  const openLeaveForward = (id) => {
+    const req = leavePending.find((l) => l.id === id);
+    setForwardNote("");
+    setForwardTarget({ kind: "leave", id, name: req?.name || "" });
+  };
+
+  const closeForward = () => {
+    setForwardTarget(null);
+    setForwardNote("");
+  };
+
+  async function confirmForward() {
+    if (!forwardTarget) return;
+    setForwarding(true);
+    const { kind, id } = forwardTarget;
+    try {
+      if (kind === "outing") {
+        await forwardRequest(id, forwardNote);
+      } else {
+        await forwardLeave(id, forwardNote);
+      }
+      closeForward();
+    } finally {
+      setForwarding(false);
+    }
+  }
+
+  async function forwardRequest(id, note) {
+    const req = pending.find((p) => p.id === id);
+    if (!req) return;
+    // Optimistic: drop from pending — the warden owns it now.
+    setPending((p) => p.filter((r) => r.id !== id));
+    try {
+      await apiFetch(`/outing/${id}/forward`, {
+        method: "PATCH",
+        body: JSON.stringify({ note: note?.trim() || undefined }),
+      });
+    } catch (err) {
+      setPending((p) => [req, ...p]);
+      setRequestsError(err.message || t("couldNotForward"));
+    }
+  }
+
+  async function forwardLeave(id, note) {
+    const req = leavePending.find((l) => l.id === id);
+    if (!req) return;
+    setLeavePending((l) => l.filter((r) => r.id !== id));
+    try {
+      await apiFetch(`/leave/${id}/forward`, {
+        method: "PATCH",
+        body: JSON.stringify({ note: note?.trim() || undefined }),
+      });
+    } catch (err) {
+      setLeavePending((l) => [req, ...l]);
+      setLeaveError(err.message || t("couldNotForwardLeave"));
+    }
+  }
 
   async function confirmApproval() {
     if (!approvalTarget || !approvalSignature) return;
@@ -1122,6 +1202,7 @@ export default function CaretakerDashboardPage() {
               pending={pending}
               approveRequest={openOutingApproval}
               rejectRequest={rejectRequest}
+              forwardRequest={openOutingForward}
               loading={loadingRequests}
               error={requestsError}
               onRefresh={loadRequests}
@@ -1150,6 +1231,7 @@ export default function CaretakerDashboardPage() {
               history={leaveHistory}
               approveLeave={openLeaveApproval}
               rejectLeave={rejectLeave}
+              forwardLeave={openLeaveForward}
               loading={loadingLeave}
               loadingHistory={loadingLeaveHistory}
               error={leaveError}
@@ -1322,6 +1404,60 @@ export default function CaretakerDashboardPage() {
               >
                 <Check className="h-4 w-4" />
                 {approving ? tc("loading") : !approvalSignature ? "Sign to Approve" : tc("approve")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {forwardTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+          <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <p className="sd-kicker">{forwardTarget.kind === "leave" ? t("leaveApplications") : t("outingRequests")}</p>
+                <h3 className="sd-title sd-title-sm mt-0.5">{t("forwardToWarden")}{forwardTarget.name ? ` — ${forwardTarget.name}` : ""}</h3>
+              </div>
+              <button
+                onClick={closeForward}
+                disabled={forwarding}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mt-4 rounded-2xl border border-teal-200 bg-teal-50/70 px-4 py-3 text-sm font-medium text-teal-800">
+              {t("forwardHint")}
+            </p>
+
+            <div className="mt-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-600">{t("forwardNote")}</label>
+              <textarea
+                value={forwardNote}
+                onChange={(e) => setForwardNote(e.target.value)}
+                rows={3}
+                maxLength={500}
+                placeholder={t("forwardNotePlaceholder")}
+                className="mt-1.5 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-400 focus:bg-white focus:outline-none"
+              />
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={closeForward}
+                disabled={forwarding}
+                className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50"
+              >
+                {tc("cancel")}
+              </button>
+              <button
+                onClick={confirmForward}
+                disabled={forwarding}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-teal-700 via-teal-600 to-emerald-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+                {forwarding ? tc("loading") : t("confirmForward")}
               </button>
             </div>
           </div>

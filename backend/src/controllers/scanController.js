@@ -292,28 +292,32 @@ const previewScan = async (req, res) => {
   }
 };
 
-// GET /api/scan — private (Admin/Caretaker/Guard)
+// GET /api/scan — private (Admin/Caretaker/Warden/Guard)
 const getScanLogs = async (req, res) => {
   try {
     const filter = {};
     if (req.query.direction) filter.direction = req.query.direction;
 
-    // Caretakers only see logs for students in their managed hostel.
-    if (req.user.role === 'Caretaker') {
+    // Caretakers and wardens only see logs for students in their managed hostel.
+    if (req.user.role === 'Caretaker' || req.user.role === 'Warden') {
       const hostelFilter = req.user.managedHostel
         ? { hostelName: req.user.managedHostel }
         : req.user.managedGender
         ? { gender: req.user.managedGender }
         : null;
       if (!hostelFilter) return res.json([]);
-      const students = await User.find({ role: 'Student', ...hostelFilter }, '_id');
+      // Case-insensitive hostelName match (same collation as hostelScope.ownHostelStudentIds):
+      // without it a casing difference silently returns an empty log for the whole hostel.
+      const students = await User.find({ role: 'Student', ...hostelFilter }, '_id')
+        .collation({ locale: 'en', strength: 2 });
       filter.student = { $in: students.map((s) => s._id) };
     }
 
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
     const logs = await ScanLog.find(filter)
-      .populate('student', 'name studentId campusStatus')
+      // roomNumber/department are rendered and searched by the movement log view.
+      .populate('student', 'name studentId campusStatus roomNumber department')
       .populate('guard', 'name studentId')
       .sort({ createdAt: -1 })
       .limit(limit);

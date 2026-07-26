@@ -1,13 +1,4 @@
-// One-off, idempotent: node scripts/migrateWardenToCaretaker.js — renames the
-// warden designation to caretaker in existing data. Same people, same routing;
-// only the stored role value and the field names change:
-//   users.role            'Warden' -> 'Caretaker'
-//   outingrequests        wardenSignature -> caretakerSignature, targetWarden -> targetCaretaker
-//   leaveapplications     wardenSignature -> caretakerSignature, targetWarden -> targetCaretaker
-//   complaints            targetWarden -> targetCaretaker
-// Run this BEFORE deploying the renamed code: until it runs, the new code reads
-// the new field names and would see legacy docs as unrouted/unsigned.
-// Safe to re-run — every step matches only documents still on the old shape.
+
 require('dotenv').config();
 const mongoose = require('mongoose');
 const connectDB = require('../src/config/db');
@@ -49,6 +40,22 @@ const run = async () => {
   process.exit(0);
 };
 
+// Hard stop: running this now would demote every real Warden account to Caretaker.
+console.error(
+  [
+    'REFUSING TO RUN — this migration is retired.',
+    '',
+    "'Warden' is a live role again (one rank above caretaker, per-hostel accounts).",
+    'Step 1 of this script sets role: Warden -> Caretaker, which would wipe out',
+    'every warden account on the instance.',
+    '',
+    'If you genuinely need the historic 2025 rename on an old database, do it by',
+    'hand against that database only, and never against one that has wardens.',
+  ].join('\n')
+);
+process.exit(1);
+
+// eslint-disable-next-line no-unreachable
 run().catch((err) => {
   console.error('Migration failed:', err);
   process.exit(1);

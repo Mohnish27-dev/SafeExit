@@ -13,12 +13,13 @@ const { sosLimiter } = require('../middlewares/rateLimit');
 
 router.route('/')
   .post(protect, authorizeRoles('Student'), sosLimiter, createSOSAlert)
-  .get(protect, authorizeRoles('Admin', 'Caretaker', 'Guard'), getSOSAlerts);
+  .get(protect, authorizeRoles('Admin', 'Caretaker', 'Guard', 'Warden'), getSOSAlerts);
 
 router.get('/mine', protect, authorizeRoles('Student'), getMySOSAlerts);
 
-router.get('/stream', protect, authorizeRoles('Admin', 'Caretaker', 'Guard'), streamSOSEvents);
+router.get('/stream', protect, authorizeRoles('Admin', 'Caretaker', 'Guard', 'Warden'), streamSOSEvents);
 
-router.patch('/:id/status', protect, authorizeRoles('Admin', 'Caretaker'), updateSOSStatus);
+// Wardens can acknowledge/resolve within their gender scope, same as caretakers.
+router.patch('/:id/status', protect, authorizeRoles('Admin', 'Caretaker', 'Warden'), updateSOSStatus);
 
 module.exports = router;

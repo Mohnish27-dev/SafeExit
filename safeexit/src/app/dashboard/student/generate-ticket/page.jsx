@@ -50,7 +50,7 @@ const nowMinutesInCampusTZ = () => {
 // UX-only mirror of backend outingRules policies — keep values in sync. Minutes since midnight.
 const OUTING_POLICIES = {
   femaleNearby: { departStart: 6 * 60, departEnd: 18 * 60 + 30, returnDeadline: 20 * 60, requiresCaretaker: false },
-  femaleMarket: { departStart: 6 * 60, departEnd: 14 * 60 + 30, returnDeadline: 17 * 60 + 30, requiresCaretaker: true },
+  femaleMarket: { departStart: 6 * 60, departEnd: 15 * 60, returnDeadline: 17 * 60 + 30, requiresCaretaker: true },
   general: { departStart: 6 * 60, departEnd: 20 * 60 - 1, returnDeadline: 20 * 60, requiresCaretaker: false },
 };
 
@@ -692,7 +692,7 @@ export default function GenerateTicket() {
               <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
               <p className="text-[11px] text-amber-800 leading-relaxed">
                 {form.outingType === "Market"
-                  ? "Local market outings need caretaker approval. Leave between 6:00 AM and 2:30 PM; you must return by 5:30 PM."
+                  ? "Local market outings need caretaker approval. Leave between 6:00 AM and 3:00 PM; you must return by 5:30 PM."
                   : "Nearby outings are auto-approved. Leave between 6:00 AM and 6:30 PM; you must return by 8:00 PM."}
               </p>
             </div>

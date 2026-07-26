@@ -2,7 +2,7 @@ const Complaint = require('../models/Complaint');
 const User = require('../models/User');
 const sseHub = require('../utils/sseHub');
 const { notifyCaretakers, notifyDepartment } = require('../utils/pushService');
-const { scopedStudentFilter, resolveTargetCaretaker } = require('../utils/caretakerScope');
+const { scopedStudentFilter, resolveTargetCaretaker } = require('../utils/hostelScope');
 
 // Categories that route to a maintenance department (i.e. everything except 'Other').
 const DEPARTMENT_CATEGORIES = ['Electrical', 'Plumbing', 'Cleaning', 'Wifi', 'Furniture'];

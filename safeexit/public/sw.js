@@ -4,10 +4,6 @@ const CACHE_NAME = 'safeexit-v1';
 const OFFLINE_URL = '/offline';
 const PRECACHE_URLS = [OFFLINE_URL];
 
-// Precache without letting a single failed fetch reject `install`.
-// cache.addAll() rejects atomically if ANY request is non-OK, which would
-// prevent the SW from ever activating (breaking offline + push). Instead we
-// fetch + cache.put() each URL individually and swallow failures.
 async function precache() {
   const cache = await caches.open(CACHE_NAME);
   await Promise.all(

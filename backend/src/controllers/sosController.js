@@ -1,7 +1,7 @@
 const SOSAlert = require('../models/SOSAlert');
 const sseHub = require('../utils/sseHub');
 const { notifyCaretakersAndAdmins } = require('../utils/pushService');
-const { genderScopedStudentFilter, studentInGenderScope } = require('../utils/caretakerScope');
+const { genderScopedStudentFilter, studentInGenderScope } = require('../utils/hostelScope');
 
 // POST /api/sos — private (Student)
 const createSOSAlert = async (req, res) => {

@@ -5,6 +5,7 @@ import {
   GraduationCap,
   ShieldCheck,
   UserCog,
+  UserCheck,
   Wrench,
   Search,
   Loader2,
@@ -26,8 +27,12 @@ const TABS = [
   { key: "Student", label: "Students", icon: GraduationCap },
   { key: "Guard", label: "Guards", icon: ShieldCheck },
   { key: "Caretaker", label: "Caretakers", icon: UserCog },
+  { key: "Warden", label: "Wardens", icon: UserCheck },
   { key: "Department", label: "Departments", icon: Wrench },
 ];
+
+
+const HOSTEL_ROLES = ["Caretaker", "Warden"];
 
 // Maintenance departments a Department account can service (mirrors Complaint.category).
 const DEPARTMENT_OPTIONS = ["Electrical", "Plumbing", "Cleaning", "Wifi", "Furniture"];
@@ -81,14 +86,15 @@ export default function PeopleView() {
   }, [people, search]);
 
   // Only staff are provisioned here; students self-register.
-  const isStaffTab = role === "Guard" || role === "Caretaker" || role === "Department";
+  const isStaffTab = role === "Guard" || role === "Caretaker" || role === "Warden" || role === "Department";
+  const isHostelRole = HOSTEL_ROLES.includes(role);
 
-  // Hostels with a caretaker already; hides them from pickers and caps "Add Caretaker".
+
   const takenHostels = useMemo(() => {
-    if (role !== "Caretaker") return new Set();
+    if (!isHostelRole) return new Set();
     return new Set(people.map((p) => p.managedHostel).filter(Boolean));
-  }, [role, people]);
-  const allHostelsTaken = role === "Caretaker" && takenHostels.size >= HOSTEL_OPTIONS.length;
+  }, [isHostelRole, people]);
+  const allHostelsTaken = isHostelRole && takenHostels.size >= HOSTEL_OPTIONS.length;
 
   // Departments with an account already; keeps one account per department.
   const takenDepartments = useMemo(() => {
@@ -130,11 +136,11 @@ export default function PeopleView() {
         body: JSON.stringify({
           name: addForm.name,
           staffId: addForm.staffId,
-          role, // the currently selected tab: "Guard", "Caretaker", or "Department"
+          role, // the currently selected tab: "Guard", "Caretaker", "Warden", or "Department"
           pin: addForm.pin,
           phoneNumber: addForm.phoneNumber,
-          // Only caretakers carry a hostel scope; departments carry a category. Backend ignores the rest.
-          ...(role === "Caretaker" ? { managedHostel: addForm.managedHostel } : {}),
+   
+          ...(isHostelRole ? { managedHostel: addForm.managedHostel } : {}),
           ...(role === "Department" ? { managedDepartment: addForm.managedDepartment } : {}),
         }),
       });
@@ -233,7 +239,7 @@ export default function PeopleView() {
             <button
               onClick={openAdd}
               disabled={addDisabled}
-              title={allHostelsTaken ? "Every hostel already has a caretaker account." : allDepartmentsTaken ? "Every department already has an account." : undefined}
+              title={allHostelsTaken ? `Every hostel already has a ${role.toLowerCase()} account.` : allDepartmentsTaken ? "Every department already has an account." : undefined}
               className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus className="h-4 w-4" /> Add {role}
@@ -295,6 +301,11 @@ export default function PeopleView() {
                     {p.managedHostel || "No hostel"}
                   </span>
                 )}
+                {role === "Warden" && (
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${p.managedHostel ? "bg-purple-100 text-purple-700" : "bg-amber-100 text-amber-700"}`}>
+                    {p.managedHostel || "No hostel"}
+                  </span>
+                )}
                 {role === "Department" && (
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${p.managedDepartment ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                     {p.managedDepartment || "No department"}
@@ -335,7 +346,7 @@ export default function PeopleView() {
                 {p.webAuthnRegistered && <span className="ml-2 text-emerald-500">· Passkey ✓</span>}
               </div>
 
-              {role === "Caretaker" && (
+              {isHostelRole && (
                 <button
                   onClick={() => { setScopeTarget(p); setScopeValue(p.managedHostel || ""); setActionMsg(""); }}
                   disabled={busy}
@@ -413,12 +424,12 @@ export default function PeopleView() {
                 <input
                   value={addForm.staffId}
                   onChange={(e) => setAddForm((f) => ({ ...f, staffId: e.target.value }))}
-                  placeholder={role === "Guard" ? "E.g. GRD001" : role === "Department" ? "E.g. DEPT-ELEC" : "E.g. WDN001"}
+                  placeholder={role === "Guard" ? "E.g. GRD001" : role === "Department" ? "E.g. DEPT-ELEC" : role === "Warden" ? "E.g. WDN001" : "E.g. CTK001"}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:outline-none"
                   required
                 />
               </div>
-              {role === "Caretaker" && (
+              {isHostelRole && (
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Hostel</label>
                   <select
@@ -428,7 +439,7 @@ export default function PeopleView() {
                     required
                   >
                     <option value="" disabled>Select hostel…</option>
-                    {/* Only hostels without a caretaker yet; grouped by boys'/girls'. */}
+                    {/* Only hostels without an account of THIS role yet; grouped by boys'/girls'. */}
                     {["Male", "Female"].map((g) => {
                       const opts = HOSTEL_OPTIONS.filter((h) => h.gender === g && !takenHostels.has(h.value));
                       if (opts.length === 0) return null;
@@ -442,7 +453,9 @@ export default function PeopleView() {
                     })}
                   </select>
                   <p className="mt-1 text-[11px] text-slate-400">
-                    Each hostel has one caretaker login. This account will only see and manage students of the selected hostel.
+                    {role === "Warden"
+                      ? "Each hostel has one warden login. The warden ranks above the caretaker: they decide the requests the caretaker forwards up, and their decision is final."
+                      : "Each hostel has one caretaker login. This account will only see and manage students of the selected hostel."}
                   </p>
                 </div>
               )}
@@ -580,7 +593,10 @@ export default function PeopleView() {
               {scopeTarget.role === "Department" ? (
                 <>Choose which department <span className="font-semibold text-slate-700">{scopeTarget.name}</span> services. They will only see complaints of that category.</>
               ) : (
-                <>Choose which hostel <span className="font-semibold text-slate-700">{scopeTarget.name}</span> oversees. They will only see and manage students of that hostel.</>
+                <>Choose which hostel <span className="font-semibold text-slate-700">{scopeTarget.name}</span> oversees.{" "}
+                {scopeTarget.role === "Warden"
+                  ? "They will decide the requests that hostel's caretaker forwards up to them."
+                  : "They will only see and manage students of that hostel."}</>
               )}
             </p>
 
@@ -608,8 +624,6 @@ export default function PeopleView() {
                 ) : (
                   <>
                     <option value="" disabled>Select hostel…</option>
-                    {/* Free hostels plus this caretaker's own current one — a hostel held
-                        by ANOTHER caretaker is excluded to keep one account per hostel. */}
                     {["Male", "Female"].map((g) => {
                       const opts = HOSTEL_OPTIONS.filter(
                         (h) => h.gender === g && (!takenHostels.has(h.value) || h.value === scopeTarget.managedHostel)
