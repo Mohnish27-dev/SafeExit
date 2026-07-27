@@ -121,6 +121,10 @@ const en = {
     couldNotLoadComplaints: "Could not load complaints",
     leaveApplications: "Leave Applications",
     leaveApplicationsDesc: "Review multi-day leave requests before departure.",
+    // Short forms for the mobile bottom nav, where full labels wrap to three lines.
+    navLeave: "Leave",
+    navAlerts: "Alerts",
+    navComplaints: "Issues",
     manageLeave: "Manage Leave Applications",
     loadingLeave: "Loading leave applications…",
     noPendingLeave: "No pending leave applications",

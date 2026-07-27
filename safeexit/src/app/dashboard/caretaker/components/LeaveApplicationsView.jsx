@@ -236,7 +236,7 @@ export default function LeaveApplicationsView({
             >
               <div className="sd-tile__inner p-4">
                 <span className="sd-tile__glare" aria-hidden="true" />
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex items-start gap-3 min-w-0">
                     <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-fuchsia-400 flex items-center justify-center text-white font-bold">
                       {req.initials}
@@ -282,27 +282,27 @@ export default function LeaveApplicationsView({
                   </div>
 
                   {rejectingId !== req.id && (
-                    <div className="flex shrink-0 flex-col gap-2">
+                    <div className="grid grid-cols-3 gap-2 sm:flex sm:shrink-0 sm:flex-col">
                       <button
                         onClick={() => approveLeave(req.id)}
                         onPointerMove={handleMagneticMove}
                         onPointerLeave={handleMagneticLeave}
-                        className="sd-magnetic flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-white font-bold shadow"
+                        className="sd-magnetic flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-sm text-white font-bold shadow sm:gap-2 sm:px-4 sm:py-2"
                       >
-                        <Check className="h-4 w-4" /> {tc("approve")}
+                        <Check className="h-4 w-4 shrink-0" /> {tc("approve")}
                       </button>
                       <button
                         onClick={() => startReject(req.id)}
-                        className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-rose-300 text-rose-600 font-bold hover:bg-rose-50 transition-colors"
+                        className="flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 border border-rose-300 text-sm text-rose-600 font-bold hover:bg-rose-50 transition-colors sm:gap-2 sm:px-4 sm:py-2"
                       >
-                        <X className="h-4 w-4" /> {tc("reject")}
+                        <X className="h-4 w-4 shrink-0" /> {tc("reject")}
                       </button>
                       <button
                         onClick={() => forwardLeave(req.id)}
                         title={t("forwardToWarden")}
-                        className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-teal-300 text-teal-700 font-bold hover:bg-teal-50 transition-colors"
+                        className="flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 border border-teal-300 text-sm text-teal-700 font-bold hover:bg-teal-50 transition-colors sm:gap-2 sm:px-4 sm:py-2"
                       >
-                        <ArrowUpRight className="h-4 w-4" /> {t("forward")}
+                        <ArrowUpRight className="h-4 w-4 shrink-0" /> {t("forward")}
                       </button>
                     </div>
                   )}
