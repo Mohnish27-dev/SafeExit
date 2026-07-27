@@ -92,13 +92,13 @@ export default function RequestsView({
               }}
               className="sd-tile sd-luxe-rise"
             >
-              <div className="sd-tile__inner flex items-center justify-between gap-3 p-4">
+              <div className="sd-tile__inner flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <span className="sd-tile__glare" aria-hidden="true" />
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-linear-to-br from-indigo-400 to-cyan-400 flex items-center justify-center text-white font-bold">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-indigo-400 to-cyan-400 flex items-center justify-center text-white font-bold">
                     {req.initials}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="sd-card-title text-slate-900 text-base">{req.name}</p>
                     <p className="sd-micro mt-0.5">
                       {req.branch}
@@ -107,35 +107,38 @@ export default function RequestsView({
                     {req.destination && (
                       <p className="sd-micro mt-0.5 text-slate-500">{t("toDestination")} {req.destination}</p>
                     )}
+                    <p className="sd-micro mt-0.5 text-slate-500 sm:hidden">
+                      {tc("out")} <span className="font-semibold text-slate-900">{req.out}</span>
+                    </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <div className="text-right mr-2">
+                  <div className="mr-2 hidden text-right sm:block">
                     <p className="text-xs text-slate-500">{tc("out")}</p>
                     <p className="font-semibold text-slate-900">{req.out}</p>
                   </div>
-                  <div className="flex sm:flex-col gap-2">
+                  <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-col">
                     <button
                       onClick={() => approveRequest(req.id)}
                       onPointerMove={handleMagneticMove}
                       onPointerLeave={handleMagneticLeave}
-                      className="sd-magnetic flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-white font-bold shadow"
+                      className="sd-magnetic flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-sm text-white font-bold shadow sm:gap-2 sm:px-4 sm:py-2"
                     >
-                      <Check className="h-4 w-4" /> {tc("approve")}
+                      <Check className="h-4 w-4 shrink-0" /> {tc("approve")}
                     </button>
                     <button
                       onClick={() => rejectRequest(req.id)}
-                      className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-rose-300 text-rose-600 font-bold hover:bg-rose-50 transition-colors"
+                      className="flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 border border-rose-300 text-sm text-rose-600 font-bold hover:bg-rose-50 transition-colors sm:gap-2 sm:px-4 sm:py-2"
                     >
-                      <X className="h-4 w-4" /> {tc("reject")}
+                      <X className="h-4 w-4 shrink-0" /> {tc("reject")}
                     </button>
                     <button
                       onClick={() => forwardRequest(req.id)}
                       title={t("forwardToWarden")}
-                      className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-teal-300 text-teal-700 font-bold hover:bg-teal-50 transition-colors"
+                      className="flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 border border-teal-300 text-sm text-teal-700 font-bold hover:bg-teal-50 transition-colors sm:gap-2 sm:px-4 sm:py-2"
                     >
-                      <ArrowUpRight className="h-4 w-4" /> {t("forward")}
+                      <ArrowUpRight className="h-4 w-4 shrink-0" /> {t("forward")}
                     </button>
                   </div>
                 </div>

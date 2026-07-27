@@ -1024,7 +1024,7 @@ export default function CaretakerDashboardPage() {
                   </div>
                 ) : (
                   leavePending.map((req, i) => (
-                  <div key={req.id} className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3.5" style={{ animationDelay: `${0.12 + i * 0.06}s` }}>
+                  <div key={req.id} className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex flex-col gap-3 rounded-2xl px-4 py-3.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between" style={{ animationDelay: `${0.12 + i * 0.06}s` }}>
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-fuchsia-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
                       <div className="min-w-0">
@@ -1034,12 +1034,12 @@ export default function CaretakerDashboardPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => openLeaveApproval(req.id)} className="flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-white font-bold shadow hover:-translate-y-0.5 transition-transform">
-                        <Check className="h-4 w-4" /> {tc("approve")}
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                      <button onClick={() => openLeaveApproval(req.id)} className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-sm text-white font-bold shadow hover:-translate-y-0.5 transition-transform sm:px-4 sm:py-2">
+                        <Check className="h-4 w-4 shrink-0" /> {tc("approve")}
                       </button>
-                      <button onClick={() => setView('leave')} className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 transition-colors">
-                        <ArrowRight className="h-4 w-4" /> {t("reviewInLeave")}
+                      <button onClick={() => setView('leave')} className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 border border-slate-300 text-sm text-slate-600 font-bold hover:bg-slate-50 transition-colors sm:px-4 sm:py-2">
+                        <ArrowRight className="h-4 w-4 shrink-0" /> {t("reviewInLeave")}
                       </button>
                     </div>
                   </div>
@@ -1057,32 +1057,32 @@ export default function CaretakerDashboardPage() {
               </div>
               <div className="mt-6 space-y-3">
                 {pending.map((req, i) => (
-                  <div key={req.id} className="sd-row sd-luxe-rise flex-wrap" style={{ "--accent": "#6366f1", animationDelay: `${0.12 + i * 0.06}s` }}>
+                  <div key={req.id} className="sd-row sd-luxe-rise flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center" style={{ "--accent": "#6366f1", animationDelay: `${0.12 + i * 0.06}s` }}>
                     <span className="sd-row__accent" aria-hidden="true" />
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-linear-to-br from-indigo-400 to-cyan-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
-                      <div>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-indigo-400 to-cyan-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
+                      <div className="min-w-0">
                         <p className="sd-card-title text-slate-900 text-base">{req.name}</p>
                         <p className="sd-micro mt-0.5">{req.branch} • <span className="font-mono">{req.roll}</span></p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div className="text-right mr-2">
+                      <div className="mr-2 shrink-0">
                         <p className="text-xs text-slate-500">{tc("out")}</p>
                         <p className="font-semibold text-slate-900">{req.out}</p>
                       </div>
-                      <div className="flex sm:flex-col gap-2">
+                      <div className="grid flex-1 grid-cols-2 gap-2 sm:flex sm:flex-none sm:flex-col">
                         <button
                           onClick={() => openOutingApproval(req.id)}
                           onPointerMove={handleMagneticMove}
                           onPointerLeave={handleMagneticLeave}
-                          className="sd-magnetic flex items-center gap-2 rounded-2xl px-4 py-2 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-white font-bold shadow"
+                          className="sd-magnetic flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-sm text-white font-bold shadow sm:px-4 sm:py-2"
                         >
-                          <Check className="h-4 w-4" /> {tc("approve")}
+                          <Check className="h-4 w-4 shrink-0" /> {tc("approve")}
                         </button>
-                        <button onClick={() => rejectRequest(req.id)} className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-rose-300 text-rose-600 font-bold hover:bg-rose-50 transition-colors">
-                          <X className="h-4 w-4" /> {tc("reject")}
+                        <button onClick={() => rejectRequest(req.id)} className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 border border-rose-300 text-sm text-rose-600 font-bold hover:bg-rose-50 transition-colors sm:px-4 sm:py-2">
+                          <X className="h-4 w-4 shrink-0" /> {tc("reject")}
                         </button>
                       </div>
                     </div>
@@ -1416,34 +1416,34 @@ export default function CaretakerDashboardPage() {
         </div>
       )}
 
-      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-6' : 'grid-cols-7'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
-        <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="text-[9px]">{tc("home")}</span></button>
+      {/* Mobile nav — Logs lives on the Home tile grid and Profile behind the header avatar,
+          so they're dropped here to keep every tab label on one line. */}
+      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-4' : 'grid-cols-5'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
+        <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="sd-navx__label">{tc("home")}</span></button>
         {!isBoysCaretaker && (
-          <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="text-[9px]">{t("requests")}</span></button>
+          <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="sd-navx__label">{t("requests")}</span></button>
         )}
         <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
           <span className="sd-navx__icon relative">
             <CalendarDays className="h-5 w-5" />
             {leavePending.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
           </span>
-          <span className="text-[9px]">{t("leaveApplications")}</span>
+          <span className="sd-navx__label">{t("navLeave")}</span>
         </button>
         <button onClick={() => setView('sos')} className={`sd-navx ${view === 'sos' ? 'sd-navx--active' : ''}`}>
           <span className="sd-navx__icon relative">
             <Siren className="h-5 w-5" />
             {sosCount > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
           </span>
-          <span className="text-[9px]">{t("safetyAlerts")}</span>
+          <span className="sd-navx__label">{t("navAlerts")}</span>
         </button>
         <button onClick={() => setView('complaints')} className={`sd-navx ${view === 'complaints' ? 'sd-navx--active' : ''}`}>
           <span className="sd-navx__icon relative">
             <MessageSquare className="h-5 w-5" />
             {reports.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
           </span>
-          <span className="text-[9px]">{t("complaints")}</span>
+          <span className="sd-navx__label">{t("navComplaints")}</span>
         </button>
-        <button onClick={() => setView('logs')} className={`sd-navx ${view === 'logs' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ScrollText className="h-5 w-5" /></span><span className="text-[9px]">Logs</span></button>
-        <button onClick={() => setView('profile')} className={`sd-navx ${view === 'profile' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><User className="h-5 w-5" /></span><span className="text-[9px]">{tc("profile")}</span></button>
       </nav>
     </main>
   );

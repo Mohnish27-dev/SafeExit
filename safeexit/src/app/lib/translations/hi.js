@@ -121,6 +121,10 @@ const hi = {
     couldNotLoadComplaints: "शिकायतें लोड नहीं हो पाईं",
     leaveApplications: "लीव एप्लीकेशन",
     leaveApplicationsDesc: "जाने से पहले मल्टी-डे लीव रिक्वेस्ट रिव्यू करें।",
+    // Short forms for the mobile bottom nav, where full labels wrap to three lines.
+    navLeave: "लीव",
+    navAlerts: "अलर्ट",
+    navComplaints: "शिकायत",
     manageLeave: "लीव एप्लीकेशन मैनेज करें",
     loadingLeave: "लीव एप्लीकेशन लोड हो रही हैं…",
     noPendingLeave: "कोई पेंडिंग लीव एप्लीकेशन नहीं",
