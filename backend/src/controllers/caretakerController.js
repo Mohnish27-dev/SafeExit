@@ -2,7 +2,7 @@ const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
 const LeaveApplication = require('../models/LeaveApplication');
 const { genderForHostel } = require('../config/hostels');
-const { caretakerStudentFilter, COLLATION } = require('../utils/caretakerScope');
+const { caretakerStudentFilter, COLLATION } = require('../utils/hostelScope');
 const { isReturnLate } = require('../utils/outingRules');
 
 // GET /api/caretaker/selectable — private (Student)

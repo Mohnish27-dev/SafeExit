@@ -7,16 +7,15 @@ const userSchema = new mongoose.Schema({
   // Students only; sparse+unique so many staff can share "no email".
   email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
   password: { type: String }, // optional for webauthn-only, but usually required for first login
-  role: { type: String, enum: ['Student', 'Caretaker', 'Guard', 'Admin', 'Department'], default: 'Student' },
+
+  role: { type: String, enum: ['Student', 'Caretaker', 'Warden', 'Guard', 'Admin', 'Department'], default: 'Student' },
   gender: { type: String, enum: ['Male', 'Female', 'Other'] },
   // Department staff scope: the single maintenance category this account services.
   // Complaints of this category route here; unset for non-Department users.
   managedDepartment: { type: String, enum: ['Electrical', 'Plumbing', 'Cleaning', 'Wifi', 'Furniture'] },
-  // Caretaker's hostel scope (derived gender), kept for the existing auto-approval
-  // rules; unset = legacy/unassigned. managedHostel is the real routing key.
+
   managedGender: { type: String, enum: ['Male', 'Female'] },
-  // Caretaker's specific hostel (one of the campus hostels); requests route here.
-  // Unset on a caretaker = not yet assigned (falls back to managedGender scope).
+
   managedHostel: { type: String },
   studentId: { type: String }, // e.g., register number
   department: { type: String },

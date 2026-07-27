@@ -1,9 +1,12 @@
 const User = require('../models/User');
 const { genderForHostel } = require('../config/hostels');
 
-// A caretaker's managedGender -> the set of student genders they may see.
-// 'Other' rides with the boys' hostel, matching outingRules' male/general path.
-// Used only as the LEGACY fallback for caretakers not yet assigned a managedHostel.
+
+const HOSTEL_SCOPED_ROLES = ['Caretaker', 'Warden'];
+
+const isHostelScoped = (user) => !!user && HOSTEL_SCOPED_ROLES.includes(user.role);
+
+
 const scopeGenders = (managedGender) =>
   managedGender === 'Female' ? ['Female']
   : managedGender === 'Male' ? ['Male', 'Other']
@@ -19,15 +22,14 @@ const ownHostelStudentIds = (managedHostel) =>
     .collation({ locale: 'en', strength: 2 })
     .distinct('_id');
 
-// Mongo filter fragment restricting a REQUEST query (outing/leave/complaint) to the
-// caller's scope. Routing is now request-keyed on `targetCaretaker`:
-// - Admin/Guard (and any non-Caretaker): {} (no restriction).
-// - Caretaker: requests routed to them (targetCaretaker === self) OR legacy requests with
-//   no targetCaretaker whose student belongs to their own hostel (migration-safe).
-// - Caretaker with only a legacy managedGender (no managedHostel): students of that gender.
-// - Caretaker with neither: matches nothing.
 async function scopedStudentFilter(user) {
-  if (!user || user.role !== 'Caretaker') return {};
+  if (!isHostelScoped(user)) return {};
+
+  if (user.role === 'Warden') {
+    if (!user.managedHostel) return { student: { $in: [] } };
+    const ids = await ownHostelStudentIds(user.managedHostel);
+    return { student: { $in: ids } };
+  }
 
   if (user.managedHostel) {
     const ids = await ownHostelStudentIds(user.managedHostel);
@@ -46,53 +48,49 @@ async function scopedStudentFilter(user) {
   return { student: { $in: ids } };
 }
 
-// Single-doc guard for approve/reject/handle endpoints: may this caretaker act on this
-// request? The request carries `targetCaretaker` (routing key). `student` must be a
-// populated doc/object carrying at least { hostelName, gender }.
-// - targetCaretaker set -> only that caretaker may act.
-// - targetCaretaker unset (legacy) -> hostel-first check, with the gender fallback.
+
+const forwardedToFilter = (user) => ({
+  status: 'Forwarded',
+  forwardedTo: user._id,
+});
+
 function requestInScope(user, request, student) {
-  if (!user || user.role !== 'Caretaker') return true; // Admin/Guard unrestricted
+  if (!isHostelScoped(user)) return true; // Admin/Guard unrestricted
+
+  if (user.role === 'Warden') {
+    return !!request && !!request.forwardedTo && String(request.forwardedTo) === String(user._id);
+  }
+
   if (request && request.targetCaretaker) {
     return String(request.targetCaretaker) === String(user._id);
   }
   return studentInScope(user, student);
 }
 
-// Legacy single-doc guard used where there is no routed request (kept for the
-// gender fallback path and any hostel-only checks).
 function studentInScope(user, student) {
-  if (!user || user.role !== 'Caretaker') return true; // Admin/Guard unrestricted
+  if (!isHostelScoped(user)) return true; // Admin/Guard unrestricted
   if (!student) return false;
   if (user.managedHostel) return sameHostel(student.hostelName, user.managedHostel);
+  // A warden with no hostel is unassigned and sees nothing; only caretakers keep the
+  // legacy gender fallback.
+  if (user.role === 'Warden') return false;
   return scopeGenders(user.managedGender).includes(student.gender);
 }
-
-// GENDER-scoped filter for SOS: an emergency is never fenced to a single hostel, so
-// every caretaker of the matching gender (plus admins, via notifyCaretakersAndAdmins) can
-// see and act on it. Admin/Guard: unrestricted. Caretaker: all students of their gender.
 async function genderScopedStudentFilter(user) {
-  if (!user || user.role !== 'Caretaker') return {};
+  if (!isHostelScoped(user)) return {};
   const genders = scopeGenders(user.managedGender);
   if (genders.length === 0) return { student: { $in: [] } };
   const ids = await User.find({ role: 'Student', gender: { $in: genders } }).distinct('_id');
   return { student: { $in: ids } };
 }
 
-// Single-doc gender guard for SOS handle/resolve: may this caretaker act on an alert
-// raised by this student? Yes when the student's gender is within the caretaker's scope.
 function studentInGenderScope(user, student) {
-  if (!user || user.role !== 'Caretaker') return true; // Admin/Guard unrestricted
+  if (!isHostelScoped(user)) return true; // Admin/Guard unrestricted
   if (!student) return false;
   return scopeGenders(user.managedGender).includes(student.gender);
 }
 
-// Resolve the caretaker a new request should route to.
-// - If `requestedCaretakerId` is supplied, it must be an assigned Caretaker whose managed
-//   gender matches the student's gender (the boys<->girls fence). Mismatch -> throws.
-// - Otherwise defaults to the caretaker of the student's own hostel (or null if none).
-// Returns the caretaker doc, or null when no caretaker can be resolved (routing then falls
-// back to hostel-based notification/scoping).
+
 async function resolveTargetCaretaker(student, requestedCaretakerId) {
   const studentGender = student.gender || genderForHostel(student.hostelName);
 
@@ -124,6 +122,15 @@ async function resolveTargetCaretaker(student, requestedCaretakerId) {
   return null;
 }
 
+
+async function resolveWardenForHostel(hostelName) {
+  if (!hostelName) return null;
+  const warden = await User.findOne({ role: 'Warden', managedHostel: hostelName })
+    .collation({ locale: 'en', strength: 2 })
+    .select('_id role name managedGender managedHostel');
+  return warden || null;
+}
+
 // Mongo filter selecting the STUDENTS a caretaker oversees (as opposed to
 // scopedStudentFilter, which selects their routed *requests*). Hostel-first with the
 // legacy gender fallback; `null` when the caretaker has no scope configured at all.
@@ -139,10 +146,13 @@ function caretakerStudentFilter(user) {
 }
 
 module.exports = {
+  HOSTEL_SCOPED_ROLES,
   scopedStudentFilter,
+  forwardedToFilter,
   studentInScope,
   requestInScope,
   resolveTargetCaretaker,
+  resolveWardenForHostel,
   genderScopedStudentFilter,
   studentInGenderScope,
   caretakerStudentFilter,

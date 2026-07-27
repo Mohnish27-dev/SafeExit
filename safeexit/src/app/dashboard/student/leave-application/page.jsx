@@ -20,6 +20,7 @@ import {
   FileSignature,
   Home,
   PenLine,
+  ArrowUpRight,
 } from "lucide-react";
 import StudentFeatureShell, {
   StudentFeaturePanel,
@@ -45,6 +46,8 @@ const isBeforeEveningCurfew = (date) =>
 
 const statusConfig = {
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
+  // Caretaker escalated it — the hostel warden decides this one.
+  forwarded: { label: "With warden", color: "text-teal-700", bg: "bg-teal-100", icon: ArrowUpRight },
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
   out: { label: "On Leave", color: "text-sky-700", bg: "bg-sky-100", icon: MapPin },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
@@ -56,6 +59,7 @@ const statusConfig = {
 const filters = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
+  { key: "forwarded", label: "With warden" },
   { key: "approved", label: "Approved" },
   { key: "out", label: "On Leave" },
   { key: "rejected", label: "Rejected" },
@@ -161,10 +165,10 @@ export default function LeaveApplicationPage() {
 
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
-  // Mirrors the backend rule: one live leave at a time (Pending/Approved/Out).
+  // Mirrors the backend rule: one live leave at a time (Pending/Forwarded/Approved/Out).
   // A student must finish the current trip (Returned) or let it end before applying again.
   const activeLeave = useMemo(
-    () => applications.find((a) => ["pending", "approved", "out"].includes((a.status || "").toLowerCase())),
+    () => applications.find((a) => ["pending", "forwarded", "approved", "out"].includes((a.status || "").toLowerCase())),
     [applications]
   );
 
@@ -360,7 +364,7 @@ export default function LeaveApplicationPage() {
         <StudentFeaturePanel className="p-0 overflow-hidden animate-scale-in" delay={60}>
           <div className="sf-letter-paper">
             <p>To,</p>
-            <p>The Caretaker,</p>
+            <p>The Warden,</p>
             <p>{display.hostel || "Hostel Administration"}</p>
             <p className="mt-4 font-bold">Subject: Application for Leave — {form.destination}</p>
             <p className="mt-4">Respected Sir/Madam,</p>
@@ -487,6 +491,8 @@ export default function LeaveApplicationPage() {
               ? "You're currently on leave. Once you return and get scanned back in at the gate, you can apply for new leave."
               : activeLeave.status === "Approved"
               ? "Your leave pass is approved. Complete that trip and return to campus — or cancel it — before applying again."
+              : activeLeave.status === "Forwarded"
+              ? "Your leave application is with the warden for a decision. Wait for the outcome, or cancel it, before applying again."
               : "Your leave application is awaiting your caretaker's decision. Wait for the outcome, or cancel it, before applying again."}
           </p>
           <div className="rounded-2xl p-4 mb-5 text-left bg-slate-50 border border-slate-100 space-y-1.5">
@@ -746,20 +752,23 @@ export default function LeaveApplicationPage() {
                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-start gap-2.5">
                               <AlertCircle size={14} className="text-slate-500 shrink-0 mt-0.5" />
                               <p className="text-xs text-slate-600">
-                                <span className="font-bold text-slate-700">Caretaker&rsquo;s note: </span>
+                                <span className="font-bold text-slate-700">
+                                  {a.forwardedTo ? "Warden" : "Caretaker"}&rsquo;s note:{" "}
+                                </span>
                                 {a.remarks}
                               </p>
                             </div>
                           )}
-                          {a.caretakerSignature && (
+                   
+                          {(a.wardenSignature || a.caretakerSignature) && (
                             <div className="mt-3 pt-3 border-t border-emerald-100">
                               <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-                                <CheckCircle2 size={12} /> Approved &amp; signed by caretaker
+                                <CheckCircle2 size={12} /> Approved &amp; signed by {a.wardenSignature ? "warden" : "caretaker"}
                               </p>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={a.caretakerSignature}
-                                alt="Caretaker signature"
+                                src={a.wardenSignature || a.caretakerSignature}
+                                alt={a.wardenSignature ? "Warden signature" : "Caretaker signature"}
                                 className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
                               />
                             </div>
@@ -768,6 +777,12 @@ export default function LeaveApplicationPage() {
                             <div className="mt-3 pt-3 border-t border-amber-100 flex items-start gap-2.5">
                               <Loader2 size={15} className="text-amber-500 shrink-0 mt-0.5 animate-spin" />
                               <p className="text-xs font-semibold text-amber-705">Awaiting caretaker approval. You will be notified.</p>
+                            </div>
+                          )}
+                          {statusKey === "forwarded" && (
+                            <div className="mt-3 pt-3 border-t border-teal-100 flex items-start gap-2.5">
+                              <ArrowUpRight size={15} className="text-teal-600 shrink-0 mt-0.5" />
+                              <p className="text-xs font-semibold text-teal-700">Escalated to the warden for a decision. You will be notified.</p>
                             </div>
                           )}
                           {statusKey === "expired" && (
@@ -782,7 +797,7 @@ export default function LeaveApplicationPage() {
                               <p className="text-xs font-semibold text-slate-500">You cancelled this leave application.</p>
                             </div>
                           )}
-                          {(statusKey === "approved" || statusKey === "pending") && (
+                          {(statusKey === "approved" || statusKey === "pending" || statusKey === "forwarded") && (
                             <div className="mt-4 pt-3 border-t border-slate-100">
                               {confirmCancel === a._id ? (
                                 <div className="flex flex-col gap-2">

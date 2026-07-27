@@ -2,6 +2,7 @@ import { Outfit, Manrope, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { LanguageProvider } from "./lib/i18n";
+import InstallPrompt from "./components/InstallPrompt";
 
 const displayFont = Outfit({
   variable: "--font-space-grotesk",
@@ -60,6 +61,16 @@ export default function RootLayout({ children }) {
             })();
           `}
         </Script>
+        <Script id="pwa-install-capture" strategy="beforeInteractive">
+          {`
+            // Chrome may fire beforeinstallprompt before React hydrates.
+            // Stash it so InstallPrompt can pick it up on mount.
+            window.addEventListener('beforeinstallprompt', function(e) {
+              e.preventDefault();
+              window.__deferredInstallPrompt = e;
+            });
+          `}
+        </Script>
         <Script id="sw-register" strategy="afterInteractive">
           {`
             if ('serviceWorker' in navigator) {
@@ -70,7 +81,7 @@ export default function RootLayout({ children }) {
           `}
         </Script>
       </head>
-      <body className="min-h-full flex flex-col transition-colors duration-300"><LanguageProvider>{children}</LanguageProvider></body>
+      <body className="min-h-full flex flex-col transition-colors duration-300"><LanguageProvider>{children}<InstallPrompt /></LanguageProvider></body>
     </html>
   );
 }

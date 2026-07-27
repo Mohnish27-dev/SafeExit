@@ -8,7 +8,6 @@
     "dev": "nodemon src/server.js",
     "seed:admins": "node scripts/seedAdmins.js",
     "migrate:loginid": "node scripts/migrateStaffLoginId.js",
-    "migrate:caretaker": "node scripts/migrateWardenToCaretaker.js",
     "lint": "eslint src/**/*.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

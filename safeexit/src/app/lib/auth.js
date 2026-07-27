@@ -11,6 +11,7 @@ import { autoSubscribeIfGranted } from "./pushManager";
 const ROLE_CONFIG = {
   student: { loginPath: "/login/student" },
   caretaker: { loginPath: "/login/caretaker" },
+  warden: { loginPath: "/login/warden" },
   security: { loginPath: "/login/security" },
   admin: { loginPath: "/login/admin" },
   department: { loginPath: "/login/department" },
@@ -22,6 +23,7 @@ const loginPathFor = (role) => ROLE_CONFIG[role]?.loginPath || "/login";
 const BACKEND_ROLE_TO_SLUG = {
   Student: "student",
   Caretaker: "caretaker",
+  Warden: "warden",
   Guard: "security",
   Admin: "admin",
   Department: "department",
@@ -30,6 +32,7 @@ const BACKEND_ROLE_TO_SLUG = {
 const ROLE_LABELS = {
   student: "Student",
   caretaker: "Caretaker",
+  warden: "Warden",
   security: "Security Guard",
   admin: "Administrator",
   department: "Department",

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, X, ClipboardList, Loader2, RefreshCcw } from "lucide-react";
+import { Check, X, ClipboardList, Loader2, RefreshCcw, ArrowUpRight } from "lucide-react";
 import { useTranslation } from "@/app/lib/i18n";
 
 const handleTilePointerMove = (e) => {
@@ -37,6 +37,7 @@ export default function RequestsView({
   pending = [],
   approveRequest = () => {},
   rejectRequest = () => {},
+  forwardRequest = () => {},
   loading = false,
   error = "",
   onRefresh = () => {},
@@ -128,6 +129,13 @@ export default function RequestsView({
                       className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-rose-300 text-rose-600 font-bold hover:bg-rose-50 transition-colors"
                     >
                       <X className="h-4 w-4" /> {tc("reject")}
+                    </button>
+                    <button
+                      onClick={() => forwardRequest(req.id)}
+                      title={t("forwardToWarden")}
+                      className="flex items-center gap-2 rounded-2xl px-4 py-2 border border-teal-300 text-teal-700 font-bold hover:bg-teal-50 transition-colors"
+                    >
+                      <ArrowUpRight className="h-4 w-4" /> {t("forward")}
                     </button>
                   </div>
                 </div>

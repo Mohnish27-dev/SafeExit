@@ -51,7 +51,7 @@ const nowMinutesInCampusTZ = () => {
 // UX-only mirror of backend outingRules policies — keep values in sync. Minutes since midnight.
 const OUTING_POLICIES = {
   femaleNearby: { departStart: 6 * 60, departEnd: 18 * 60 + 30, returnDeadline: 20 * 60, requiresCaretaker: false },
-  femaleMarket: { departStart: 6 * 60, departEnd: 14 * 60 + 30, returnDeadline: 17 * 60 + 30, requiresCaretaker: true },
+  femaleMarket: { departStart: 6 * 60, departEnd: 15 * 60, returnDeadline: 17 * 60 + 30, requiresCaretaker: true },
   general: { departStart: 6 * 60, departEnd: 20 * 60 - 1, returnDeadline: 20 * 60, requiresCaretaker: false },
 };
 
@@ -142,7 +142,7 @@ export default function GenerateTicket() {
         const data = await apiFetch("/outing/myrequests");
         if (cancelled) return;
         const active = Array.isArray(data)
-          ? data.find((o) => ["Pending", "Approved", "Out"].includes(o.status))
+          ? data.find((o) => ["Pending", "Forwarded", "Approved", "Out"].includes(o.status))
           : null;
         setActiveOuting(active || null);
       } catch {
@@ -328,7 +328,8 @@ export default function GenerateTicket() {
   if (activeOuting && step !== "success") {
     const activeTicketId = `SE-${String(activeOuting._id).slice(-6).toUpperCase()}`;
     const isOut = activeOuting.status === "Out";
-    const statusLabel = isOut ? "Outside" : activeOuting.status;
+    const isForwarded = activeOuting.status === "Forwarded";
+    const statusLabel = isOut ? "Outside" : isForwarded ? "With warden" : activeOuting.status;
 
     return (
       <StudentFeatureCentered>
@@ -343,6 +344,8 @@ export default function GenerateTicket() {
           <p className="text-slate-500 text-sm mb-6">
             {isOut
               ? "You're currently marked outside campus. Log your entry at the gate before requesting a new outing."
+              : isForwarded
+              ? "Your request is with the warden for a decision. Wait for the outcome or cancel it before generating a new outing ticket."
               : "Complete that journey or cancel your current request before generating a new outing ticket."}
           </p>
 
@@ -740,7 +743,7 @@ export default function GenerateTicket() {
               <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
               <p className="text-[11px] text-amber-800 leading-relaxed">
                 {form.outingType === "Market"
-                  ? "Local market outings need caretaker approval. Leave between 6:00 AM and 2:30 PM; you must return by 5:30 PM."
+                  ? "Local market outings need caretaker approval. Leave between 6:00 AM and 3:00 PM; you must return by 5:30 PM."
                   : "Nearby outings are auto-approved. Leave between 6:00 AM and 6:30 PM; you must return by 8:00 PM."}
               </p>
             </div>

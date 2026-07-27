@@ -1,29 +1,60 @@
 const LeaveApplication = require('../models/LeaveApplication');
 const sseHub = require('../utils/sseHub');
-const { notifyCaretakers } = require('../utils/pushService');
+const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
 const { isBeforeEveningCurfew } = require('../utils/outingRules');
-const { scopedStudentFilter, requestInScope, resolveTargetCaretaker } = require('../utils/caretakerScope');
+const {
+  scopedStudentFilter,
+  forwardedToFilter,
+  requestInScope,
+  resolveTargetCaretaker,
+  resolveWardenForHostel,
+} = require('../utils/hostelScope');
 const { isSignatureDataUrl } = require('../utils/signature');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
 
-const ACTIVE_LEAVE_STATUSES = ['Pending', 'Approved', 'Out'];
+// 'Forwarded' counts as live too — an application sitting with the warden must block a
+// second one just like a Pending one does, or a student could stack approvals.
+const ACTIVE_LEAVE_STATUSES = ['Pending', 'Approved', 'Forwarded', 'Out'];
 
-// Lazy read-time expiry of Pending/Approved passes whose leaveDate passed; Out/Returned/Rejected/Cancelled are never touched. Saves are best-effort per doc.
+// A row counts as "decided" if it carries a frozen verdict, or — for rows written before
+// `decision` existed — if its status still happens to be the verdict. The second clause is
+// what keeps pre-existing history visible without a migration.
+const DECIDED_FILTER = {
+  $or: [
+    { decision: { $in: ['Approved', 'Rejected'] } },
+    { decision: { $exists: false }, status: { $in: ['Approved', 'Rejected'] } },
+  ],
+};
+
+// `status` moved on but the pass never got used as decided (student cancelled, or the leave
+// date came and went). History still shows the verdict; this is the footnote explaining it.
+const LAPSED_STATUSES = ['Cancelled', 'Expired'];
+
+// Normalises a history row: legacy docs get `decision` derived from status, and every row
+// gets `lapsed` so the dashboards don't each have to re-derive it.
+const withDecisionMeta = (doc) => {
+  const obj = doc.toObject();
+  obj.decision = obj.decision || (['Approved', 'Rejected'].includes(obj.status) ? obj.status : null);
+  obj.lapsed = LAPSED_STATUSES.includes(obj.status) ? obj.status : null;
+  return obj;
+};
+
+// Lazy read-time expiry of Pending/Forwarded/Approved passes whose leaveDate passed;
+// Out/Returned/Rejected/Cancelled are never touched. Saves are best-effort per doc.
+// Forwarded must expire here too: it blocks new applications, so a stale one sitting
+// with the warden would otherwise lock the student out indefinitely.
+const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
 const expireStaleApplications = async (applications) => {
   const list = Array.isArray(applications) ? applications : [applications];
   const now = Date.now();
   await Promise.all(
     list.map(async (appDoc) => {
       if (!appDoc) return;
-      if (appDoc.status === 'Pending' && now > new Date(appDoc.leaveDate).getTime()) {
-        appDoc.status = 'Expired';
-      } else if (appDoc.status === 'Approved' && now > new Date(appDoc.leaveDate).getTime()) {
-        appDoc.status = 'Expired';
-      } else {
-        return;
-      }
+      if (!EXPIRABLE_STATUSES.includes(appDoc.status)) return;
+      if (now <= new Date(appDoc.leaveDate).getTime()) return;
+      appDoc.status = 'Expired';
       try {
         await appDoc.save();
       } catch (err) {
@@ -97,6 +128,8 @@ const createLeaveApplication = async (req, res) => {
           ? 'You are currently on leave. Return to campus and get scanned back in at the gate before applying for new leave.'
           : blockingLeave.status === 'Approved'
           ? 'You already have an approved leave pass. Complete or cancel that leave before applying again.'
+          : blockingLeave.status === 'Forwarded'
+          ? 'Your leave application is with the warden for a decision. Wait for the outcome or cancel it before applying again.'
           : 'You already have a leave application awaiting approval. Wait for a decision or cancel it before applying again.';
 
       return res.status(409).json({
@@ -175,17 +208,25 @@ const getPendingLeaveApplications = async (req, res) => {
   }
 };
 
-// GET /api/leave/history — private (Caretaker); caretaker-actioned outcomes only, scoped to their hostel.
+
+// GET /api/leave/history — private (Caretaker); every decided application in their scope,
+// whoever signed it (them or the warden they escalated to), plus anything still sitting with
+// the warden. Keyed off the frozen `decision`, not `status`, so a later cancel/expire/gate
+// scan can't erase the record of what was approved.
 const getLeaveHistory = async (req, res) => {
   try {
     const applications = await LeaveApplication.find({
-      status: { $in: ['Approved', 'Rejected'] },
-      ...(await scopedStudentFilter(req.user)),
+      $and: [
+        { $or: [DECIDED_FILTER, { status: 'Forwarded' }] },
+        await scopedStudentFilter(req.user),
+      ],
     })
       .populate('student', 'name studentId roomNumber hostelName')
-      .sort({ updatedAt: -1 });
+      .populate('forwardedTo', 'name')
+      .populate('approvedBy', 'name role')
+      .sort({ decidedAt: -1, updatedAt: -1 });
 
-    res.json(applications);
+    res.json(applications.map(withDecisionMeta));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -260,6 +301,11 @@ const updateLeaveStatus = async (req, res) => {
 
     if (['Approved', 'Rejected'].includes(status)) {
       application.approvedBy = req.user._id;
+      // Immutable audit verdict — `status` moves on from here (Out/Returned/Cancelled/
+      // Expired), `decision` does not, so history stays complete.
+      application.decision = status;
+      application.decidedAt = new Date();
+      application.decidedByRole = 'Caretaker';
     }
 
     if (status === 'Approved') {
@@ -280,6 +326,200 @@ const updateLeaveStatus = async (req, res) => {
   }
 };
 
+
+const forwardLeaveApplication = async (req, res) => {
+  const { note } = req.body;
+
+  try {
+    const application = await LeaveApplication.findById(req.params.id).populate(
+      'student',
+      'gender hostelName name'
+    );
+
+    if (!application) {
+      return res.status(404).json({ message: 'Leave application not found' });
+    }
+
+    // Only the caretaker this application is routed to may forward it.
+    if (!requestInScope(req.user, application, application.student)) {
+      return res.status(403).json({ message: 'This application is not routed to you.' });
+    }
+
+    if (application.status !== 'Pending') {
+      return res.status(409).json({
+        message: `Only a pending application can be forwarded — this one is already ${application.status.toLowerCase()}.`,
+        status: application.status,
+      });
+    }
+
+    // Don't forward a pass that's already past its leave date; expire it instead.
+    if (Date.now() > new Date(application.leaveDate).getTime()) {
+      application.status = 'Expired';
+      await application.save();
+      sseHub.broadcast('leave:changed', { reason: 'expired', id: application._id, status: 'Expired' });
+      return res.status(409).json({
+        message: 'This application has expired — the leave date has already passed. It can no longer be forwarded.',
+        status: 'Expired',
+      });
+    }
+
+    // Resolve the warden of the student's hostel. No warden assigned -> actionable error.
+    const warden = await resolveWardenForHostel(application.student.hostelName);
+    if (!warden) {
+      return res.status(409).json({
+        message:
+          'No warden is assigned to this hostel yet, so this application can\'t be forwarded. Decide it yourself or ask an admin to assign a warden.',
+      });
+    }
+
+    application.status = 'Forwarded';
+    application.forwardedTo = warden._id;
+    application.forwardedBy = req.user._id;
+    application.forwardedNote = note || undefined;
+    application.forwardedAt = new Date();
+
+    const updated = await application.save();
+
+    sseHub.broadcast('leave:changed', { reason: 'forwarded', id: updated._id, status: 'Forwarded' });
+
+    notifyWarden(warden._id, {
+      title: '⬆️ Leave Forwarded to You',
+      body: `${req.user.name} forwarded ${application.student.name}'s leave application for your decision.`,
+      url: '/dashboard/warden?view=leave',
+    });
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/leave/forwarded — private (Warden); the warden's action queue.
+const getForwardedLeaveApplications = async (req, res) => {
+  try {
+    const applications = await LeaveApplication.find(forwardedToFilter(req.user))
+      .populate('student', 'name studentId roomNumber hostelName')
+      .populate('forwardedBy', 'name')
+      .sort({ forwardedAt: 1 });
+
+    // A forwarded pass can still go stale while it waits on the warden.
+    await expireStaleApplications(applications);
+    const stillForwarded = applications.filter((a) => a.status === 'Forwarded');
+
+    res.json(stillForwarded);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/leave/warden-history — private (Warden); every decided application in their
+// hostel, not just the escalations they personally ruled on, so the warden and the caretaker
+// see the same record. scopedStudentFilter's Warden branch resolves managedHostel -> student
+// ids, and returns an empty set for an unassigned warden.
+const getWardenLeaveHistory = async (req, res) => {
+  try {
+    const applications = await LeaveApplication.find({
+      $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)],
+    })
+      .populate('student', 'name studentId roomNumber hostelName')
+      .populate('forwardedBy', 'name')
+      .populate('approvedBy', 'name role')
+      .sort({ decidedAt: -1, updatedAt: -1 });
+
+    res.json(applications.map(withDecisionMeta));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// PATCH /api/leave/:id/warden-status — private (Warden). Final decision on a forwarded
+// application. Warden approves (with their own signature) -> Approved and the pass is
+// live; warden rejects (with reason) -> Rejected.
+const updateWardenLeaveStatus = async (req, res) => {
+  const { status, remarks, wardenSignature } = req.body;
+
+  if (!['Approved', 'Rejected'].includes(status)) {
+    return res.status(400).json({ message: 'Status can only be set to Approved or Rejected.' });
+  }
+
+  if (status === 'Approved' && !isSignatureDataUrl(wardenSignature)) {
+    return res.status(400).json({ message: 'Your signature is required to approve this application.' });
+  }
+
+  if (status === 'Rejected' && !remarks) {
+    return res.status(400).json({ message: 'A reason is required when rejecting a leave application.' });
+  }
+
+  try {
+    const application = await LeaveApplication.findById(req.params.id).populate(
+      'student',
+      'gender hostelName'
+    );
+
+    if (!application) {
+      return res.status(404).json({ message: 'Leave application not found' });
+    }
+
+    // Warden may act only on an application forwarded to THEM.
+    if (!requestInScope(req.user, application, application.student)) {
+      return res.status(403).json({ message: 'This application was not forwarded to you.' });
+    }
+
+    if (application.status !== 'Forwarded') {
+      return res.status(409).json({
+        message: `This application is ${application.status.toLowerCase()} and can no longer be decided.`,
+        status: application.status,
+      });
+    }
+
+    // Approving after the leave date passed would mint an already-expired pass.
+    if (status === 'Approved' && Date.now() > new Date(application.leaveDate).getTime()) {
+      application.status = 'Expired';
+      await application.save();
+      sseHub.broadcast('leave:changed', { reason: 'expired', id: application._id, status: 'Expired' });
+      return res.status(409).json({
+        message: 'This application has expired — the leave date has already passed. It can no longer be approved.',
+        status: 'Expired',
+      });
+    }
+
+    application.status = status;
+    if (remarks) application.remarks = remarks;
+    application.approvedBy = req.user._id;
+    // Immutable audit verdict; see the note in updateLeaveStatus.
+    application.decision = status;
+    application.decidedAt = new Date();
+    application.decidedByRole = 'Warden';
+    if (status === 'Approved') {
+      application.wardenSignature = wardenSignature;
+      // Mirror into caretakerSignature too: the student's leave view reads
+      // caretakerSignature as "the signed pass", so a warden-approved pass must carry
+      // it there to render like a caretaker-signed one.
+      application.caretakerSignature = wardenSignature;
+    }
+
+    const updated = await application.save();
+
+    sseHub.broadcast('leave:changed', { reason: 'warden-status', id: updated._id, status: updated.status });
+
+    // Let the caretaker who forwarded it know the outcome (their view is read-only now).
+    if (application.forwardedBy) {
+      notifyCaretakers(
+        { caretakerId: application.forwardedBy },
+        {
+          title: status === 'Approved' ? '✅ Warden Approved Leave' : '❌ Warden Rejected Leave',
+          body: `The warden ${status.toLowerCase()} a leave application you forwarded.`,
+          url: '/dashboard/caretaker?view=leave',
+        }
+      );
+    }
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // PATCH /api/leave/:id/cancel — private (Student)
 const cancelLeaveApplication = async (req, res) => {
   try {
@@ -293,7 +533,11 @@ const cancelLeaveApplication = async (req, res) => {
       return res.status(403).json({ message: 'You can only cancel your own leave applications.' });
     }
 
-    if (application.status !== 'Pending' && application.status !== 'Approved') {
+    // Forwarded is cancellable too — it's still undecided, and since it now blocks new
+    // applications the student needs a way out while the warden holds it. The warden's
+    // decision endpoint re-checks for 'Forwarded', so a cancel won during the race just
+    // turns their action into a 409.
+    if (!['Pending', 'Approved', 'Forwarded'].includes(application.status)) {
       return res.status(409).json({
         message: `Cannot cancel an application that is already ${application.status.toLowerCase()}.`,
         status: application.status,
@@ -343,6 +587,10 @@ module.exports = {
   getPendingLeaveApplications,
   getLeaveHistory,
   updateLeaveStatus,
+  forwardLeaveApplication,
+  getForwardedLeaveApplications,
+  getWardenLeaveHistory,
+  updateWardenLeaveStatus,
   cancelLeaveApplication,
   streamLeaveEvents,
 };
