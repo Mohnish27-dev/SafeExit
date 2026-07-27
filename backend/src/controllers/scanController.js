@@ -3,6 +3,7 @@ const ScanLog = require('../models/ScanLog');
 const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
 const LeaveApplication = require('../models/LeaveApplication');
+const sseHub = require('../utils/sseHub');
 const {
   isDeparturePassed,
   isBeforeDeparture,
@@ -218,6 +219,17 @@ const createScanLog = async (req, res) => {
     });
 
     await User.findByIdAndUpdate(req.user._id, { onDuty: true, lastActiveAt: new Date() });
+
+    // A gate scan flips a pass Approved->Out or Out->Returned, which moves the caretaker's
+    // "Out Now" counter. Reuse the outing channel both caretaker dashboards already listen
+    // on so the tile updates immediately instead of waiting for the 30s poll.
+    sseHub.broadcast('outing:changed', {
+      reason: 'scan',
+      direction,
+      student: String(studentDoc._id),
+      passType: linkedPass?.passType || null,
+      status: linkedPass?.doc?.status || null,
+    });
 
     const populated = await log.populate('student', 'name studentId');
     res.status(201).json(populated);

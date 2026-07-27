@@ -124,6 +124,20 @@ async function resolveTargetCaretaker(student, requestedCaretakerId) {
   return null;
 }
 
+// Mongo filter selecting the STUDENTS a caretaker oversees (as opposed to
+// scopedStudentFilter, which selects their routed *requests*). Hostel-first with the
+// legacy gender fallback; `null` when the caretaker has no scope configured at all.
+// Compare hostel names under COLLATION so stored casing/spacing can't miss.
+const COLLATION = { locale: 'en', strength: 2 };
+
+function caretakerStudentFilter(user) {
+  if (!user || user.role !== 'Caretaker') return { role: 'Student' };
+  if (user.managedHostel) return { role: 'Student', hostelName: user.managedHostel };
+  const genders = scopeGenders(user.managedGender);
+  if (genders.length === 0) return null;
+  return { role: 'Student', gender: { $in: genders } };
+}
+
 module.exports = {
   scopedStudentFilter,
   studentInScope,
@@ -131,4 +145,6 @@ module.exports = {
   resolveTargetCaretaker,
   genderScopedStudentFilter,
   studentInGenderScope,
+  caretakerStudentFilter,
+  COLLATION,
 };
