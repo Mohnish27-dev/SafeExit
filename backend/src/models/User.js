@@ -25,6 +25,11 @@ const userSchema = new mongoose.Schema({
   phoneNumber: { type: String },
   // Student face photo (base64 data URL). Owner-writable only; guards read it via /scan/preview.
   photo: { type: String },
+  // Reusable signature (PNG or JPEG data URL), captured once during onboarding or from
+  // the profile. The server stamps it onto every outing/leave request; those per-request
+  // copies are immutable snapshots, so changing this never rewrites history.
+  // Absent = "not set up yet" (see utils/signature.js).
+  signature: { type: String },
 
   // Live status, maintained by gate scans / duty toggles.
   campusStatus: { type: String, enum: ['Inside', 'Outside', 'Overdue'], default: 'Inside' },

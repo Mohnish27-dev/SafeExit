@@ -36,6 +36,9 @@ export const apiFetch = async (path, options = {}) => {
   if (!res.ok) {
     const err = new Error(data.message || `Request failed (${res.status})`);
     err.status = res.status;
+    // Machine-readable code (e.g. SIGNATURE_REQUIRED) so callers can branch on the
+    // reason rather than string-matching the message.
+    if (data.code) err.code = data.code;
     throw err;
   }
   return data;

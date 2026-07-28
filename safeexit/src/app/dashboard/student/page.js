@@ -18,6 +18,7 @@ import {
   MapPinOff,
   MessageSquareWarning,
   MoonStar,
+  PenLine,
   QrCode,
   ScanLine,
   Shield,
@@ -53,6 +54,7 @@ import {
 } from "@/app/lib/locationManager";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
+import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import useCountUp from "@/app/hooks/useCountUp";
 import { HOSTELS } from "@/app/lib/hostels";
 
@@ -134,7 +136,7 @@ const outingAccent = (outing) => {
 
 const actions = [
   {
-    title: "Generate Ticket",
+    title: "Make An Outing",
     description: "Tap to request a café, meal, or market outing and get your gate pass once approved.",
     icon: Ticket,
     href: "/dashboard/student/generate-ticket",
@@ -330,6 +332,7 @@ export default function StudentDashboardPage() {
   const [showQrModal, setShowQrModal] = useState(false);
   const [outings, setOutings] = useState([]);
   const [outingsLoading, setOutingsLoading] = useState(true);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [photoDraft, setPhotoDraft] = useState(null);
@@ -416,14 +419,13 @@ export default function StudentDashboardPage() {
     (async () => {
       try {
         const me = await apiFetch("/auth/profile");
-        if (cancelled) return;
+        if (cancelled || !me) return;
+        // Signature bytes live only on the server — sessionStorage carries the flag alone.
         setProfile((prev) => ({
           ...prev,
-          ...(me?.studentId ? { rollNo: me.studentId, sid: me._id } : null),
-          hostelName: me?.hostelName || "",
-          gender: me?.gender || prev.gender,
+          ...(me.studentId ? { rollNo: me.studentId, sid: me._id } : null),
+          signature: me.signature || null,
         }));
-        setHostelSynced(true);
       } catch {
         /* not authenticated — keep local profile */
       }
@@ -798,6 +800,19 @@ export default function StudentDashboardPage() {
             </div>
 
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSignatureModal(true)}
+                title="Your Signature"
+                className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-indigo-100 bg-white px-3 shadow-sm transition hover:bg-indigo-50 sm:h-[3.25rem]"
+              >
+                {profile.signature ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.signature} alt="Signature" className="h-6 w-auto" />
+                ) : (
+                  <PenLine className="h-5 w-5 text-indigo-500" />
+                )}
+              </button>
               <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt flex items-center gap-3 rounded-2xl px-3 py-2.5 sm:min-w-[200px] sm:px-4 sm:py-3">
                 <div className="relative shrink-0 group">
                   <div className="sd-profile-avatar overflow-hidden">
@@ -1515,6 +1530,19 @@ export default function StudentDashboardPage() {
           </div>
         </div>
       )}
+      
+      <SignatureSetupModal
+        open={showSignatureModal}
+        currentSignature={profile?.signature || null}
+        title={profile?.signature ? "Update your signature" : "Add your signature"}
+        description="Draw it or upload a photo — it is attached automatically to everything you approve."
+        onClose={() => setShowSignatureModal(false)}
+        onSaved={(signature) => {
+          setProfile((prev) => ({ ...prev, signature }));
+          setStoredUser({ ...getStoredUser(), hasSignature: true });
+          setShowSignatureModal(false);
+        }}
+      />
     </main>
   );
 }

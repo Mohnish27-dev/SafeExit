@@ -28,7 +28,8 @@ import StudentFeatureShell, {
 } from "@/app/components/student/StudentFeatureShell";
 import { apiFetch } from "@/app/lib/api";
 import CaretakerSelect from "@/app/components/student/CaretakerSelect";
-import SignaturePad from "@/app/components/SignaturePad";
+import SignatureSetupModal from "@/app/components/SignatureSetupModal";
+import { isSignatureRequiredError } from "@/app/lib/signatureImage";
 
 const STEPS = ["form", "review", "success"];
 
@@ -128,7 +129,15 @@ export default function GenerateTicket() {
   const [errors, setErrors] = useState({});
   const [createdOuting, setCreatedOuting] = useState(null);
   const [targetCaretakerId, setTargetCaretakerId] = useState("");
-  const [signature, setSignature] = useState(null);
+  // The signature is captured once (onboarding or profile) and stamped by the server.
+  // These only drive the read-only confirmation strip and the one-time setup fallback
+  // for accounts that predate that flow.
+  const [mySignature, setMySignature] = useState(null);
+  const [needsSignature, setNeedsSignature] = useState(false);
+  // True only when the setup modal was opened by a rejected submit, so signing resumes
+  // that submit. When the modal was opened pre-emptively on entering review, signing
+  // must not fire a submit the student never asked for.
+  const resumeSubmitRef = useRef(false);
 
   const [activeOuting, setActiveOuting] = useState(null);
   const [checkingActive, setCheckingActive] = useState(true);
@@ -294,7 +303,7 @@ export default function GenerateTicket() {
         // Return time is NOT sent — the server fixes it from policy.
         outingType: isFemale ? form.outingType : "General",
         outTime: buildTodayISO(form.timeOut),
-        studentSignature: signature,
+        // No signature in the body — the server stamps the student's saved one.
         // Only caretaker-gated outings route to a chosen caretaker; server ignores it otherwise.
         ...(activePolicy.requiresCaretaker && targetCaretakerId ? { targetCaretakerId } : {}),
       };
@@ -309,12 +318,39 @@ export default function GenerateTicket() {
       setStep("success");
     } catch (error) {
       setLoading(false);
+      // Not a form error — the account has no saved signature yet. The server rejects
+      // before creating anything, so capturing one and retrying is safe.
+      if (isSignatureRequiredError(error)) {
+        resumeSubmitRef.current = true;
+        setNeedsSignature(true);
+        return;
+      }
       setErrors((prev) => ({
         ...prev,
         submit: describeSubmitError(error),
       }));
     }
   };
+
+  // Pull the saved signature when the review step opens, so it can be shown above the
+  // submit button. Also pre-opens the setup modal for accounts that never captured one,
+  // instead of letting them press Submit and bounce off a 428.
+  useEffect(() => {
+    if (step !== "review" || mySignature) return;
+    let cancelled = false;
+    apiFetch("/auth/profile")
+      .then((me) => {
+        if (cancelled) return;
+        if (me?.signature) setMySignature(me.signature);
+        else setNeedsSignature(true);
+      })
+      .catch(() => {
+        /* best-effort: the submit attempt is the authoritative check */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, mySignature]);
 
   useEffect(() => {
     if (step === "review" && errors.submit && submitErrorRef.current) {
@@ -622,13 +658,21 @@ export default function GenerateTicket() {
           </p>
         </div>
 
-        <StudentFeaturePanel className="p-4 sm:p-5" delay={80}>
-          <SignaturePad
-            label="Student signature"
-            hint="Sign here to submit your request"
-            onChange={setSignature}
-          />
-        </StudentFeaturePanel>
+        {mySignature && (
+          <StudentFeaturePanel className="p-4 sm:p-5" delay={80}>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Signing as {display.name}
+            </p>
+            {/* White background so the transparent PNG reads correctly. */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={mySignature} alt="Your signature" className="mx-auto h-14 w-auto" />
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              Your saved signature is attached automatically.
+            </p>
+          </StudentFeaturePanel>
+        )}
 
         <div className="flex gap-3 sf-rise sf-stagger-3">
           <button type="button" onClick={() => setStep("form")} className="sf-btn-secondary flex-1">
@@ -637,7 +681,7 @@ export default function GenerateTicket() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={loading || !signature}
+            disabled={loading}
             className="sf-btn-primary flex-1"
           >
             {loading ? (
@@ -646,13 +690,26 @@ export default function GenerateTicket() {
               </>
             ) : errors.submit ? (
               "Try Again"
-            ) : !signature ? (
-              "Sign to Submit"
             ) : (
               "Submit Request"
             )}
           </button>
         </div>
+
+        <SignatureSetupModal
+          open={needsSignature}
+          dismissible={false}
+          title="Add your signature"
+          description="Your signature goes on every outing pass. You only set this up once."
+          onSaved={(sig) => {
+            setMySignature(sig);
+            setNeedsSignature(false);
+            if (resumeSubmitRef.current) {
+              resumeSubmitRef.current = false;
+              handleSubmit();
+            }
+          }}
+        />
       </StudentFeatureShell>
     );
   }

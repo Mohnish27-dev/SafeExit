@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays,
@@ -33,7 +33,8 @@ import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import CaretakerSelect from "@/app/components/student/CaretakerSelect";
-import SignaturePad from "@/app/components/SignaturePad";
+import SignatureSetupModal from "@/app/components/SignatureSetupModal";
+import { isSignatureRequiredError } from "@/app/lib/signatureImage";
 
 const MIN_LEAD_HOURS = 24;
 
@@ -118,7 +119,13 @@ export default function LeaveApplicationPage() {
 
   const [form, setForm] = useState({ destination: "", reason: "", leaveDate: "", returnDate: "" });
   const [acknowledged, setAcknowledged] = useState(false);
-  const [signature, setSignature] = useState(null);
+  // Captured once (onboarding or profile) and stamped by the server; these only drive
+  // the letter's rendered signature and the one-time setup fallback for older accounts.
+  const [mySignature, setMySignature] = useState(null);
+  const [needsSignature, setNeedsSignature] = useState(false);
+  // Set only when a rejected submit opened the modal, so signing resumes that submit
+  // rather than firing one the student never asked for.
+  const resumeSubmitRef = useRef(false);
   const [targetCaretakerId, setTargetCaretakerId] = useState("");
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -130,6 +137,26 @@ export default function LeaveApplicationPage() {
   const [expanded, setExpanded] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+
+  // Pull the saved signature when the letter step opens, so it renders in the letter.
+  // Also pre-opens the setup modal for accounts that never captured one, rather than
+  // letting the student press Submit and bounce off a 428.
+  useEffect(() => {
+    if (step !== "letter" || mySignature) return;
+    let cancelled = false;
+    apiFetch("/auth/profile")
+      .then((me) => {
+        if (cancelled) return;
+        if (me?.signature) setMySignature(me.signature);
+        else setNeedsSignature(true);
+      })
+      .catch(() => {
+        /* best-effort: the submit attempt is the authoritative check */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, mySignature]);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,7 +256,7 @@ export default function LeaveApplicationPage() {
           leaveDate: leaveDateObj.toISOString(),
           returnDate: returnDateObj.toISOString(),
           acknowledgement: true,
-          studentSignature: signature,
+          // No signature in the body — the server stamps the student's saved one.
           ...(targetCaretakerId ? { targetCaretakerId } : {}),
         }),
       });
@@ -239,6 +266,13 @@ export default function LeaveApplicationPage() {
       setStep("success");
     } catch (error) {
       setSubmitting(false);
+      // Not a form error — no saved signature yet. The server rejects before creating
+      // anything, so capturing one and retrying is safe.
+      if (isSignatureRequiredError(error)) {
+        resumeSubmitRef.current = true;
+        setNeedsSignature(true);
+        return;
+      }
       setErrors((prev) => ({ ...prev, submit: describeSubmitError(error) }));
     }
   };
@@ -247,7 +281,6 @@ export default function LeaveApplicationPage() {
     setCreated(null);
     setForm({ destination: "", reason: "", leaveDate: "", returnDate: "" });
     setAcknowledged(false);
-    setSignature(null);
     setTargetCaretakerId("");
     setErrors({});
     setStep("form");
@@ -384,17 +417,17 @@ export default function LeaveApplicationPage() {
               journey at my own responsibility.
             </p>
             <p className="mt-5">Yours sincerely,</p>
+            {mySignature && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={mySignature}
+                alt="Your signature"
+                className="mt-1.5 h-14 w-auto"
+              />
+            )}
             <p className="mt-1 font-bold">{display.name}</p>
             <p>{display.rollNo}</p>
             <p>{today}</p>
-
-            <div className="mt-5 border-t border-dashed border-slate-200 pt-4">
-              <SignaturePad
-                label="Student signature"
-                hint="Sign here to submit your application"
-                onChange={setSignature}
-              />
-            </div>
           </div>
         </StudentFeaturePanel>
 
@@ -423,18 +456,31 @@ export default function LeaveApplicationPage() {
           <button type="button" onClick={() => setStep("form")} className="sf-btn-secondary flex-1">
             Edit Details
           </button>
-          <button type="button" onClick={handleSubmit} disabled={submitting || !signature} className="sf-btn-primary flex-1">
+          <button type="button" onClick={handleSubmit} disabled={submitting} className="sf-btn-primary flex-1">
             {submitting ? (
               <>
                 <Loader2 size={16} className="animate-spin" /> Submitting...
               </>
-            ) : !signature ? (
-              "Sign to Submit"
             ) : (
               "Submit Application"
             )}
           </button>
         </div>
+
+        <SignatureSetupModal
+          open={needsSignature}
+          dismissible={false}
+          title="Add your signature"
+          description="Your signature goes on every leave application. You only set this up once."
+          onSaved={(sig) => {
+            setMySignature(sig);
+            setNeedsSignature(false);
+            if (resumeSubmitRef.current) {
+              resumeSubmitRef.current = false;
+              handleSubmit();
+            }
+          }}
+        />
 
         <div className="h-4" />
       </StudentFeatureShell>
