@@ -56,6 +56,7 @@ import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import useCountUp from "@/app/hooks/useCountUp";
+import { HOSTELS } from "@/app/lib/hostels";
 
 const formatClock = (value) =>
   new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
@@ -344,6 +345,14 @@ export default function StudentDashboardPage() {
   const [genderDraft, setGenderDraft] = useState("");
   const [savingGender, setSavingGender] = useState(false);
   const [genderError, setGenderError] = useState("");
+
+  // Hostel backfill for accounts created before hostel was mandatory. Without it the
+  // caretaker's residence-scoped views can't see this student at all — including the
+  // Out Now roster while they're off campus.
+  const [hostelSynced, setHostelSynced] = useState(false);
+  const [hostelDraft, setHostelDraft] = useState("");
+  const [savingHostel, setSavingHostel] = useState(false);
+  const [hostelError, setHostelError] = useState("");
 
   // Location permission banner — primed on first dashboard visit so the SOS
   // page never has to surface the browser's location prompt mid-emergency.
@@ -732,6 +741,36 @@ export default function StudentDashboardPage() {
     }
   };
 
+  const handleSaveHostel = async () => {
+    if (!hostelDraft) {
+      setHostelError("Please select your hostel.");
+      return;
+    }
+    setSavingHostel(true);
+    setHostelError("");
+    try {
+      const updated = await apiFetch("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ hostelName: hostelDraft }),
+      });
+      const merged = {
+        ...getStoredUser(),
+        hostelName: updated.hostelName,
+        gender: updated.gender,
+      };
+      setStoredUser(merged);
+      setProfile((prev) => ({
+        ...prev,
+        hostelName: updated.hostelName,
+        gender: updated.gender,
+      }));
+    } catch (err) {
+      setHostelError(err?.message || "Couldn't save your hostel. Please try again.");
+    } finally {
+      setSavingHostel(false);
+    }
+  };
+
   // Gate render on the session check; hook redirects to /login/student otherwise.
   if (!checked || !authorized) return <AuthLoading />;
 
@@ -810,6 +849,55 @@ export default function StudentDashboardPage() {
               </button>
             </div>
           </header>
+
+          {/* Not dismissable: until a hostel is on record the caretaker's roster and Out Now
+              board can't see this student, so skipping it would silently break gate oversight. */}
+          {mounted && hostelSynced && !profile.hostelName && (
+            <section className="sd-luxe-panel sd-luxe-rise mt-4 rounded-4xl p-4 shadow-xl border border-amber-200 sm:mt-6 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+                    <Home className="h-5.5 w-5.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="sd-card-title text-slate-900 text-base">Confirm your hostel</p>
+                    <p className="sd-micro mt-0.5">
+                      Your hostel isn&apos;t on record, so your caretaker can&apos;t see you on their
+                      roster or track you when you&apos;re off campus.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={hostelDraft}
+                    onChange={(e) => {
+                      setHostelDraft(e.target.value);
+                      setHostelError("");
+                    }}
+                    disabled={savingHostel}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:border-amber-500 focus:bg-white transition-colors disabled:opacity-50"
+                  >
+                    <option value="">Select Hostel</option>
+                    {HOSTELS.filter((h) => !profile.gender || h.gender === profile.gender).map((h) => (
+                      <option key={h.name} value={h.name}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleSaveHostel}
+                    disabled={savingHostel || !hostelDraft}
+                    className="sf-btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingHostel ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Save
+                  </button>
+                </div>
+              </div>
+              {hostelError && <p className="text-xs text-rose-500 mt-3">{hostelError}</p>}
+            </section>
+          )}
 
           {mounted && !profile.gender && !genderDismissed && (
             <section className="sd-luxe-panel sd-luxe-rise mt-4 rounded-4xl p-4 shadow-xl border border-indigo-100 sm:mt-6 sm:p-6">
