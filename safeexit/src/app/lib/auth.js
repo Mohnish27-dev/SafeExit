@@ -66,6 +66,7 @@ const tryRestoreSession = async () => {
             mobile: data.phoneNumber,
           }
         : {}),
+      hasSignature: Boolean(data.hasSignature),
       ...(data.managedGender ? { managedGender: data.managedGender } : {}),
       ...(data.managedHostel ? { managedHostel: data.managedHostel } : {}),
       ...(data.managedDepartment ? { managedDepartment: data.managedDepartment } : {}),

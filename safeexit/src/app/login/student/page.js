@@ -38,6 +38,7 @@ import {
   clearQuickLogin,
 } from "@/app/lib/quickLogin";
 import { HOSTELS } from "@/app/lib/hostels";
+import SignatureCapture from "@/app/components/SignatureCapture";
 
 
 // Campus hostels come from the shared registry — gender is implied by the
@@ -47,7 +48,7 @@ export default function StudentLoginPage() {
   const router = useRouter();
 
   const [appState, setAppState] = useState("LOADING");
-  const [onboardingStep, setOnboardingStep] = useState(1); // 1: Form, 2: Verify, 3: Photo, 4: Quick Login
+  const [onboardingStep, setOnboardingStep] = useState(1); // 1: Form, 2: Verify, 3: Photo, 4: Signature, 5: Quick Login
   const [storedProfile, setStoredProfile] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -68,6 +69,11 @@ export default function StudentLoginPage() {
 
   const [photoPreview, setPhotoPreview] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Captured at step 4 and published once the account exists. Required: every outing and
+  // leave request is stamped with it server-side, so onboarding is where we collect it.
+  const [signatureData, setSignatureData] = useState(null);
+  const [signatureError, setSignatureError] = useState("");
 
   const [otp, setOtp] = useState("");
   const [emailToken, setEmailToken] = useState(null); // signed proof from /otp/verify
@@ -150,13 +156,19 @@ export default function StudentLoginPage() {
     setFormData((prev) => ({ ...prev, hostelBlock, gender }));
   };
 
-  // Persist the face photo to the authenticated backend so the guard's scanner can show it.
+  // Persist the face photo (guard scanner) and signature (stamped onto every request) to
+  // the authenticated backend. Collected before the account exists, so this runs after
+  // registration. Fire-and-forget is safe: if it fails, the request forms still gate on a
+  // missing signature (HTTP 428) and prompt for it again.
   const publishPhoto = (p) => {
-    if (!p?.photo) return;
+    const body = {};
+    if (p?.photo) body.photo = p.photo;
+    if (p?.signature) body.signature = p.signature;
+    if (!Object.keys(body).length) return;
     apiFetch("/auth/profile", {
       method: "PATCH",
-      body: JSON.stringify({ photo: p.photo }),
-    }).catch((err) => console.error("Failed to publish profile photo", err));
+      body: JSON.stringify(body),
+    }).catch((err) => console.error("Failed to publish profile media", err));
   };
 
   const persistProfile = (p) => {
@@ -191,6 +203,8 @@ export default function StudentLoginPage() {
       mobile: p.phoneNumber,
       photo: p.photo,
       gender: p.gender,
+      // Flag only — the bytes live on the server and are fetched where they are needed.
+      hasSignature: Boolean(p.signature),
     });
     router.push("/dashboard/student");
   };
@@ -412,13 +426,35 @@ export default function StudentLoginPage() {
           console.error('Unable to persist profile to localStorage after error', e);
         }
       } finally {
-        setPin("");
-        setConfirmPin("");
-        setEnableBiometric(false);
-        setSessionToken(null);
         setOnboardingStep(4);
       }
     })();
+  };
+
+  // Step 4 → 5. The signature is required, so this only runs once one is captured; it is
+  // merged into the stored profile and published after the account is created.
+  const continueFromSignature = (signature) => {
+    setSignatureData(signature);
+    setSignatureError("");
+    try {
+      const saved = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null") || {};
+      localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...saved, signature }));
+    } catch (err) {
+      // Quota is the likely cause; drop the photo before the signature, which is the one
+      // the backend hard-requires.
+      console.warn("Could not persist signature to localStorage, retrying without photo", err);
+      try {
+        const saved = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null") || {};
+        localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...saved, photo: null, signature }));
+      } catch (e2) {
+        console.error("Unable to persist signature to localStorage", e2);
+      }
+    }
+    setPin("");
+    setConfirmPin("");
+    setEnableBiometric(false);
+    setSessionToken(null);
+    setOnboardingStep(5);
   };
 
   // Enrol PIN (+ optional biometric); handles both ONBOARDING and QUICK_SETUP
@@ -1287,6 +1323,11 @@ export default function StudentLoginPage() {
                <div className={`h-px flex-1 mx-2 ${onboardingStep >= 4 ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
                <div className={`flex items-center gap-2 ${onboardingStep >= 4 ? 'text-indigo-600' : 'text-slate-400'}`}>
                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 4 ? 'bg-indigo-100' : 'bg-slate-200'}`}>4</div>
+                 <span className="text-xs font-semibold hidden sm:inline">Signature</span>
+               </div>
+               <div className={`h-px flex-1 mx-2 ${onboardingStep >= 5 ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
+               <div className={`flex items-center gap-2 ${onboardingStep >= 5 ? 'text-indigo-600' : 'text-slate-400'}`}>
+                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 5 ? 'bg-indigo-100' : 'bg-slate-200'}`}>5</div>
                  <span className="text-xs font-semibold hidden sm:inline">Security</span>
                </div>
             </div>
@@ -1563,8 +1604,37 @@ export default function StudentLoginPage() {
                 </div>
               )}
 
-              {/* STEP 4: Quick Login setup (4-digit PIN + optional biometric) */}
-              {onboardingStep === 4 && renderQuickSetupBody()}
+              {/* STEP 4: Signature */}
+              {onboardingStep === 4 && (
+                <div className="space-y-4 animate-fade-in-up">
+                  <div className="text-center mb-2">
+                    <h2 className="text-2xl font-bold text-slate-900">Your Signature</h2>
+                    <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
+                      Draw it or upload a photo. It will be attached automatically to every outing and leave request — you won&apos;t need to sign again.
+                    </p>
+                  </div>
+                  {signatureError && (
+                    <div className="bg-rose-50 text-rose-700 text-sm font-medium p-3 rounded-xl border border-rose-100 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" /> {signatureError}
+                    </div>
+                  )}
+                  <SignatureCapture
+                    currentSignature={signatureData}
+                    onSave={continueFromSignature}
+                    saveLabel="Save & Continue"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setOnboardingStep(3)}
+                    className="w-full py-3 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+
+              {/* STEP 5: Quick Login setup (4-digit PIN + optional biometric) */}
+              {onboardingStep === 5 && renderQuickSetupBody()}
 
             </div>
           </div>

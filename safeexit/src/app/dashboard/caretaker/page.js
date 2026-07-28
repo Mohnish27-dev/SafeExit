@@ -33,7 +33,8 @@ import RequestsView from "./components/RequestsView";
 import SOSAlertsView from "./components/SOSAlertsView";
 import OverdueStudentsView from "./components/OverdueStudentsView";
 import LeaveApplicationsView from "./components/LeaveApplicationsView";
-import SignaturePad from "@/app/components/SignaturePad";
+import SignatureCapture from "@/app/components/SignatureCapture";
+import { isSignatureRequiredError } from "@/app/lib/signatureImage";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
@@ -443,24 +444,48 @@ export default function CaretakerDashboardPage() {
   // Approving mints a signed pass, so it routes through a modal that captures the
   // caretaker's drawn signature. { kind: 'outing' | 'leave', id, name } while open.
   const [approvalTarget, setApprovalTarget] = useState(null);
-  const [approvalSignature, setApprovalSignature] = useState(null);
   const [approving, setApproving] = useState(false);
+  // Only used by the fallback capture for caretakers who have not set up a signature yet,
+  // or who chose to replace it from inside the approval modal.
+  const [savingSignature, setSavingSignature] = useState(false);
+  const [signatureError, setSignatureError] = useState("");
+  const [changingSignature, setChangingSignature] = useState(false);
+  // Hydrated by the /auth/profile call this dashboard already makes on mount.
+  const mySignature = user?.signature || null;
 
   const openOutingApproval = (id) => {
     const req = pending.find((p) => p.id === id);
-    setApprovalSignature(null);
     setApprovalTarget({ kind: "outing", id, name: req?.name || "", studentSignature: req?.studentSignature || null });
   };
 
   const openLeaveApproval = (id) => {
     const req = leavePending.find((l) => l.id === id);
-    setApprovalSignature(null);
     setApprovalTarget({ kind: "leave", id, name: req?.name || "", studentSignature: req?.studentSignature || null });
   };
 
   const closeApproval = () => {
     setApprovalTarget(null);
-    setApprovalSignature(null);
+    setSignatureError("");
+    setChangingSignature(false);
+  };
+
+  // Persist the caretaker's signature to their profile, then reuse it for every later
+  // approval. Reached only when they had none saved.
+  const saveMySignature = async (signature) => {
+    setSavingSignature(true);
+    setSignatureError("");
+    try {
+      const updated = await apiFetch("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ signature }),
+      });
+      setUser((u) => ({ ...(u || {}), signature: updated.signature || signature }));
+      setChangingSignature(false);
+    } catch (err) {
+      setSignatureError(err?.message || "Couldn't save your signature. Please try again.");
+    } finally {
+      setSavingSignature(false);
+    }
   };
 
   const [forwardTarget, setForwardTarget] = useState(null);
@@ -532,33 +557,46 @@ export default function CaretakerDashboardPage() {
   }
 
   async function confirmApproval() {
-    if (!approvalTarget || !approvalSignature) return;
+    if (!approvalTarget) return;
     setApproving(true);
+    setSignatureError("");
     const { kind, id } = approvalTarget;
     try {
       if (kind === "outing") {
-        await approveRequest(id, approvalSignature);
+        await approveRequest(id);
       } else {
-        await approveLeave(id, approvalSignature);
+        await approveLeave(id);
       }
       closeApproval();
+    } catch (err) {
+      // Only a missing signature reaches here (the approve fns handle everything else
+      // themselves). Keep the modal open so the capture below can fix it in place.
+      setSignatureError(err?.message || "Add your signature before approving.");
     } finally {
       setApproving(false);
     }
   }
 
-  async function approveRequest(id, signature) {
+  async function approveRequest(id) {
     const req = pending.find((p) => p.id === id);
     if (!req) return;
     // Optimistic update; persist to backend after.
     setPending((p) => p.filter((r) => r.id !== id));
     setApproved((a) => [{ id: req.id, name: req.name, outSince: req.out, initials: req.initials }, ...a]);
     try {
+      // The server stamps our saved profile signature; nothing to send.
       await apiFetch(`/outing/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Approved", caretakerSignature: signature }),
+        body: JSON.stringify({ status: "Approved" }),
       });
     } catch (err) {
+      // Checked before the 409 branch: this dashboard reads 409 as "request expired".
+      if (isSignatureRequiredError(err)) {
+        setApproved((a) => a.filter((r) => r.id !== id));
+        setPending((p) => [req, ...p]);
+        setUser((u) => ({ ...(u || {}), signature: undefined }));
+        throw err;
+      }
       // 409 = request expired: don't roll back, just drop the card.
       if (err?.status === 409) {
         setApproved((a) => a.filter((r) => r.id !== id));
@@ -586,16 +624,22 @@ export default function CaretakerDashboardPage() {
     }
   }
 
-  async function approveLeave(id, signature) {
+  async function approveLeave(id) {
     const req = leavePending.find((l) => l.id === id);
     if (!req) return;
     setLeavePending((l) => l.filter((r) => r.id !== id));
     try {
       await apiFetch(`/leave/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Approved", caretakerSignature: signature }),
+        body: JSON.stringify({ status: "Approved" }),
       });
     } catch (err) {
+      // Before the 409 branch: 409 means "already expired" on this dashboard.
+      if (isSignatureRequiredError(err)) {
+        setLeavePending((l) => [req, ...l]);
+        setUser((u) => ({ ...(u || {}), signature: undefined }));
+        throw err;
+      }
       if (err?.status === 409) {
         setLeaveError(t("leaveExpired"));
         return;
@@ -1196,7 +1240,14 @@ export default function CaretakerDashboardPage() {
 
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
           {view === 'overdue' && <OverdueStudentsView onCountChange={setOverdueCount} />}
-          {view === 'profile' && <ProfileView user={user} displayName={displayName} onLogout={handleLogout} />}
+          {view === 'profile' && (
+            <ProfileView
+              user={user}
+              displayName={displayName}
+              onLogout={handleLogout}
+              onSignatureSaved={(signature) => setUser((u) => ({ ...(u || {}), signature }))}
+            />
+          )}
           {view === 'complaints' && (
             <ComplaintsView
               reports={reports}
@@ -1318,7 +1369,9 @@ export default function CaretakerDashboardPage() {
             </div>
 
             <p className="mt-4 text-sm text-slate-600">
-              Sign below to approve this {approvalTarget.kind === "leave" ? "leave application" : "outing request"}. Your signature will be attached to the student&apos;s pass.
+              {mySignature && !changingSignature
+                ? `Your saved signature will be attached to this ${approvalTarget.kind === "leave" ? "leave application" : "outing request"}.`
+                : `Add your signature once — it will be attached to every ${approvalTarget.kind === "leave" ? "application" : "request"} you approve from now on.`}
             </p>
 
             {approvalTarget.studentSignature && (
@@ -1333,13 +1386,54 @@ export default function CaretakerDashboardPage() {
               </div>
             )}
 
-            <div className="mt-4">
-              <SignaturePad
-                label="Caretaker signature"
-                hint="Sign here to approve"
-                onChange={setApprovalSignature}
-              />
-            </div>
+            {mySignature && !changingSignature ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Your signature</p>
+                  <button
+                    type="button"
+                    onClick={() => setChangingSignature(true)}
+                    disabled={approving}
+                    className="cursor-pointer text-[11px] font-bold text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+                  >
+                    Change
+                  </button>
+                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={mySignature}
+                  alt="Your signature"
+                  className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
+                />
+              </div>
+            ) : (
+              // Fallback capture: a caretaker with no saved signature is never hard-blocked,
+              // they set it up here and the approval continues in the same modal.
+              <div className="mt-4">
+                <SignatureCapture
+                  currentSignature={mySignature}
+                  onSave={saveMySignature}
+                  saving={savingSignature}
+                  error={signatureError}
+                  disabled={approving}
+                  saveLabel={mySignature ? "Update signature" : "Save signature"}
+                />
+                {mySignature && (
+                  <button
+                    type="button"
+                    onClick={() => { setChangingSignature(false); setSignatureError(""); }}
+                    disabled={savingSignature}
+                    className="mt-2 w-full cursor-pointer text-xs font-bold text-slate-500 hover:text-slate-700 disabled:opacity-50"
+                  >
+                    Keep my current signature
+                  </button>
+                )}
+              </div>
+            )}
+
+            {signatureError && mySignature && !changingSignature && (
+              <p className="mt-2 text-xs font-semibold text-rose-600">{signatureError}</p>
+            )}
 
             <div className="mt-5 flex gap-3">
               <button
@@ -1351,11 +1445,11 @@ export default function CaretakerDashboardPage() {
               </button>
               <button
                 onClick={confirmApproval}
-                disabled={approving || !approvalSignature}
+                disabled={approving || !mySignature || changingSignature}
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Check className="h-4 w-4" />
-                {approving ? tc("loading") : !approvalSignature ? "Sign to Approve" : tc("approve")}
+                {approving ? tc("loading") : tc("approve")}
               </button>
             </div>
           </div>

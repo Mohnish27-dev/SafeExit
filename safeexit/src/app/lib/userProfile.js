@@ -11,6 +11,10 @@ export const defaultStudentProfile = {
   hostel: "—",
   room: "",
   mobile: "",
+  // Flag only. This store deliberately holds signature *flags*, never signature bytes —
+  // it is per-tab and would otherwise carry a base64 image that only the capture
+  // screens read (they fetch it from /auth/profile instead).
+  hasSignature: false,
 };
 
 // Tab-scoped (sessionStorage) so another tab's role can't overwrite this one.
@@ -31,6 +35,13 @@ export const setStoredUser = (profile) => {
   if (typeof window === "undefined") return;
 
   sessionStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+};
+
+// Flip the cached flag after a signature is saved, so the request forms stop
+// pre-opening the setup modal without needing a full profile refetch.
+export const markSignatureSaved = () => {
+  const stored = getStoredUser();
+  if (stored) setStoredUser({ ...stored, hasSignature: true });
 };
 
 export const getInitials = (name) => {

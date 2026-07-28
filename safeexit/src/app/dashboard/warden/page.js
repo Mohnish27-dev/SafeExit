@@ -28,7 +28,9 @@ import { useRouter } from "next/navigation";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
-import SignaturePad from "@/app/components/SignaturePad";
+import SignatureCapture from "@/app/components/SignatureCapture";
+import SignatureCard from "@/app/components/SignatureCard";
+import { isSignatureRequiredError } from "@/app/lib/signatureImage";
 import {
   isPushSupported,
   getNotificationPermission,
@@ -316,8 +318,13 @@ export default function WardenDashboardPage() {
 
   // ---- Approve (signature modal) / Reject (leave needs remarks) ----
   const [approvalTarget, setApprovalTarget] = useState(null); // { kind, id, name }
-  const [approvalSignature, setApprovalSignature] = useState(null);
   const [approving, setApproving] = useState(false);
+  // Fallback capture, for a warden with no saved signature or one replacing it here.
+  const [savingSignature, setSavingSignature] = useState(false);
+  const [signatureError, setSignatureError] = useState("");
+  const [changingSignature, setChangingSignature] = useState(false);
+  // Hydrated by the /auth/profile refresh this dashboard already runs on mount.
+  const mySignature = user?.signature || null;
 
   const [rejectTarget, setRejectTarget] = useState(null); // { kind, id, name }
   const [rejectRemarks, setRejectRemarks] = useState("");
@@ -326,26 +333,56 @@ export default function WardenDashboardPage() {
   const openApproval = (kind, id) => {
     const list = kind === "leave" ? leavePending : pending;
     const req = list.find((r) => r.id === id);
-    setApprovalSignature(null);
     setApprovalTarget({ kind, id, name: req?.name || "" });
   };
-  const closeApproval = () => { setApprovalTarget(null); setApprovalSignature(null); };
+  const closeApproval = () => {
+    setApprovalTarget(null);
+    setSignatureError("");
+    setChangingSignature(false);
+  };
+
+  // Persist the warden's signature to their profile so every later approval reuses it.
+  const saveMySignature = async (signature) => {
+    setSavingSignature(true);
+    setSignatureError("");
+    try {
+      const updated = await apiFetch("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ signature }),
+      });
+      setUser((u) => ({ ...(u || {}), signature: updated.signature || signature }));
+      setChangingSignature(false);
+    } catch (err) {
+      setSignatureError(err?.message || "Couldn't save your signature. Please try again.");
+    } finally {
+      setSavingSignature(false);
+    }
+  };
 
   async function confirmApproval() {
-    if (!approvalTarget || !approvalSignature) return;
+    if (!approvalTarget) return;
     setApproving(true);
+    setSignatureError("");
     const { kind, id } = approvalTarget;
     const path = kind === "leave" ? `/leave/${id}/warden-status` : `/outing/${id}/warden-status`;
     try {
+      // The server stamps our saved profile signature; nothing to send.
       await apiFetch(path, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Approved", wardenSignature: approvalSignature }),
+        body: JSON.stringify({ status: "Approved" }),
       });
       if (kind === "leave") { setLeavePending((l) => l.filter((r) => r.id !== id)); }
       else { setPending((p) => p.filter((r) => r.id !== id)); }
       loadHistory();
       closeApproval();
     } catch (err) {
+      // Keep the modal open so the capture below can fix it in place — closing here would
+      // discard the approval the warden already intended to make.
+      if (isSignatureRequiredError(err)) {
+        setUser((u) => ({ ...(u || {}), signature: undefined }));
+        setSignatureError(err?.message || "Add your signature before approving.");
+        return;
+      }
       if (kind === "leave") setLeaveError(err.message || "Could not approve application.");
       else setRequestsError(err.message || "Could not approve request.");
       closeApproval();
@@ -694,6 +731,10 @@ export default function WardenDashboardPage() {
                     <div className="flex items-center gap-3"><Phone className="h-4 w-4 text-slate-400" /><span className="sd-card-title text-[0.88rem]">{user.phoneNumber}</span></div>
                   </div>
                 )}
+                <SignatureCard
+                  signature={mySignature}
+                  onSaved={(signature) => setUser((u) => ({ ...(u || {}), signature }))}
+                />
               </div>
               <button type="button" onClick={handleLogout} className="sd-magnetic mt-8 flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-rose-50 px-5 py-4 text-sm font-bold uppercase tracking-[0.2em] text-rose-600 shadow-sm transition hover:bg-rose-100">
                 <LogOut className="h-5 w-5" /> Logout
@@ -730,18 +771,60 @@ export default function WardenDashboardPage() {
               </button>
             </div>
             <p className="mt-4 text-sm text-slate-600">
-              Sign below to approve this {approvalTarget.kind === "leave" ? "leave application" : "outing request"}. Your signature will be attached to the student&apos;s pass.
+              {mySignature && !changingSignature
+                ? `Your saved signature will be attached to this ${approvalTarget.kind === "leave" ? "leave application" : "outing request"}.`
+                : `Add your signature once — it will be attached to every ${approvalTarget.kind === "leave" ? "application" : "request"} you approve from now on.`}
             </p>
-            <div className="mt-4">
-              <SignaturePad label="Warden signature" hint="Sign here to approve" onChange={setApprovalSignature} />
-            </div>
+            {mySignature && !changingSignature ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Your signature</p>
+                  <button
+                    type="button"
+                    onClick={() => setChangingSignature(true)}
+                    disabled={approving}
+                    className="cursor-pointer text-[11px] font-bold text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+                  >
+                    Change
+                  </button>
+                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={mySignature} alt="Your signature" className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1" />
+              </div>
+            ) : (
+              // Fallback capture: a warden with no saved signature is never hard-blocked,
+              // they set it up here and the approval continues in the same modal.
+              <div className="mt-4">
+                <SignatureCapture
+                  currentSignature={mySignature}
+                  onSave={saveMySignature}
+                  saving={savingSignature}
+                  error={signatureError}
+                  disabled={approving}
+                  saveLabel={mySignature ? "Update signature" : "Save signature"}
+                />
+                {mySignature && (
+                  <button
+                    type="button"
+                    onClick={() => { setChangingSignature(false); setSignatureError(""); }}
+                    disabled={savingSignature}
+                    className="mt-2 w-full cursor-pointer text-xs font-bold text-slate-500 hover:text-slate-700 disabled:opacity-50"
+                  >
+                    Keep my current signature
+                  </button>
+                )}
+              </div>
+            )}
+            {signatureError && mySignature && !changingSignature && (
+              <p className="mt-2 text-xs font-semibold text-rose-600">{signatureError}</p>
+            )}
             <div className="mt-5 flex gap-3">
               <button onClick={closeApproval} disabled={approving} className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={confirmApproval} disabled={approving || !approvalSignature} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+              <button onClick={confirmApproval} disabled={approving || !mySignature || changingSignature} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
                 <Check className="h-4 w-4" />
-                {approving ? "Approving…" : !approvalSignature ? "Sign to Approve" : "Approve"}
+                {approving ? "Approving…" : "Approve"}
               </button>
             </div>
           </div>

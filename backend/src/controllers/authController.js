@@ -4,6 +4,7 @@ const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
 const { isValidStudentEmail } = require('../config/emailPolicy');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
 const { isEmailVerificationValid } = require('./otpController');
+const { isSignatureDataUrl } = require('../utils/signature');
 
 // loginId is the canonical key: student email or normalized staff ID; `email` accepted as legacy alias.
 const resolveLoginId = (body = {}) =>
@@ -147,6 +148,9 @@ const authUser = async (req, res) => {
         managedGender: user.managedGender,
         managedHostel: user.managedHostel,
         managedDepartment: user.managedDepartment,
+        // Flag only, never the bytes: this response is cached into sessionStorage per tab,
+        // and only the capture screens need the actual image (they read /auth/profile).
+        hasSignature: Boolean(user.signature),
         webAuthnRegistered: user.webAuthnRegistered,
         token
       });
@@ -179,6 +183,9 @@ const getUserProfile = async (req, res) => {
       managedHostel: user.managedHostel,
       managedDepartment: user.managedDepartment,
       photo: user.photo,
+      // The owner's own signature bytes; every capture UI reads them from here.
+      signature: user.signature,
+      hasSignature: Boolean(user.signature),
       webAuthnRegistered: user.webAuthnRegistered
     });
   } else {
@@ -186,9 +193,9 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// PATCH /api/auth/profile — private (gender backfill + own photo)
+// PATCH /api/auth/profile — private (gender backfill + own photo + own signature)
 const updateUserProfile = async (req, res) => {
-  const { gender, photo } = req.body;
+  const { gender, photo, signature } = req.body;
 
   // Reject oversized payloads early; a data-URL face photo should be well under this.
   if (photo !== undefined) {
@@ -200,8 +207,15 @@ const updateUserProfile = async (req, res) => {
     }
   }
 
+  // Signature: a PNG or JPEG data URL, or null to clear.
+  if (signature !== undefined && signature !== null && !isSignatureDataUrl(signature)) {
+    return res.status(400).json({
+      message: 'Signature must be a PNG or JPEG image under 400KB. Please capture it again.',
+    });
+  }
+
   // At least one supported field must be present.
-  if (gender === undefined && photo === undefined) {
+  if (gender === undefined && photo === undefined && signature === undefined) {
     return res.status(400).json({ message: 'Nothing to update.' });
   }
 
@@ -229,6 +243,13 @@ const updateUserProfile = async (req, res) => {
       user.photo = photo || undefined;
     }
 
+    // Freely re-writable, like photo (unlike gender's one-time write above): a signature
+    // drawn badly on a phone should be fixable. Already-submitted requests keep the
+    // snapshot they were signed with, so history is unaffected.
+    if (signature !== undefined) {
+      user.signature = signature || undefined;
+    }
+
     await user.save();
 
     res.json({
@@ -244,6 +265,8 @@ const updateUserProfile = async (req, res) => {
       phoneNumber: user.phoneNumber,
       gender: user.gender,
       photo: user.photo,
+      signature: user.signature,
+      hasSignature: Boolean(user.signature),
       webAuthnRegistered: user.webAuthnRegistered,
     });
   } catch (error) {
@@ -291,6 +314,7 @@ const refreshSession = async (req, res) => {
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,
       managedDepartment: user.managedDepartment,
+      hasSignature: Boolean(user.signature),
       webAuthnRegistered: user.webAuthnRegistered,
       token,
     });
@@ -470,6 +494,7 @@ const verifyAuthentication = async (req, res) => {
       email: user.email,
       role: user.role,
       studentId: user.studentId,
+      hasSignature: Boolean(user.signature),
       webAuthnRegistered: user.webAuthnRegistered,
       token,
     });

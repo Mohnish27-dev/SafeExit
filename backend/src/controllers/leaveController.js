@@ -9,7 +9,7 @@ const {
   resolveTargetCaretaker,
   resolveWardenForHostel,
 } = require('../utils/hostelScope');
-const { isSignatureDataUrl } = require('../utils/signature');
+const { ownSignature, sendSignatureRequired } = require('../utils/signature');
 
 const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
 
@@ -67,16 +67,24 @@ const expireStaleApplications = async (applications) => {
 
 // POST /api/leave — private (Student)
 const createLeaveApplication = async (req, res) => {
-  const { destination, reason, leaveDate, returnDate, acknowledgement, targetCaretakerId, studentSignature } = req.body;
+  const { destination, reason, leaveDate, returnDate, acknowledgement, targetCaretakerId } = req.body;
 
   try {
     if (!destination || !reason || !leaveDate || !returnDate) {
       return res.status(400).json({ message: 'Destination, reason, leave date and return date are all required.' });
     }
 
-    // The student's drawn signature is required to file an application.
-    if (!isSignatureDataUrl(studentSignature)) {
-      return res.status(400).json({ message: 'Your signature is required to submit this application.' });
+    // Stamped from the student's saved profile signature — never accepted from the body.
+    //
+    // KEEP THIS AHEAD of the active-leave query below: the frontend re-submits automatically
+    // once the student captures a signature in response to this 428, which is only safe
+    // while the rejection happens before any document is created or state is touched.
+    const studentSignature = ownSignature(req.user);
+    if (!studentSignature) {
+      return sendSignatureRequired(
+        res,
+        'Add your signature to your profile before submitting an application.'
+      );
     }
 
     if (acknowledgement !== true) {
@@ -234,7 +242,7 @@ const getLeaveHistory = async (req, res) => {
 
 // PATCH /api/leave/:id/status — private (Caretaker)
 const updateLeaveStatus = async (req, res) => {
-  const { status, remarks, caretakerSignature } = req.body;
+  const { status, remarks } = req.body;
 
   // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a caretaker.
   if (!['Approved', 'Rejected'].includes(status)) {
@@ -243,9 +251,13 @@ const updateLeaveStatus = async (req, res) => {
     });
   }
 
-  // Approving mints a pass — the caretaker must sign it. (Rejection needs no signature.)
-  if (status === 'Approved' && !isSignatureDataUrl(caretakerSignature)) {
-    return res.status(400).json({ message: 'Your signature is required to approve this application.' });
+  // Approving mints a pass, so it carries the caretaker's saved signature. (Rejection needs none.)
+  const caretakerSignature = status === 'Approved' ? ownSignature(req.user) : null;
+  if (status === 'Approved' && !caretakerSignature) {
+    return sendSignatureRequired(
+      res,
+      'Add your signature in your profile before approving applications.'
+    );
   }
 
   try {
@@ -436,14 +448,18 @@ const getWardenLeaveHistory = async (req, res) => {
 // application. Warden approves (with their own signature) -> Approved and the pass is
 // live; warden rejects (with reason) -> Rejected.
 const updateWardenLeaveStatus = async (req, res) => {
-  const { status, remarks, wardenSignature } = req.body;
+  const { status, remarks } = req.body;
 
   if (!['Approved', 'Rejected'].includes(status)) {
     return res.status(400).json({ message: 'Status can only be set to Approved or Rejected.' });
   }
 
-  if (status === 'Approved' && !isSignatureDataUrl(wardenSignature)) {
-    return res.status(400).json({ message: 'Your signature is required to approve this application.' });
+  const wardenSignature = status === 'Approved' ? ownSignature(req.user) : null;
+  if (status === 'Approved' && !wardenSignature) {
+    return sendSignatureRequired(
+      res,
+      'Add your signature in your profile before approving applications.'
+    );
   }
 
   if (status === 'Rejected' && !remarks) {
