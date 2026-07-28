@@ -191,6 +191,10 @@ const handleMagneticLeave = (e) => {
   e.currentTarget.style.setProperty("--mag-y", "0px");
 };
 
+// Bar width as this count's share of the hostel roster, clamped to 100%.
+const shareOf = (count, total) =>
+  `${total > 0 ? Math.min(100, Math.round((count / total) * 100)) : 0}%`;
+
 function CaretakerStat({ label, value, width, fill, glow }) {
   const [ref, animated] = useCountUp(value);
   return (
@@ -278,6 +282,18 @@ export default function CaretakerDashboardPage() {
   // Students still out past their outing return time; kept live for the badge.
   const [overdueCount, setOverdueCount] = useState(0);
 
+  // Counts-only occupancy for the Live Stats card — no student identities.
+  const [liveStats, setLiveStats] = useState({ outNow: 0, overdue: 0, totalStudents: 0 });
+
+  const loadLiveStats = useCallback(async () => {
+    try {
+      const data = await apiFetch("/caretaker/stats");
+      setLiveStats(data);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
   const loadSosCount = useCallback(async () => {
     try {
       const data = await apiFetch("/sos?status=Active");
@@ -307,6 +323,12 @@ export default function CaretakerDashboardPage() {
     const interval = setInterval(loadOverdueCount, 30000);
     return () => clearInterval(interval);
   }, [loadOverdueCount]);
+
+  useEffect(() => {
+    loadLiveStats();
+    const interval = setInterval(loadLiveStats, 30000);
+    return () => clearInterval(interval);
+  }, [loadLiveStats]);
 
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
@@ -380,9 +402,10 @@ export default function CaretakerDashboardPage() {
     source.addEventListener("outing:changed", () => {
       loadRequests();
       loadOverdueCount();
+      loadLiveStats();
     });
     return () => source.close();
-  }, [loadRequests, loadOverdueCount]);
+  }, [loadRequests, loadOverdueCount, loadLiveStats]);
 
   // Poll as safety net in case the SSE connection is silently dropped.
   useEffect(() => {
@@ -1108,16 +1131,23 @@ export default function CaretakerDashboardPage() {
                 <CaretakerStat
                   label={isBoysCaretaker ? t("pendingLeave") : t("pendingRequests")}
                   value={isBoysCaretaker ? leavePending.length : pending.length}
-                  width="48%"
+                  width={shareOf(isBoysCaretaker ? leavePending.length : pending.length, liveStats.totalStudents)}
                   fill="linear-gradient(90deg, #6366f1, #38bdf8)"
                   glow="rgba(99,102,241,0.45)"
                 />
                 <CaretakerStat
                   label={t("outNow")}
-                  value={21}
-                  width="62%"
+                  value={liveStats.outNow}
+                  width={shareOf(liveStats.outNow, liveStats.totalStudents)}
                   fill="linear-gradient(90deg, #f59e0b, #fb923c)"
                   glow="rgba(245,158,11,0.45)"
+                />
+                <CaretakerStat
+                  label={t("overdueStudents")}
+                  value={liveStats.overdue}
+                  width={shareOf(liveStats.overdue, liveStats.totalStudents)}
+                  fill="linear-gradient(90deg, #f43f5e, #fb7185)"
+                  glow="rgba(244,63,94,0.45)"
                 />
               </div>
             </div>

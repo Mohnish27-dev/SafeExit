@@ -175,6 +175,7 @@ const getUserProfile = async (req, res) => {
       year: user.year,
       phoneNumber: user.phoneNumber,
       gender: user.gender,
+      hostelName: user.hostelName,
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,
       managedDepartment: user.managedDepartment,
@@ -186,9 +187,9 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// PATCH /api/auth/profile — private (gender backfill + own photo)
+// PATCH /api/auth/profile — private (gender/hostel backfill + own photo)
 const updateUserProfile = async (req, res) => {
-  const { gender, photo } = req.body;
+  const { gender, photo, hostelName } = req.body;
 
   // Reject oversized payloads early; a data-URL face photo should be well under this.
   if (photo !== undefined) {
@@ -201,12 +202,16 @@ const updateUserProfile = async (req, res) => {
   }
 
   // At least one supported field must be present.
-  if (gender === undefined && photo === undefined) {
+  if (gender === undefined && photo === undefined && hostelName === undefined) {
     return res.status(400).json({ message: 'Nothing to update.' });
   }
 
   if (gender !== undefined && !['Male', 'Female', 'Other'].includes(gender)) {
     return res.status(400).json({ message: 'Please select a valid gender.' });
+  }
+
+  if (hostelName !== undefined && !isValidHostel(hostelName)) {
+    return res.status(400).json({ message: 'Please select a valid hostel.' });
   }
 
   try {
@@ -215,7 +220,28 @@ const updateUserProfile = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (gender !== undefined) {
+    if (hostelName !== undefined) {
+      if (user.role !== 'Student') {
+        return res.status(403).json({ message: 'Only students can set a hostel.' });
+      }
+      if (user.hostelName) {
+        return res.status(403).json({
+          message: 'Hostel is already set and can only be changed by an administrator.',
+        });
+      }
+      // Hostel is the source of truth for gender — same derivation registration uses.
+      // A boy picking a girls' hostel is rejected rather than silently rewriting gender.
+      const impliedGender = genderForHostel(hostelName);
+      if (user.gender && user.gender !== impliedGender) {
+        return res.status(400).json({
+          message: 'That hostel does not match the gender on your account. Contact your caretaker.',
+        });
+      }
+      user.hostelName = canonicalHostelName(hostelName);
+      user.gender = impliedGender;
+    }
+
+    if (gender !== undefined && hostelName === undefined) {
       if (user.gender) {
         return res.status(403).json({
           message: 'Gender is already set and can only be changed by an administrator.',
@@ -243,6 +269,7 @@ const updateUserProfile = async (req, res) => {
       year: user.year,
       phoneNumber: user.phoneNumber,
       gender: user.gender,
+      hostelName: user.hostelName,
       photo: user.photo,
       webAuthnRegistered: user.webAuthnRegistered,
     });
