@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   UserCog,
   UserCheck,
+  Crown,
   Wrench,
   Search,
   Loader2,
@@ -28,11 +29,30 @@ const TABS = [
   { key: "Guard", label: "Guards", icon: ShieldCheck },
   { key: "Caretaker", label: "Caretakers", icon: UserCog },
   { key: "Warden", label: "Wardens", icon: UserCheck },
+  { key: "ChiefWarden", label: "Chief Warden", icon: Crown },
   { key: "Department", label: "Departments", icon: Wrench },
 ];
 
 
 const HOSTEL_ROLES = ["Caretaker", "Warden"];
+
+const ROLE_LABELS = {
+  Student: "Student",
+  Guard: "Guard",
+  Caretaker: "Caretaker",
+  Warden: "Warden",
+  ChiefWarden: "Chief Warden",
+  Department: "Department",
+};
+
+const ROLE_PLURALS = {
+  Student: "students",
+  Guard: "guards",
+  Caretaker: "caretakers",
+  Warden: "wardens",
+  ChiefWarden: "Chief Wardens",
+  Department: "departments",
+};
 
 // Maintenance departments a Department account can service (mirrors Complaint.category).
 const DEPARTMENT_OPTIONS = ["Electrical", "Plumbing", "Cleaning", "Wifi", "Furniture"];
@@ -71,6 +91,7 @@ export default function PeopleView() {
   }, [role]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -86,7 +107,7 @@ export default function PeopleView() {
   }, [people, search]);
 
   // Only staff are provisioned here; students self-register.
-  const isStaffTab = role === "Guard" || role === "Caretaker" || role === "Warden" || role === "Department";
+  const isStaffTab = role === "Guard" || role === "Caretaker" || role === "Warden" || role === "ChiefWarden" || role === "Department";
   const isHostelRole = HOSTEL_ROLES.includes(role);
 
 
@@ -103,7 +124,8 @@ export default function PeopleView() {
   }, [role, people]);
   const allDepartmentsTaken = role === "Department" && takenDepartments.size >= DEPARTMENT_OPTIONS.length;
 
-  const addDisabled = allHostelsTaken || allDepartmentsTaken;
+  const chiefWardenExists = role === "ChiefWarden" && people.length > 0;
+  const addDisabled = allHostelsTaken || allDepartmentsTaken || chiefWardenExists;
 
   // --- Add staff modal ---
   const emptyAddForm = { name: "", staffId: "", pin: "", phoneNumber: "", managedHostel: "", managedDepartment: "" };
@@ -198,7 +220,7 @@ export default function PeopleView() {
   };
 
   const removePerson = async (person) => {
-    if (!window.confirm(`Remove ${person.name}? This permanently deletes their ${role.toLowerCase()} account.`)) {
+    if (!window.confirm(`Remove ${person.name}? This permanently deletes their ${ROLE_LABELS[role].toLowerCase()} account.`)) {
       return;
     }
     setBusy(true);
@@ -222,7 +244,7 @@ export default function PeopleView() {
           </span>
           <div>
             <h2 className="text-lg font-bold text-slate-900">People &amp; Status</h2>
-            <p className="text-sm text-slate-600">{visible.length} {role.toLowerCase()}s</p>
+            <p className="text-sm text-slate-600">{visible.length} {ROLE_PLURALS[role]}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -239,10 +261,10 @@ export default function PeopleView() {
             <button
               onClick={openAdd}
               disabled={addDisabled}
-              title={allHostelsTaken ? `Every hostel already has a ${role.toLowerCase()} account.` : allDepartmentsTaken ? "Every department already has an account." : undefined}
+              title={allHostelsTaken ? `Every hostel already has a ${role.toLowerCase()} account.` : allDepartmentsTaken ? "Every department already has an account." : chiefWardenExists ? "Only one Chief Warden account is allowed." : undefined}
               className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <UserPlus className="h-4 w-4" /> Add {role}
+              <UserPlus className="h-4 w-4" /> Add {ROLE_LABELS[role]}
             </button>
           )}
         </div>
@@ -266,12 +288,12 @@ export default function PeopleView() {
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading {role.toLowerCase()}s…
+          <Loader2 className="h-5 w-5 animate-spin" /> Loading {ROLE_PLURALS[role]}…
         </div>
       ) : visible.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-16 text-center">
           <Users className="mx-auto h-10 w-10 text-slate-300" />
-          <p className="mt-3 font-semibold text-slate-700">No {role.toLowerCase()}s found</p>
+          <p className="mt-3 font-semibold text-slate-700">No {ROLE_PLURALS[role]} found</p>
           <p className="text-sm text-slate-400">They will appear here once registered.</p>
         </div>
       ) : (
@@ -304,6 +326,11 @@ export default function PeopleView() {
                 {role === "Warden" && (
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${p.managedHostel ? "bg-purple-100 text-purple-700" : "bg-amber-100 text-amber-700"}`}>
                     {p.managedHostel || "No hostel"}
+                  </span>
+                )}
+                {role === "ChiefWarden" && (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-700">
+                    All hostels
                   </span>
                 )}
                 {role === "Department" && (
@@ -395,14 +422,14 @@ export default function PeopleView() {
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                <UserPlus className="h-5 w-5 text-indigo-600" /> Add {role}
+                <UserPlus className="h-5 w-5 text-indigo-600" /> Add {ROLE_LABELS[role]}
               </h3>
               <button onClick={() => setShowAdd(false)} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              Create a {role.toLowerCase()} account. They sign in on the {role.toLowerCase()} page with the ID and PIN you set here.
+              Create a {ROLE_LABELS[role].toLowerCase()} account. They sign in on the {ROLE_LABELS[role].toLowerCase()} page with the ID and PIN you set here.
             </p>
 
             {actionMsg && (
@@ -420,11 +447,11 @@ export default function PeopleView() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">{role} ID</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">{ROLE_LABELS[role]} ID</label>
                 <input
                   value={addForm.staffId}
                   onChange={(e) => setAddForm((f) => ({ ...f, staffId: e.target.value }))}
-                  placeholder={role === "Guard" ? "E.g. GRD001" : role === "Department" ? "E.g. DEPT-ELEC" : role === "Warden" ? "E.g. WDN001" : "E.g. CTK001"}
+                  placeholder={role === "Guard" ? "E.g. GRD001" : role === "Department" ? "E.g. DEPT-ELEC" : role === "ChiefWarden" ? "E.g. CWDN001" : role === "Warden" ? "E.g. WDN001" : "E.g. CTK001"}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:outline-none"
                   required
                 />
@@ -516,7 +543,7 @@ export default function PeopleView() {
                   disabled={busy}
                   className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2.5 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:opacity-60"
                 >
-                  {busy ? "Creating…" : `Create ${role}`}
+                  {busy ? "Creating…" : `Create ${ROLE_LABELS[role]}`}
                 </button>
               </div>
             </form>

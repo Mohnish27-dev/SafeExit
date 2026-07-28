@@ -211,6 +211,27 @@ const getMyOutingRequests = async (req, res) => {
   }
 };
 
+// GET /api/outing/all — private (ChiefWarden). Campus-wide, read-only oversight.
+// Signatures are intentionally omitted from this list response; the dashboard needs
+// operational details, not large immutable image snapshots.
+const getAllOutingRequests = async (req, res) => {
+  try {
+    const requests = await OutingRequest.find({})
+      .select('-studentSignature -caretakerSignature -wardenSignature')
+      .populate('student', 'name studentId roomNumber hostelName department year')
+      .populate('targetCaretaker', 'name')
+      .populate('forwardedTo', 'name')
+      .populate('forwardedBy', 'name')
+      .populate('approvedBy', 'name role')
+      .sort({ createdAt: -1 });
+
+    await expireStaleRequests(requests);
+    res.json(requests);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // GET /api/outing/pending — private (Caretaker/Guard)
 const getPendingRequests = async (req, res) => {
   try {
@@ -604,6 +625,7 @@ const streamOutingEvents = (req, res) => {
 module.exports = {
   createOutingRequest,
   getMyOutingRequests,
+  getAllOutingRequests,
   getPendingRequests,
   getOverdueOutings,
   updateRequestStatus,

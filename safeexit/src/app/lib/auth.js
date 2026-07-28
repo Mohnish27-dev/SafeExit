@@ -12,6 +12,7 @@ const ROLE_CONFIG = {
   student: { loginPath: "/login/student" },
   caretaker: { loginPath: "/login/caretaker" },
   warden: { loginPath: "/login/warden" },
+  "chief-warden": { loginPath: "/login/chief-warden" },
   security: { loginPath: "/login/security" },
   admin: { loginPath: "/login/admin" },
   department: { loginPath: "/login/department" },
@@ -24,6 +25,7 @@ const BACKEND_ROLE_TO_SLUG = {
   Student: "student",
   Caretaker: "caretaker",
   Warden: "warden",
+  ChiefWarden: "chief-warden",
   Guard: "security",
   Admin: "admin",
   Department: "department",
@@ -33,6 +35,7 @@ const ROLE_LABELS = {
   student: "Student",
   caretaker: "Caretaker",
   warden: "Warden",
+  "chief-warden": "Chief Warden",
   security: "Security Guard",
   admin: "Administrator",
   department: "Department",
@@ -72,8 +75,9 @@ const tryRestoreSession = async () => {
       ...(data.managedDepartment ? { managedDepartment: data.managedDepartment } : {}),
     });
 
-    // Re-sync the push subscription under the fresh token. Best-effort.
-    autoSubscribeIfGranted().catch(() => {});
+    // Chief Warden is an oversight-only dashboard and intentionally has no Web
+    // Push feature. Other roles keep the existing best-effort re-subscription.
+    if (slug !== "chief-warden") autoSubscribeIfGranted().catch(() => {});
 
     return slug;
   } catch {

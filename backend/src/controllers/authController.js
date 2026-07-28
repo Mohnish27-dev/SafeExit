@@ -132,7 +132,7 @@ const authUser = async (req, res) => {
 
       const token = generateToken(res, user._id);
 
-      if (['Guard', 'Caretaker', 'Admin', 'Warden'].includes(user.role)) {
+      if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
         user.lastActiveAt = new Date();
         if (user.role === 'Guard') user.onDuty = true;
         await user.save();
@@ -196,7 +196,7 @@ const getUserProfile = async (req, res) => {
 
 // PATCH /api/auth/profile — private (gender backfill + own photo + own signature)
 const updateUserProfile = async (req, res) => {
-  const { gender, photo, signature } = req.body;
+  const { gender, hostelName, photo, signature } = req.body;
 
   // Reject oversized payloads early; a data-URL face photo should be well under this.
   if (photo !== undefined) {
@@ -320,7 +320,7 @@ const refreshSession = async (req, res) => {
 
     const token = generateToken(res, user._id);
 
-    if (['Guard', 'Caretaker', 'Admin', 'Warden'].includes(user.role)) {
+    if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
       user.lastActiveAt = new Date();
       if (user.role === 'Guard') user.onDuty = true;
       await user.save();
@@ -507,7 +507,7 @@ const verifyAuthentication = async (req, res) => {
     // Replay protection: persist the authenticator's monotonic counter.
     cred.counter = authenticationInfo.newCounter;
     user.currentChallenge = undefined;
-    if (['Guard', 'Caretaker', 'Admin', 'Warden'].includes(user.role)) {
+    if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
       user.lastActiveAt = new Date();
       if (user.role === 'Guard') user.onDuty = true;
     }

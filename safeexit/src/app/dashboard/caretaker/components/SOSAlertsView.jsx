@@ -43,7 +43,7 @@ const STATUS_META = {
 
 const FILTER_KEYS = ["Active", "Acknowledged", "Resolved", "All"];
 
-export default function SOSAlertsView({ onCountChange }) {
+export default function SOSAlertsView({ onCountChange, readOnly = false }) {
   const { t } = useTranslation("sos");
   const dateLocale = useDateLocale();
 
@@ -91,6 +91,7 @@ export default function SOSAlertsView({ onCountChange }) {
   }, [onCountChange, t]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     // Frequent poll: these are emergencies; SSE below is the fast path.
     const t = setInterval(load, 8000);
@@ -202,7 +203,7 @@ export default function SOSAlertsView({ onCountChange }) {
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  {!readOnly && <div className="flex gap-2">
                     {a.status !== "Acknowledged" && a.status !== "Resolved" && (
                       <button
                         onClick={() => updateStatus(a._id, "Acknowledged")}
@@ -222,7 +223,7 @@ export default function SOSAlertsView({ onCountChange }) {
                         {tc("resolve")}
                       </button>
                     )}
-                  </div>
+                  </div>}
                 </div>
 
                 {/* Student profile strip */}

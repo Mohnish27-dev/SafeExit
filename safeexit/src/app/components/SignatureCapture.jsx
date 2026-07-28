@@ -157,9 +157,13 @@ export default function SignatureCapture({
           </p>
           {/* Explicit white background: a drawn signature is a transparent PNG and must
               read correctly here. */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-2">
+          <div className="flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt="Signature preview" className="mx-auto h-16 w-auto" />
+            <img
+              src={preview}
+              alt="Signature preview"
+              className="h-full w-full object-contain"
+            />
           </div>
         </div>
       )}

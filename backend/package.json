@@ -9,7 +9,7 @@
     "seed:admins": "node scripts/seedAdmins.js",
     "migrate:loginid": "node scripts/migrateStaffLoginId.js",
     "lint": "eslint src/**/*.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",

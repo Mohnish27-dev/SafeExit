@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   createOutingRequest,
   getMyOutingRequests,
+  getAllOutingRequests,
   getPendingRequests,
   getOverdueOutings,
   updateRequestStatus,
@@ -22,6 +23,8 @@ router.route('/')
   .post(protect, authorizeRoles('Student'), createLimiter, createOutingRequest);
 
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyOutingRequests);
+
+router.get('/all', protect, authorizeRoles('ChiefWarden'), getAllOutingRequests);
 
 router.get('/pending', protect, authorizeRoles('Caretaker', 'Guard'), getPendingRequests);
 

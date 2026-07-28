@@ -133,8 +133,8 @@ const createStaff = async (req, res) => {
       return res.status(400).json({ message: 'A staff ID is required.' });
     }
     // Admins come only from the .env allowlist — this endpoint can't mint one.
-    if (!['Caretaker', 'Warden', 'Guard', 'Department'].includes(role)) {
-      return res.status(400).json({ message: 'Role must be Caretaker, Warden, Guard, or Department.' });
+    if (!['Caretaker', 'Warden', 'ChiefWarden', 'Guard', 'Department'].includes(role)) {
+      return res.status(400).json({ message: 'Role must be Caretaker, Warden, Chief Warden, Guard, or Department.' });
     }
     if (!pin || String(pin).trim().length < 4) {
       return res.status(400).json({ message: 'An initial PIN of at least 4 characters is required.' });
@@ -156,6 +156,16 @@ const createStaff = async (req, res) => {
       const hostel = canonicalHostelName(managedHostel);
       const clash = await wardenHostelClashMessage(hostel);
       if (clash) return res.status(409).json({ message: clash });
+    }
+    // The Chief Warden is campus-wide, so there is no hostel scope and only one
+    // account is needed. Admin can reset/replace that account from People.
+    if (role === 'ChiefWarden') {
+      const existing = await User.findOne({ role: 'ChiefWarden' });
+      if (existing) {
+        return res.status(409).json({
+          message: `A Chief Warden account already exists (${existing.loginId}). Reset its PIN or remove it before creating another.`,
+        });
+      }
     }
     // A department account services exactly one category, one account per department.
     if (role === 'Department') {
@@ -218,7 +228,7 @@ const resetStaffPin = async (req, res) => {
 
     const user = await User.findById(req.params.id);
     // Staff only — never resets a student's or another admin's credentials.
-    if (!user || !['Caretaker', 'Warden', 'Guard', 'Department'].includes(user.role)) {
+    if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard', 'Department'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 
@@ -309,7 +319,7 @@ const updateStaffScope = async (req, res) => {
 const removeStaff = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user || !['Caretaker', 'Warden', 'Guard', 'Department'].includes(user.role)) {
+    if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard', 'Department'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 
