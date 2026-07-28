@@ -53,7 +53,7 @@ export default function SignatureSetupModal({
         className="absolute inset-0 cursor-default"
         disabled={!dismissible}
       />
-      <div className="relative z-10 w-full max-w-md rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
+      <div className="relative z-10 max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">

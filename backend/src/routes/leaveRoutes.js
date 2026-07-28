@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   createLeaveApplication,
   getMyLeaveApplications,
+  getAllLeaveApplications,
   getPendingLeaveApplications,
   getLeaveHistory,
   updateLeaveStatus,
@@ -21,6 +22,8 @@ router.route('/')
   .post(protect, authorizeRoles('Student'), createLimiter, createLeaveApplication);
 
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyLeaveApplications);
+
+router.get('/all', protect, authorizeRoles('ChiefWarden'), getAllLeaveApplications);
 
 router.get('/pending', protect, authorizeRoles('Caretaker'), getPendingLeaveApplications);
 

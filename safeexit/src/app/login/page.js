@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, LogIn, Headphones, ShieldCheck, GraduationCap, UserCog, UserCheck, Lock, CheckCircle, ArrowLeft } from "lucide-react";
+import { Shield, LogIn, Headphones, ShieldCheck, GraduationCap, UserCog, UserCheck, Crown, Lock, CheckCircle, ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { getToken } from "@/app/lib/auth";
 import { getStoredUser } from "@/app/lib/userProfile";
+import { CHIEF_WARDEN_PIN_KEY } from "@/app/lib/chiefWardenQuickLogin";
 
 // Per-role Quick Login PIN keys — presence tells which roles this device is set up for
 const ROLE_PIN_KEYS = {
@@ -14,12 +15,22 @@ const ROLE_PIN_KEYS = {
   student: "safeexit_quick_pin",
   caretaker: "safeexit_quick_pin_caretaker",
   warden: "safeexit_quick_pin_warden",
+  "chief-warden": CHIEF_WARDEN_PIN_KEY,
+};
+
+const ROLE_LOGIN_PATH = {
+  student: "/login/student",
+  caretaker: "/login/caretaker",
+  warden: "/login/warden",
+  "chief-warden": "/login/chief-warden",
+  security: "/login/security",
 };
 
 const ROLE_DASHBOARD = {
   student: "/dashboard/student",
   caretaker: "/dashboard/caretaker",
   warden: "/dashboard/warden",
+  "chief-warden": "/dashboard/chief-warden",
   security: "/dashboard/security",
   admin: "/dashboard/admin",
 };
@@ -82,6 +93,7 @@ export default function LoginRoleSelect() {
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- hydrate role/session state from browser storage once on mount */
     // Active session? Go straight to the dashboard
     const token = getToken();
     if (token) {
@@ -100,21 +112,23 @@ export default function LoginRoleSelect() {
 
     // Exactly one role enrolled → auto-redirect to that role's login
     if (found.length === 1) {
-      const target = allRoles.find((r) => r.id === found[0]);
+      const target = ROLE_LOGIN_PATH[found[0]];
       if (target) {
         setPageState("redirect");
-        router.replace(target.href);
+        router.replace(target);
         return;
       }
     }
 
     setPageState("ready");
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [router]);
 
+  const enrolledPrimaryRoles = enrolledRoles.filter((role) => allRoles.some((item) => item.id === role));
   const visibleRoles =
-    showAll || enrolledRoles.length === 0
+    showAll || enrolledPrimaryRoles.length === 0
       ? allRoles
-      : allRoles.filter((r) => enrolledRoles.includes(r.id));
+      : allRoles.filter((r) => enrolledPrimaryRoles.includes(r.id));
 
   if (pageState !== "ready") {
     return (
@@ -163,7 +177,7 @@ export default function LoginRoleSelect() {
     );
   }
 
-  const isFiltered = !showAll && enrolledRoles.length > 0;
+  const isFiltered = !showAll && enrolledPrimaryRoles.length > 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f0f0ff] relative overflow-hidden">
@@ -299,8 +313,16 @@ export default function LoginRoleSelect() {
           </div>
         )}
 
-        {/* Admin Console access */}
-        <div className="mt-5 sm:mt-8">
+        {/* Privileged oversight access stays compact, outside the primary role cards. */}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2 sm:mt-8">
+          <Link
+            href="/login/chief-warden"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/70 backdrop-blur-sm px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-md transition-all"
+          >
+            <Crown className="h-4 w-4 text-indigo-500" />
+            Chief Warden
+            <span className="text-slate-400">→</span>
+          </Link>
           <Link
             href="/login/admin"
             className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/70 backdrop-blur-sm px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-md transition-all"

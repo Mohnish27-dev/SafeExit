@@ -8,7 +8,9 @@ const userSchema = new mongoose.Schema({
   email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
   password: { type: String }, // optional for webauthn-only, but usually required for first login
 
-  role: { type: String, enum: ['Student', 'Caretaker', 'Warden', 'Guard', 'Admin', 'Department'], default: 'Student' },
+  // ChiefWarden is the campus-wide hostel oversight role: below Admin, but not
+  // tied to one hostel like Warden/Caretaker accounts.
+  role: { type: String, enum: ['Student', 'Caretaker', 'Warden', 'ChiefWarden', 'Guard', 'Admin', 'Department'], default: 'Student' },
   gender: { type: String, enum: ['Male', 'Female', 'Other'] },
   // Department staff scope: the single maintenance category this account services.
   // Complaints of this category route here; unset for non-Department users.

@@ -200,6 +200,25 @@ const getMyLeaveApplications = async (req, res) => {
   }
 };
 
+// GET /api/leave/all — private (ChiefWarden). Campus-wide, read-only oversight.
+const getAllLeaveApplications = async (req, res) => {
+  try {
+    const applications = await LeaveApplication.find({})
+      .select('-studentSignature -caretakerSignature -wardenSignature')
+      .populate('student', 'name studentId roomNumber hostelName department year')
+      .populate('targetCaretaker', 'name')
+      .populate('forwardedTo', 'name')
+      .populate('forwardedBy', 'name')
+      .populate('approvedBy', 'name role')
+      .sort({ createdAt: -1 });
+
+    await expireStaleApplications(applications);
+    res.json(applications);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // GET /api/leave/pending — private (Caretaker)
 const getPendingLeaveApplications = async (req, res) => {
   try {
@@ -600,6 +619,7 @@ const streamLeaveEvents = (req, res) => {
 module.exports = {
   createLeaveApplication,
   getMyLeaveApplications,
+  getAllLeaveApplications,
   getPendingLeaveApplications,
   getLeaveHistory,
   updateLeaveStatus,

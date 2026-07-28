@@ -329,7 +329,7 @@ const getScanLogs = async (req, res) => {
 
     const logs = await ScanLog.find(filter)
       // roomNumber/department are rendered and searched by the movement log view.
-      .populate('student', 'name studentId campusStatus roomNumber department')
+      .populate('student', 'name studentId campusStatus roomNumber hostelName department')
       .populate('guard', 'name studentId')
       .sort({ createdAt: -1 })
       .limit(limit);
