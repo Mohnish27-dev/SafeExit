@@ -1,9 +1,7 @@
 const User = require('../models/User');
-const OutingRequest = require('../models/OutingRequest');
-const LeaveApplication = require('../models/LeaveApplication');
 const { genderForHostel } = require('../config/hostels');
-const { caretakerStudentFilter, COLLATION } = require('../utils/hostelScope');
-const { isReturnLate } = require('../utils/outingRules');
+
+const HOSTEL_COLLATION = { locale: 'en', strength: 2 };
 
 // GET /api/caretaker/selectable — private (Student)
 // Lists the caretakers a student may route a request to: every assigned caretaker whose
@@ -37,77 +35,23 @@ const getSelectableCaretakers = async (req, res) => {
 };
 
 // GET /api/caretaker/stats — private (Caretaker)
-// Live occupancy for the dashboard's "Live Stats" card: how many from THIS caretaker's
-// hostel are off campus right now. Counts only — no student identities are returned.
-//
-// Scoped by RESIDENCE (hostelName), not by request routing. A student may route a request
-// to another hostel's caretaker, but they still sleep in this building — occupancy has to
-// follow where they live, or a routed-away student would be counted by the wrong hostel
-// and missing from their own.
-//
-// Counted from the PASS (status 'Out'), never User.campusStatus, so a half-failed gate
-// scan can't drift the number. Outing + leave, deduped by student.
-//   outNow       — students currently off campus.
-//   overdue      — the subset past their return window (same isReturnLate the gate enforces).
-//   totalStudents— the hostel roster, for the share bar.
+// Live occupancy for the dashboard's "Live Stats" card. The caretaker receives only the
+// number of students currently out from their assigned hostel — never student identities.
+// Residence (hostelName), rather than request routing, is the scope boundary.
 const getCaretakerStats = async (req, res) => {
   try {
-    const studentFilter = caretakerStudentFilter(req.user);
+    const managedHostel = String(req.user.managedHostel || '').trim();
+    if (!managedHostel) return res.json({ outNow: 0 });
 
-    const empty = {
-      outNow: 0,
-      overdue: 0,
-      totalStudents: 0,
-      generatedAt: new Date(),
-    };
+    // Gate scans maintain campusStatus atomically, making it the live occupancy source.
+    // Include Overdue for older records even though overdue is normally derived at read time.
+    const outNow = await User.countDocuments({
+      role: 'Student',
+      hostelName: managedHostel,
+      campusStatus: { $in: ['Outside', 'Overdue'] },
+    }).collation(HOSTEL_COLLATION);
 
-    // No hostel and no gender configured — the caretaker oversees nobody yet.
-    if (!studentFilter) return res.json(empty);
-
-    // Only the ids are needed now that names are never rendered.
-    const residents = await User.find(studentFilter)
-      .collation(COLLATION)
-      .select('_id')
-      .lean();
-
-    if (residents.length === 0) return res.json(empty);
-
-    const ids = residents.map((s) => s._id);
-
-    const [outOutings, outLeaves] = await Promise.all([
-      // Pull the return window so overdue is derived with the gate's own rule.
-      OutingRequest.find({ status: 'Out', student: { $in: ids } })
-        .select('student inTime')
-        .lean(),
-      LeaveApplication.find({ status: 'Out', student: { $in: ids } })
-        .select('student returnDate')
-        .lean(),
-    ]);
-
-    // A student shouldn't hold an outing and a leave pass at once, but dedupe anyway so a
-    // data anomaly can never report more students out than actually live here. First pass
-    // wins; outings are checked first since they're the shorter, more time-critical trip.
-    const dueByStudent = new Map();
-    for (const o of outOutings) {
-      const key = String(o.student);
-      if (!dueByStudent.has(key)) dueByStudent.set(key, o.inTime);
-    }
-    for (const l of outLeaves) {
-      const key = String(l.student);
-      if (!dueByStudent.has(key)) dueByStudent.set(key, l.returnDate);
-    }
-
-    let overdue = 0;
-    for (const due of dueByStudent.values()) {
-      if (isReturnLate(due)) overdue += 1;
-    }
-
-    res.json({
-      outNow: dueByStudent.size,
-      overdue,
-      totalStudents: residents.length,
-      generatedAt: new Date(),
-    });
+    res.json({ outNow });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
