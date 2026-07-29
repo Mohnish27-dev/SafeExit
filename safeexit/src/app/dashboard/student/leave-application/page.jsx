@@ -198,6 +198,7 @@ export default function LeaveApplicationPage() {
     () => applications.find((a) => ["pending", "forwarded", "approved", "out"].includes((a.status || "").toLowerCase())),
     [applications]
   );
+  const activeLeaveStatus = (activeLeave?.status || "").toLowerCase();
 
   const leaveDateObj = form.leaveDate ? new Date(form.leaveDate) : null;
   const returnDateObj = parseReturnDate(form.returnDate);
@@ -287,18 +288,27 @@ export default function LeaveApplicationPage() {
   };
 
   const handleCancel = async (id) => {
+    if (!id || cancelling) return false;
     setCancelling(true);
     try {
-      await apiFetch(`/leave/${id}/cancel`, { method: "PATCH" });
+      const cancelledApplication = await apiFetch(`/leave/${id}/cancel`, { method: "PATCH" });
       setApplications((prev) =>
-        prev.map((a) => (a._id === id ? { ...a, status: "Cancelled" } : a))
+        prev.map((a) => (a._id === id ? { ...a, ...cancelledApplication, status: "Cancelled" } : a))
       );
       setConfirmCancel(null);
+      return true;
     } catch (err) {
       console.error("Failed to cancel leave application:", err);
+      return false;
     } finally {
       setCancelling(false);
     }
+  };
+
+  const handleCancelCreated = async () => {
+    if (!(await handleCancel(created?._id))) return;
+    resetForm();
+    setTab("mine");
   };
 
   const filteredApplications = applications.filter(
@@ -365,6 +375,15 @@ export default function LeaveApplicationPage() {
               className="sf-btn-secondary w-full"
             >
               View My Applications
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelCreated}
+              disabled={cancelling}
+              className="sf-btn-danger w-full disabled:opacity-45 disabled:cursor-not-allowed"
+            >
+              {cancelling ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+              {cancelling ? "Cancelling…" : "Cancel Leave"}
             </button>
             <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full">
               Back to Dashboard
@@ -556,6 +575,17 @@ export default function LeaveApplicationPage() {
           <button type="button" onClick={() => setTab("mine")} className="sf-btn-primary w-full">
             View My Applications
           </button>
+          {activeLeaveStatus !== "out" && (
+            <button
+              type="button"
+              onClick={() => handleCancel(activeLeave._id)}
+              disabled={cancelling}
+              className="sf-btn-danger w-full mt-3 disabled:opacity-45 disabled:cursor-not-allowed"
+            >
+              {cancelling ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+              {cancelling ? "Cancelling…" : "Cancel Leave"}
+            </button>
+          )}
         </StudentFeaturePanel>
       ) : tab === "new" ? (
         <>

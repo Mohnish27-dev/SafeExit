@@ -192,26 +192,17 @@ const handleMagneticLeave = (e) => {
   e.currentTarget.style.setProperty("--mag-y", "0px");
 };
 
-// Bar width as this count's share of the hostel roster, clamped to 100%.
-const shareOf = (count, total) =>
-  `${total > 0 ? Math.min(100, Math.round((count / total) * 100)) : 0}%`;
-
-function CaretakerStat({ label, value, width, fill, glow }) {
+function CaretakerStat({ label, value, fill, glow }) {
   const [ref, animated] = useCountUp(value);
   return (
-    <div ref={ref} className="sd-stat px-4 py-4" style={{ "--stat-glow": glow }}>
-      <div className="flex items-center justify-between">
-        <p className="sd-micro">{label}</p>
-        <p
-          className="text-xl font-bold italic tracking-tight text-transparent bg-clip-text"
-          style={{ backgroundImage: fill }}
-        >
-          {Math.round(animated)}
-        </p>
-      </div>
-      <div className="sd-bar mt-3">
-        <div className="sd-bar__fill" style={{ width, background: fill, boxShadow: `0 0 12px ${glow}` }} />
-      </div>
+    <div ref={ref} className="sd-stat px-4 py-7 text-center" style={{ "--stat-glow": glow }}>
+      <p className="sd-micro">{label}</p>
+      <p
+        className="mt-2 text-5xl font-bold italic tracking-tight text-transparent bg-clip-text"
+        style={{ backgroundImage: fill }}
+      >
+        {Math.round(animated)}
+      </p>
     </div>
   );
 }
@@ -283,13 +274,14 @@ export default function CaretakerDashboardPage() {
   // Students still out past their outing return time; kept live for the badge.
   const [overdueCount, setOverdueCount] = useState(0);
 
-  // Counts-only occupancy for the Live Stats card — no student identities.
-  const [liveStats, setLiveStats] = useState({ outNow: 0, overdue: 0, totalStudents: 0 });
+  // Numeric occupancy only — the API never sends student identities to this card.
+  const [studentsOut, setStudentsOut] = useState(0);
 
   const loadLiveStats = useCallback(async () => {
     try {
       const data = await apiFetch("/caretaker/stats");
-      setLiveStats(data);
+      const count = Number(data?.outNow);
+      setStudentsOut(Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0);
     } catch {
       /* best-effort */
     }
@@ -1171,27 +1163,12 @@ export default function CaretakerDashboardPage() {
                 </div>
                 <span className="sd-tag">{tc("autoSync")}</span>
               </div>
-              <div className="mt-5 space-y-4">
-                <CaretakerStat
-                  label={isBoysCaretaker ? t("pendingLeave") : t("pendingRequests")}
-                  value={isBoysCaretaker ? leavePending.length : pending.length}
-                  width={shareOf(isBoysCaretaker ? leavePending.length : pending.length, liveStats.totalStudents)}
-                  fill="linear-gradient(90deg, #6366f1, #38bdf8)"
-                  glow="rgba(99,102,241,0.45)"
-                />
+              <div className="mt-5">
                 <CaretakerStat
                   label={t("outNow")}
-                  value={liveStats.outNow}
-                  width={shareOf(liveStats.outNow, liveStats.totalStudents)}
+                  value={studentsOut}
                   fill="linear-gradient(90deg, #f59e0b, #fb923c)"
                   glow="rgba(245,158,11,0.45)"
-                />
-                <CaretakerStat
-                  label={t("overdueStudents")}
-                  value={liveStats.overdue}
-                  width={shareOf(liveStats.overdue, liveStats.totalStudents)}
-                  fill="linear-gradient(90deg, #f43f5e, #fb7185)"
-                  glow="rgba(244,63,94,0.45)"
                 />
               </div>
             </div>

@@ -19,6 +19,7 @@ import {
   CalendarDays,
   RefreshCw,
   DoorOpen,
+  ChartNoAxesCombined,
 } from "lucide-react";
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { getStoredUser, getFirstName, getInitials } from "@/app/lib/userProfile";
@@ -27,9 +28,11 @@ import AuthLoading from "@/app/components/AuthGate";
 import SOSAlertsView from "./components/SOSAlertsView";
 import MovementLogsView from "./components/MovementLogsView";
 import PeopleView from "./components/PeopleView";
+import AnalyticsView from "./components/AnalyticsView";
 
 const NAV = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
+  { key: "analytics", label: "Analytics", icon: ChartNoAxesCombined },
   { key: "sos", label: "SOS Alerts", icon: Siren },
   { key: "logs", label: "Movement Logs", icon: ScrollText },
   { key: "people", label: "People", icon: Users },
@@ -194,7 +197,7 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Nav tabs */}
-        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/70 bg-white/80 p-2 shadow-sm backdrop-blur sm:grid-cols-4">
+        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/70 bg-white/80 p-2 shadow-sm backdrop-blur sm:grid-cols-5">
           {NAV.map((item) => {
             const active = view === item.key;
             const badge = item.key === "sos" ? overview?.activeSOS : null;
@@ -271,6 +274,7 @@ export default function AdminDashboardPage() {
           )}
 
           {view === "sos" && <SOSAlertsView onChange={loadOverview} />}
+          {view === "analytics" && <AnalyticsView />}
           {view === "logs" && <MovementLogsView />}
           {view === "people" && <PeopleView />}
         </div>

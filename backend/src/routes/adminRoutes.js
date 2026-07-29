@@ -8,10 +8,12 @@ const {
   updateStaffScope,
   removeStaff,
 } = require('../controllers/adminController');
+const { getAnalytics } = require('../controllers/adminAnalyticsController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authorizeRoles } = require('../middlewares/roleMiddleware');
 
 router.get('/overview', protect, authorizeRoles('Admin'), getOverview);
+router.get('/analytics', protect, authorizeRoles('Admin'), getAnalytics);
 // getUsers pins a Guard's query to role=Student regardless of what's asked.
 router.get('/users', protect, authorizeRoles('Admin', 'Guard'), getUsers);
 

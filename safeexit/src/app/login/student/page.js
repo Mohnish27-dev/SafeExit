@@ -22,7 +22,9 @@ import {
   KeyRound,
   Eye,
   EyeOff,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -39,7 +41,16 @@ import {
 } from "@/app/lib/quickLogin";
 import { HOSTELS } from "@/app/lib/hostels";
 import SignatureCapture from "@/app/components/SignatureCapture";
+import {
+  clampCropOffset,
+  cropCoverScale,
+  getCropSourceRect,
+} from "@/app/lib/profilePhotoCrop.mjs";
 
+
+const LOGIN_CROP_FRAME = 240;
+const CROP_OUTPUT_SIZE = 512;
+const MAX_PHOTO_FILE_SIZE = 12 * 1024 * 1024;
 
 // Campus hostels come from the shared registry — gender is implied by the
 // hostel, so selecting one verifies the student as a boy/girl.
@@ -68,7 +79,16 @@ export default function StudentLoginPage() {
   });
 
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoError, setPhotoError] = useState("");
+  const [cropSource, setCropSource] = useState(null);
+  const [cropNatural, setCropNatural] = useState(null);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const [isReadingPhoto, setIsReadingPhoto] = useState(false);
+  const [isCropping, setIsCropping] = useState(false);
   const fileInputRef = useRef(null);
+  const cropDragRef = useRef(null);
+  const photoReadIdRef = useRef(0);
 
   // Captured at step 4 and published once the account exists. Required: every outing and
   // leave request is stamped with it server-side, so onboarding is where we collect it.
@@ -317,13 +337,180 @@ export default function StudentLoginPage() {
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result);
-      };
-      reader.readAsDataURL(file);
+    e.target.value = "";
+    if (!file) return;
+
+    const readId = ++photoReadIdRef.current;
+    setIsReadingPhoto(false);
+    setPhotoError("");
+    if (file.type && !file.type.startsWith("image/")) {
+      setPhotoError("Please choose a valid image file.");
+      return;
     }
+    if (file.size > MAX_PHOTO_FILE_SIZE) {
+      setPhotoError("That image is too large. Please choose one under 12 MB.");
+      return;
+    }
+
+    setIsReadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (readId !== photoReadIdRef.current) return;
+      if (typeof reader.result !== "string") {
+        setIsReadingPhoto(false);
+        setPhotoError("Couldn't read that image. Please try a different photo.");
+        return;
+      }
+
+      const image = new window.Image();
+      image.onload = () => {
+        if (readId !== photoReadIdRef.current) return;
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        if (!width || !height) {
+          setIsReadingPhoto(false);
+          setPhotoError("Couldn't read that image. Please try a different photo.");
+          return;
+        }
+        setCropNatural({ width, height });
+        setCropZoom(1);
+        setCropOffset({ x: 0, y: 0 });
+        setCropSource(reader.result);
+        setIsReadingPhoto(false);
+      };
+      image.onerror = () => {
+        if (readId !== photoReadIdRef.current) return;
+        setIsReadingPhoto(false);
+        setPhotoError("This image format isn't supported. Please choose a JPG, PNG, or WebP photo.");
+      };
+      image.src = reader.result;
+    };
+    reader.onerror = () => {
+      if (readId !== photoReadIdRef.current) return;
+      setIsReadingPhoto(false);
+      setPhotoError("Couldn't read that file. Please try a different photo.");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const resetPhotoCrop = () => {
+    photoReadIdRef.current += 1;
+    cropDragRef.current = null;
+    setCropSource(null);
+    setCropNatural(null);
+    setCropZoom(1);
+    setCropOffset({ x: 0, y: 0 });
+    setIsReadingPhoto(false);
+    setIsCropping(false);
+    setPhotoError("");
+  };
+
+  const handleCropZoomChange = (value) => {
+    const zoom = Number(value);
+    setCropZoom(zoom);
+    setCropOffset((current) =>
+      cropNatural
+        ? clampCropOffset(current, cropNatural, zoom, LOGIN_CROP_FRAME)
+        : current
+    );
+  };
+
+  const handleCropPointerDown = (event) => {
+    if (!cropNatural || (event.pointerType === "mouse" && event.button !== 0)) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: cropOffset,
+    };
+  };
+
+  const handleCropPointerMove = (event) => {
+    const drag = cropDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !cropNatural) return;
+    const nextOffset = {
+      x: drag.origin.x + event.clientX - drag.startX,
+      y: drag.origin.y + event.clientY - drag.startY,
+    };
+    setCropOffset(
+      clampCropOffset(nextOffset, cropNatural, cropZoom, LOGIN_CROP_FRAME)
+    );
+  };
+
+  const handleCropPointerUp = (event) => {
+    if (cropDragRef.current?.pointerId !== event.pointerId) return;
+    cropDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleCropKeyDown = (event) => {
+    if (!cropNatural) return;
+    const movement = {
+      ArrowLeft: { x: -6, y: 0 },
+      ArrowRight: { x: 6, y: 0 },
+      ArrowUp: { x: 0, y: -6 },
+      ArrowDown: { x: 0, y: 6 },
+    }[event.key];
+    if (!movement) return;
+    event.preventDefault();
+    setCropOffset((current) =>
+      clampCropOffset(
+        { x: current.x + movement.x, y: current.y + movement.y },
+        cropNatural,
+        cropZoom,
+        LOGIN_CROP_FRAME
+      )
+    );
+  };
+
+  const confirmPhotoCrop = () => {
+    if (!cropSource || !cropNatural || isCropping) return;
+    setIsCropping(true);
+    setPhotoError("");
+
+    const image = new window.Image();
+    image.onload = () => {
+      try {
+        const source = getCropSourceRect(
+          cropNatural,
+          cropZoom,
+          cropOffset,
+          LOGIN_CROP_FRAME
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = CROP_OUTPUT_SIZE;
+        canvas.height = CROP_OUTPUT_SIZE;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas is unavailable");
+
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE);
+        context.drawImage(
+          image,
+          source.x,
+          source.y,
+          source.size,
+          source.size,
+          0,
+          0,
+          CROP_OUTPUT_SIZE,
+          CROP_OUTPUT_SIZE
+        );
+        setPhotoPreview(canvas.toDataURL("image/jpeg", 0.9));
+        resetPhotoCrop();
+      } catch {
+        setPhotoError("Couldn't crop that image. Please try a different photo.");
+        setIsCropping(false);
+      }
+    };
+    image.onerror = () => {
+      setPhotoError("Couldn't crop that image. Please try a different photo.");
+      setIsCropping(false);
+    };
+    image.src = cropSource;
   };
 
   const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) => {
@@ -848,6 +1035,8 @@ export default function StudentLoginPage() {
       password: "", confirmPassword: ""
     });
     setPhotoPreview(null);
+    setPhotoError("");
+    resetPhotoCrop();
     setOtp("");
     setEmailToken(null);
     setResendIn(0);
@@ -1573,34 +1762,186 @@ export default function StudentLoginPage() {
                      <Camera className="w-8 h-8" />
                    </div>
                    <div>
-                     <h2 className="text-2xl font-bold text-slate-900">Profile Photo</h2>
-                     <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">Security guards will use this photo to verify your identity when scanning your exit pass. A clear face photo is highly recommended.</p>
+                     <h2 className="text-2xl font-bold text-slate-900">
+                       {cropSource ? "Crop Your Photo" : "Profile Photo"}
+                     </h2>
+                     <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
+                       {cropSource
+                         ? "Drag the photo to position your face, then use the slider to zoom in."
+                         : "Security guards will use this photo to verify your identity when scanning your exit pass. A clear face photo is highly recommended."}
+                     </p>
                    </div>
 
-                   {/* Upload Area */}
-                   <div
-                     className="w-40 h-40 rounded-full border-4 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer hover:border-indigo-400 transition-colors"
-                     onClick={() => fileInputRef.current?.click()}
-                   >
-                     {photoPreview ? (
-                       <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                     ) : (
-                       <>
-                         <ImageIcon className="w-10 h-10 text-slate-400 group-hover:text-indigo-500 transition-colors mb-2" />
-                         <span className="text-xs font-semibold text-slate-500 group-hover:text-indigo-600">Tap to upload</span>
-                       </>
-                     )}
-                     <input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" className="hidden" />
-                   </div>
+                   {cropSource ? (
+                     <>
+                       <div
+                         role="img"
+                         aria-label="Photo crop area. Drag the image or use the arrow keys to reposition it."
+                         tabIndex={0}
+                         className="relative rounded-full overflow-hidden bg-slate-900 cursor-grab active:cursor-grabbing touch-none select-none ring-4 ring-indigo-100 focus:outline-none focus:ring-indigo-400"
+                         style={{ width: LOGIN_CROP_FRAME, height: LOGIN_CROP_FRAME }}
+                         onPointerDown={handleCropPointerDown}
+                         onPointerMove={handleCropPointerMove}
+                         onPointerUp={handleCropPointerUp}
+                         onPointerCancel={handleCropPointerUp}
+                         onLostPointerCapture={() => {
+                           cropDragRef.current = null;
+                         }}
+                         onKeyDown={handleCropKeyDown}
+                       >
+                         {cropNatural && (
+                           // eslint-disable-next-line @next/next/no-img-element
+                           <img
+                             src={cropSource}
+                             alt=""
+                             draggable={false}
+                             className="absolute top-1/2 left-1/2 max-w-none pointer-events-none"
+                             style={{
+                               width:
+                                 cropNatural.width *
+                                 cropCoverScale(cropNatural, cropZoom, LOGIN_CROP_FRAME),
+                               height:
+                                 cropNatural.height *
+                                 cropCoverScale(cropNatural, cropZoom, LOGIN_CROP_FRAME),
+                               transform: `translate(calc(-50% + ${cropOffset.x}px), calc(-50% + ${cropOffset.y}px))`,
+                             }}
+                           />
+                         )}
+                         <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-white/40" />
+                       </div>
 
-                   <div className="w-full flex gap-3 pt-4">
-                     <button onClick={() => setOnboardingStep(2)} className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer">
-                       Back
-                     </button>
-                     <button onClick={skipOrSubmitPhoto} className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer">
-                       {photoPreview ? 'Save Photo' : 'Skip for now'} <ArrowRight className="w-4 h-4" />
-                     </button>
-                   </div>
+                       <div className="w-full max-w-xs">
+                         <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
+                           <label htmlFor="student-photo-zoom">Zoom</label>
+                           <span>{Math.round(cropZoom * 100)}%</span>
+                         </div>
+                         <div className="flex items-center gap-3">
+                           <ZoomOut aria-hidden="true" className="w-4 h-4 text-slate-400 shrink-0" />
+                           <input
+                             id="student-photo-zoom"
+                             type="range"
+                             min="1"
+                             max="3"
+                             step="0.01"
+                             value={cropZoom}
+                             onChange={(event) => handleCropZoomChange(event.target.value)}
+                             aria-label="Photo zoom"
+                             className="w-full accent-indigo-600 cursor-pointer"
+                           />
+                           <ZoomIn aria-hidden="true" className="w-4 h-4 text-slate-400 shrink-0" />
+                         </div>
+                       </div>
+
+                       <button
+                         type="button"
+                         onClick={() => fileInputRef.current?.click()}
+                         disabled={isCropping || isReadingPhoto}
+                         className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                       >
+                         Choose a different photo
+                       </button>
+
+                       {isReadingPhoto && (
+                         <p role="status" className="text-xs font-medium text-indigo-600">
+                           Loading photo...
+                         </p>
+                       )}
+
+                       {photoError && (
+                         <p role="alert" className="text-xs font-medium text-rose-600">
+                           {photoError}
+                         </p>
+                       )}
+
+                       <div className="w-full flex gap-3 pt-2">
+                         <button
+                           type="button"
+                           onClick={resetPhotoCrop}
+                           disabled={isCropping || isReadingPhoto}
+                           className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                         >
+                           Cancel
+                         </button>
+                         <button
+                           type="button"
+                           onClick={confirmPhotoCrop}
+                           disabled={isCropping || isReadingPhoto}
+                           className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                         >
+                           {isCropping ? (
+                             <>
+                               <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                               Cropping...
+                             </>
+                           ) : (
+                             <>
+                               <CheckCircle className="w-4 h-4" /> Use Photo
+                             </>
+                           )}
+                         </button>
+                       </div>
+                     </>
+                   ) : (
+                     <>
+                       <button
+                         type="button"
+                         aria-label={photoPreview ? "Choose a different profile photo" : "Choose a profile photo"}
+                         disabled={isReadingPhoto}
+                         className="w-40 h-40 rounded-full border-4 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer hover:border-indigo-400 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                         onClick={() => fileInputRef.current?.click()}
+                       >
+                         {photoPreview ? (
+                           // eslint-disable-next-line @next/next/no-img-element
+                           <img src={photoPreview} alt="Profile preview" className="w-full h-full object-cover" />
+                         ) : (
+                           <>
+                             <ImageIcon className="w-10 h-10 text-slate-400 group-hover:text-indigo-500 transition-colors mb-2" />
+                             <span className="text-xs font-semibold text-slate-500 group-hover:text-indigo-600">Tap to upload</span>
+                           </>
+                         )}
+                       </button>
+
+                       {photoPreview && (
+                         <button
+                           type="button"
+                           onClick={() => fileInputRef.current?.click()}
+                           disabled={isReadingPhoto}
+                           className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                         >
+                           Choose a different photo
+                         </button>
+                       )}
+
+                       {isReadingPhoto && (
+                         <p role="status" className="text-xs font-medium text-indigo-600">
+                           Loading photo...
+                         </p>
+                       )}
+
+                       {photoError && (
+                         <p role="alert" className="text-xs font-medium text-rose-600">
+                           {photoError}
+                         </p>
+                       )}
+
+                       <div className="w-full flex gap-3 pt-4">
+                         <button disabled={isReadingPhoto} onClick={() => setOnboardingStep(2)} className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait">
+                           Back
+                         </button>
+                         <button disabled={isReadingPhoto} onClick={skipOrSubmitPhoto} className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait disabled:active:scale-100">
+                           {photoPreview ? 'Save Photo' : 'Skip for now'} <ArrowRight className="w-4 h-4" />
+                         </button>
+                       </div>
+                     </>
+                   )}
+
+                   <input
+                     type="file"
+                     ref={fileInputRef}
+                     onChange={handlePhotoUpload}
+                     accept="image/jpeg,image/png,image/webp,image/*"
+                     className="hidden"
+                   />
                 </div>
               )}
 
