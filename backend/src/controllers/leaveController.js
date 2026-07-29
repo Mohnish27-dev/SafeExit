@@ -323,10 +323,6 @@ const updateLeaveStatus = async (req, res) => {
       });
     }
 
-    if (status === 'Rejected' && !remarks) {
-      return res.status(400).json({ message: 'A reason is required when rejecting a leave application.' });
-    }
-
     application.status = status;
     if (remarks) application.remarks = remarks;
 

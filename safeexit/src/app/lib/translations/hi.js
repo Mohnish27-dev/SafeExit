@@ -143,7 +143,7 @@ const hi = {
     forwarded: "आगे भेजी गई",
     awaitingWarden: "वार्डन के फैसले का इंतज़ार",
     leaveExpired: "यह एप्लीकेशन एक्सपायर हो गई — जाने की तारीख बीत चुकी है।",
-    reasonForRejection: "रिजेक्ट करने का कारण",
+    reasonForRejection: "रिजेक्ट करने का कारण (ज़रूरी नहीं)",
     confirmRejection: "रिजेक्शन कन्फर्म करें",
     rejectionRequired: "रिजेक्ट करने से पहले कारण बताएं।",
     destination: "जगह:",
