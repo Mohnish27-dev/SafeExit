@@ -25,6 +25,9 @@ import {
   Image as ImageIcon,
   ZoomIn,
   ZoomOut,
+  Plus,
+  Trash2,
+  Users,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -59,7 +62,7 @@ export default function StudentLoginPage() {
   const router = useRouter();
 
   const [appState, setAppState] = useState("LOADING");
-  const [onboardingStep, setOnboardingStep] = useState(1); // 1: Form, 2: Verify, 3: Photo, 4: Signature, 5: Quick Login
+  const [onboardingStep, setOnboardingStep] = useState(1); // 1: Form, 2: Verify, 3: Media, 4: Close contacts, 5: Quick Login
   const [storedProfile, setStoredProfile] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -90,10 +93,15 @@ export default function StudentLoginPage() {
   const cropDragRef = useRef(null);
   const photoReadIdRef = useRef(0);
 
-  // Captured at step 4 and published once the account exists. Required: every outing and
+  // Captured with the photo at step 3 and published once the account exists. Required: every outing and
   // leave request is stamped with it server-side, so onboarding is where we collect it.
   const [signatureData, setSignatureData] = useState(null);
   const [signatureError, setSignatureError] = useState("");
+  const [isSavingMedia, setIsSavingMedia] = useState(false);
+
+  const [closeContacts, setCloseContacts] = useState([
+    { name: "", mobileNumber: "", roomNumber: "" },
+  ]);
 
   const [otp, setOtp] = useState("");
   const [emailToken, setEmailToken] = useState(null); // signed proof from /otp/verify
@@ -166,7 +174,10 @@ export default function StudentLoginPage() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const nextValue = ["phoneNumber", "emergencyContact"].includes(name)
+      ? value.replace(/\D/g, "").slice(0, 15)
+      : value;
+    setFormData((prev) => ({ ...prev, [name]: nextValue }));
   };
 
   // Picking a hostel also fixes the student's gender (boys' vs girls' hostel).
@@ -275,6 +286,8 @@ export default function StudentLoginPage() {
         roomNumber: profile.roomNumber,
         hostelName: profile.hostelBlock,
         phoneNumber: profile.phoneNumber,
+        guardianPhoneNumber: profile.emergencyContact,
+        closeContacts: profile.closeContacts,
         emailVerificationToken: emailToken, // proves the college email was verified
       }),
     });
@@ -549,8 +562,12 @@ export default function StudentLoginPage() {
       setErrorMsg("Please enter a valid NIT Patna email ending in @nitp.ac.in.");
       return false;
     }
-    if (formData.phoneNumber.length < 10) {
-      setErrorMsg("Please enter a valid phone number.");
+    if (!/^\d{10,15}$/.test(formData.phoneNumber)) {
+      setErrorMsg("Please enter a valid 10 to 15 digit phone number.");
+      return false;
+    }
+    if (!/^\d{10,15}$/.test(formData.emergencyContact)) {
+      setErrorMsg("Please enter a valid 10 to 15 digit parent/guardian phone number.");
       return false;
     }
     if (formData.password.length < 6) {
@@ -574,12 +591,11 @@ export default function StudentLoginPage() {
     sendEmailOtp();
   };
 
-  const skipOrSubmitPhoto = () => {
-    (async () => {
-      // Never persist the login secret — strip password fields before storage
-      const { password, confirmPassword, ...safeProfile } = formData;
-      const profileToSave = { ...safeProfile };
-      try {
+  const saveMediaAndContinue = async (signature) => {
+    // Never persist the login secret — strip password fields before storage.
+    const { password, confirmPassword, ...safeProfile } = formData;
+    const profileToSave = { ...safeProfile, signature };
+    try {
         if (photoPreview && typeof photoPreview === 'string' && photoPreview.startsWith('data:')) {
           const compressed = await compressImage(photoPreview, 800, 0.7);
           profileToSave.photo = compressed || null;
@@ -599,7 +615,7 @@ export default function StudentLoginPage() {
             console.warn('second localStorage attempt failed, clearing old profile key and retrying', e2);
             try {
               localStorage.removeItem('safeexit_user_profile');
-              localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...safeProfile, photo: null }));
+              localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...safeProfile, signature, photo: null }));
             } catch (finalErr) {
               console.error('Unable to persist profile to localStorage', finalErr);
             }
@@ -608,35 +624,80 @@ export default function StudentLoginPage() {
       } catch (err) {
         console.error('Error while processing photo for storage', err);
         try {
-          localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...safeProfile, photo: null }));
+          localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...safeProfile, signature, photo: null }));
         } catch (e) {
           console.error('Unable to persist profile to localStorage after error', e);
         }
-      } finally {
-        setOnboardingStep(4);
-      }
-    })();
+    } finally {
+      setOnboardingStep(4);
+    }
   };
 
-  // Step 4 → 5. The signature is required, so this only runs once one is captured; it is
-  // merged into the stored profile and published after the account is created.
-  const continueFromSignature = (signature) => {
+  // The capture component calls this only after a valid signature is available.
+  const continueFromMedia = async (signature) => {
     setSignatureData(signature);
     setSignatureError("");
-    try {
-      const saved = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null") || {};
-      localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...saved, signature }));
-    } catch (err) {
-      // Quota is the likely cause; drop the photo before the signature, which is the one
-      // the backend hard-requires.
-      console.warn("Could not persist signature to localStorage, retrying without photo", err);
-      try {
-        const saved = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null") || {};
-        localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...saved, photo: null, signature }));
-      } catch (e2) {
-        console.error("Unable to persist signature to localStorage", e2);
-      }
+    setIsSavingMedia(true);
+    await saveMediaAndContinue(signature);
+    setIsSavingMedia(false);
+  };
+
+  const updateCloseContact = (index, field, value) => {
+    const normalizedValue = field === "mobileNumber"
+      ? value.replace(/\D/g, "").slice(0, 15)
+      : value;
+    setCloseContacts((contacts) => contacts.map((contact, contactIndex) =>
+      contactIndex === index ? { ...contact, [field]: normalizedValue } : contact
+    ));
+    setErrorMsg("");
+  };
+
+  const addCloseContact = () => {
+    setCloseContacts((contacts) => contacts.length >= 2
+      ? contacts
+      : [...contacts, { name: "", mobileNumber: "", roomNumber: "" }]
+    );
+    setErrorMsg("");
+  };
+
+  const removeCloseContact = (index) => {
+    setCloseContacts((contacts) => contacts.filter((_, contactIndex) => contactIndex !== index));
+    setErrorMsg("");
+  };
+
+  const continueFromCloseContacts = () => {
+    if (closeContacts.length < 1 || closeContacts.length > 2) {
+      setErrorMsg("Please add at least one roommate or close friend (maximum two).");
+      return;
     }
+
+    const normalized = closeContacts.map((contact) => ({
+      name: contact.name.trim(),
+      mobileNumber: contact.mobileNumber.trim(),
+      roomNumber: contact.roomNumber.trim(),
+    }));
+    if (normalized.some((contact) => !contact.name || !contact.mobileNumber || !contact.roomNumber)) {
+      setErrorMsg("Please complete the name, mobile number, and room number for each person.");
+      return;
+    }
+    if (normalized.some((contact) => !/^\d{10,15}$/.test(contact.mobileNumber))) {
+      setErrorMsg("Please enter a valid 10 to 15 digit mobile number for each person.");
+      return;
+    }
+
+    const { password, confirmPassword, ...safeProfile } = formData;
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null") || {};
+    } catch {
+      // Rebuild from live form state if device storage contains invalid JSON.
+    }
+    persistProfile({
+      ...safeProfile,
+      ...saved,
+      signature: saved.signature || signatureData,
+      closeContacts: normalized,
+    });
     setPin("");
     setConfirmPin("");
     setEnableBiometric(false);
@@ -810,15 +871,18 @@ export default function StudentLoginPage() {
 
     const resolvedEmail = profileData.email || emailFallback;
 
-    // Server doesn't store the photo — carry over this device's copy for the same account
-    let carriedPhoto = null;
-    try {
-      const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null");
-      if (existing?.photo && (existing.email || "").toLowerCase() === resolvedEmail.toLowerCase()) {
-        carriedPhoto = existing.photo;
+    // MongoDB is the source of truth. Keep this device's copy only as a fallback for
+    // profiles created before photos were published to the backend.
+    let carriedPhoto = profileData.photo || null;
+    if (!carriedPhoto) {
+      try {
+        const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null");
+        if (existing?.photo && (existing.email || "").toLowerCase() === resolvedEmail.toLowerCase()) {
+          carriedPhoto = existing.photo;
+        }
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
     }
 
     const deviceProfile = {
@@ -830,8 +894,9 @@ export default function StudentLoginPage() {
       hostelBlock: profileData.hostelName || "",
       roomNumber: profileData.roomNumber || "",
       phoneNumber: profileData.phoneNumber || "",
+      closeContacts: profileData.closeContacts || [],
       gender: profileData.gender || "",
-      emergencyContact: "",
+      emergencyContact: profileData.guardianPhoneNumber || "",
       photo: carriedPhoto,
     };
     persistProfile(deviceProfile);
@@ -1037,6 +1102,10 @@ export default function StudentLoginPage() {
     setPhotoPreview(null);
     setPhotoError("");
     resetPhotoCrop();
+    setSignatureData(null);
+    setSignatureError("");
+    setIsSavingMedia(false);
+    setCloseContacts([{ name: "", mobileNumber: "", roomNumber: "" }]);
     setOtp("");
     setEmailToken(null);
     setResendIn(0);
@@ -1044,7 +1113,7 @@ export default function StudentLoginPage() {
     setSessionToken(null);
   };
 
-  // Quick Login setup card body (shared by step 4 and QUICK_SETUP)
+  // Quick Login setup card body (shared by step 5 and QUICK_SETUP)
   const renderQuickSetupBody = () => (
     <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
       <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-1">
@@ -1507,12 +1576,12 @@ export default function StudentLoginPage() {
                <div className={`h-px flex-1 mx-2 ${onboardingStep >= 3 ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
                <div className={`flex items-center gap-2 ${onboardingStep >= 3 ? 'text-indigo-600' : 'text-slate-400'}`}>
                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 3 ? 'bg-indigo-100' : 'bg-slate-200'}`}>3</div>
-                 <span className="text-xs font-semibold hidden sm:inline">Photo</span>
+                 <span className="text-xs font-semibold hidden sm:inline">Photo &amp; Sign</span>
                </div>
                <div className={`h-px flex-1 mx-2 ${onboardingStep >= 4 ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
                <div className={`flex items-center gap-2 ${onboardingStep >= 4 ? 'text-indigo-600' : 'text-slate-400'}`}>
                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 4 ? 'bg-indigo-100' : 'bg-slate-200'}`}>4</div>
-                 <span className="text-xs font-semibold hidden sm:inline">Signature</span>
+                 <span className="text-xs font-semibold hidden sm:inline">Contacts</span>
                </div>
                <div className={`h-px flex-1 mx-2 ${onboardingStep >= 5 ? 'bg-indigo-600' : 'bg-slate-200'}`}></div>
                <div className={`flex items-center gap-2 ${onboardingStep >= 5 ? 'text-indigo-600' : 'text-slate-400'}`}>
@@ -1625,7 +1694,7 @@ export default function StudentLoginPage() {
                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Phone Number</label>
                       <div className="relative">
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Phone className="w-4 h-4" /></div>
-                        <input type="tel" name="phoneNumber" value={formData.phoneNumber} onChange={handleInputChange} placeholder="10-digit number" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
+                        <input type="tel" inputMode="numeric" autoComplete="tel" name="phoneNumber" value={formData.phoneNumber} onChange={handleInputChange} placeholder="10–15 digit number" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
                       </div>
                     </div>
 
@@ -1634,7 +1703,7 @@ export default function StudentLoginPage() {
                       <label className="block text-xs font-semibold text-rose-600 uppercase tracking-wider mb-1">Emergency Contact (Parent/Guardian)</label>
                       <div className="relative">
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-rose-400"><AlertCircle className="w-4 h-4" /></div>
-                        <input type="tel" name="emergencyContact" value={formData.emergencyContact} onChange={handleInputChange} placeholder="Emergency 10-digit number" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-rose-100 bg-rose-50/30 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-rose-400 focus:bg-white transition-colors" />
+                        <input type="tel" inputMode="numeric" autoComplete="tel" name="emergencyContact" value={formData.emergencyContact} onChange={handleInputChange} placeholder="10–15 digit number" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-rose-100 bg-rose-50/30 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-rose-400 focus:bg-white transition-colors" />
                       </div>
                     </div>
 
@@ -1755,7 +1824,7 @@ export default function StudentLoginPage() {
                 </div>
               )}
 
-              {/* STEP 3: Photo Upload */}
+              {/* STEP 3: Photo and signature */}
               {onboardingStep === 3 && (
                 <div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
                    <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-2">
@@ -1763,12 +1832,12 @@ export default function StudentLoginPage() {
                    </div>
                    <div>
                      <h2 className="text-2xl font-bold text-slate-900">
-                       {cropSource ? "Crop Your Photo" : "Profile Photo"}
+                       {cropSource ? "Crop Your Photo" : "Photo & Signature"}
                      </h2>
                      <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
                        {cropSource
                          ? "Drag the photo to position your face, then use the slider to zoom in."
-                         : "Security guards will use this photo to verify your identity when scanning your exit pass. A clear face photo is highly recommended."}
+                         : "Add a clear face photo for identity checks, then draw or upload your signature for outing and leave requests."}
                      </p>
                    </div>
 
@@ -1924,12 +1993,29 @@ export default function StudentLoginPage() {
                          </p>
                        )}
 
-                       <div className="w-full flex gap-3 pt-4">
-                         <button disabled={isReadingPhoto} onClick={() => setOnboardingStep(2)} className="flex-1 py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-wait">
+                       <div className="w-full border-t border-slate-100 pt-5 text-left">
+                         <h3 className="text-base font-bold text-slate-900">Your Signature <span className="text-rose-500">*</span></h3>
+                         <p className="mt-1 mb-4 text-xs text-slate-500">
+                           Your photo is optional. A signature is required and will be attached automatically to your requests.
+                         </p>
+                         {signatureError && (
+                           <div className="mb-3 bg-rose-50 text-rose-700 text-sm font-medium p-3 rounded-xl border border-rose-100 flex items-center gap-2">
+                             <AlertCircle className="w-4 h-4 shrink-0" /> {signatureError}
+                           </div>
+                         )}
+                         <SignatureCapture
+                           currentSignature={signatureData}
+                           onSave={continueFromMedia}
+                           saving={isSavingMedia}
+                           saveLabel={photoPreview ? "Save Photo & Signature" : "Save Signature & Continue"}
+                         />
+                         <button
+                           type="button"
+                           disabled={isReadingPhoto || isSavingMedia}
+                           onClick={() => setOnboardingStep(2)}
+                           className="mt-3 w-full py-3 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                         >
                            Back
-                         </button>
-                         <button disabled={isReadingPhoto} onClick={skipOrSubmitPhoto} className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait disabled:active:scale-100">
-                           {photoPreview ? 'Save Photo' : 'Skip for now'} <ArrowRight className="w-4 h-4" />
                          </button>
                        </div>
                      </>
@@ -1945,25 +2031,106 @@ export default function StudentLoginPage() {
                 </div>
               )}
 
-              {/* STEP 4: Signature */}
+              {/* STEP 4: Required roommate / close-friend contacts */}
               {onboardingStep === 4 && (
                 <div className="space-y-4 animate-fade-in-up">
                   <div className="text-center mb-2">
-                    <h2 className="text-2xl font-bold text-slate-900">Your Signature</h2>
+                    <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                      <Users className="h-7 w-7" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-900">Trusted Contacts</h2>
                     <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
-                      Draw it or upload a photo. It will be attached automatically to every outing and leave request — you won&apos;t need to sign again.
+                      Add at least one roommate or close friend who is easy to reach. Emergency staff can use these details if you raise an SOS or miss your return time.
                     </p>
                   </div>
-                  {signatureError && (
-                    <div className="bg-rose-50 text-rose-700 text-sm font-medium p-3 rounded-xl border border-rose-100 flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 shrink-0" /> {signatureError}
-                    </div>
+                  <div className="space-y-4">
+                    {closeContacts.map((contact, index) => (
+                      <div key={index} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-slate-800">Person {index + 1}</h3>
+                          {closeContacts.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeCloseContact(index)}
+                              aria-label={`Remove person ${index + 1}`}
+                              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label htmlFor={`close-contact-name-${index}`} className="mb-1 block text-xs font-semibold text-slate-700">Full name</label>
+                            <div className="relative">
+                              <User className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <input
+                                id={`close-contact-name-${index}`}
+                                type="text"
+                                value={contact.name}
+                                maxLength={100}
+                                onChange={(event) => updateCloseContact(index, "name", event.target.value)}
+                                placeholder="Roommate or close friend's name"
+                                autoComplete="name"
+                                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div>
+                              <label htmlFor={`close-contact-mobile-${index}`} className="mb-1 block text-xs font-semibold text-slate-700">Mobile number</label>
+                              <div className="relative">
+                                <Phone className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  id={`close-contact-mobile-${index}`}
+                                  type="tel"
+                                  inputMode="numeric"
+                                  value={contact.mobileNumber}
+                                  onChange={(event) => updateCloseContact(index, "mobileNumber", event.target.value)}
+                                  placeholder="10–15 digits"
+                                  autoComplete="tel"
+                                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label htmlFor={`close-contact-room-${index}`} className="mb-1 block text-xs font-semibold text-slate-700">Room number</label>
+                              <div className="relative">
+                                <MapPin className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  id={`close-contact-room-${index}`}
+                                  type="text"
+                                  value={contact.roomNumber}
+                                  maxLength={30}
+                                  onChange={(event) => updateCloseContact(index, "roomNumber", event.target.value)}
+                                  placeholder="e.g. B-214"
+                                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {closeContacts.length < 2 && (
+                    <button
+                      type="button"
+                      onClick={addCloseContact}
+                      className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/50 py-3 text-sm font-bold text-indigo-600 transition hover:bg-indigo-50"
+                    >
+                      <Plus className="h-4 w-4" /> Add another person (optional)
+                    </button>
                   )}
-                  <SignatureCapture
-                    currentSignature={signatureData}
-                    onSave={continueFromSignature}
-                    saveLabel="Save & Continue"
-                  />
+
+                  <button
+                    type="button"
+                    onClick={continueFromCloseContacts}
+                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40 active:scale-[0.98]"
+                  >
+                    Save & Continue <ArrowRight className="h-4 w-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setOnboardingStep(3)}

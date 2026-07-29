@@ -412,10 +412,12 @@ export default function StudentDashboardPage() {
       try {
         const me = await apiFetch("/auth/profile");
         if (cancelled || !me) return;
-        // Signature bytes live only on the server — sessionStorage carries the flag alone.
+        // Restore both server-backed media fields after every login path; sessionStorage
+        // carries only the signature flag and may not contain the photo.
         setProfile((prev) => ({
           ...prev,
           ...(me.studentId ? { rollNo: me.studentId, sid: me._id } : null),
+          photo: me.photo || prev.photo || null,
           signature: me.signature || null,
         }));
       } catch {

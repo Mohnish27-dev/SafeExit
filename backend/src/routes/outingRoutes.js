@@ -28,7 +28,12 @@ router.get('/all', protect, authorizeRoles('ChiefWarden'), getAllOutingRequests)
 
 router.get('/pending', protect, authorizeRoles('Caretaker', 'Guard'), getPendingRequests);
 
-router.get('/overdue', protect, authorizeRoles('Caretaker', 'Guard'), getOverdueOutings);
+router.get(
+  '/overdue',
+  protect,
+  authorizeRoles('Admin', 'Caretaker', 'Guard', 'Warden', 'ChiefWarden'),
+  getOverdueOutings
+);
 
 // Caretaker's own decision log — decided requests in their scope, whoever signed them.
 router.get('/history', protect, authorizeRoles('Caretaker'), getCaretakerRequestHistory);
@@ -38,8 +43,13 @@ router.get('/forwarded', protect, authorizeRoles('Warden'), getForwardedRequests
 
 router.get('/warden-history', protect, authorizeRoles('Warden'), getWardenRequestHistory);
 
-// Stream is shared by caretaker, guard and warden dashboards.
-router.get('/stream', protect, authorizeRoles('Caretaker', 'Guard', 'Warden'), streamOutingEvents);
+// Stream also keeps the campus-wide Admin/ChiefWarden overdue views current.
+router.get(
+  '/stream',
+  protect,
+  authorizeRoles('Admin', 'Caretaker', 'Guard', 'Warden', 'ChiefWarden'),
+  streamOutingEvents
+);
 
 router.patch('/:id/cancel', protect, authorizeRoles('Student'), cancelOutingRequest);
 

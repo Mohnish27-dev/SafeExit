@@ -29,11 +29,13 @@ import SOSAlertsView from "./components/SOSAlertsView";
 import MovementLogsView from "./components/MovementLogsView";
 import PeopleView from "./components/PeopleView";
 import AnalyticsView from "./components/AnalyticsView";
+import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
 
 const NAV = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "analytics", label: "Analytics", icon: ChartNoAxesCombined },
   { key: "sos", label: "SOS Alerts", icon: Siren },
+  { key: "overdue", label: "Overdue", icon: Clock3 },
   { key: "logs", label: "Movement Logs", icon: ScrollText },
   { key: "people", label: "People", icon: Users },
 ];
@@ -197,10 +199,14 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Nav tabs */}
-        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/70 bg-white/80 p-2 shadow-sm backdrop-blur sm:grid-cols-5">
+        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/70 bg-white/80 p-2 shadow-sm backdrop-blur sm:grid-cols-3 lg:grid-cols-6">
           {NAV.map((item) => {
             const active = view === item.key;
-            const badge = item.key === "sos" ? overview?.activeSOS : null;
+            const badge = item.key === "sos"
+              ? overview?.activeSOS
+              : item.key === "overdue"
+                ? overview?.students?.overdue
+                : null;
             return (
               <button
                 key={item.key}
@@ -274,6 +280,7 @@ export default function AdminDashboardPage() {
           )}
 
           {view === "sos" && <SOSAlertsView onChange={loadOverview} />}
+          {view === "overdue" && <OverdueStudentsView />}
           {view === "analytics" && <AnalyticsView />}
           {view === "logs" && <MovementLogsView />}
           {view === "people" && <PeopleView />}

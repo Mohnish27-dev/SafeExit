@@ -43,6 +43,7 @@ import SOSAlertsView from "../caretaker/components/SOSAlertsView";
 import ComplaintsView from "../caretaker/components/ComplaintsView";
 // Wardens get the same read-only movement log as caretakers; /scan already scopes by managedHostel.
 import MovementLogsView from "../caretaker/components/MovementLogsView";
+import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
 
 const initials = (name = "") =>
   name.split(" ").map((n) => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
@@ -190,7 +191,7 @@ export default function WardenDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["requests", "leave", "sos", "complaints", "logs", "profile"].includes(target)) {
+    if (target && ["requests", "leave", "sos", "overdue", "complaints", "logs", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -203,6 +204,7 @@ export default function WardenDashboardPage() {
   const [reports, setReports] = useState([]);
   const [resolvedReports, setResolvedReports] = useState([]);
   const [sosCount, setSosCount] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
 
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [loadingLeave, setLoadingLeave] = useState(true);
@@ -275,20 +277,30 @@ export default function WardenDashboardPage() {
     }
   }, []);
 
+  const loadOverdueCount = useCallback(async () => {
+    try {
+      const data = await apiFetch("/outing/overdue");
+      setOverdueCount(data.length);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
   useEffect(() => {
     loadRequests();
     loadLeave();
     loadHistory();
     loadReports();
     loadSosCount();
-  }, [loadRequests, loadLeave, loadHistory, loadReports, loadSosCount]);
+    loadOverdueCount();
+  }, [loadRequests, loadLeave, loadHistory, loadReports, loadSosCount, loadOverdueCount]);
 
   // SSE: refresh the affected queues + history when the backend broadcasts a change.
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/outing/stream`, { withCredentials: true });
-    source.addEventListener("outing:changed", () => { loadRequests(); loadHistory(); });
+    source.addEventListener("outing:changed", () => { loadRequests(); loadHistory(); loadOverdueCount(); });
     return () => source.close();
-  }, [loadRequests, loadHistory]);
+  }, [loadRequests, loadHistory, loadOverdueCount]);
 
   useEffect(() => {
     const source = new EventSource(`${getApiBase()}/leave/stream`, { withCredentials: true });
@@ -312,9 +324,9 @@ export default function WardenDashboardPage() {
 
   // Poll as a safety net in case an SSE connection is silently dropped.
   useEffect(() => {
-    const id = setInterval(() => { loadRequests(); loadLeave(); loadSosCount(); }, 30000);
+    const id = setInterval(() => { loadRequests(); loadLeave(); loadSosCount(); loadOverdueCount(); }, 30000);
     return () => clearInterval(id);
-  }, [loadRequests, loadLeave, loadSosCount]);
+  }, [loadRequests, loadLeave, loadSosCount, loadOverdueCount]);
 
   // ---- Approve (signature modal) / Reject (leave needs remarks) ----
   const [approvalTarget, setApprovalTarget] = useState(null); // { kind, id, name }
@@ -457,13 +469,15 @@ export default function WardenDashboardPage() {
     { key: "requests", label: "Outings", icon: ClipboardList, badge: pending.length },
     { key: "leave", label: "Leave", icon: CalendarDays, badge: leavePending.length },
     { key: "sos", label: "Alerts", icon: Siren, badge: sosCount },
+    { key: "overdue", label: "Overdue", icon: Clock, badge: overdueCount },
     { key: "complaints", label: "Complaints", icon: MessageSquare, badge: reports.length },
     { key: "logs", label: "Logs", icon: ScrollText },
     { key: "profile", label: "Profile", icon: User },
   ];
 
-  // Desktop shows all seven; the phone bar drops "profile" (the header avatar opens it there).
-  const mobileNavItems = navItems.filter((n) => n.key !== "profile");
+  // Keep six comfortably tappable phone tabs. Profile lives behind the header avatar,
+  // and movement logs remain available from the full-width home shortcut.
+  const mobileNavItems = navItems.filter((n) => !["profile", "logs"].includes(n.key));
 
   return (
     <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28">
@@ -561,6 +575,7 @@ export default function WardenDashboardPage() {
               {(() => {
                 const attention = [
                   sosCount > 0 && { key: "sos", label: "Safety Alerts", count: sosCount, icon: Siren, onClick: () => setView("sos") },
+                  overdueCount > 0 && { key: "overdue", label: "Overdue Students", count: overdueCount, icon: Clock, onClick: () => setView("overdue") },
                   pending.length > 0 && { key: "requests", label: "Forwarded Outings", count: pending.length, icon: ClipboardList, onClick: () => setView("requests") },
                   leavePending.length > 0 && { key: "leave", label: "Forwarded Leave", count: leavePending.length, icon: CalendarDays, onClick: () => setView("leave") },
                   reports.length > 0 && { key: "complaints", label: "Complaints", count: reports.length, icon: MessageSquare, onClick: () => setView("complaints") },
@@ -689,6 +704,8 @@ export default function WardenDashboardPage() {
 
           {view === "sos" && <SOSAlertsView onCountChange={setSosCount} />}
 
+          {view === "overdue" && <OverdueStudentsView onCountChange={setOverdueCount} />}
+
           {view === "logs" && <MovementLogsView />}
 
           {view === "complaints" && (
@@ -743,7 +760,7 @@ export default function WardenDashboardPage() {
           )}
 
           {/* Desktop nav */}
-          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-7 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
+          <nav className="sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid grid-cols-8 gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur">
             {navItems.map((n) => (
               <button key={n.key} onClick={() => setView(n.key)} className={`sd-navx ${view === n.key ? "sd-navx--active" : ""}`}>
                 <span className="sd-navx__icon relative">

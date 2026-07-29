@@ -5,6 +5,10 @@ const { isValidStudentEmail } = require('../config/emailPolicy');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
 const { isEmailVerificationValid } = require('./otpController');
 const { isSignatureDataUrl } = require('../utils/signature');
+const {
+  normalizeCloseContacts,
+  normalizeGuardianPhoneNumber,
+} = require('../utils/closeContacts');
 
 // loginId is the canonical key: student email or normalized staff ID; `email` accepted as legacy alias.
 const resolveLoginId = (body = {}) =>
@@ -38,7 +42,23 @@ const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
 
 // POST /api/auth/register — public
 const registerUser = async (req, res) => {
-  const { name, email, password, role, studentId, roomNumber, department, year, phoneNumber, hostelName, emailVerificationToken } = req.body;
+  const {
+    name,
+    email,
+    password,
+    role,
+    studentId,
+    roomNumber,
+    department,
+    year,
+    phoneNumber,
+    hostelName,
+    emailVerificationToken,
+    closeContacts,
+    guardianPhoneNumber,
+    // Temporary compatibility alias for clients deployed before the API field was named.
+    emergencyContact,
+  } = req.body;
 
   try {
     // Role is resolved server-side; body `role` is untrusted. Self-registration mints Students ONLY — a missing role must still hit the verification gate.
@@ -70,6 +90,17 @@ const registerUser = async (req, res) => {
     const resolvedHostel = canonicalHostelName(hostelName);
     const resolvedGender = genderForHostel(hostelName);
 
+    const closeContactResult = normalizeCloseContacts(closeContacts);
+    if (closeContactResult.error) {
+      return res.status(400).json({ message: closeContactResult.error });
+    }
+    const guardianPhoneResult = normalizeGuardianPhoneNumber(
+      guardianPhoneNumber ?? emergencyContact
+    );
+    if (guardianPhoneResult.error) {
+      return res.status(400).json({ message: guardianPhoneResult.error });
+    }
+
     const loginId = resolveLoginId(req.body) || (studentId || '').trim().toLowerCase();
     if (!loginId) {
       return res.status(400).json({ message: 'A login identifier (email or ID) is required.' });
@@ -87,7 +118,9 @@ const registerUser = async (req, res) => {
     const user = await User.create({
       name, loginId, email: realEmail, password, role: resolvedRole,
       studentId, roomNumber, department, year, phoneNumber,
-      gender: resolvedGender, hostelName: resolvedHostel
+      gender: resolvedGender, hostelName: resolvedHostel,
+      guardianPhoneNumber: guardianPhoneResult.phoneNumber,
+      closeContacts: closeContactResult.contacts,
     });
 
     if (user) {
@@ -178,6 +211,8 @@ const getUserProfile = async (req, res) => {
       department: user.department,
       year: user.year,
       phoneNumber: user.phoneNumber,
+      guardianPhoneNumber: user.guardianPhoneNumber,
+      closeContacts: user.closeContacts,
       gender: user.gender,
       hostelName: user.hostelName,
       managedGender: user.managedGender,
@@ -289,6 +324,8 @@ const updateUserProfile = async (req, res) => {
       department: user.department,
       year: user.year,
       phoneNumber: user.phoneNumber,
+      guardianPhoneNumber: user.guardianPhoneNumber,
+      closeContacts: user.closeContacts,
       gender: user.gender,
       hostelName: user.hostelName,
       photo: user.photo,
@@ -337,6 +374,8 @@ const refreshSession = async (req, res) => {
       department: user.department,
       year: user.year,
       phoneNumber: user.phoneNumber,
+      guardianPhoneNumber: user.guardianPhoneNumber,
+      closeContacts: user.closeContacts,
       gender: user.gender,
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,

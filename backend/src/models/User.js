@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const closeContactSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true, maxlength: 100 },
+  mobileNumber: { type: String, required: true, trim: true, match: /^\d{10,15}$/ },
+  roomNumber: { type: String, required: true, trim: true, maxlength: 30 },
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   loginId: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
@@ -25,6 +31,20 @@ const userSchema = new mongoose.Schema({
   roomNumber: { type: String },
   hostelName: { type: String },
   phoneNumber: { type: String },
+  // Required by student self-registration and reserved for emergency staff use.
+  // Kept optional at schema level so legacy students and non-student accounts remain valid.
+  guardianPhoneNumber: { type: String, trim: true, match: /^\d{10,15}$/ },
+  // Students nominate one or two nearby people who can be contacted if needed.
+  // Registration enforces the minimum; the schema also prevents later writes from
+  // exceeding the two-person limit.
+  closeContacts: {
+    type: [closeContactSchema],
+    default: undefined,
+    validate: {
+      validator: (contacts) => contacts == null || contacts.length <= 2,
+      message: 'A maximum of two close contacts is allowed.',
+    },
+  },
   // Student face photo (base64 data URL). Owner-writable only; guards read it via /scan/preview.
   photo: { type: String },
   // Reusable signature (PNG or JPEG data URL), captured once during onboarding or from

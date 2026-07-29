@@ -27,6 +27,7 @@ import SOSAlertsView from "../caretaker/components/SOSAlertsView";
 import ApplicationsView from "./components/ApplicationsView";
 import MovementLogsView from "./components/MovementLogsView";
 import ComplaintsView from "./components/ComplaintsView";
+import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
 
 const NAV = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
@@ -34,6 +35,7 @@ const NAV = [
   { key: "leaves", label: "Leave", icon: FileText },
   { key: "movements", label: "Movement", icon: ShieldCheck },
   { key: "sos", label: "SOS", icon: Siren },
+  { key: "overdue", label: "Overdue", icon: Clock3 },
   { key: "complaints", label: "Complaints", icon: MessageSquareWarning },
 ];
 
@@ -161,7 +163,7 @@ export default function ChiefWardenDashboardPage() {
           <button onClick={loadOverview} disabled={loading} className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh overview</button>
         </div>
 
-        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/80 bg-white/90 p-2 shadow-sm sm:grid-cols-3 lg:grid-cols-6">
+        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/80 bg-white/90 p-2 shadow-sm sm:grid-cols-3 lg:grid-cols-7">
           {NAV.map((item) => <button key={item.key} onClick={() => setView(item.key)} className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold transition ${view === item.key ? "bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow" : "text-slate-500 hover:bg-slate-100"}`}><item.icon className="h-4 w-4" /> {item.label}</button>)}
         </nav>
 
@@ -178,6 +180,7 @@ export default function ChiefWardenDashboardPage() {
           {view === "leaves" && <ApplicationsView type="leave" />}
           {view === "movements" && <MovementLogsView />}
           {view === "sos" && <SOSAlertsView readOnly />}
+          {view === "overdue" && <OverdueStudentsView />}
           {view === "complaints" && <ComplaintsView />}
         </div>
       </div>

@@ -251,8 +251,20 @@ const getPendingRequests = async (req, res) => {
 const getOverdueOutings = async (req, res) => {
   try {
     const scope = await scopedStudentFilter(req.user);
+    const canViewEmergencyContacts = ['Admin', 'Caretaker', 'Warden', 'ChiefWarden']
+      .includes(req.user.role);
+    const studentFields = [
+      'name',
+      'studentId',
+      'roomNumber',
+      'hostelName',
+      'phoneNumber',
+      'department',
+      'year',
+      ...(canViewEmergencyContacts ? ['guardianPhoneNumber', 'closeContacts'] : []),
+    ].join(' ');
     const outings = await OutingRequest.find({ status: 'Out', ...scope })
-      .populate('student', 'name studentId roomNumber hostelName phoneNumber department year')
+      .populate('student', studentFields)
       .sort({ inTime: 1 });
 
     const overdue = outings.filter((o) => isReturnLate(o.inTime));
