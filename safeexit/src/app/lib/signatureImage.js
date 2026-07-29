@@ -1,6 +1,7 @@
 // Signature image handling: resize so it fits the storage cap, then encode. Whatever the
 // user drew or photographed is kept as-is — no thresholding, no cropping, no background
-// removal, so a capture never gets rejected for lighting or contrast.
+// removal, so a capture never gets rejected for lighting or contrast. The upload UI may
+// crop a photo before passing the adjusted image to this helper.
 //
 // Encoding depends on the source. A drawn pad stroke has a transparent background and must
 // stay PNG — JPEG has no alpha channel and would composite the transparency to BLACK, giving
