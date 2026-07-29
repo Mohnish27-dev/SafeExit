@@ -391,7 +391,7 @@ export default function LoginRoleSelect() {
             {isStaffView ? (
               <>Choose your <span className="text-indigo-600">staff role</span></>
             ) : isFiltered ? (
-              <>Welcome back to <span className="text-indigo-600">SafeExit</span></>
+              <>Welcome back to <span className="text-indigo-600">NITP-SafeExit</span></>
             ) : (
               <>Welcome to <span className="text-indigo-600">NITP-SafeExit</span></>
             )}
