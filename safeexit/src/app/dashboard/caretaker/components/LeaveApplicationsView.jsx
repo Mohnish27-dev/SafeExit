@@ -92,8 +92,8 @@ export default function LeaveApplicationsView({
   const { t } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const [rejectingId, setRejectingId] = useState(null);
+  const [rejectingFromViewer, setRejectingFromViewer] = useState(false);
   const [reason, setReason] = useState("");
-  const [reasonError, setReasonError] = useState("");
   const [viewingId, setViewingId] = useState(null);
   const [tab, setTab] = useState("pending");
 
@@ -138,28 +138,28 @@ export default function LeaveApplicationsView({
     setViewingId(null);
   }
 
-  function startReject(id) {
+  function startReject(id, fromViewer = false) {
     setRejectingId(id);
+    setRejectingFromViewer(fromViewer);
     setReason("");
-    setReasonError("");
+    if (fromViewer) setViewingId(null);
   }
 
   function cancelReject() {
     setRejectingId(null);
+    setRejectingFromViewer(false);
     setReason("");
-    setReasonError("");
   }
 
   function confirmReject(id) {
     const trimmed = reason.trim();
-    if (!trimmed) {
-      setReasonError(t("rejectionRequired"));
-      return;
-    }
+    // If the decision came from the full-application drawer, dismiss that
+    // overlay before the request is removed from the pending list.
+    setViewingId(null);
     rejectLeave(id, trimmed);
     setRejectingId(null);
+    setRejectingFromViewer(false);
     setReason("");
-    setReasonError("");
   }
 
   return (
@@ -314,15 +314,11 @@ export default function LeaveApplicationsView({
                     <textarea
                       autoFocus
                       value={reason}
-                      onChange={(e) => {
-                        setReason(e.target.value);
-                        if (reasonError) setReasonError("");
-                      }}
+                      onChange={(e) => setReason(e.target.value)}
                       rows={2}
                       className="mt-2 w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-300"
                       placeholder={t("reasonForRejection")}
                     />
-                    {reasonError && <p className="mt-1.5 text-xs font-semibold text-rose-600">{reasonError}</p>}
                     <div className="mt-3 flex items-center gap-2">
                       <button
                         onClick={() => confirmReject(req.id)}
@@ -528,13 +524,17 @@ export default function LeaveApplicationsView({
             ) : rejectingId !== viewing.id ? (
               <div className="mt-6 flex gap-3">
                 <button
-                  onClick={() => approveLeave(viewing.id)}
+                  onClick={() => {
+                    const id = viewing.id;
+                    closeViewer();
+                    approveLeave(id);
+                  }}
                   className="flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2.5 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-white font-bold shadow"
                 >
                   <Check className="h-4 w-4" /> {tc("approve")}
                 </button>
                 <button
-                  onClick={() => startReject(viewing.id)}
+                  onClick={() => startReject(viewing.id, true)}
                   className="flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2.5 border border-rose-300 text-rose-600 font-bold hover:bg-rose-50 transition-colors"
                 >
                   <X className="h-4 w-4" /> {tc("reject")}
@@ -548,15 +548,11 @@ export default function LeaveApplicationsView({
                 <textarea
                   autoFocus
                   value={reason}
-                  onChange={(e) => {
-                    setReason(e.target.value);
-                    if (reasonError) setReasonError("");
-                  }}
+                  onChange={(e) => setReason(e.target.value)}
                   rows={2}
                   className="mt-2 w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-300"
                   placeholder={t("reasonForRejection")}
                 />
-                {reasonError && <p className="mt-1.5 text-xs font-semibold text-rose-600">{reasonError}</p>}
                 <div className="mt-3 flex items-center gap-2">
                   <button
                     onClick={() => confirmReject(viewing.id)}
@@ -576,6 +572,60 @@ export default function LeaveApplicationsView({
           </aside>
         </div>,
         document.body
+    )}
+
+    {/* Rejection from the full preview uses a separate dialog so the preview can
+        close first, matching the approval/signature flow. */}
+    {rejectingFromViewer && rejectingId && typeof document !== "undefined" && createPortal(
+      <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md">
+        <button
+          type="button"
+          aria-label={tc("cancel")}
+          onClick={cancelReject}
+          className="absolute inset-0"
+        />
+        <div className="sd-enter relative w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <p className="sd-kicker">{t("leaveApplications")}</p>
+              <h3 className="sd-title sd-title-sm mt-0.5">{tc("reject")}</h3>
+            </div>
+            <button
+              type="button"
+              onClick={cancelReject}
+              className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 transition-colors hover:bg-slate-100"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <label className="mt-4 block text-sm font-semibold text-rose-700">{t("reasonForRejection")}</label>
+          <textarea
+            autoFocus
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            className="mt-2 w-full rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-300"
+            placeholder={t("reasonForRejection")}
+          />
+          <div className="mt-5 flex gap-3">
+            <button
+              type="button"
+              onClick={cancelReject}
+              className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+            >
+              {tc("cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => confirmReject(rejectingId)}
+              className="flex-1 rounded-xl bg-linear-to-r from-rose-600 to-orange-500 py-3 text-sm font-bold text-white shadow-lg transition"
+            >
+              {t("confirmRejection")}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
     )}
     </>
   );

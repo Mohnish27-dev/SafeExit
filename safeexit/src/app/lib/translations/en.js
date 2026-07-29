@@ -143,7 +143,7 @@ const en = {
     forwarded: "Forwarded",
     awaitingWarden: "Awaiting warden",
     leaveExpired: "That application expired — the departure date has already passed.",
-    reasonForRejection: "Reason for rejection",
+    reasonForRejection: "Reason for rejection (optional)",
     confirmRejection: "Confirm Rejection",
     rejectionRequired: "Please provide a reason before rejecting.",
     destination: "To:",
