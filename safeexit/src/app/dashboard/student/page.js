@@ -57,6 +57,11 @@ import AuthLoading from "@/app/components/AuthGate";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import useCountUp from "@/app/hooks/useCountUp";
 import { HOSTELS } from "@/app/lib/hostels";
+import {
+  clampCropOffset,
+  cropCoverScale,
+  getCropSourceRect,
+} from "@/app/lib/profilePhotoCrop.mjs";
 
 const formatClock = (value) =>
   new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
@@ -82,19 +87,6 @@ const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) =>
 
 // Crop viewport size; image shown at "cover" scale so pan math ignores fit-to-frame.
 const CROP_FRAME = 260;
-
-const cropCoverScale = (natural, zoom) =>
-  Math.max(CROP_FRAME / natural.width, CROP_FRAME / natural.height) * zoom;
-
-const clampCropOffset = (offset, natural, zoom) => {
-  const scale = cropCoverScale(natural, zoom);
-  const maxX = Math.max(0, (natural.width * scale - CROP_FRAME) / 2);
-  const maxY = Math.max(0, (natural.height * scale - CROP_FRAME) / 2);
-  return {
-    x: Math.min(maxX, Math.max(-maxX, offset.x)),
-    y: Math.min(maxY, Math.max(-maxY, offset.y)),
-  };
-};
 
 // 'Returned' + returnPunctuality 'Overdue' surfaces as a distinct "Returned late" badge.
 const outingBadge = (outing) => {
@@ -669,15 +661,14 @@ export default function StudentDashboardPage() {
     if (!cropSrc || !cropNatural) return;
     const img = new window.Image();
     img.onload = () => {
-      const scale = cropCoverScale(cropNatural, cropZoom);
-      const sourceSize = CROP_FRAME / scale;
-      const sx = cropNatural.width / 2 - cropOffset.x / scale - sourceSize / 2;
-      const sy = cropNatural.height / 2 - cropOffset.y / scale - sourceSize / 2;
+      const source = getCropSourceRect(cropNatural, cropZoom, cropOffset, CROP_FRAME);
       const OUTPUT = 480;
       const canvas = document.createElement("canvas");
       canvas.width = OUTPUT;
       canvas.height = OUTPUT;
-      canvas.getContext("2d").drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, OUTPUT, OUTPUT);
+      canvas
+        .getContext("2d")
+        .drawImage(img, source.x, source.y, source.size, source.size, 0, 0, OUTPUT, OUTPUT);
       setPhotoDraft(canvas.toDataURL("image/jpeg", 0.9));
       setCropSrc(null);
       setCropNatural(null);
