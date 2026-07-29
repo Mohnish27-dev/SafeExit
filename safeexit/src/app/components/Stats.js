@@ -40,7 +40,7 @@ export default function Stats() {
 
   const statsList = [
     { icon: <Shield className="h-5 w-5 text-indigo-600" />, target: 1200, suffix: "+", label: "Students Protected", desc: "Contact details masked and shielded from gate log leakage.", bg: "bg-indigo-50/70 dark:bg-indigo-950/40", accent: "bg-indigo-400/40" },
-    { icon: <Building className="h-5 w-5 text-violet-600" />, target: 15, suffix: "+", label: "Institutions Enrolled", desc: "Universities replacing paper registers with SafeExit.", bg: "bg-violet-50/70 dark:bg-violet-950/40", accent: "bg-violet-400/40" },
+    { icon: <Building className="h-5 w-5 text-violet-600" />, target: 15, suffix: "+", label: "Institutions Enrolled", desc: "Universities replacing paper registers with NITP-SafeExit.", bg: "bg-violet-50/70 dark:bg-violet-950/40", accent: "bg-violet-400/40" },
     { icon: <QrCode className="h-5 w-5 text-emerald-600" />, target: 5000, suffix: "+", label: "Secure Check-Ins", desc: "Seamless entry and exit scans completed in seconds.", bg: "bg-emerald-50/70 dark:bg-emerald-950/40", accent: "bg-emerald-400/40" },
     { icon: <ClipboardCheck className="h-5 w-5 text-cyan-600" />, target: 800, suffix: "+", label: "Requests Approved Daily", desc: "Automatic travel ticket validation bypassing manual hold-ups.", bg: "bg-cyan-50/70 dark:bg-cyan-950/40", accent: "bg-cyan-400/40" },
   ];

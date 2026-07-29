@@ -36,7 +36,7 @@ const {
 } = require('@simplewebauthn/server');
 
 // In production set RP_ID / RP_ORIGIN to the real frontend domain.
-const rpName = process.env.RP_NAME || 'SafeExit';
+const rpName = process.env.RP_NAME || 'NITP-SafeExit';
 const rpID = process.env.RP_ID || 'localhost';
 const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
 

@@ -69,13 +69,13 @@ self.addEventListener('push', (event) => {
   try {
     data = event.data.json();
   } catch {
-    data = { title: 'SafeExit', body: event.data.text() };
+    data = { title: 'NITP-SafeExit', body: event.data.text() };
   }
 
   const options = {
     body: data.body || '',
-    icon: '/images/icon-192.png',
-    badge: '/images/icon-192.png',
+    icon: '/images/nit-patna-icon-192.png',
+    badge: '/images/nit-patna-icon-192.png',
     vibrate: [100, 200, 100],
     // Same tag replaces the older notification instead of stacking
     tag: data.tag || 'safeexit-notification',
@@ -87,7 +87,7 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'SafeExit', options)
+    self.registration.showNotification(data.title || 'NITP-SafeExit', options)
   );
 });
 

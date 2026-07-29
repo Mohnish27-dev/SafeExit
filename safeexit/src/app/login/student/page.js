@@ -1240,7 +1240,7 @@ export default function StudentLoginPage() {
             <Shield className="h-7 w-7" />
           </div>
           <div className="text-center">
-            <span className="font-sans text-2xl font-bold tracking-tight text-slate-900">Safe<span className="text-indigo-600">Exit</span></span>
+            <span className="font-sans text-2xl font-bold tracking-tight text-slate-900">NITP-Safe<span className="text-indigo-600">Exit</span></span>
             <p className="text-[11px] font-medium text-slate-500 tracking-wide">Secure Access. Safer Campuses.</p>
           </div>
         </Link>
@@ -1551,7 +1551,7 @@ export default function StudentLoginPage() {
 
             <div className="mt-6 pt-6 border-t border-slate-100 w-full">
               <p className="text-sm text-slate-500">
-                New to SafeExit?{" "}
+                New to NITP-SafeExit?{" "}
                 <button onClick={goToRegister} disabled={isProcessing} className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors disabled:opacity-50">
                   Create an account
                 </button>

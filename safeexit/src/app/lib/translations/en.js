@@ -1,5 +1,5 @@
 /**
- * English translations for SafeExit dashboards.
+ * English translations for NITP-SafeExit dashboards.
  * Keys are grouped by dashboard area (common, caretaker, security).
  */
 const en = {
@@ -217,7 +217,7 @@ const en = {
   // ─── Security Dashboard ───
   security: {
     liveCommand: "Live Command",
-    controlTitle: "SafeExit Control",
+    controlTitle: "NITP-SafeExit Control",
     guardOps: "Security Guard Operations",
     securityGuard: "Security Guard",
     shiftPulse: "Shift Pulse",
@@ -343,8 +343,8 @@ const en = {
 
   // ─── PWA Install Prompt ───
   install: {
-    ariaLabel: "Install SafeExit app",
-    message: "Install SafeExit on your phone — quick access, even offline!",
+    ariaLabel: "Install NITP-SafeExit app",
+    message: "Install NITP-SafeExit on your phone — quick access, even offline!",
     button: "Install",
     dismiss: "Dismiss",
     iosHint: "Tap the Share button",

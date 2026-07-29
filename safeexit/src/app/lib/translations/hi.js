@@ -1,5 +1,5 @@
 /**
- * Hindi (हिंदी) translations for SafeExit dashboards.
+ * Hindi (हिंदी) translations for NITP-SafeExit dashboards.
  * Uses simple, modern Hindi — not overly formal or traditional.
  */
 const hi = {
@@ -217,7 +217,7 @@ const hi = {
   // ─── Security Dashboard ───
   security: {
     liveCommand: "लाइव कमांड",
-    controlTitle: "SafeExit कंट्रोल",
+    controlTitle: "NITP-SafeExit कंट्रोल",
     guardOps: "सिक्योरिटी गार्ड ऑपरेशन",
     securityGuard: "सिक्योरिटी गार्ड",
     shiftPulse: "शिफ्ट अपडेट",
@@ -343,8 +343,8 @@ const hi = {
 
   // ─── PWA Install Prompt ───
   install: {
-    ariaLabel: "SafeExit ऐप इंस्टॉल करें",
-    message: "SafeExit को अपने फ़ोन में इंस्टॉल करें — बिना इंटरनेट के भी इस्तेमाल करें!",
+    ariaLabel: "NITP-SafeExit ऐप इंस्टॉल करें",
+    message: "NITP-SafeExit को अपने फ़ोन में इंस्टॉल करें — बिना इंटरनेट के भी इस्तेमाल करें!",
     button: "इंस्टॉल करें",
     dismiss: "बंद करें",
     iosHint: "शेयर बटन दबाएं",

@@ -244,7 +244,7 @@ export default function ChiefWardenLoginPage() {
 
         <div className="mt-6 flex items-center gap-4">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 to-indigo-600 text-white shadow-lg"><Crown className="h-7 w-7" /></span>
-          <div><p className="text-xs font-bold uppercase tracking-[0.28em] text-indigo-500">SafeExit</p><h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Chief Warden</h1><p className="text-sm font-medium text-slate-500">Campus-wide hostel oversight</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.28em] text-indigo-500">NITP-SafeExit</p><h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Chief Warden</h1><p className="text-sm font-medium text-slate-500">Campus-wide hostel oversight</p></div>
         </div>
 
         {appState === "RETURNING_USER" ? (

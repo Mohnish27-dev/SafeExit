@@ -63,7 +63,7 @@ export default function Navbar() {
             </div>
             <div>
               <span className="font-sans text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Safe<span className="text-indigo-600">Exit</span>
+                NITP-Safe<span className="text-indigo-600">Exit</span>
               </span>
               <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 -mt-1 uppercase tracking-wider">
                 Secure. Private. Safe.

@@ -308,7 +308,7 @@ export default function HowItWorks() {
                   <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800/80">
                     <div className="flex items-center gap-1.5">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SafeExit Live</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">NITP-SafeExit Live</span>
                     </div>
                     <span className="text-[10px] font-mono text-slate-600">Step {active + 1}/4</span>
                   </div>

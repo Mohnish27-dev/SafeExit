@@ -63,7 +63,7 @@ export default function Hero() {
 
             {/* Description */}
             <p className="text-lg text-slate-600 dark:text-slate-300 max-w-xl font-medium leading-relaxed transition-colors">
-              SafeExit replaces unsafe paper registers with a secure, student-first system. Contact details stay masked, exit passes are verified in seconds, and every access is logged for accountability.
+              NITP-SafeExit replaces unsafe paper registers with a secure, student-first system. Contact details stay masked, exit passes are verified in seconds, and every access is logged for accountability.
             </p>
 
             {/* CTAs */}

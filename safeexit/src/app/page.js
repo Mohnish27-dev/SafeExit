@@ -9,8 +9,8 @@ import Stats from "./components/Stats";
 import Footer from "./components/Footer";
 
 export const metadata = {
-  title: "SafeExit | Privacy-First Smart Hostel Access & Safety System",
-  description: "SafeExit replaces outdated physical registries with a privacy-first digital system that protects student numbers, automates travel approvals, and logs full audit trails.",
+  title: "NITP-SafeExit | Privacy-First Smart Hostel Access & Safety System",
+  description: "NITP-SafeExit replaces outdated physical registries with a privacy-first digital system that protects student numbers, automates travel approvals, and logs full audit trails.",
 };
 
 export default function Home() {
