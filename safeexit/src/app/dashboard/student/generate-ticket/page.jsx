@@ -28,6 +28,7 @@ import StudentFeatureShell, {
 } from "@/app/components/student/StudentFeatureShell";
 import { apiFetch } from "@/app/lib/api";
 import CaretakerSelect from "@/app/components/student/CaretakerSelect";
+import GateQrInstruction from "@/app/components/student/GateQrInstruction";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import { isSignatureRequiredError } from "@/app/lib/signatureImage";
 
@@ -403,6 +404,10 @@ export default function GenerateTicket() {
             </div>
           </div>
 
+          {activeOuting.status === "Approved" && (
+            <GateQrInstruction ready showAction className="mb-6" />
+          )}
+
           <button
             type="button"
             onClick={() => router.push("/dashboard/student/my-outings")}
@@ -527,19 +532,11 @@ export default function GenerateTicket() {
             </div>
           </div>
 
-          <div className="sf-notice mb-6 text-left">
-            {isAutoApproved ? (
-              <>
-                <CheckCircle2 size={14} className="text-emerald-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-slate-600">Your ticket is auto-approved — this outing type doesn&rsquo;t need caretaker approval. Show your pass at the gate to log your exit.</p>
-              </>
-            ) : (
-              <>
-                <AlertCircle size={14} className="text-sky-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-slate-600">Local market outings need caretaker approval. You will be notified once approved.</p>
-              </>
-            )}
-          </div>
+          {isAutoApproved ? (
+            <GateQrInstruction ready showAction className="mb-6" />
+          ) : (
+            <GateQrInstruction className="mb-6" />
+          )}
 
           <button
             type="button"

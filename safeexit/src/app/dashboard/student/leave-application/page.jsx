@@ -33,17 +33,17 @@ import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import CaretakerSelect from "@/app/components/student/CaretakerSelect";
+import GateQrInstruction from "@/app/components/student/GateQrInstruction";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import { isSignatureRequiredError } from "@/app/lib/signatureImage";
-
-const MIN_LEAD_HOURS = 24;
-
-// UX-only mirror of the backend's isBeforeEveningCurfew rule.
-const EVENING_CURFEW_HOUR = 17;
-const EVENING_CURFEW_MINUTE = 30;
-const isBeforeEveningCurfew = (date) =>
-  date.getHours() < EVENING_CURFEW_HOUR ||
-  (date.getHours() === EVENING_CURFEW_HOUR && date.getMinutes() <= EVENING_CURFEW_MINUTE);
+import {
+  CAMPUS_TIMEZONE,
+  getLeaveSubmissionTimingViolation,
+  getMinimumLeaveInputValue,
+  isWithinLeaveDepartureWindow,
+  parseCampusDateTime,
+  parseCampusReturnDate,
+} from "@/app/lib/leaveRules.mjs";
 
 const statusConfig = {
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
@@ -69,26 +69,26 @@ const filters = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
-// datetime-local values are local wall-clock strings — convert in local time, not UTC.
-const toLocalInputValue = (date) => {
-  const offset = date.getTimezoneOffset();
-  const local = new Date(date.getTime() - offset * 60000);
-  return local.toISOString().slice(0, 16);
-};
-
 const formatDateTime = (date) =>
-  `${date.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" })} at ${date.toLocaleTimeString(
-    "en-US",
-    { hour: "2-digit", minute: "2-digit" }
-  )}`;
+  `${date.toLocaleDateString("en-US", {
+    timeZone: CAMPUS_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })} at ${date.toLocaleTimeString("en-US", {
+    timeZone: CAMPUS_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
 
 // Return is a date only — no time is collected or shown.
 const formatDate = (date) =>
-  date.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
-
-// The return field is date-only; treat it as end of that day so it always falls
-// after a same-day departure and reads as "back by the end of this day".
-const parseReturnDate = (value) => (value ? new Date(`${value}T23:59:59`) : null);
+  date.toLocaleDateString("en-US", {
+    timeZone: CAMPUS_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 
 const getDuration = (leave, ret) => {
   if (!leave || !ret) return null;
@@ -200,33 +200,47 @@ export default function LeaveApplicationPage() {
   );
   const activeLeaveStatus = (activeLeave?.status || "").toLowerCase();
 
-  const leaveDateObj = form.leaveDate ? new Date(form.leaveDate) : null;
-  const returnDateObj = parseReturnDate(form.returnDate);
+  const isFemale = display.gender === "Female";
+  const leaveDateObj = parseCampusDateTime(form.leaveDate);
+  const returnDateObj = parseCampusReturnDate(form.returnDate);
   const duration = useMemo(
-    () => getDuration(form.leaveDate ? new Date(form.leaveDate) : null, parseReturnDate(form.returnDate)),
+    () => getDuration(parseCampusDateTime(form.leaveDate), parseCampusReturnDate(form.returnDate)),
     [form.leaveDate, form.returnDate]
   );
 
-  const earliestAllowed = useMemo(() => new Date(Date.now() + MIN_LEAD_HOURS * 60 * 60 * 1000), []);
-  const minLeaveInputValue = toLocalInputValue(earliestAllowed);
+  const minLeaveInputValue = useMemo(
+    () => getMinimumLeaveInputValue(display.gender),
+    [display.gender]
+  );
+  const timingGuidance = isFemale
+    ? "Girls must submit before the departure day. To leave tomorrow, apply by the end of today."
+    : "Boys can submit at any time before departure; no 24-hour advance notice is required.";
 
   const validate = () => {
     const nextErrors = {};
+    const timingViolation = leaveDateObj
+      ? getLeaveSubmissionTimingViolation(display.gender, leaveDateObj)
+      : null;
     if (!form.destination.trim()) nextErrors.destination = "Destination is required";
     if (!form.reason.trim() || form.reason.trim().length < 10) {
       nextErrors.reason = "Please describe the reason for leave in at least 10 characters";
     }
     if (!form.leaveDate) {
       nextErrors.leaveDate = "Leave date & time is required";
-    } else if (leaveDateObj.getTime() < earliestAllowed.getTime()) {
-      nextErrors.leaveDate = `Applications must be submitted at least ${MIN_LEAD_HOURS} hours in advance. Earliest allowed: ${formatDateTime(
-        earliestAllowed
-      )}`;
-    } else if (!isBeforeEveningCurfew(leaveDateObj)) {
-      nextErrors.leaveDate = "Leave departure must be on or before 5:30 PM — a leave pass is only valid until 5:30 PM on the departure day. Please choose an earlier leave time.";
+    } else if (!leaveDateObj) {
+      nextErrors.leaveDate = "Leave date & time must be valid";
+    } else if (timingViolation === "DEPARTURE_NOT_FUTURE") {
+      nextErrors.leaveDate = "Leave departure must be in the future";
+    } else if (timingViolation === "FEMALE_DEPARTURE_DAY") {
+      nextErrors.leaveDate =
+        "Girls cannot submit a leave application on the departure day. To leave tomorrow, submit by the end of today.";
+    } else if (!isWithinLeaveDepartureWindow(leaveDateObj)) {
+      nextErrors.leaveDate = "Leave departure must be between 6:00 AM and 5:30 PM on the departure day.";
     }
     if (!form.returnDate) {
       nextErrors.returnDate = "Return date is required";
+    } else if (!returnDateObj) {
+      nextErrors.returnDate = "Return date must be valid";
     } else if (leaveDateObj && returnDateObj.getTime() <= leaveDateObj.getTime()) {
       nextErrors.returnDate = "Return date must be on or after the leave date";
     }
@@ -358,12 +372,7 @@ export default function LeaveApplicationPage() {
             </div>
           </div>
 
-          <div className="sf-notice mb-6 text-left">
-            <AlertCircle size={14} className="text-sky-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-slate-600">
-              Leave applications are never auto-approved. Track its progress under &ldquo;My Applications&rdquo;.
-            </p>
-          </div>
+          <GateQrInstruction className="mb-6" />
 
           <div className="flex flex-col gap-2.5">
             <button
@@ -521,7 +530,7 @@ export default function LeaveApplicationPage() {
         variant="leave"
         icon={CalendarDays}
         title="Apply for leave"
-        description="Festivals, home visits, or multi-day trips — send a formal application to your caretaker at least 24 hours ahead."
+        description={`Festivals, home visits, or multi-day trips — ${timingGuidance}`}
       />
 
       {hydrated && <StudentProfileBanner display={display} compact />}
@@ -572,6 +581,9 @@ export default function LeaveApplicationPage() {
               </span>
             </div>
           </div>
+          {activeLeaveStatus === "approved" && (
+            <GateQrInstruction ready showAction className="mb-5" />
+          )}
           <button type="button" onClick={() => setTab("mine")} className="sf-btn-primary w-full">
             View My Applications
           </button>
@@ -674,9 +686,7 @@ export default function LeaveApplicationPage() {
                 </span>
               </div>
             )}
-            <p className="text-xs text-slate-400 mt-3">
-              Applications must be submitted at least {MIN_LEAD_HOURS} hours before the leave date.
-            </p>
+            <p className="text-xs text-slate-400 mt-3">{timingGuidance}</p>
           </StudentFeaturePanel>
 
           <StudentFeaturePanel className="p-5" delay={140}>
@@ -860,6 +870,9 @@ export default function LeaveApplicationPage() {
                               <ArrowUpRight size={15} className="text-teal-600 shrink-0 mt-0.5" />
                               <p className="text-xs font-semibold text-teal-700">Escalated to the warden for a decision. You will be notified.</p>
                             </div>
+                          )}
+                          {statusKey === "approved" && (
+                            <GateQrInstruction ready showAction className="mt-3" />
                           )}
                           {statusKey === "expired" && (
                             <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">

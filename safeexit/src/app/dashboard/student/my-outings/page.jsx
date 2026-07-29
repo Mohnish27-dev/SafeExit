@@ -23,6 +23,7 @@ import {
 import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
+import GateQrInstruction from "@/app/components/student/GateQrInstruction";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { getFirstName } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
@@ -357,6 +358,9 @@ export default function MyOutings() {
                           <ArrowUpRight size={15} className="text-teal-600 shrink-0 mt-0.5" />
                           <p className="text-xs font-semibold text-teal-700">Escalated to the warden for a decision. You will be notified.</p>
                         </div>
+                      )}
+                      {outing.status === "approved" && (
+                        <GateQrInstruction ready showAction className="mt-3" />
                       )}
                       {outing.status === "expired" && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">

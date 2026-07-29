@@ -3,6 +3,14 @@
 
 const CAMPUS_TIMEZONE = 'Asia/Kolkata';
 
+const campusDateKey = (date) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: CAMPUS_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(date));
+
 const minutesOfDayInTimeZone = (date, timeZone) => {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -47,21 +55,28 @@ const isBeforeEveningCurfew = (date) => {
   return mins >= LEAVE_DEPART_START_MINUTES && mins <= EVENING_CURFEW_MINUTES;
 };
 
+// Female students must apply before the campus-local departure day. Everyone
+// else may apply at any time before departure. The departure-window rule is
+// checked separately by isBeforeEveningCurfew.
+const getLeaveSubmissionTimingViolation = (gender, leaveDate, at = Date.now()) => {
+  const departure = new Date(leaveDate);
+  const now = new Date(at);
+  if (Number.isNaN(departure.getTime()) || Number.isNaN(now.getTime())) return 'INVALID_DATE';
+  if (departure.getTime() <= now.getTime()) return 'DEPARTURE_NOT_FUTURE';
+  if (gender === 'Female' && campusDateKey(departure) === campusDateKey(now)) {
+    return 'FEMALE_DEPARTURE_DAY';
+  }
+  return null;
+};
+
 // Leave pass dies at 5:30 PM campus time on its departure day; any later
 // calendar day counts as past-curfew regardless of clock time.
 const isAfterLeaveCurfew = (leaveDate, at = Date.now()) => {
   const dep = new Date(leaveDate);
   if (Number.isNaN(dep.getTime())) return false;
   const now = new Date(at);
-  const campusDay = (d) =>
-    new Intl.DateTimeFormat('en-CA', {
-      timeZone: CAMPUS_TIMEZONE,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(d);
-  const depDay = campusDay(dep);
-  const nowDay = campusDay(now);
+  const depDay = campusDateKey(dep);
+  const nowDay = campusDateKey(now);
   if (nowDay < depDay) return false;
   if (nowDay > depDay) return true;
   return minutesOfDayInTimeZone(now, CAMPUS_TIMEZONE) > EVENING_CURFEW_MINUTES;
@@ -153,6 +168,7 @@ module.exports = {
   isBeforeDeparture,
   isReturnLate,
   isBeforeEveningCurfew,
+  getLeaveSubmissionTimingViolation,
   isAfterLeaveCurfew,
   resolveOutingPolicy,
   normalizeOutingType,
