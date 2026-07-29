@@ -344,7 +344,7 @@ const en = {
   // ─── PWA Install Prompt ───
   install: {
     ariaLabel: "Install NITP-SafeExit app",
-    message: "Install NITP-SafeExit on your phone — quick access, even offline!",
+    message: "Install NITP-SafeExit on your phone — quick access",
     button: "Install",
     dismiss: "Dismiss",
     iosHint: "Tap the Share button",

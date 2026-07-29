@@ -380,6 +380,16 @@ export default function StudentDashboardPage() {
     setMounted(true);
   }, []);
 
+  // Approved outing/leave notices link here so the student lands directly on
+  // the permanent identity QR they must present at the main gate.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("showQr") !== "1") return;
+    window.history.replaceState(null, "", window.location.pathname);
+    const openQr = window.setTimeout(() => setShowQrModal(true), 0);
+    return () => window.clearTimeout(openQr);
+  }, []);
+
   // Read the current location-permission state on first visit so we can decide
   // whether to show the priming banner. Reading is silent — it never prompts.
   useEffect(() => {
@@ -971,7 +981,9 @@ export default function StudentDashboardPage() {
                   </h2>
                   <p className="sd-body mt-2 max-w-md">
                     {latestApproved
-                      ? `You're cleared to be out until ${formatClock(latestApproved.inTime)}. Stay safe and check in on time.`
+                      ? latestApproved.status === "Out"
+                        ? `You're outside campus until ${formatClock(latestApproved.inTime)}. Show this same permanent QR at the main gate to log your entry when you return.`
+                        : `Your pass is approved. Show your permanent QR at the main gate to log your exit; return by ${formatClock(latestApproved.inTime)}.`
                       : "No active pass right now. Generate an outing ticket or send an alert from the quick actions below."}
                   </p>
                   <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -1087,7 +1099,7 @@ export default function StudentDashboardPage() {
                       <Fingerprint className="h-6 w-6 text-cyan-300" />
                     </span>
                     <div>
-                      <p className="sd-passport-eyebrow">NITP-SafeExit · Digital Passport</p>
+                      <p className="sd-passport-eyebrow">NITP-SafeExit · Permanent Student QR</p>
                       <p className="mt-1 text-[0.72rem] font-semibold tracking-wide text-slate-400">
                         Campus gate authorization
                       </p>
@@ -1131,7 +1143,7 @@ export default function StudentDashboardPage() {
                   className="sd-btn-glow mt-5 inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-cyan-500/25 cursor-pointer sm:mt-8"
                 >
                   <QrCode className="h-5 w-5" />
-                  Show QR Code
+                  Show Permanent QR
                 </MagneticButton>
               </div>
 
@@ -1143,7 +1155,7 @@ export default function StudentDashboardPage() {
               <div className="relative z-[1] flex flex-col items-center justify-center gap-3 p-4 sm:gap-4 sm:p-8 lg:w-[250px]">
                 <p className="sd-passport-eyebrow flex items-center gap-1.5">
                   <ScanLine className="h-3.5 w-3.5 text-cyan-300" />
-                  Scan at gate
+                  Scan permanent QR at gate
                 </p>
                 <button
                   type="button"
@@ -1330,9 +1342,9 @@ export default function StudentDashboardPage() {
                 Active Student Pass
               </span>
 
-              <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">NITP-SafeExit Digital QR</h2>
+              <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">Your Permanent Student QR</h2>
               <p className="text-xs text-slate-400 mt-1 leading-normal max-w-xs mx-auto">
-                Scan this QR code at the campus main gates to authorize entry or exit.
+                Show this QR to security at the campus main gate. Your entry or exit is logged only after it is scanned.
               </p>
 
               <div className="relative mt-6 p-6 rounded-3xl bg-linear-to-br from-indigo-50/50 to-sky-50/50 border border-slate-100 shadow-inner flex justify-center items-center">

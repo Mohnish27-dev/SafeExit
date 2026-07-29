@@ -1,7 +1,10 @@
 const LeaveApplication = require('../models/LeaveApplication');
 const sseHub = require('../utils/sseHub');
 const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
-const { isBeforeEveningCurfew } = require('../utils/outingRules');
+const {
+  getLeaveSubmissionTimingViolation,
+  isBeforeEveningCurfew,
+} = require('../utils/outingRules');
 const {
   scopedStudentFilter,
   forwardedToFilter,
@@ -10,9 +13,6 @@ const {
   resolveWardenForHostel,
 } = require('../utils/hostelScope');
 const { ownSignature, sendSignatureRequired } = require('../utils/signature');
-
-const MIN_LEAD_TIME_MS = 24 * 60 * 60 * 1000;
-
 
 // 'Forwarded' counts as live too — an application sitting with the warden must block a
 // second one just like a Pending one does, or a student could stack approvals.
@@ -104,12 +104,16 @@ const createLeaveApplication = async (req, res) => {
       return res.status(400).json({ message: 'Return date must be after the leave date.' });
     }
 
-    // 24-hour lead time enforced here; client shows the same rule for UX only.
-    const earliestAllowed = new Date(Date.now() + MIN_LEAD_TIME_MS);
-    if (leaveDateObj.getTime() < earliestAllowed.getTime()) {
+    const timingViolation = getLeaveSubmissionTimingViolation(req.user.gender, leaveDateObj);
+    if (timingViolation === 'DEPARTURE_NOT_FUTURE') {
       return res.status(400).json({
-        message: 'Leave applications must be submitted at least 24 hours before the leave date.',
-        earliestAllowed: earliestAllowed.toISOString(),
+        message: 'Leave departure must be in the future.',
+      });
+    }
+    if (timingViolation === 'FEMALE_DEPARTURE_DAY') {
+      return res.status(400).json({
+        message:
+          'Girls\' leave applications must be submitted before the departure day. To leave tomorrow, submit the application by the end of today.',
       });
     }
 
