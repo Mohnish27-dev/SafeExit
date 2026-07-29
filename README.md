@@ -1,6 +1,6 @@
-# SafeExit 🚀
+# NITP-SafeExit 🚀
 
-SafeExit is a comprehensive student outing and complaint management system designed for hostels/universities. It streamlines the process of requesting outings, approving them by caretakers, and verifying student exits/entries at the security gate using QR codes. It also features a complaint management system for students to report issues.
+NITP-SafeExit is a comprehensive student outing and complaint management system designed for hostels/universities. It streamlines the process of requesting outings, approving them by caretakers, and verifying student exits/entries at the security gate using QR codes. It also features a complaint management system for students to report issues.
 
 ## 📋 Features
 

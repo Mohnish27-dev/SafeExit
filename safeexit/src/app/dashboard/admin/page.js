@@ -155,7 +155,7 @@ export default function AdminDashboardPage() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Command Center</p>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">SafeExit Admin</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">NITP-SafeExit Admin</h1>
               <p className="text-sm font-medium text-slate-500">Welcome back, {greetingName}</p>
             </div>
           </div>

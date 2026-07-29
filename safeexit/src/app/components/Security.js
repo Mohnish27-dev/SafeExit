@@ -102,7 +102,7 @@ export default function Security() {
               Safety That Never Trades Away Privacy
             </h3>
             <p className="reveal text-slate-400 text-base leading-relaxed font-medium">
-              Student safety cannot come at the cost of privacy. SafeExit enforces encrypted logs and anonymous access filters so authorities can protect students without ever exposing personal data.
+              Student safety cannot come at the cost of privacy. NITP-SafeExit enforces encrypted logs and anonymous access filters so authorities can protect students without ever exposing personal data.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-2">

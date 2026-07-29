@@ -72,9 +72,9 @@ const requestPasswordReset = async (req, res) => {
 
     const { delivered } = await sendMail({
       to: email,
-      subject: 'Your SafeExit password reset code',
-      text: `Your SafeExit password reset code is ${otp}. It expires in 10 minutes. If you did not request a password reset, you can ignore this email — your password will not change.`,
-      html: `<p>Your SafeExit password reset code is <strong style="font-size:20px;letter-spacing:3px">${otp}</strong>.</p><p>It expires in 10 minutes. If you didn't request a password reset, you can safely ignore this email — your password will not change.</p>`,
+      subject: 'Your NITP-SafeExit password reset code',
+      text: `Your NITP-SafeExit password reset code is ${otp}. It expires in 10 minutes. If you did not request a password reset, you can ignore this email — your password will not change.`,
+      html: `<p>Your NITP-SafeExit password reset code is <strong style="font-size:20px;letter-spacing:3px">${otp}</strong>.</p><p>It expires in 10 minutes. If you didn't request a password reset, you can safely ignore this email — your password will not change.</p>`,
     });
 
     const body = { message: 'Password reset code sent to your college email.' };

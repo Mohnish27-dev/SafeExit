@@ -211,7 +211,7 @@ export default function Simulator() {
             See the Safety Flow in Action
           </h2>
           <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 font-medium">
-            Switch roles to see how SafeExit protects privacy, verifies exits, and logs every access in real time.
+            Switch roles to see how NITP-SafeExit protects privacy, verifies exits, and logs every access in real time.
           </p>
         </div>
 
@@ -223,7 +223,7 @@ export default function Simulator() {
             <div className="flex items-center gap-3">
               <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
               <span className="text-slate-400 font-bold text-xs uppercase tracking-wider">
-                Simulation Running: SafeExit WebPortal
+                Simulation Running: NITP-SafeExit WebPortal
               </span>
             </div>
 

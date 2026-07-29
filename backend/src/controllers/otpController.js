@@ -63,9 +63,9 @@ const sendOtp = async (req, res) => {
 
     const { delivered } = await sendMail({
       to: email,
-      subject: 'Your SafeExit verification code',
-      text: `Your SafeExit verification code is ${otp}. It expires in 10 minutes. If you did not request this, you can ignore this email.`,
-      html: `<p>Your SafeExit verification code is <strong style="font-size:20px;letter-spacing:3px">${otp}</strong>.</p><p>It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`,
+      subject: 'Your NITP-SafeExit verification code',
+      text: `Your NITP-SafeExit verification code is ${otp}. It expires in 10 minutes. If you did not request this, you can ignore this email.`,
+      html: `<p>Your NITP-SafeExit verification code is <strong style="font-size:20px;letter-spacing:3px">${otp}</strong>.</p><p>It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`,
     });
 
     const body = { message: 'Verification code sent to your college email.' };

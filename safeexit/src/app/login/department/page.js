@@ -304,7 +304,7 @@ export default function DepartmentLoginPage() {
             <Wrench className="h-7 w-7" />
           </div>
           <div className="text-center">
-            <span className="font-sans text-2xl font-bold tracking-tight text-slate-900">Safe<span className="text-emerald-600">Exit</span></span>
+            <span className="font-sans text-2xl font-bold tracking-tight text-slate-900">NITP-Safe<span className="text-emerald-600">Exit</span></span>
             <p className="text-[11px] font-medium text-slate-500 tracking-wide">Secure Access. Safer Campuses.</p>
           </div>
         </Link>

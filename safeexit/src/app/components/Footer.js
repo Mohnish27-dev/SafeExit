@@ -39,11 +39,11 @@ export default function Footer() {
                 <Shield className="h-5 w-5" />
               </div>
               <span className="font-display text-lg font-bold tracking-tight text-slate-900 dark:text-white">
-                Safe<span className="text-indigo-500">Exit</span>
+                NITP-Safe<span className="text-indigo-500">Exit</span>
               </span>
             </div>
             <p className="text-sm font-medium text-slate-600 leading-relaxed max-w-sm">
-              SafeExit delivers privacy-first campus safety. By replacing exposed paper registers with encrypted digital checkpoints, we protect students and reinforce institutional accountability.
+              NITP-SafeExit delivers privacy-first campus safety. By replacing exposed paper registers with encrypted digital checkpoints, we protect students and reinforce institutional accountability.
             </p>
           </div>
 
@@ -93,7 +93,7 @@ export default function Footer() {
         </div>
 
         <div className="border-t border-slate-100 mt-12 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-semibold text-slate-500">
-          <p className="text-slate-600">© {new Date().getFullYear()} SafeExit. Built for Student Safety & Accountability.</p>
+          <p className="text-slate-600">© {new Date().getFullYear()} NITP-SafeExit. Built for Student Safety & Accountability.</p>
           <div className="flex items-center gap-6">
             {displayName && <div className="text-sm font-semibold text-slate-800">Signed in as <span className="font-bold">{displayName}</span></div>}
             <div className="flex items-center gap-3 text-sm text-slate-700">

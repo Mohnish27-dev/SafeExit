@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "Offline | SafeExit",
+  title: "Offline | NITP-SafeExit",
   description: "You are currently offline.",
 };
 
@@ -26,7 +26,7 @@ export default function Offline() {
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">You&apos;re offline</h1>
         <p className="mt-3 text-slate-600 dark:text-slate-400">
-          SafeExit can&apos;t reach the network right now. Check your connection —
+          NITP-SafeExit can&apos;t reach the network right now. Check your connection —
           the app will reconnect automatically once you&apos;re back online.
         </p>
         <a

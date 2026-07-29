@@ -111,7 +111,7 @@ export default function InstallPrompt() {
       <div className="flex items-center gap-3 rounded-2xl border border-teal-400/25 bg-slate-900/95 p-3.5 pl-4 shadow-2xl shadow-slate-900/40 backdrop-blur-md">
         {/* App icon */}
         <img
-          src="/images/icon-192.png"
+          src="/images/nit-patna-icon-192.png"
           alt=""
           className="h-10 w-10 shrink-0 rounded-xl shadow-md"
         />

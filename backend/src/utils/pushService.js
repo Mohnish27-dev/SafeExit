@@ -33,7 +33,7 @@ const notifyUsers = async (userFilter, payload) => {
     if (!subs.length) return;
 
     const message = JSON.stringify({
-      title: payload.title || 'SafeExit',
+      title: payload.title || 'NITP-SafeExit',
       body: payload.body || '',
       url: payload.url || '/dashboard/caretaker',
       urgency: payload.urgency || 'normal',

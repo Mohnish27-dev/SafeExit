@@ -155,7 +155,7 @@ export default function LoginRoleSelect() {
             </div>
             <div>
               <span className="font-sans text-xl font-bold tracking-tight text-slate-900">
-                Safe<span className="text-indigo-600">Exit</span>
+                NITP-Safe<span className="text-indigo-600">Exit</span>
               </span>
               <p className="text-[10px] font-medium text-slate-500 -mt-0.5 tracking-wide">
                 Secure Access. Safer Campuses.
@@ -203,7 +203,7 @@ export default function LoginRoleSelect() {
           </div>
           <div>
             <span className="font-sans text-xl font-bold tracking-tight text-slate-900">
-              Safe<span className="text-indigo-600">Exit</span>
+              NITP-Safe<span className="text-indigo-600">Exit</span>
             </span>
             <p className="text-[10px] font-medium text-slate-500 -mt-0.5 tracking-wide">
               Secure Access. Safer Campuses.
@@ -230,9 +230,9 @@ export default function LoginRoleSelect() {
         <div className="text-center mb-5 sm:mb-10">
           <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             {isFiltered ? (
-              <>Welcome back to <span className="text-indigo-600">SafeExit</span></>
+              <>Welcome back to <span className="text-indigo-600">NITP-SafeExit</span></>
             ) : (
-              <>Welcome to <span className="text-indigo-600">SafeExit</span></>
+              <>Welcome to <span className="text-indigo-600">NITP-SafeExit</span></>
             )}
           </h1>
           <p className="text-slate-500 mt-1.5 text-sm sm:text-base font-medium">
@@ -363,7 +363,7 @@ export default function LoginRoleSelect() {
             <ShieldCheck className="h-3.5 w-3.5" />
           </div>
           <div className="text-left">
-            <p>SafeExit © {new Date().getFullYear()}. All rights reserved.</p>
+            <p>NITP-SafeExit © {new Date().getFullYear()}. All rights reserved.</p>
             <p className="text-xs text-slate-400 -mt-0.5">
               Building safer & smarter campuses.
             </p>

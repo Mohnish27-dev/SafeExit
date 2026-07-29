@@ -325,7 +325,7 @@ export default function SecurityLoginPage() {
           </div>
           <div>
             <span className="font-sans text-xl font-bold tracking-tight text-slate-900">
-              Safe<span className="text-indigo-600">Exit</span>
+              NITP-Safe<span className="text-indigo-600">Exit</span>
             </span>
             <p className="text-[10px] font-medium text-slate-500 -mt-0.5 tracking-wide">
               Secure Access. Safer Campuses.

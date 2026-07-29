@@ -788,7 +788,7 @@ export default function StudentDashboardPage() {
                 <h1 className="sd-title sd-reveal sd-stagger-1">
                   <span className="sd-gradient-text">Student Dashboard</span>
                 </h1>
-                <p className="sd-subtitle">SafeExit Passport</p>
+                <p className="sd-subtitle">NITP-SafeExit Passport</p>
               </div>
             </div>
 
@@ -1087,7 +1087,7 @@ export default function StudentDashboardPage() {
                       <Fingerprint className="h-6 w-6 text-cyan-300" />
                     </span>
                     <div>
-                      <p className="sd-passport-eyebrow">SafeExit · Digital Passport</p>
+                      <p className="sd-passport-eyebrow">NITP-SafeExit · Digital Passport</p>
                       <p className="mt-1 text-[0.72rem] font-semibold tracking-wide text-slate-400">
                         Campus gate authorization
                       </p>
@@ -1155,7 +1155,7 @@ export default function StudentDashboardPage() {
                 </button>
                 <div className="sd-barcode w-full max-w-[190px]" aria-hidden="true" />
                 <p className="font-mono text-[0.62rem] tracking-[0.35em] text-slate-400">
-                  {qrRollNo || "SAFEEXIT"}
+                  {qrRollNo || "NITP-SAFEEXIT"}
                 </p>
               </div>
             </div>
@@ -1330,7 +1330,7 @@ export default function StudentDashboardPage() {
                 Active Student Pass
               </span>
 
-              <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">SafeExit Digital QR</h2>
+              <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">NITP-SafeExit Digital QR</h2>
               <p className="text-xs text-slate-400 mt-1 leading-normal max-w-xs mx-auto">
                 Scan this QR code at the campus main gates to authorize entry or exit.
               </p>

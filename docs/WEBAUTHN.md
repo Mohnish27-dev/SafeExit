@@ -101,7 +101,7 @@ Set in `backend/.env`:
 
 ```
 RP_ID=localhost                 # registrable domain (no scheme/port). Prod: e.g. safeexit.app
-RP_NAME=SafeExit                # user-visible relying-party name
+RP_NAME=NITP-SafeExit           # user-visible relying-party name
 RP_ORIGIN=http://localhost:3000 # exact origin where navigator.credentials runs (the frontend)
 ```
 

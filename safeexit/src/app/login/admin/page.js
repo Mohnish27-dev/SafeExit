@@ -281,7 +281,7 @@ export default function AdminLoginPage() {
             <Shield className="h-7 w-7" />
           </div>
           <div className="text-center">
-            <span className="font-sans text-2xl font-bold tracking-tight text-slate-900">Safe<span className="text-indigo-600">Exit</span></span>
+            <span className="font-sans text-2xl font-bold tracking-tight text-slate-900">NITP-Safe<span className="text-indigo-600">Exit</span></span>
             <p className="text-[11px] font-medium text-slate-500 tracking-wide">Admin Console · Command Center</p>
           </div>
         </Link>

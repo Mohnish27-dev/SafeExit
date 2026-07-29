@@ -123,7 +123,7 @@ export default function Features() {
             Built Around Student Safety, Not Just Access
           </h3>
           <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 font-medium">
-            SafeExit replaces exposed registers with a privacy-first system that verifies exits, alerts caretakers, and protects student data at every step.
+            NITP-SafeExit replaces exposed registers with a privacy-first system that verifies exits, alerts caretakers, and protects student data at every step.
           </p>
         </div>
 

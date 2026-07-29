@@ -1,4 +1,4 @@
-# SafeExit — two app containers on a private network.
+# NITP-SafeExit — two app containers on a private network.
 # nginx + certbot live on the HOST and reverse-proxy into these published ports.
 # MongoDB is Atlas (cloud), so there is no database service here.
 
