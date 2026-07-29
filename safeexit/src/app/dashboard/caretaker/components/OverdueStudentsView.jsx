@@ -14,6 +14,7 @@ import {
 import { apiFetch, getApiBase } from "@/app/lib/api";
 import { getInitials } from "@/app/lib/userProfile";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
+import EmergencyContactsPanel from "@/app/components/EmergencyContactsPanel";
 
 // "2h 15m" style label for how long past the return deadline the student is.
 const overdueDuration = (inTime, now) => {
@@ -118,15 +119,15 @@ export default function OverdueStudentsView({ onCountChange }) {
               <article
                 key={o._id}
                 style={{ "--accent": "#f43f5e", animationDelay: `${0.05 + Math.min(i, 10) * 0.05}s` }}
-                className="sd-luxe-card sd-luxe-rise relative overflow-hidden rounded-3xl p-5 ring-1 ring-rose-200"
+                className="sd-luxe-card sd-luxe-rise relative min-w-0 overflow-hidden rounded-3xl p-4 ring-1 ring-rose-200 sm:p-5"
               >
                 <span className="absolute inset-y-0 left-0 w-1" style={{ background: "var(--accent)" }} aria-hidden="true" />
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
                       <AlarmClock className="h-6 w-6" />
                     </span>
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-base font-bold text-slate-900">{student.name || "—"}</h3>
                         <span className="rounded-full border border-rose-200 bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-700">
@@ -152,7 +153,7 @@ export default function OverdueStudentsView({ onCountChange }) {
                   {student.phoneNumber && (
                     <a
                       href={`tel:${student.phoneNumber}`}
-                      className="flex items-center gap-1.5 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5"
+                      className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 sm:w-auto"
                     >
                       <Phone className="h-4 w-4" /> {t("callStudent")}
                     </a>
@@ -160,27 +161,30 @@ export default function OverdueStudentsView({ onCountChange }) {
                 </div>
 
                 {/* Student profile strip — mirrors the SOS alert contact card */}
-                <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-cyan-400 text-sm font-bold text-white">
+                <div className="mt-4 min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-cyan-400 text-sm font-bold text-white">
                       {getInitials(student.name)}
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">{student.name || "—"}</p>
-                      <p className="text-xs text-slate-500">
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-bold text-slate-900">{student.name || "—"}</p>
+                      <p className="break-words text-xs text-slate-500">
                         {[student.studentId, student.department, student.year].filter(Boolean).join(" · ") || "—"}
                       </p>
                     </div>
                   </div>
-                  <span className="flex items-center gap-1.5 text-sm text-slate-600">
-                    <DoorOpen className="h-4 w-4 text-slate-400" />
+                  <span className="flex min-w-0 items-start gap-1.5 break-words text-sm text-slate-600">
+                    <DoorOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     {student.hostelName || "—"} {student.roomNumber ? `· Room ${student.roomNumber}` : ""}
                   </span>
                   {student.phoneNumber && (
-                    <a href={`tel:${student.phoneNumber}`} className="flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:underline">
-                      <Phone className="h-4 w-4" /> {student.phoneNumber}
+                    <a href={`tel:${student.phoneNumber}`} className="flex min-w-0 max-w-full items-start gap-1.5 text-sm font-semibold text-indigo-600 hover:underline">
+                      <Phone className="mt-0.5 h-4 w-4 shrink-0" /> <span className="break-all">{student.phoneNumber}</span>
                     </a>
                   )}
+                  </div>
+                  <EmergencyContactsPanel student={student} />
                 </div>
               </article>
             );

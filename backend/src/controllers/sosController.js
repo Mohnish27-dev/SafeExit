@@ -3,6 +3,13 @@ const sseHub = require('../utils/sseHub');
 const { notifyCaretakersAndAdmins } = require('../utils/pushService');
 const { genderScopedStudentFilter, studentInGenderScope } = require('../utils/hostelScope');
 
+const SOS_STUDENT_FIELDS = 'name studentId roomNumber hostelName department year';
+const SOS_CONTACT_ROLES = new Set(['Admin', 'Caretaker', 'Warden', 'ChiefWarden']);
+const sosStudentFieldsFor = (role) =>
+  SOS_CONTACT_ROLES.has(role)
+    ? `${SOS_STUDENT_FIELDS} phoneNumber guardianPhoneNumber closeContacts`
+    : SOS_STUDENT_FIELDS;
+
 // POST /api/sos — private (Student)
 const createSOSAlert = async (req, res) => {
   const { type, note, location, coords } = req.body;
@@ -30,7 +37,10 @@ const createSOSAlert = async (req, res) => {
       coords: safeCoords
     });
 
-    const populated = await alert.populate('student', 'name studentId roomNumber hostelName phoneNumber department year');
+    const populated = await alert.populate(
+      'student',
+      `${SOS_STUDENT_FIELDS} phoneNumber guardianPhoneNumber closeContacts`
+    );
 
     // No student PII in the broadcast — the SSE hub reaches out-of-hostel caretakers too.
     sseHub.broadcast('sos:created', {
@@ -74,7 +84,9 @@ const getSOSAlerts = async (req, res) => {
     Object.assign(filter, await genderScopedStudentFilter(req.user));
 
     const alerts = await SOSAlert.find(filter)
-      .populate('student', 'name studentId roomNumber hostelName phoneNumber department year')
+      // Guards receive the operational identity/location only. Emergency phone details
+      // are limited to the four staff roles responsible for escalation and follow-up.
+      .populate('student', sosStudentFieldsFor(req.user.role))
       .populate('handledBy', 'name role')
       .sort({ createdAt: -1 });
     res.json(alerts);
@@ -105,7 +117,7 @@ const updateSOSStatus = async (req, res) => {
     alert.handledBy = req.user._id;
 
     const updated = await alert.save();
-    const populated = await updated.populate('student', 'name studentId roomNumber hostelName phoneNumber');
+    const populated = await updated.populate('student', sosStudentFieldsFor(req.user.role));
 
     sseHub.broadcast('sos:updated', {
       id: populated._id,
