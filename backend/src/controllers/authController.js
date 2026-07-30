@@ -90,12 +90,13 @@ const registerUser = async (req, res) => {
     const resolvedHostel = canonicalHostelName(hostelName);
     const resolvedGender = genderForHostel(hostelName);
 
-    const closeContactResult = normalizeCloseContacts(closeContacts);
+    const closeContactResult = normalizeCloseContacts(closeContacts, phoneNumber);
     if (closeContactResult.error) {
       return res.status(400).json({ message: closeContactResult.error });
     }
     const guardianPhoneResult = normalizeGuardianPhoneNumber(
-      guardianPhoneNumber ?? emergencyContact
+      guardianPhoneNumber ?? emergencyContact,
+      phoneNumber
     );
     if (guardianPhoneResult.error) {
       return res.status(400).json({ message: guardianPhoneResult.error });
