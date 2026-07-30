@@ -1,6 +1,6 @@
 // Admin access allowlist — the real security boundary for the admin console
-// (frontend only mirrors it for friendlier errors). Configure via ADMIN_n_NAME /
-// ADMIN_n_ID / ADMIN_n_PIN env vars in backend/.env, scanned until the first gap.
+// Configure it via ADMIN_n_NAME / ADMIN_n_ID / ADMIN_n_PIN env vars in
+// backend/.env, scanned until the first gap.
 const buildAllowlistFromEnv = () => {
   const list = [];
   for (let i = 1; ; i += 1) {

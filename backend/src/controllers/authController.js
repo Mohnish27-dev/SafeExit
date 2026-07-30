@@ -19,6 +19,9 @@ const findByLoginId = (key) =>
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const normalizePersonName = (value) =>
+  String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
 // Password login only: also accepts the roll number (case-insensitive studentId match).
 const findByIdentifier = async (rawKey) => {
   const key = String(rawKey || '').trim().toLowerCase();
@@ -156,12 +159,12 @@ const authUser = async (req, res) => {
         return res.status(403).json({ message: 'This account is not authorized for admin access.' });
       }
 
-      // Admin PIN is a one-time bootstrap; once a passkey exists, PIN login is dead.
-      if (user.role === 'Admin' && user.webAuthnRegistered) {
-        return res.status(403).json({
-          message:
-            'This admin already has a passkey. Please sign in with your fingerprint / device passkey instead of the PIN.',
-        });
+      // Admin login requires the configured name, Admin ID, and PIN.
+      if (
+        user.role === 'Admin' &&
+        normalizePersonName(req.body.name) !== normalizePersonName(user.name)
+      ) {
+        return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       const token = generateToken(res, user._id);
