@@ -3371,6 +3371,10 @@ body {
 
 /* Greeting-name gradient */
 .sd-name-live {
+  display: inline-block;
+  /* Keep the italic final glyph inside the gradient's paint area. */
+  padding-right: 0.1em;
+  margin-right: -0.1em;
   background: linear-gradient(100deg, #4338ca 0%, #06b6d4 28%, #6366f1 52%, #06b6d4 76%, #4338ca 100%);
   background-size: 220% 100%;
   -webkit-background-clip: text;
