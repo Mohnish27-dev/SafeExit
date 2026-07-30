@@ -51,3 +51,17 @@ test('registration normalizes and validates the parent/guardian phone number', (
   assert.match(normalizeGuardianPhoneNumber('12345').error, /10 to 15 digit/i);
   assert.match(normalizeGuardianPhoneNumber('98765abc10').error, /10 to 15 digit/i);
 });
+
+test("registration rejects a parent/guardian number matching the student's mobile number", () => {
+  const result = normalizeGuardianPhoneNumber(' 9876543210 ', '9876543210');
+
+  assert.match(result.error, /different from the student's mobile number/i);
+});
+
+test("registration rejects a trusted-contact number matching the student's mobile number", () => {
+  const result = normalizeCloseContacts([
+    { name: 'Asha Singh', mobileNumber: '9876543210', roomNumber: 'B-214' },
+  ], ' 9876543210 ');
+
+  assert.match(result.error, /different from the student's mobile number/i);
+});

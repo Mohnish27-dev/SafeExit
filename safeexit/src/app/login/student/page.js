@@ -570,6 +570,10 @@ export default function StudentLoginPage() {
       setErrorMsg("Please enter a valid 10 to 15 digit parent/guardian phone number.");
       return false;
     }
+    if (formData.emergencyContact === formData.phoneNumber) {
+      setErrorMsg("The parent/guardian phone number must be different from your mobile number.");
+      return false;
+    }
     if (formData.password.length < 6) {
       setErrorMsg("Password must be at least 6 characters.");
       return false;
@@ -682,6 +686,10 @@ export default function StudentLoginPage() {
     }
     if (normalized.some((contact) => !/^\d{10,15}$/.test(contact.mobileNumber))) {
       setErrorMsg("Please enter a valid 10 to 15 digit mobile number for each person.");
+      return;
+    }
+    if (normalized.some((contact) => contact.mobileNumber === formData.phoneNumber)) {
+      setErrorMsg("A trusted contact's mobile number must be different from your mobile number.");
       return;
     }
 

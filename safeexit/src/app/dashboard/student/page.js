@@ -966,27 +966,27 @@ export default function StudentDashboardPage() {
           >
             <span className="sd-spotlight" aria-hidden="true" />
             <div className="grid items-center gap-4 sm:gap-6 lg:grid-cols-[1.2fr_auto]">
-              <div className="flex flex-wrap items-center gap-4 sm:gap-5">
+              <div className="flex items-center gap-3 sm:flex-wrap sm:gap-5">
                 <div
-                  className={`sd-luxe-float sd-orb-halo flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br sm:h-20 sm:w-20 sm:rounded-3xl ${timeVisual.orb} text-white ring-4 ring-white/70 shadow-xl sm:ring-8`}
+                  className={`sd-luxe-float sd-orb-halo flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br sm:h-20 sm:w-20 sm:rounded-3xl ${timeVisual.orb} text-white ring-4 ring-white/70 shadow-xl sm:ring-8`}
                   style={{ "--halo": timeVisual.halo }}
                 >
-                  <timeVisual.Icon className="h-7 w-7 sm:h-10 sm:w-10" />
+                  <timeVisual.Icon className="h-6 w-6 sm:h-10 sm:w-10" />
                 </div>
-                <div>
-                  <p className="sd-kicker">Daily Pulse</p>
-                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-2">
+                <div className="min-w-0 flex-1 sm:flex-none">
+                  <p className="sd-kicker hidden sm:inline-flex">Daily Pulse</p>
+                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 sm:mt-2">
                     {timeGreeting},{" "}
                     <span className="sd-name-live">{greetingName}</span>.
                   </h2>
-                  <p className="sd-body mt-2 max-w-md">
+                  <p className="sd-body mt-2 hidden max-w-md sm:block">
                     {latestApproved
                       ? latestApproved.status === "Out"
                         ? `You're outside campus until ${formatClock(latestApproved.inTime)}. Show this same permanent QR at the main gate to log your entry when you return.`
                         : `Your pass is approved. Show your permanent QR at the main gate to log your exit; return by ${formatClock(latestApproved.inTime)}.`
                       : "No active pass right now. Generate an outing ticket or send an alert from the quick actions below."}
                   </p>
-                  <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 sm:mt-4 sm:gap-2.5">
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold ${
                         latestApproved
