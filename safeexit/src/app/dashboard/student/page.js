@@ -1367,6 +1367,7 @@ export default function StudentDashboardPage() {
               <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">Your Permanent Student QR</h2>
               <p className="text-xs text-slate-400 mt-1 leading-normal max-w-xs mx-auto">
                 Show this QR to security at the campus main gate. Your entry or exit is logged only after it is scanned.
+                The QR on your college ID card works at the gate too.
               </p>
 
               <div className="relative mt-6 p-6 rounded-3xl bg-linear-to-br from-indigo-50/50 to-sky-50/50 border border-slate-100 shadow-inner flex justify-center items-center">

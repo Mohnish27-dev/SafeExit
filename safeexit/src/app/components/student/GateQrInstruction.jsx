@@ -13,7 +13,7 @@ export default function GateQrInstruction({ ready = false, showAction = false, c
         <p className="text-xs text-slate-600 leading-relaxed">
           <strong className="text-slate-700">Main-gate instruction:</strong>{" "}
           {ready
-            ? "Open your Student Dashboard, tap “Show QR Code,” and show your permanent student QR to security. Your exit is logged only after it is scanned at the main gate."
+            ? "Open your Student Dashboard, tap “Show QR Code,” and show your permanent student QR — or the QR on your college ID card — to security. Your exit is logged only after it is scanned at the main gate."
             : "Wait for approval. Once approved, open your Student Dashboard, tap “Show QR Code,” and show your permanent student QR to security at the main gate to log your exit."}
         </p>
         {ready && showAction && (

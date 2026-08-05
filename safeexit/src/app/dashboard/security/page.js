@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
+import { parseScannedQr } from "@/app/lib/qrPayload.mjs";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
@@ -108,6 +109,9 @@ export default function SecurityDashboardPage() {
   const [counts, setCounts] = useState({ inside: 0, outside: 0, overdue: 0 });
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
+  // Shown inside the scanner modal when a QR is neither format; the camera stays
+  // open so the guard can simply re-aim.
+  const [scanError, setScanError] = useState("");
 
   // Recent scans + Inside/Outside/Overdue counts; backend overlays live 'Overdue'.
   const loadScans = useCallback(async () => {
@@ -183,31 +187,35 @@ export default function SecurityDashboardPage() {
 
   const handleScan = async (result) => {
     if (result && result[0]) {
+      // Accepts the SafeExit QR and the college ID card alike; both reduce to an
+      // identifier the backend resolves against the student record.
+      const parsed = parseScannedQr(result[0].rawValue);
+      if (!parsed) {
+        // Never log rawValue — an ID card carries DOB, address and phone number.
+        setScanError(t("unreadableQr"));
+        return;
+      }
+
+      setScanError("");
+      setScanResult(parsed);
+      setIsScanning(false);
+
+      setScanPreview(null);
+      setPreviewLoading(true);
       try {
-        const parsed = JSON.parse(result[0].rawValue);
-
-        setScanResult(parsed);
-        setIsScanning(false);
-
-        setScanPreview(null);
-        setPreviewLoading(true);
-        try {
-          const params = new URLSearchParams();
-          if (parsed.sid) params.set("sid", parsed.sid);
-          if (parsed.id) params.set("studentId", parsed.id);
-          // Authenticated (Guard/Admin) — also carries the student's face photo.
-          const preview = await apiFetch(`/scan/preview?${params.toString()}`);
-          setScanPreview(preview);
-          if (preview?.student?.photo) {
-            setScanResult((prev) => (prev ? { ...prev, photo: preview.student.photo } : prev));
-          }
-        } catch (e) {
-          console.error("Failed to load scan preview:", e);
-        } finally {
-          setPreviewLoading(false);
+        const params = new URLSearchParams();
+        if (parsed.sid) params.set("sid", parsed.sid);
+        if (parsed.id) params.set("studentId", parsed.id);
+        // Authenticated (Guard/Admin) — also carries the student's face photo.
+        const preview = await apiFetch(`/scan/preview?${params.toString()}`);
+        setScanPreview(preview);
+        if (preview?.student?.photo) {
+          setScanResult((prev) => (prev ? { ...prev, photo: preview.student.photo } : prev));
         }
-      } catch (err) {
-        console.error("Invalid QR code:", err);
+      } catch (e) {
+        console.error("Failed to load scan preview:", e);
+      } finally {
+        setPreviewLoading(false);
       }
     }
   };
@@ -378,7 +386,7 @@ export default function SecurityDashboardPage() {
                     "--tile-border": "rgba(56,189,248,0.5)",
                   }}
                 >
-                  <div onClick={() => { setScanMode('exit'); setIsScanning(true); }} className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center cursor-pointer">
+                  <div onClick={() => { setScanMode('exit'); setScanError(""); setIsScanning(true); }} className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center cursor-pointer">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
                       className="sd-lift-lg flex h-16 w-16 items-center justify-center rounded-full text-white"
@@ -392,7 +400,7 @@ export default function SecurityDashboardPage() {
                     <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanExit")}</h3>
                     <p className="sd-lift-md sd-body mt-1.5 text-xs leading-snug">{t("scanExitDesc")}</p>
                     <button
-                      onClick={() => { setScanMode('exit'); setIsScanning(true); }}
+                      onClick={() => { setScanMode('exit'); setScanError(""); setIsScanning(true); }}
                       className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
                       style={{ background: "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)" }}
                       onPointerMove={(e) => {
@@ -423,7 +431,7 @@ export default function SecurityDashboardPage() {
                     "--tile-border": "rgba(45,212,191,0.5)",
                   }}
                 >
-                  <div onClick={() => { setScanMode('entry'); setIsScanning(true); }} className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center cursor-pointer">
+                  <div onClick={() => { setScanMode('entry'); setScanError(""); setIsScanning(true); }} className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center cursor-pointer">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
                       className="sd-lift-lg flex h-16 w-16 items-center justify-center rounded-full text-white"
@@ -437,7 +445,7 @@ export default function SecurityDashboardPage() {
                     <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanEntry")}</h3>
                     <p className="sd-lift-md sd-body mt-1.5 text-xs leading-snug">{t("scanEntryDesc")}</p>
                     <button
-                      onClick={() => { setScanMode('entry'); setIsScanning(true); }}
+                      onClick={() => { setScanMode('entry'); setScanError(""); setIsScanning(true); }}
                       className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
                       style={{ background: "linear-gradient(135deg, #10b981 0%, #0d9488 100%)" }}
                       onPointerMove={(e) => {
@@ -639,10 +647,13 @@ export default function SecurityDashboardPage() {
                 {t("scanStudentQR")}
                 <span className="grd-radar h-3 w-3" aria-hidden="true" />
               </h3>
-              <button onClick={() => setIsScanning(false)} className="cursor-pointer rounded-full p-2 transition hover:bg-slate-100">
+              <button onClick={() => { setScanError(""); setIsScanning(false); }} className="cursor-pointer rounded-full p-2 transition hover:bg-slate-100">
                 <X className="h-5 w-5 text-slate-500" />
               </button>
             </div>
+            {scanError && (
+              <p className="mx-4 mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">{scanError}</p>
+            )}
             <div className="grd-frame grd-sweep relative aspect-square w-full bg-black/5">
               <span className="grd-corner grd-corner--tl" style={{ "--grd-bracket": "rgba(45,212,191,0.85)" }} aria-hidden="true" />
               <span className="grd-corner grd-corner--tr" style={{ "--grd-bracket": "rgba(45,212,191,0.85)" }} aria-hidden="true" />
