@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   MessageSquareWarning,
@@ -221,6 +221,24 @@ export default function StudentComplaintPage() {
     (c) => filter === "all" || c.status === filter
   );
 
+  // Map of category → status for every non-terminal complaint.
+  // Drives which tiles are locked in the "New Complaint" tab.
+  const activeByCategory = useMemo(() => {
+    const map = {};
+    for (const c of complaints) {
+      if (c.status !== "Resolved" && c.status !== "Rejected") {
+        map[c.category] = c.status;
+      }
+    }
+    return map;
+  }, [complaints]);
+
+  // If the polling cycle shows a previously-selected category is now blocked
+  // (e.g. the student opened two tabs), clear the selection before they submit.
+  useEffect(() => {
+    if (category && activeByCategory[category] !== undefined) setCategory(null);
+  }, [activeByCategory, category]);
+
   const complaintId = created ? `CMP-${String(created._id).slice(-6).toUpperCase()}` : "";
 
   if (created) {
@@ -339,31 +357,50 @@ export default function StudentComplaintPage() {
           <StudentFeaturePanel className="p-6 sm:p-7 animate-scale-in" delay={60}>
             <p className="sf-section-label mb-4">Select Category *</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {categories.map(({ value, label, desc, color, selectedBg, icon: Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setCategory(value)}
-                  className={`sf-alert-type p-4 sf-panel-lift ${
-                    category === value ? `sf-alert-type--selected ${selectedBg} border-2` : ""
-                  }`}
-                >
-                  <div
-                    className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${
-                      category === value ? "bg-white" : "bg-slate-100"
+              {categories.map(({ value, label, desc, color, selectedBg, icon: Icon }) => {
+                const isBlocked = value in activeByCategory;
+                const activeStatus = activeByCategory[value]; // "Open" | "In Progress" | …
+                const isSelected = !isBlocked && category === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={isBlocked}
+                    onClick={() => !isBlocked && setCategory(value)}
+                    className={`sf-alert-type p-4 sf-panel-lift relative ${
+                      isBlocked
+                        ? "opacity-60 cursor-not-allowed"
+                        : isSelected
+                        ? `sf-alert-type--selected ${selectedBg} border-2`
+                        : ""
                     }`}
                   >
-                    <Icon size={18} className={category === value ? color : "text-slate-400"} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-extrabold tracking-tight ${category === value ? color : "text-slate-800"}`}>
-                      {label}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5 font-medium leading-relaxed">{desc}</p>
-                  </div>
-                  {category === value && <CheckCircle2 size={18} className={color} />}
-                </button>
-              ))}
+                    {/* Status badge shown when this category already has an active complaint */}
+                    {isBlocked && (
+                      <span className="absolute top-2 right-2 text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 border border-amber-200 leading-tight">
+                        {activeStatus}
+                      </span>
+                    )}
+                    <div
+                      className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${
+                        isSelected ? "bg-white" : "bg-slate-100"
+                      }`}
+                    >
+                      <Icon size={18} className={isSelected ? color : "text-slate-400"} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-extrabold tracking-tight ${isSelected ? color : "text-slate-800"}`}>
+                        {label}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5 font-medium leading-relaxed">{desc}</p>
+                      {isBlocked && (
+                        <p className="text-xs text-amber-600 font-semibold mt-1">Complaint already active</p>
+                      )}
+                    </div>
+                    {isSelected && <CheckCircle2 size={18} className={color} />}
+                  </button>
+                );
+              })}
             </div>
             {errors.category && <p className="text-xs text-rose-500 mt-3">{errors.category}</p>}
           </StudentFeaturePanel>

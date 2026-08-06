@@ -21,6 +21,19 @@ const createComplaint = async (req, res) => {
       return res.status(err.statusCode || 400).json({ message: err.message });
     }
 
+    // One active complaint per category per student — prevents repeated filings
+    // while the original issue is still open, in progress, or acknowledged.
+    const active = await Complaint.findOne({
+      student: req.user._id,
+      category,
+      status: { $nin: ['Resolved', 'Rejected'] },
+    });
+    if (active) {
+      return res.status(409).json({
+        message: `You already have an active ${category} complaint (CMP-${String(active._id).slice(-6).toUpperCase()}). It must be resolved before you can file another.`,
+      });
+    }
+
     const complaint = await Complaint.create({
       student: req.user._id,
       roomNumber: req.user.roomNumber,
