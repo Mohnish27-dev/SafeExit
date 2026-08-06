@@ -281,6 +281,7 @@ const en = {
     exitBlockedNoPass: "No caretaker-approved outing or leave pass for this student. Exit denied until a new request is approved.",
     entryBlockedInside: "This student is already inside — an entry has already been logged. Log an exit first.",
     couldNotLogScan: "Could not log this scan",
+    unreadableQr: "Unreadable QR code. Use the student's SafeExit QR or their college ID card.",
 
     // Sub-pages
     students: "Students",

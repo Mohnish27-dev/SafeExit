@@ -596,6 +596,19 @@ export default function StudentDashboardPage() {
 
   const handleLogout = () => logout(router, { role: "student" });
 
+  // Click-outside dismissal for the modals. Both the press and the release must land on
+  // the overlay itself, so a crop drag that starts inside the panel and ends over the
+  // backdrop isn't mistaken for an outside click.
+  const backdropPressRef = useRef(false);
+  const handleBackdropPointerDown = (e) => {
+    backdropPressRef.current = e.target === e.currentTarget;
+  };
+  const backdropCloseHandler = (close) => (e) => {
+    if (e.target !== e.currentTarget || !backdropPressRef.current) return;
+    backdropPressRef.current = false;
+    close();
+  };
+
   const openPhotoModal = () => {
     setPhotoDraft(profile.photo || null);
     setPhotoError("");
@@ -816,31 +829,36 @@ export default function StudentDashboardPage() {
                   <PenLine className="h-5 w-5 text-indigo-500" />
                 )}
               </button>
-              <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt flex items-center gap-3 rounded-2xl px-3 py-2.5 sm:min-w-[200px] sm:px-4 sm:py-3">
-                <div className="relative shrink-0 group">
-                  <div className="sd-profile-avatar overflow-hidden">
+              {/* Whole chip is the photo-change target — the 24px camera badge alone was
+                  too small to hit reliably on a phone. */}
+              <button
+                type="button"
+                onClick={openPhotoModal}
+                title="Change profile photo"
+                className="sd-luxe-card sd-profile-chip sd-luxe-tilt group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left cursor-pointer sm:min-w-[200px] sm:px-4 sm:py-3"
+              >
+                <span className="relative block shrink-0">
+                  <span className="sd-profile-avatar overflow-hidden">
                     {mounted && profile.photo ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={profile.photo} alt={profile.name} className="h-full w-full object-cover" />
                     ) : (
                       mounted ? getInitials(profile.name) : "?"
                     )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={openPhotoModal}
-                    title="Change profile photo"
-                    className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white text-indigo-600 shadow-md ring-2 ring-white transition-transform group-hover:scale-110 cursor-pointer"
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white text-indigo-600 shadow-md ring-2 ring-white transition-transform group-hover:scale-110"
                   >
                     <Camera className="h-3.5 w-3.5" />
-                    <span className="sr-only">Change profile photo</span>
-                  </button>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-slate-900  gap-2 text-base">{profile.name}</p>
-                  <p className="text-sm text-slate-500">{profile.subtitle}</p>
-                </div>
-              </div>
+                  </span>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-bold text-slate-900 text-base">{profile.name}</span>
+                  <span className="block text-sm text-slate-500">{profile.subtitle}</span>
+                </span>
+                <span className="sr-only">Change profile photo</span>
+              </button>
               <button
                 type="button"
                 onClick={handleLogout}
@@ -1326,7 +1344,11 @@ export default function StudentDashboardPage() {
       </div>
 
       {showQrModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in text-slate-800">
+        <div
+          onPointerDown={handleBackdropPointerDown}
+          onClick={backdropCloseHandler(() => setShowQrModal(false))}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in text-slate-800"
+        >
           <div className="relative w-full max-w-sm overflow-hidden bg-white rounded-3xl p-6 text-center shadow-2xl border border-slate-100 animate-scale-in">
             <button
               type="button"
@@ -1345,6 +1367,7 @@ export default function StudentDashboardPage() {
               <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">Your Permanent Student QR</h2>
               <p className="text-xs text-slate-400 mt-1 leading-normal max-w-xs mx-auto">
                 Show this QR to security at the campus main gate. Your entry or exit is logged only after it is scanned.
+                The QR on your college ID card works at the gate too.
               </p>
 
               <div className="relative mt-6 p-6 rounded-3xl bg-linear-to-br from-indigo-50/50 to-sky-50/50 border border-slate-100 shadow-inner flex justify-center items-center">
@@ -1382,7 +1405,11 @@ export default function StudentDashboardPage() {
       )}
 
       {showPhotoModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in text-slate-800">
+        <div
+          onPointerDown={handleBackdropPointerDown}
+          onClick={backdropCloseHandler(closePhotoModal)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in text-slate-800"
+        >
           <div className="relative w-full max-w-sm overflow-hidden bg-white rounded-3xl p-6 text-center shadow-2xl border border-slate-100 animate-scale-in">
             <button
               type="button"
