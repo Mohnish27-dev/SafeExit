@@ -1,4 +1,5 @@
 const OutingRequest = require('../models/OutingRequest');
+const DelayNotice = require('../models/DelayNotice');
 const { isReturnLate } = require('./outingRules');
 const { notifyCaretakers } = require('./pushService');
 
@@ -13,16 +14,23 @@ const runOverdueSweep = async () => {
     for (const o of outings) {
       if (!o.student || !isReturnLate(o.inTime)) continue;
 
-      const scope = o.targetCaretaker
-        ? { caretakerId: o.targetCaretaker }
-        : { hostelName: o.student.hostelName, gender: o.student.gender };
+      // The student already told staff they're running late — don't follow it with a
+      // near-identical "Student Overdue" push. Still stamp overdueNotifiedAt below so
+      // the doc drops out of the sweep instead of being re-checked forever.
+      const explained = await DelayNotice.exists({ trip: o._id });
 
-      await notifyCaretakers(scope, {
-        title: '⏰ Student Overdue',
-        body: `${o.student.name} has missed their outing return time.`,
-        url: '/dashboard/caretaker?view=overdue',
-        urgency: 'high',
-      });
+      if (!explained) {
+        const scope = o.targetCaretaker
+          ? { caretakerId: o.targetCaretaker }
+          : { hostelName: o.student.hostelName, gender: o.student.gender };
+
+        await notifyCaretakers(scope, {
+          title: '⏰ Student Overdue',
+          body: `${o.student.name} has missed their outing return time.`,
+          url: '/dashboard/caretaker?view=overdue',
+          urgency: 'high',
+        });
+      }
 
       // Best-effort per doc — a lost-race save just means the next tick retries.
       o.overdueNotifiedAt = new Date();

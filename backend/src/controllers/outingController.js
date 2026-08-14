@@ -17,6 +17,7 @@ const {
   resolveWardenForHostel,
 } = require('../utils/hostelScope');
 const { ownSignature, sendSignatureRequired } = require('../utils/signature');
+const DelayNotice = require('../models/DelayNotice');
 
 const clockLabel = (minutes) => {
   const h24 = Math.floor(minutes / 60);
@@ -265,9 +266,28 @@ const getOverdueOutings = async (req, res) => {
     ].join(' ');
     const outings = await OutingRequest.find({ status: 'Out', ...scope })
       .populate('student', studentFields)
-      .sort({ inTime: 1 });
+      .sort({ inTime: 1 })
+      .lean();
 
     const overdue = outings.filter((o) => isReturnLate(o.inTime));
+
+    // Attach any delay notice the student filed, so the dashboards can tell
+    // "late but explained" apart from "late and unaccounted for". One lookup for
+    // the whole page, not one per row.
+    if (overdue.length) {
+      const notices = await DelayNotice.find({ trip: { $in: overdue.map((o) => o._id) } })
+        .populate('acknowledgedBy', 'name role')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const byTrip = new Map();
+      for (const n of notices) {
+        const key = String(n.trip);
+        if (!byTrip.has(key)) byTrip.set(key, n); // newest wins (sorted desc)
+      }
+      for (const o of overdue) o.delayNotice = byTrip.get(String(o._id)) || null;
+    }
+
     res.json(overdue);
   } catch (error) {
     res.status(500).json({ message: error.message });

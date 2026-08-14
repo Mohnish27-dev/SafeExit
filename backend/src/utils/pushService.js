@@ -94,6 +94,16 @@ const notifyCaretakers = (scope, payload) =>
 const notifyAdmins = (payload) =>
   notifyUsers({ role: 'Admin' }, payload);
 
+// ChiefWarden is campus-wide oversight, so it takes no hostel/gender scope.
+const notifyChiefWardens = (payload) =>
+  notifyUsers({ role: 'ChiefWarden' }, payload);
+
+// A single student, e.g. to confirm their delay notice was acknowledged.
+const notifyStudent = (studentId, payload) => {
+  if (!studentId) return Promise.resolve();
+  return notifyUsers({ role: 'Student', _id: studentId }, payload);
+};
+
 // Notify the department staff account(s) servicing a complaint category.
 const notifyDepartment = (category, payload) =>
   notifyUsers({ role: 'Department', managedDepartment: category }, payload);
@@ -126,6 +136,7 @@ const notifyHostelStaffAndAdmins = async (scope, payload) => {
     notifyCaretakers(scope, payload),
     notifyWardensForScope(scope, { ...payload, url: payload.wardenUrl || payload.url }),
     notifyAdmins({ ...payload, url: payload.adminUrl || payload.url }),
+    notifyChiefWardens({ ...payload, url: payload.chiefWardenUrl || payload.adminUrl || payload.url }),
   ]);
 };
 
@@ -135,6 +146,8 @@ module.exports = {
   notifyCaretakers,
   notifyWarden,
   notifyWardensForScope,
+  notifyChiefWardens,
+  notifyStudent,
   notifyHostelStaffAndAdmins,
   notifyCaretakersAndAdmins,
   notifyDepartment,

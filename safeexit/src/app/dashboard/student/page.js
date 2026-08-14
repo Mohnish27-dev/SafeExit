@@ -470,9 +470,13 @@ export default function StudentDashboardPage() {
     loadOutings();
 
     // Poll + focus refetch so gate scans reflect without a reload.
-    const interval = setInterval(() => loadOutings(true), 15000);
+    const interval = setInterval(() => {
+      loadOutings(true);
+    }, 15000);
     const onVisible = () => {
-      if (document.visibilityState === "visible") loadOutings(true);
+      if (document.visibilityState === "visible") {
+        loadOutings(true);
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -510,6 +514,11 @@ export default function StudentDashboardPage() {
     [outings]
   );
 
+  // The compact delay CTA only appears once an outing is live at the gate.
+  const isOut = useMemo(
+    () => outings.some((o) => o.status === "Out"),
+    [outings]
+  );
   const qrRollNo = useMemo(() => {
     const roll = profile.rollNo && profile.rollNo !== defaultStudentProfile.rollNo ? profile.rollNo : "";
     if (roll) return roll;
@@ -1023,6 +1032,16 @@ export default function StudentDashboardPage() {
                       <TrendingUp className="h-3.5 w-3.5 text-indigo-500" />
                       {outings.length} total {outings.length === 1 ? "outing" : "outings"}
                     </span>
+                    {isOut && (
+                      <Link
+                        href="/dashboard/student/delay-notice"
+                        title="Report a delay"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700 transition hover:border-teal-300 hover:bg-teal-100 active:scale-95"
+                      >
+                        <Clock3 className="h-3.5 w-3.5" />
+                        Report delay
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>

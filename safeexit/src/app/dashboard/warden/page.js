@@ -25,7 +25,8 @@ import {
   ScrollText,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { apiFetch, getApiBase } from "@/app/lib/api";
+import { apiFetch } from "@/app/lib/api";
+import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SignatureCapture from "@/app/components/SignatureCapture";
@@ -44,6 +45,8 @@ import ComplaintsView from "../caretaker/components/ComplaintsView";
 // Wardens get the same read-only movement log as caretakers; /scan already scopes by managedHostel.
 import MovementLogsView from "../caretaker/components/MovementLogsView";
 import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
+import DelayNoticesView from "../caretaker/components/DelayNoticesView";
+import DelayNoticeToast from "../caretaker/components/DelayNoticeToast";
 
 const initials = (name = "") =>
   name.split(" ").map((n) => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
@@ -191,7 +194,7 @@ export default function WardenDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["requests", "leave", "sos", "overdue", "complaints", "logs", "profile"].includes(target)) {
+    if (target && ["requests", "leave", "sos", "overdue", "delays", "complaints", "logs", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -205,6 +208,9 @@ export default function WardenDashboardPage() {
   const [resolvedReports, setResolvedReports] = useState([]);
   const [sosCount, setSosCount] = useState(0);
   const [overdueCount, setOverdueCount] = useState(0);
+  // Students who reported they'll be late. Separate from overdueCount because a
+  // student can file *before* their deadline passes — they aren't overdue yet.
+  const [delayCount, setDelayCount] = useState(0);
 
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [loadingLeave, setLoadingLeave] = useState(true);
@@ -286,6 +292,15 @@ export default function WardenDashboardPage() {
     }
   }, []);
 
+  const loadDelayCount = useCallback(async () => {
+    try {
+      const data = await apiFetch("/delay?status=Pending");
+      setDelayCount(Array.isArray(data) ? data.length : 0);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
   useEffect(() => {
     loadRequests();
     loadLeave();
@@ -293,33 +308,41 @@ export default function WardenDashboardPage() {
     loadReports();
     loadSosCount();
     loadOverdueCount();
-  }, [loadRequests, loadLeave, loadHistory, loadReports, loadSosCount, loadOverdueCount]);
+    loadDelayCount();
+  }, [loadRequests, loadLeave, loadHistory, loadReports, loadSosCount, loadOverdueCount, loadDelayCount]);
+
+  useEffect(() => {
+    return subscribeToStaffEvents({
+      "delay:created": loadDelayCount,
+      "delay:updated": loadDelayCount,
+    });
+  }, [loadDelayCount]);
 
   // SSE: refresh the affected queues + history when the backend broadcasts a change.
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/outing/stream`, { withCredentials: true });
-    source.addEventListener("outing:changed", () => { loadRequests(); loadHistory(); loadOverdueCount(); });
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "outing:changed": () => { loadRequests(); loadHistory(); loadOverdueCount(); },
+    });
   }, [loadRequests, loadHistory, loadOverdueCount]);
 
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/leave/stream`, { withCredentials: true });
-    source.addEventListener("leave:changed", () => { loadLeave(); loadHistory(); });
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "leave:changed": () => { loadLeave(); loadHistory(); },
+    });
   }, [loadLeave, loadHistory]);
 
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/complaint/stream`, { withCredentials: true });
-    source.addEventListener("complaint:created", () => loadReports());
-    source.addEventListener("complaint:updated", () => loadReports());
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "complaint:created": loadReports,
+      "complaint:updated": loadReports,
+    });
   }, [loadReports]);
 
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
-    source.addEventListener("sos:created", () => loadSosCount());
-    source.addEventListener("sos:updated", () => loadSosCount());
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "sos:created": loadSosCount,
+      "sos:updated": loadSosCount,
+    });
   }, [loadSosCount]);
 
   // Poll as a safety net in case an SSE connection is silently dropped.
@@ -470,14 +493,16 @@ export default function WardenDashboardPage() {
     { key: "leave", label: "Leave", icon: CalendarDays, badge: leavePending.length },
     { key: "sos", label: "Alerts", icon: Siren, badge: sosCount },
     { key: "overdue", label: "Overdue", icon: Clock, badge: overdueCount },
+    { key: "delays", label: "Delays", icon: MessageSquare, badge: delayCount },
     { key: "complaints", label: "Complaints", icon: MessageSquare, badge: reports.length },
     { key: "logs", label: "Logs", icon: ScrollText },
     { key: "profile", label: "Profile", icon: User },
   ];
 
   // Keep six comfortably tappable phone tabs. Profile lives behind the header avatar,
-  // and movement logs remain available from the full-width home shortcut.
-  const mobileNavItems = navItems.filter((n) => !["profile", "logs"].includes(n.key));
+  // movement logs remain available from the full-width home shortcut, and delay
+  // notices surface via the "needs your attention" tile whenever any are pending.
+  const mobileNavItems = navItems.filter((n) => !["profile", "logs", "delays"].includes(n.key));
 
   return (
     <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28">
@@ -576,6 +601,7 @@ export default function WardenDashboardPage() {
                 const attention = [
                   sosCount > 0 && { key: "sos", label: "Safety Alerts", count: sosCount, icon: Siren, onClick: () => setView("sos") },
                   overdueCount > 0 && { key: "overdue", label: "Overdue Students", count: overdueCount, icon: Clock, onClick: () => setView("overdue") },
+                  delayCount > 0 && { key: "delays", label: "Delay Notices", count: delayCount, icon: MessageSquare, onClick: () => setView("delays") },
                   pending.length > 0 && { key: "requests", label: "Forwarded Outings", count: pending.length, icon: ClipboardList, onClick: () => setView("requests") },
                   leavePending.length > 0 && { key: "leave", label: "Forwarded Leave", count: leavePending.length, icon: CalendarDays, onClick: () => setView("leave") },
                   reports.length > 0 && { key: "complaints", label: "Complaints", count: reports.length, icon: MessageSquare, onClick: () => setView("complaints") },
@@ -705,6 +731,7 @@ export default function WardenDashboardPage() {
           {view === "sos" && <SOSAlertsView onCountChange={setSosCount} />}
 
           {view === "overdue" && <OverdueStudentsView onCountChange={setOverdueCount} />}
+          {view === "delays" && <DelayNoticesView onCountChange={setDelayCount} />}
 
           {view === "logs" && <MovementLogsView />}
 
@@ -902,6 +929,9 @@ export default function WardenDashboardPage() {
           </button>
         ))}
       </nav>
+
+      {/* Live "student is running late" popup — refetches on the /delay stream. */}
+      <DelayNoticeToast onView={() => setView("delays")} />
     </main>
   );
 }
