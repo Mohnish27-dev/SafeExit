@@ -1566,7 +1566,7 @@ export default function CaretakerDashboardPage() {
 
       {/* Mobile nav — Logs lives on the Home tile grid and Profile behind the header avatar,
           so they're dropped here to keep every tab label on one line. */}
-      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-4' : 'grid-cols-5'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
+      <nav className={`sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-4' : 'grid-cols-5'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
         <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="sd-navx__label">{tc("home")}</span></button>
         {!isBoysCaretaker && (
           <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="sd-navx__label">{t("requests")}</span></button>

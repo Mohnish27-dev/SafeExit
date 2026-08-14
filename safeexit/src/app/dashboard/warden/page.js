@@ -918,7 +918,7 @@ export default function WardenDashboardPage() {
       )}
 
       {/* Mobile nav — all tabs fit now; Profile lives behind the header avatar */}
-      <nav className="sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-60 grid grid-cols-6 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
+      <nav className="sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-60 grid grid-cols-6 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
         {mobileNavItems.map((n) => (
           <button key={n.key} onClick={() => setView(n.key)} className={`sd-navx ${view === n.key ? "sd-navx--active" : ""}`}>
             <span className="sd-navx__icon relative">
