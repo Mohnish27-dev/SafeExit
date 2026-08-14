@@ -32,10 +32,13 @@ import AutoApprovedView from "./components/AutoApprovedView";
 import RequestsView from "./components/RequestsView";
 import SOSAlertsView from "./components/SOSAlertsView";
 import OverdueStudentsView from "./components/OverdueStudentsView";
+import DelayNoticesView from "./components/DelayNoticesView";
+import DelayNoticeToast from "./components/DelayNoticeToast";
 import LeaveApplicationsView from "./components/LeaveApplicationsView";
 import SignatureCapture from "@/app/components/SignatureCapture";
 import { isSignatureRequiredError } from "@/app/lib/signatureImage";
-import { apiFetch, getApiBase } from "@/app/lib/api";
+import { apiFetch } from "@/app/lib/api";
+import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
 import { useRouter } from "next/navigation";
@@ -274,6 +277,34 @@ export default function CaretakerDashboardPage() {
   // Students still out past their outing return time; kept live for the badge.
   const [overdueCount, setOverdueCount] = useState(0);
 
+  // Students who told us they'll be late. Tracked separately from overdueCount
+  // because a student can file *before* their deadline passes — they aren't
+  // overdue yet, so the overdue list would never surface them.
+  const [delayCount, setDelayCount] = useState(0);
+
+  const loadDelayCount = useCallback(async () => {
+    try {
+      const data = await apiFetch("/delay?status=Pending");
+      setDelayCount(Array.isArray(data) ? data.length : 0);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch from the API, a client-only external source.
+    loadDelayCount();
+    const interval = setInterval(loadDelayCount, 30000);
+    return () => clearInterval(interval);
+  }, [loadDelayCount]);
+
+  useEffect(() => {
+    return subscribeToStaffEvents({
+      "delay:created": loadDelayCount,
+      "delay:updated": loadDelayCount,
+    });
+  }, [loadDelayCount]);
+
   // Numeric occupancy only — the API never sends student identities to this card.
   const [studentsOut, setStudentsOut] = useState(0);
 
@@ -324,10 +355,10 @@ export default function CaretakerDashboardPage() {
   }, [loadLiveStats]);
 
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
-    source.addEventListener("sos:created", () => loadSosCount());
-    source.addEventListener("sos:updated", () => loadSosCount());
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "sos:created": loadSosCount,
+      "sos:updated": loadSosCount,
+    });
   }, [loadSosCount]);
 
   const loadRequests = useCallback(async () => {
@@ -391,13 +422,13 @@ export default function CaretakerDashboardPage() {
   }, [loadRequests, loadReports, loadLeaveApplications, loadLeaveHistory]);
 
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/outing/stream`, { withCredentials: true });
-    source.addEventListener("outing:changed", () => {
-      loadRequests();
-      loadOverdueCount();
-      loadLiveStats();
+    return subscribeToStaffEvents({
+      "outing:changed": () => {
+        loadRequests();
+        loadOverdueCount();
+        loadLiveStats();
+      },
     });
-    return () => source.close();
   }, [loadRequests, loadOverdueCount, loadLiveStats]);
 
   // Poll as safety net in case the SSE connection is silently dropped.
@@ -407,10 +438,10 @@ export default function CaretakerDashboardPage() {
   }, [loadRequests]);
 
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/complaint/stream`, { withCredentials: true });
-    source.addEventListener("complaint:created", () => loadReports());
-    source.addEventListener("complaint:updated", () => loadReports());
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "complaint:created": loadReports,
+      "complaint:updated": loadReports,
+    });
   }, [loadReports]);
 
   useEffect(() => {
@@ -419,12 +450,12 @@ export default function CaretakerDashboardPage() {
   }, [loadReports]);
 
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/leave/stream`, { withCredentials: true });
-    source.addEventListener("leave:changed", () => {
-      loadLeaveApplications();
-      loadLeaveHistory();
+    return subscribeToStaffEvents({
+      "leave:changed": () => {
+        loadLeaveApplications();
+        loadLeaveHistory();
+      },
     });
-    return () => source.close();
   }, [loadLeaveApplications, loadLeaveHistory]);
 
   useEffect(() => {
@@ -446,7 +477,7 @@ export default function CaretakerDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["sos", "overdue", "complaints", "leave", "requests", "approved", "profile"].includes(target)) {
+    if (target && ["sos", "overdue", "delays", "complaints", "leave", "requests", "approved", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -856,6 +887,14 @@ export default function CaretakerDashboardPage() {
                     className: 'wd-attn--sos',
                     onClick: () => setView('overdue'),
                   },
+                  delayCount > 0 && {
+                    key: 'delays',
+                    label: t("delayNotices"),
+                    count: delayCount,
+                    icon: Clock,
+                    className: 'wd-attn--leave',
+                    onClick: () => setView('delays'),
+                  },
                   !isBoysCaretaker && pending.length > 0 && {
                     key: 'requests',
                     label: t("requests"),
@@ -1247,6 +1286,7 @@ export default function CaretakerDashboardPage() {
 
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
           {view === 'overdue' && <OverdueStudentsView onCountChange={setOverdueCount} />}
+          {view === 'delays' && <DelayNoticesView onCountChange={setDelayCount} />}
           {view === 'profile' && (
             <ProfileView
               user={user}
@@ -1280,11 +1320,18 @@ export default function CaretakerDashboardPage() {
 
           {view === 'logs' && <MovementLogsView />}
 
-          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysCaretaker ? 'grid-cols-6' : 'grid-cols-7'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
+          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysCaretaker ? 'grid-cols-7' : 'grid-cols-8'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
             <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span>{tc("home")}</button>
             {!isBoysCaretaker && (
               <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span>{t("requests")}</button>
             )}
+            <button onClick={() => setView('delays')} className={`sd-navx ${view === 'delays' ? 'sd-navx--active' : ''}`}>
+              <span className="sd-navx__icon relative">
+                <Clock className="h-5 w-5" />
+                {delayCount > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-amber-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{delayCount}</span>}
+              </span>
+              {t("delayNotices")}
+            </button>
             <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
               <span className="sd-navx__icon relative">
                 <CalendarDays className="h-5 w-5" />
@@ -1519,7 +1566,7 @@ export default function CaretakerDashboardPage() {
 
       {/* Mobile nav — Logs lives on the Home tile grid and Profile behind the header avatar,
           so they're dropped here to keep every tab label on one line. */}
-      <nav className={`sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-4' : 'grid-cols-5'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
+      <nav className={`sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-4' : 'grid-cols-5'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
         <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="sd-navx__label">{tc("home")}</span></button>
         {!isBoysCaretaker && (
           <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="sd-navx__label">{t("requests")}</span></button>
@@ -1546,6 +1593,9 @@ export default function CaretakerDashboardPage() {
           <span className="sd-navx__label">{t("navComplaints")}</span>
         </button>
       </nav>
+
+      {/* Live "student is running late" popup — refetches on the /delay stream. */}
+      <DelayNoticeToast onView={() => setView("delays")} />
     </main>
   );
 }

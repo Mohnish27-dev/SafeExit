@@ -23,7 +23,8 @@ import {
   Armchair,
   MoreHorizontal,
 } from "lucide-react";
-import { apiFetch, getApiBase } from "@/app/lib/api";
+import { apiFetch } from "@/app/lib/api";
+import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import { getStoredUser } from "@/app/lib/userProfile";
 import AuthLoading from "@/app/components/AuthGate";
@@ -111,10 +112,10 @@ export default function DepartmentDashboardPage() {
 
   // Live updates via SSE, with a 30s poll as a safety net.
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/complaint/stream`, { withCredentials: true });
-    source.addEventListener("complaint:created", () => loadComplaints());
-    source.addEventListener("complaint:updated", () => loadComplaints());
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "complaint:created": loadComplaints,
+      "complaint:updated": loadComplaints,
+    });
   }, [loadComplaints]);
 
   useEffect(() => {

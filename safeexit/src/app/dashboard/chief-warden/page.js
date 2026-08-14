@@ -12,6 +12,7 @@ import {
   Footprints,
   LayoutDashboard,
   LogOut,
+  MessageSquareText,
   MessageSquareWarning,
   RefreshCw,
   ShieldCheck,
@@ -20,6 +21,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
+import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import { getFirstName, getInitials, getStoredUser } from "@/app/lib/userProfile";
 import AuthLoading from "@/app/components/AuthGate";
@@ -28,6 +30,8 @@ import ApplicationsView from "./components/ApplicationsView";
 import MovementLogsView from "./components/MovementLogsView";
 import ComplaintsView from "./components/ComplaintsView";
 import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
+import DelayNoticesView from "../caretaker/components/DelayNoticesView";
+import DelayNoticeToast from "../caretaker/components/DelayNoticeToast";
 
 const NAV = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
@@ -36,6 +40,7 @@ const NAV = [
   { key: "movements", label: "Movement", icon: ShieldCheck },
   { key: "sos", label: "SOS", icon: Siren },
   { key: "overdue", label: "Overdue", icon: Clock3 },
+  { key: "delays", label: "Delays", icon: MessageSquareText },
   { key: "complaints", label: "Complaints", icon: MessageSquareWarning },
 ];
 
@@ -95,6 +100,19 @@ export default function ChiefWardenDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
+  // Students who told us they'll be late. Tracked separately from the overdue
+  // count because a notice can be filed *before* the deadline passes — those
+  // students are not overdue yet, so the overdue figure would never show them.
+  const [delayCount, setDelayCount] = useState(0);
+
+  const loadDelayCount = useCallback(async () => {
+    try {
+      const data = await apiFetch("/delay?status=Pending");
+      setDelayCount(Array.isArray(data) ? data.length : 0);
+    } catch {
+      /* best-effort badge; the Delays tab surfaces the real error */
+    }
+  }, []);
 
   useEffect(() => {
     const stored = getStoredUser();
@@ -106,6 +124,18 @@ export default function ChiefWardenDashboardPage() {
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Push-notification deep link (?view=overdue etc.); param consumed once and stripped.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("view");
+    if (target && ["overview", "outings", "leaves", "movements", "sos", "overdue", "delays", "complaints"].includes(target)) {
+      // One-shot read of the URL on mount, mirroring the caretaker/warden dashboards.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setView(target);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
 
   const loadOverview = useCallback(async () => {
@@ -123,9 +153,22 @@ export default function ChiefWardenDashboardPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadOverview();
+    loadDelayCount();
     const timer = setInterval(loadOverview, 30000);
-    return () => clearInterval(timer);
-  }, [loadOverview]);
+    const countTimer = setInterval(loadDelayCount, 30000);
+    return () => {
+      clearInterval(timer);
+      clearInterval(countTimer);
+    };
+  }, [loadOverview, loadDelayCount]);
+
+  // Live delay events — a notice filed right now should bump the badge without a refetch.
+  useEffect(() => {
+    return subscribeToStaffEvents({
+      "delay:created": loadDelayCount,
+      "delay:updated": loadDelayCount,
+    });
+  }, [loadDelayCount]);
 
   const formattedDate = useMemo(() => now.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }), [now]);
   const formattedTime = useMemo(() => now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }), [now]);
@@ -163,8 +206,8 @@ export default function ChiefWardenDashboardPage() {
           <button onClick={loadOverview} disabled={loading} className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh overview</button>
         </div>
 
-        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/80 bg-white/90 p-2 shadow-sm sm:grid-cols-3 lg:grid-cols-7">
-          {NAV.map((item) => <button key={item.key} onClick={() => setView(item.key)} className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold transition ${view === item.key ? "bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow" : "text-slate-500 hover:bg-slate-100"}`}><item.icon className="h-4 w-4" /> {item.label}</button>)}
+        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/80 bg-white/90 p-2 shadow-sm sm:grid-cols-3 lg:grid-cols-8">
+          {NAV.map((item) => <button key={item.key} onClick={() => setView(item.key)} className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold transition ${view === item.key ? "bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow" : "text-slate-500 hover:bg-slate-100"}`}><item.icon className="h-4 w-4" /> {item.label}{item.key === "delays" && delayCount > 0 && <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-black text-white">{delayCount}</span>}</button>)}
         </nav>
 
         {error && <p className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700"><AlertTriangle className="h-4 w-4" /> {error}</p>}
@@ -181,9 +224,11 @@ export default function ChiefWardenDashboardPage() {
           {view === "movements" && <MovementLogsView />}
           {view === "sos" && <SOSAlertsView readOnly />}
           {view === "overdue" && <OverdueStudentsView />}
+          {view === "delays" && <DelayNoticesView onCountChange={setDelayCount} />}
           {view === "complaints" && <ComplaintsView />}
         </div>
       </div>
+      <DelayNoticeToast onView={() => setView("delays")} />
     </main>
   );
 }

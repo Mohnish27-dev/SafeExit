@@ -3358,6 +3358,23 @@ body {
   animation: sd-angle-spin 6s linear infinite;
 }
 
+/*
+ * Mobile staff navigation must stay attached to the viewport. The generic
+ * glow-border treatment sets position: relative so its animated border can
+ * be drawn, which otherwise overrides Tailwind's fixed utility and leaves
+ * these bars at the end of the document. Keep this rule after glow-border so
+ * warden, caretaker, and security navigation remains visible while scrolling.
+ */
+@media (max-width: 767px) {
+  .sd-mobile-bottom-nav {
+    position: fixed;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    z-index: 60;
+  }
+}
+
 /* Register --angle so the conic sweep animates on GPU; static ring without @property support */
 @property --angle {
   syntax: "<angle>";

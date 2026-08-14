@@ -15,7 +15,8 @@ import {
   Loader2,
   DoorOpen,
 } from "lucide-react";
-import { apiFetch, getApiBase } from "@/app/lib/api";
+import { apiFetch } from "@/app/lib/api";
+import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import EmergencyContactsPanel from "@/app/components/EmergencyContactsPanel";
 
@@ -100,10 +101,10 @@ export default function SOSAlertsView({ onCountChange, readOnly = false }) {
   }, [load]);
 
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
-    source.addEventListener("sos:created", () => load());
-    source.addEventListener("sos:updated", () => load());
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "sos:created": load,
+      "sos:updated": load,
+    });
   }, [load]);
 
   const { t: tc } = useTranslation("common");

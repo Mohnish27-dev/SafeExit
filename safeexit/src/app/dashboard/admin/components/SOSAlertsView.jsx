@@ -15,7 +15,8 @@ import {
   Loader2,
   DoorOpen,
 } from "lucide-react";
-import { apiFetch, getApiBase } from "@/app/lib/api";
+import { apiFetch } from "@/app/lib/api";
+import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { getInitials } from "@/app/lib/userProfile";
 import EmergencyContactsPanel from "@/app/components/EmergencyContactsPanel";
 
@@ -59,6 +60,7 @@ export default function SOSAlertsView({ onChange }) {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch from the API, a client-only external source.
     load();
     // Poll frequently — these are emergencies. Fallback for when SSE drops.
     const t = setInterval(load, 8000);
@@ -67,14 +69,14 @@ export default function SOSAlertsView({ onChange }) {
 
   // SSE: new SOS alerts and status changes sync live.
   useEffect(() => {
-    const source = new EventSource(`${getApiBase()}/sos/stream`, { withCredentials: true });
     const refresh = () => {
       load();
       onChange?.();
     };
-    source.addEventListener("sos:created", refresh);
-    source.addEventListener("sos:updated", refresh);
-    return () => source.close();
+    return subscribeToStaffEvents({
+      "sos:created": refresh,
+      "sos:updated": refresh,
+    });
   }, [load, onChange]);
 
   const updateStatus = async (id, status) => {

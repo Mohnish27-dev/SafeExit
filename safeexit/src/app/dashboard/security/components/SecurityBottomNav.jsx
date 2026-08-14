@@ -39,7 +39,7 @@ export default function SecurityBottomNav({ active }) {
       </div>
 
       {/* Mobile: floating bottom bar fixed to viewport */}
-      <nav className="sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid grid-cols-4 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
+      <nav className="sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid grid-cols-4 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
         {renderItems()}
       </nav>
     </>

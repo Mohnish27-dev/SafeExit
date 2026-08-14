@@ -374,6 +374,25 @@ export default function MyOutings() {
                           <p className="text-xs font-semibold text-slate-500">You cancelled this outing request.</p>
                         </div>
                       )}
+                      {outing.status === "out" && (
+                        <div className="mt-3 pt-3 border-t border-teal-100">
+                          <p className="text-xs font-semibold text-slate-600 flex items-start gap-2">
+                            <Clock size={14} className="text-teal-600 shrink-0 mt-0.5" />
+                            Held up and won&apos;t make it back in time?
+                          </p>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push("/dashboard/student/delay-notice");
+                            }}
+                            className="mt-2.5 w-full py-2.5 rounded-xl border border-teal-200 text-teal-700 text-xs font-bold hover:bg-teal-50 transition cursor-pointer flex items-center justify-center gap-2"
+                          >
+                            <Clock size={13} />
+                            Inform authorities I&apos;ll be late
+                          </button>
+                        </div>
+                      )}
                       {(outing.status === "approved" || outing.status === "pending" || outing.status === "forwarded") && (
                         <div className="mt-4 pt-3 border-t border-slate-100">
                           {confirmCancel === outing._id ? (
