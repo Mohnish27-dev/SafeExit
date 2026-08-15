@@ -19,6 +19,7 @@ import {
   TimerOff,
   Ban,
   ArrowUpRight,
+  BellRing,
 } from "lucide-react";
 import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
@@ -33,6 +34,7 @@ import AuthLoading from "@/app/components/AuthGate";
 const statusConfig = {
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
   out: { label: "Outside", color: "text-sky-700", bg: "bg-sky-100", icon: LogOut },
+  overdue: { label: "Overdue", color: "text-rose-700", bg: "bg-rose-100", icon: BellRing },
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
   // Caretaker escalated it — the hostel warden decides this one.
   forwarded: { label: "With warden", color: "text-teal-700", bg: "bg-teal-100", icon: ArrowUpRight },
@@ -54,6 +56,7 @@ const filters = [
   { key: "all", label: "All" },
   { key: "approved", label: "Approved" },
   { key: "out", label: "Outside" },
+  { key: "overdue", label: "Overdue" },
   { key: "pending", label: "Pending" },
   { key: "forwarded", label: "With warden" },
   { key: "returned", label: "Returned" },
@@ -101,7 +104,7 @@ export default function MyOutings() {
           timeOut: fmtTime(o.outTime),
           dateReturn: fmtDate(o.inTime),
           timeReturn: fmtTime(o.inTime),
-          status: (o.status || "Pending").toLowerCase(),
+          status: o.isOverdue ? "overdue" : (o.status || "Pending").toLowerCase(),
           returnPunctuality: o.returnPunctuality || null,
           actualOutTime: fmtTime(o.actualOutTime),
           actualInTime: fmtTime(o.actualInTime),
@@ -374,11 +377,13 @@ export default function MyOutings() {
                           <p className="text-xs font-semibold text-slate-500">You cancelled this outing request.</p>
                         </div>
                       )}
-                      {outing.status === "out" && (
-                        <div className="mt-3 pt-3 border-t border-teal-100">
+                      {(outing.status === "out" || outing.status === "overdue") && (
+                        <div className={`mt-3 pt-3 border-t ${outing.status === "overdue" ? "border-rose-100" : "border-teal-100"}`}>
                           <p className="text-xs font-semibold text-slate-600 flex items-start gap-2">
-                            <Clock size={14} className="text-teal-600 shrink-0 mt-0.5" />
-                            Held up and won&apos;t make it back in time?
+                            <Clock size={14} className={outing.status === "overdue" ? "text-rose-600 shrink-0 mt-0.5" : "text-teal-600 shrink-0 mt-0.5"} />
+                            {outing.status === "overdue"
+                              ? "Your expected return time has passed. Please inform the hostel now."
+                              : "Held up and won't make it back in time?"}
                           </p>
                           <button
                             type="button"
@@ -386,7 +391,11 @@ export default function MyOutings() {
                               e.stopPropagation();
                               router.push("/dashboard/student/delay-notice");
                             }}
-                            className="mt-2.5 w-full py-2.5 rounded-xl border border-teal-200 text-teal-700 text-xs font-bold hover:bg-teal-50 transition cursor-pointer flex items-center justify-center gap-2"
+                            className={`mt-2.5 w-full py-2.5 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center justify-center gap-2 ${
+                              outing.status === "overdue"
+                                ? "border-rose-200 text-rose-700 hover:bg-rose-50"
+                                : "border-teal-200 text-teal-700 hover:bg-teal-50"
+                            }`}
                           >
                             <Clock size={13} />
                             Inform authorities I&apos;ll be late
