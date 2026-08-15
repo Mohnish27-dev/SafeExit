@@ -5,6 +5,8 @@ import QRCode from "react-qr-code";
 import {
   Activity,
   ArrowUpRight,
+  Bell,
+  BellOff,
   Camera,
   CalendarDays,
   CheckCircle2,
@@ -53,6 +55,12 @@ import {
   requestGeolocationPermission,
 } from "@/app/lib/locationManager";
 import { useRequireAuth, logout } from "@/app/lib/auth";
+import {
+  autoSubscribeIfGranted,
+  getNotificationPermission,
+  isPushSupported,
+  subscribePush,
+} from "@/app/lib/pushManager";
 import AuthLoading from "@/app/components/AuthGate";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import useCountUp from "@/app/hooks/useCountUp";
@@ -91,6 +99,9 @@ const CROP_FRAME = 260;
 // 'Returned' + returnPunctuality 'Overdue' surfaces as a distinct "Returned late" badge.
 const outingBadge = (outing) => {
   const status = String(outing?.status || "").toLowerCase();
+  if (outing?.isOverdue) {
+    return { label: "Overdue", className: "bg-rose-100 text-rose-700" };
+  }
   if (status === "returned" && outing?.returnPunctuality === "Overdue") {
     return { label: "Returned late", className: "bg-rose-100 text-rose-700" };
   }
@@ -111,6 +122,7 @@ const outingBadge = (outing) => {
 // Row accent color, mirroring outingBadge tones.
 const outingAccent = (outing) => {
   const status = String(outing?.status || "").toLowerCase();
+  if (outing?.isOverdue) return "#f43f5e";
   if (status === "returned" && outing?.returnPunctuality === "Overdue") return "#f43f5e";
   switch (status) {
     case "approved":
@@ -176,6 +188,16 @@ const actions = [
     tint: "linear-gradient(160deg, rgba(168,85,247,0.13) 0%, rgba(217,70,239,0.09) 100%)",
     glow: "rgba(147,51,234,0.5)",
     border: "rgba(192,132,252,0.55)",
+  },
+  {
+    title: "Report Delay",
+    description: "Let your hostel know when an active outing is running late and share your expected return time.",
+    icon: Clock3,
+    href: "/dashboard/student/delay-notice",
+    badge: "linear-gradient(145deg, #0f766e 0%, #14b8a6 55%, #2dd4bf 100%)",
+    tint: "linear-gradient(160deg, rgba(20,184,166,0.13) 0%, rgba(45,212,191,0.09) 100%)",
+    glow: "rgba(13,148,136,0.5)",
+    border: "rgba(45,212,191,0.55)",
   },
 ];
 
@@ -326,6 +348,12 @@ export default function StudentDashboardPage() {
   const [outingsLoading, setOutingsLoading] = useState(true);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
 
+  // Browser push is separate from passkey/WebAuthn login and needs one explicit
+  // permission gesture before overdue alerts can reach this device.
+  const [pushPermission, setPushPermission] = useState(null);
+  const [pushBannerDismissed, setPushBannerDismissed] = useState(false);
+  const [pushEnabling, setPushEnabling] = useState(false);
+
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [photoDraft, setPhotoDraft] = useState(null);
   const [savingPhoto, setSavingPhoto] = useState(false);
@@ -367,6 +395,8 @@ export default function StudentDashboardPage() {
       if (normalized.subtitle !== storedProfile.subtitle) {
         setStoredUser(normalized);
       }
+      // Hydrate the browser-backed profile once the client mounts.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setProfile(normalized);
 
       // Republish photo to the authenticated backend so the gate scanner can show it.
@@ -379,6 +409,25 @@ export default function StudentDashboardPage() {
     }
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!isPushSupported()) {
+      // Browser capability is read once on mount; this is intentionally local UI state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPushPermission("unsupported");
+      return;
+    }
+    const permission = getNotificationPermission();
+    setPushPermission(permission);
+    if (permission === "granted") autoSubscribeIfGranted();
+  }, []);
+
+  const handleEnablePush = async () => {
+    setPushEnabling(true);
+    const result = await subscribePush();
+    setPushEnabling(false);
+    setPushPermission(result.success ? "granted" : getNotificationPermission());
+  };
 
   // Approved outing/leave notices link here so the student lands directly on
   // the permanent identity QR they must present at the main gate.
@@ -453,6 +502,7 @@ export default function StudentDashboardPage() {
           place: o.destination,
           purpose: o.purpose,
           status: o.status || "Pending",
+          isOverdue: Boolean(o.isOverdue),
           returnPunctuality: o.returnPunctuality || null,
           outTime: o.outTime,
           inTime: o.inTime,
@@ -514,11 +564,11 @@ export default function StudentDashboardPage() {
     [outings]
   );
 
-  // The compact delay CTA only appears once an outing is live at the gate.
-  const isOut = useMemo(
-    () => outings.some((o) => o.status === "Out"),
+  const overdueOuting = useMemo(
+    () => outings.find((outing) => outing.status === "Out" && outing.isOverdue) || null,
     [outings]
   );
+
   const qrRollNo = useMemo(() => {
     const roll = profile.rollNo && profile.rollNo !== defaultStudentProfile.rollNo ? profile.rollNo : "";
     if (roll) return roll;
@@ -1008,40 +1058,34 @@ export default function StudentDashboardPage() {
                   </h2>
                   <p className="sd-body mt-2 hidden max-w-md sm:block">
                     {latestApproved
-                      ? latestApproved.status === "Out"
-                        ? `You're outside campus until ${formatClock(latestApproved.inTime)}. Show this same permanent QR at the main gate to log your entry when you return.`
+                      ? latestApproved.isOverdue
+                        ? `Your expected return time of ${formatClock(latestApproved.inTime)} has passed. Please report your delay and return safely.`
+                        : latestApproved.status === "Out"
+                          ? `You're outside campus until ${formatClock(latestApproved.inTime)}. Show this same permanent QR at the main gate to log your entry when you return.`
                         : `Your pass is approved. Show your permanent QR at the main gate to log your exit; return by ${formatClock(latestApproved.inTime)}.`
                       : "No active pass right now. Generate an outing ticket or send an alert from the quick actions below."}
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-2 sm:mt-4 sm:gap-2.5">
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold ${
-                        latestApproved
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        overdueOuting
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : latestApproved
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                           : "border-amber-200 bg-amber-50 text-amber-700"
                       }`}
                     >
                       <span
                         className={`inline-block h-1.5 w-1.5 rounded-full animate-pulse ${
-                          latestApproved ? "bg-emerald-500" : "bg-amber-500"
+                          overdueOuting ? "bg-rose-500" : latestApproved ? "bg-emerald-500" : "bg-amber-500"
                         }`}
                       />
-                      {latestApproved ? "Pass active" : "On campus"}
+                      {overdueOuting ? "Return overdue" : latestApproved ? "Pass active" : "On campus"}
                     </span>
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-600">
                       <TrendingUp className="h-3.5 w-3.5 text-indigo-500" />
                       {outings.length} total {outings.length === 1 ? "outing" : "outings"}
                     </span>
-                    {isOut && (
-                      <Link
-                        href="/dashboard/student/delay-notice"
-                        title="Report a delay"
-                        className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700 transition hover:border-teal-300 hover:bg-teal-100 active:scale-95"
-                      >
-                        <Clock3 className="h-3.5 w-3.5" />
-                        Report delay
-                      </Link>
-                    )}
                   </div>
                 </div>
               </div>
@@ -1061,6 +1105,74 @@ export default function StudentDashboardPage() {
               </div>
             </div>
           </section>
+
+          {overdueOuting && (
+            <div className="mt-4 flex flex-col gap-3 rounded-3xl border border-rose-200 bg-rose-50/90 px-5 py-4 text-rose-900 shadow-sm backdrop-blur-sm sd-enter sm:flex-row sm:items-center">
+              <Bell className="h-5 w-5 shrink-0 text-rose-600" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">Your outing is overdue</p>
+                <p className="text-sm text-rose-700">
+                  Your expected return time has passed. If you are delayed, inform the hostel immediately.
+                </p>
+              </div>
+              <Link
+                href="/dashboard/student/delay-notice"
+                className="shrink-0 rounded-xl bg-rose-600 px-4 py-2 text-center text-sm font-bold text-white shadow-md transition hover:bg-rose-700 active:scale-95"
+              >
+                Report delay
+              </Link>
+            </div>
+          )}
+
+          {pushPermission === "default" && !pushBannerDismissed && (
+            <div className="mt-4 flex flex-col gap-3 rounded-3xl border border-indigo-200 bg-indigo-50/90 px-5 py-4 text-indigo-900 shadow-sm backdrop-blur-sm sd-enter sm:flex-row sm:items-center">
+              <Bell className="h-5 w-5 shrink-0 text-indigo-600" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">Enable outing alerts</p>
+                <p className="text-sm text-indigo-700">
+                  Allow browser notifications so SafeExit can alert you if your expected return time passes.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleEnablePush}
+                  disabled={pushEnabling}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
+                >
+                  {pushEnabling ? "Enabling…" : "Enable"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPushBannerDismissed(true)}
+                  className="rounded-xl p-2 text-indigo-400 transition hover:bg-indigo-100"
+                  title="Later"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {pushPermission === "denied" && !pushBannerDismissed && (
+            <div className="mt-4 flex flex-col gap-3 rounded-3xl border border-amber-200 bg-amber-50/90 px-5 py-4 text-amber-900 shadow-sm backdrop-blur-sm sd-enter sm:flex-row sm:items-center">
+              <BellOff className="h-5 w-5 shrink-0 text-amber-600" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">Outing alerts are blocked</p>
+                <p className="text-sm text-amber-700">
+                  Allow notifications for this site in your browser settings to receive overdue return alerts.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPushBannerDismissed(true)}
+                className="self-end rounded-xl p-2 text-amber-400 transition hover:bg-amber-100 sm:self-auto"
+                title="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
 
           {/* Location permission priming — so the SOS flow isn't interrupted by
               the browser's location prompt during an emergency. */}
@@ -1116,7 +1228,7 @@ export default function StudentDashboardPage() {
                 Ready
               </span>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-3 xl:grid-cols-5">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
               {actions.map((action, index) => (
                 <ActionCard key={action.title} action={action} index={index} />
               ))}

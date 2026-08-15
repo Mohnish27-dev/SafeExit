@@ -52,6 +52,12 @@ const outingRequestSchema = new mongoose.Schema({
     default: null
   },
 
+  // Separate marker for the student's own browser push.
+  studentOverdueNotifiedAt: {
+    type: Date,
+    default: null
+  },
+
   actualOutTime: {
     type: Date,
     default: null

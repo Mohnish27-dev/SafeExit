@@ -206,7 +206,12 @@ const getMyOutingRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find({ student: req.user._id }).sort({ createdAt: -1 });
     await expireStaleRequests(requests);
-    res.json(requests);
+    res.json(requests.map((request) => ({
+      ...request.toObject(),
+      // Live display state only. The stored status remains 'Out' until the gate
+      // records a return, preserving the movement lifecycle and audit history.
+      isOverdue: request.status === 'Out' && isReturnLate(request.inTime),
+    })));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
