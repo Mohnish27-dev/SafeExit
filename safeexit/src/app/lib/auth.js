@@ -15,7 +15,6 @@ const ROLE_CONFIG = {
   "chief-warden": { loginPath: "/login/chief-warden" },
   security: { loginPath: "/login/security" },
   admin: { loginPath: "/login/admin" },
-  department: { loginPath: "/login/department" },
 };
 
 const loginPathFor = (role) => ROLE_CONFIG[role]?.loginPath || "/login";
@@ -28,7 +27,6 @@ const BACKEND_ROLE_TO_SLUG = {
   ChiefWarden: "chief-warden",
   Guard: "security",
   Admin: "admin",
-  Department: "department",
 };
 
 const ROLE_LABELS = {
@@ -38,7 +36,6 @@ const ROLE_LABELS = {
   "chief-warden": "Chief Warden",
   security: "Security Guard",
   admin: "Administrator",
-  department: "Department",
 };
 
 // Silent session restore via the httpOnly `jwt` cookie; returns role slug or null.
@@ -72,7 +69,6 @@ const tryRestoreSession = async () => {
       hasSignature: Boolean(data.hasSignature),
       ...(data.managedGender ? { managedGender: data.managedGender } : {}),
       ...(data.managedHostel ? { managedHostel: data.managedHostel } : {}),
-      ...(data.managedDepartment ? { managedDepartment: data.managedDepartment } : {}),
     });
 
     // Chief Warden is an oversight-only dashboard and intentionally has no Web

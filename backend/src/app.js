@@ -10,7 +10,6 @@ validateEnv();
 
 const authRoutes = require('./routes/authRoutes');
 const outingRoutes = require('./routes/outingRoutes');
-const complaintRoutes = require('./routes/complaintRoutes');
 const leaveRoutes = require('./routes/leaveRoutes');
 const sosRoutes = require('./routes/sosRoutes');
 const scanRoutes = require('./routes/scanRoutes');
@@ -35,7 +34,6 @@ app.use(cookieParser());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/outing', outingRoutes);
-app.use('/api/complaint', complaintRoutes);
 app.use('/api/leave', leaveRoutes);
 app.use('/api/sos', sosRoutes);
 app.use('/api/scan', scanRoutes);

@@ -1,5 +1,4 @@
 const OutingRequest = require('../models/OutingRequest');
-const Complaint = require('../models/Complaint');
 const SOSAlert = require('../models/SOSAlert');
 const User = require('../models/User');
 
@@ -41,7 +40,7 @@ const getAnalytics = async (req, res) => {
     const startDate = new Date(startOfIstDay(now).getTime() - ((days - 1) * DAY_MS));
     const outingActivityDate = { $ifNull: ['$actualOutTime', '$outTime'] };
 
-    const [outingResult, complaintResult, sosResult] = await Promise.all([
+    const [outingResult, sosResult] = await Promise.all([
       OutingRequest.aggregate([
         { $match: { status: { $in: ['Out', 'Returned'] } } },
         { $addFields: { analyticsDate: outingActivityDate } },
@@ -136,44 +135,6 @@ const getAnalytics = async (req, res) => {
           },
         },
       ]),
-      Complaint.aggregate([
-        { $match: { createdAt: { $gte: startDate, $lte: now } } },
-        {
-          $facet: {
-            trend: [
-              {
-                $group: {
-                  _id: {
-                    $dateToString: {
-                      format: '%Y-%m-%d',
-                      date: '$createdAt',
-                      timezone: TIMEZONE,
-                    },
-                  },
-                  count: { $sum: 1 },
-                },
-              },
-              { $sort: { _id: 1 } },
-            ],
-            byStatus: [
-              { $group: { _id: '$status', count: { $sum: 1 } } },
-              { $sort: { count: -1 } },
-            ],
-            byCategoryAndStatus: [
-              { $group: { _id: { category: '$category', status: '$status' }, count: { $sum: 1 } } },
-            ],
-            resolution: [
-              { $match: { status: 'Resolved' } },
-              {
-                $group: {
-                  _id: null,
-                  averageMs: { $avg: { $subtract: ['$updatedAt', '$createdAt'] } },
-                },
-              },
-            ],
-          },
-        },
-      ]),
       SOSAlert.aggregate([
         { $match: { createdAt: { $gte: startDate, $lte: now } } },
         {
@@ -223,29 +184,6 @@ const getAnalytics = async (req, res) => {
       outingsPerWeek: round(student.count / (days / 7)),
     }));
 
-    const complaintRaw = complaintResult[0] || {};
-    const complaintStatuses = complaintRaw.byStatus || [];
-    const complaintTotal = complaintStatuses.reduce((sum, row) => sum + row.count, 0);
-    const complaintResolved = statusCount(complaintStatuses, 'Resolved');
-    const complaintCategories = new Map();
-    for (const row of complaintRaw.byCategoryAndStatus || []) {
-      const { category, status } = row._id;
-      const current = complaintCategories.get(category) || {
-        category,
-        total: 0,
-        open: 0,
-        inProgress: 0,
-        resolved: 0,
-        rejected: 0,
-      };
-      current.total += row.count;
-      if (status === 'Open') current.open += row.count;
-      if (status === 'In Progress') current.inProgress += row.count;
-      if (status === 'Resolved') current.resolved += row.count;
-      if (status === 'Rejected') current.rejected += row.count;
-      complaintCategories.set(category, current);
-    }
-
     const sosRaw = sosResult[0] || {};
     const sosStatuses = sosRaw.byStatus || [];
     const sosTotal = sosStatuses.reduce((sum, row) => sum + row.count, 0);
@@ -270,17 +208,6 @@ const getAnalytics = async (req, res) => {
         byType: (outingsRaw.byType || []).map((row) => ({ type: row._id, count: row.count })),
         byWeekday: (outingsRaw.byWeekday || []).map((row) => ({ day: row._id, count: row.count })),
         byHour: (outingsRaw.byHour || []).map((row) => ({ hour: row._id, count: row.count })),
-      },
-      complaints: {
-        total: complaintTotal,
-        open: statusCount(complaintStatuses, 'Open'),
-        inProgress: statusCount(complaintStatuses, 'In Progress'),
-        resolved: complaintResolved,
-        rejected: statusCount(complaintStatuses, 'Rejected'),
-        resolutionRate: complaintTotal ? round((complaintResolved / complaintTotal) * 100) : 0,
-        averageResolutionHours: round((complaintRaw.resolution?.[0]?.averageMs || 0) / (60 * 60 * 1000)),
-        trend: fillDailySeries(complaintRaw.trend, startDate, days),
-        byCategory: Array.from(complaintCategories.values()).sort((a, b) => b.total - a.total),
       },
       sos: {
         total: sosTotal,

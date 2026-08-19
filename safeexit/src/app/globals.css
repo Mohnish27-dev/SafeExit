@@ -1100,11 +1100,6 @@ body {
   animation: sf-sos-pulse 2.5s ease-in-out infinite;
 }
 
-.sf-icon-complaint {
-  background: linear-gradient(135deg, #b45309 0%, #f97316 55%, #fbbf24 100%);
-  color: #fff;
-}
-
 .sf-icon-leave {
   background: linear-gradient(135deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%);
   color: #fff;
@@ -1636,10 +1631,6 @@ body {
   animation: sf-sos-pulse 2.5s ease-in-out infinite;
 }
 
-.sd-action-icon--complaint {
-  background: linear-gradient(145deg, #b45309 0%, #f97316 55%, #fbbf24 100%);
-}
-
 .sd-action-icon--leave {
   background: linear-gradient(145deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%);
 }
@@ -1880,10 +1871,6 @@ body {
   border-color: rgba(251, 113, 133, 0.45);
   background: linear-gradient(135deg, rgba(255, 241, 242, 0.98) 0%, rgba(255, 228, 230, 0.92) 100%);
   animation: sf-emergency-glow 3s ease-in-out infinite;
-}
-
-.sf-hero-strip--complaint {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 237, 213, 0.9) 50%, rgba(254, 243, 199, 0.85) 100%);
 }
 
 .sf-hero-strip--leave {
@@ -3765,12 +3752,4 @@ body {
   --attn-icon-bg: linear-gradient(145deg, #6d28d9 0%, #d946ef 100%);
   --attn-glow: rgba(139, 92, 246, 0.55);
   --attn-count: #7c3aed;
-}
-
-.wd-attn--complaints {
-  --attn-border: rgba(251, 146, 60, 0.55);
-  --attn-bg: linear-gradient(150deg, rgba(255, 247, 237, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
-  --attn-icon-bg: linear-gradient(145deg, #c2410c 0%, #fb923c 100%);
-  --attn-glow: rgba(249, 115, 22, 0.55);
-  --attn-count: #ea580c;
 }

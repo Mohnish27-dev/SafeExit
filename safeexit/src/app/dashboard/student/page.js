@@ -18,7 +18,6 @@ import {
   Loader2,
   MapPin,
   MapPinOff,
-  MessageSquareWarning,
   MoonStar,
   PenLine,
   QrCode,
@@ -170,16 +169,6 @@ const actions = [
     border: "rgba(251,113,133,0.55)",
   },
   {
-    title: "Register Complaint",
-    description: "Report a hostel issue and track it until your caretaker marks it resolved.",
-    icon: MessageSquareWarning,
-    href: "/dashboard/student/complaint",
-    badge: "linear-gradient(145deg, #b45309 0%, #f97316 55%, #fbbf24 100%)",
-    tint: "linear-gradient(160deg, rgba(249,115,22,0.13) 0%, rgba(251,191,36,0.09) 100%)",
-    glow: "rgba(234,88,12,0.5)",
-    border: "rgba(251,146,60,0.55)",
-  },
-  {
     title: "Leave Application",
     description: "Send your caretaker a formal multi-day leave request for festivals or home visits.",
     icon: CalendarDays,
@@ -206,7 +195,6 @@ const navItems = [
   { label: "Outings", icon: ClipboardList, href: "/dashboard/student/my-outings" },
   { label: "New Pass", icon: Ticket, href: "/dashboard/student/generate-ticket" },
   { label: "SOS", icon: Siren, href: "/dashboard/student/sos" },
-  { label: "Complaints", icon: MessageSquareWarning, href: "/dashboard/student/complaint" },
   { label: "Leave", icon: CalendarDays, href: "/dashboard/student/leave-application" },
 ];
 

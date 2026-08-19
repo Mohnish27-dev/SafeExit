@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import {
-  Shield, User, ShieldAlert, Users,
+  Shield, User, Users,
   Search, EyeOff, AlertTriangle, CheckCircle,
-  Send, QrCode, PhoneCall,
+  QrCode, PhoneCall,
   RefreshCw, Radio, Smartphone
 } from "lucide-react";
 import confetti from "canvas-confetti";
@@ -44,15 +44,6 @@ export default function Simulator() {
     }
   ]);
 
-  const [complaints, setComplaints] = useState([
-    {
-      id: "COMP-701",
-      timestamp: "Today, 2:10 PM",
-      description: "Guard at main gate repeatedly asked for my phone number and social accounts during entry logging.",
-      status: "Open"
-    }
-  ]);
-
   const [auditLogs, setAuditLogs] = useState([
     {
       time: "17:15:32",
@@ -89,9 +80,6 @@ export default function Simulator() {
     destination: "",
     travelTime: "6:00 PM"
   });
-
-  // Complaint Form State
-  const [newComplaint, setNewComplaint] = useState("");
 
   const triggerConfetti = () => {
     confetti({
@@ -175,24 +163,6 @@ export default function Simulator() {
     if (approve) {
       triggerConfetti();
     }
-  };
-
-  const handleComplaintSubmit = (e) => {
-    e.preventDefault();
-    if (!newComplaint) return;
-
-    const compId = "COMP-" + Math.floor(700 + Math.random() * 300);
-    const addedComp = {
-      id: compId,
-      timestamp: "Just Now",
-      description: newComplaint,
-      status: "Investigating"
-    };
-
-    setComplaints(prev => [addedComp, ...prev]);
-    addLog("Student (Anonymous)", `Submitted misconduct complaint ${compId}`, "warning");
-    alert("Complaint filed anonymously. Your identity is masked, and the report has been dispatched to the Internal Complaints Committee (ICC).");
-    setNewComplaint("");
   };
 
   return (
@@ -372,36 +342,6 @@ export default function Simulator() {
                     >
                       {sosActive ? "Deactivate Emergency SOS" : "Trigger Emergency SOS"}
                     </button>
-                  </div>
-
-                  {/* Misconduct Report */}
-                  <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl border border-slate-200/60 dark:border-slate-700 shadow-sm space-y-4 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <ShieldAlert className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Report Guard Misconduct</h4>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-                      Did security staff ask for personal social links or behave inappropriately? File a masked, direct escalation report.
-                    </p>
-
-                    <form onSubmit={handleComplaintSubmit} className="space-y-3">
-                      <textarea
-                        required
-                        rows="2"
-                        placeholder="Detail the interaction here. (This report is sent anonymously straight to ICC officers)"
-                        value={newComplaint}
-                        onChange={(e) => setNewComplaint(e.target.value)}
-                        className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-xs rounded-xl focus:border-indigo-500 dark:focus:border-indigo-500 outline-none font-medium transition-colors"
-                      ></textarea>
-                      <button
-                        type="submit"
-                        className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-slate-900 dark:bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-slate-700 dark:hover:bg-indigo-700 active:scale-95 cursor-pointer"
-                      >
-                        <Send className="h-3.5 w-3.5" />
-                        Send Anonymous Report
-                      </button>
-                    </form>
                   </div>
 
                 </div>
@@ -673,51 +613,6 @@ export default function Simulator() {
                         No active SOS signals from hostel perimeters currently.
                       </p>
                     )}
-                  </div>
-
-                  {/* Misconduct escalation reports */}
-                  <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl border border-slate-200/60 dark:border-slate-700 shadow-sm space-y-4 transition-colors">
-                    <div className="pb-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
-                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">Misconduct Complaints</h4>
-                      <span className="text-[10px] text-indigo-600 bg-indigo-50 dark:text-indigo-300 dark:bg-indigo-950/60 px-2 py-0.5 rounded font-bold border border-indigo-100 dark:border-indigo-800/40 transition-colors">Internal Only</span>
-                    </div>
-
-                    <div className="space-y-3">
-                      {complaints.map(comp => (
-                        <div key={comp.id} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-2 transition-colors">
-                          <div className="flex items-center justify-between font-bold text-[10px] text-slate-500 dark:text-slate-400">
-                            <span>ID: {comp.id}</span>
-                            <span>{comp.timestamp}</span>
-                          </div>
-                          <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
-                            &ldquo;{comp.description}&rdquo;
-                          </p>
-                          <div className="flex justify-between items-center pt-1">
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border transition-colors ${
-                              comp.status === "Resolved"
-                                ? "text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-800/40"
-                                : "text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40 border-amber-100 dark:border-amber-800/40"
-                            }`}>
-                              {comp.status}
-                            </span>
-                            <button
-                              onClick={() => {
-                                setComplaints(prev => prev.map(c => c.id === comp.id ? { ...c, status: "Resolved" } : c));
-                                addLog("Caretaker", `Marked complaint ${comp.id} as resolved.`, "success");
-                              }}
-                              disabled={comp.status === "Resolved"}
-                              className={`text-[10px] font-bold cursor-pointer ${
-                                comp.status === "Resolved"
-                                  ? "text-slate-400 dark:text-slate-600 cursor-not-allowed"
-                                  : "text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
-                              }`}
-                            >
-                              {comp.status === "Resolved" ? "Resolved ✓" : "Mark Resolved →"}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
 
                 </div>
