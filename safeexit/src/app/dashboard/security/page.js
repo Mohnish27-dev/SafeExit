@@ -209,8 +209,18 @@ export default function SecurityDashboardPage() {
         // Authenticated (Guard/Admin) — also carries the student's face photo.
         const preview = await apiFetch(`/scan/preview?${params.toString()}`);
         setScanPreview(preview);
-        if (preview?.student?.photo) {
-          setScanResult((prev) => (prev ? { ...prev, photo: preview.student.photo } : prev));
+        if (preview?.student) {
+          setScanResult((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  sid: preview.student._id || prev.sid,
+                  id: preview.student.studentId || prev.id,
+                  name: preview.student.name || prev.name,
+                  photo: preview.student.photo || "",
+                }
+              : prev
+          );
         }
       } catch (e) {
         console.error("Failed to load scan preview:", e);
@@ -637,7 +647,7 @@ export default function SecurityDashboardPage() {
         </div>
       </div>
 
-      <SecurityBottomNav active="Home" />
+      {!isScanning && !scanResult && <SecurityBottomNav active="Home" />}
 
       {isScanning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
@@ -670,36 +680,38 @@ export default function SecurityDashboardPage() {
       )}
 
       {scanResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="sd-enter relative max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-[2rem] bg-white p-5 text-center shadow-2xl sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-md sm:p-4">
+          <div className="sd-enter relative max-h-[94dvh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white text-center shadow-2xl">
             <button
               onClick={() => { setScanResult(null); setScanPreview(null); }}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 transition cursor-pointer text-slate-400"
+              aria-label={tc("cancel")}
+              className="absolute top-3 right-3 z-10 cursor-pointer rounded-full bg-white/95 p-2.5 text-slate-600 shadow-lg transition hover:bg-white sm:top-4 sm:right-4"
             >
               <X className="h-5 w-5" />
             </button>
 
-            <div className="mt-4 flex flex-col items-center">
-              <div
-                className="relative h-24 w-24 overflow-hidden rounded-full p-[3px] shadow-xl"
-                style={{ background: "linear-gradient(135deg, #4338ca 0%, #06b6d4 100%)" }}
-              >
-                <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full border-4 border-white bg-slate-100">
-                  {scanResult.photo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={scanResult.photo} alt={scanResult.name} className="h-full w-full object-cover" />
-                  ) : (
-                    <UserRound className="h-12 w-12 text-slate-400" />
-                  )}
-                </div>
+            <div className="flex h-[clamp(14rem,40dvh,20rem)] w-full items-center justify-center overflow-hidden bg-slate-100">
+              {scanResult.photo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={scanResult.photo}
+                  alt={scanResult.name || t("unknownStudent")}
+                  className="h-full w-full object-cover object-[center_20%]"
+                />
+              ) : (
+                <UserRound className="h-24 w-24 text-slate-400" />
+              )}
+            </div>
+
+            <div className="flex flex-col items-center p-4 sm:p-5">
+              <div className="w-full border-b border-slate-100 pb-4">
+                <h2 className="sd-title sd-title-sm">{scanResult.name || t("unknownStudent")}</h2>
+                <p className="sd-micro grd-mono mt-1 uppercase tracking-widest">
+                  {scanResult.id}
+                </p>
               </div>
 
-              <h2 className="sd-title sd-title-sm mt-4">{scanResult.name || t("unknownStudent")}</h2>
-              <p className="sd-micro grd-mono mt-1 mb-6 uppercase tracking-widest">
-                {scanResult.id}
-              </p>
-
-              <div className="w-full bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-4 mb-6">
+              <div className="mt-4 mb-4 w-full space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("status")}</span>
                   {scanMode === 'exit' ? (

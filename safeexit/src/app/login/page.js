@@ -108,9 +108,9 @@ const allRoles = [
     href: "/login/department",
     eyebrow: "Complaint resolution",
     features: ["Assigned complaints", "Progress updates"],
-    accentClass: "bg-emerald-600",
-    iconClass: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-    visualClass: "from-emerald-50 via-teal-50 to-white border-emerald-100",
+    accentClass: "bg-indigo-600",
+    iconClass: "bg-indigo-50 text-indigo-700 ring-indigo-100",
+    visualClass: "from-indigo-50 via-violet-50 to-white border-indigo-100",
   },
 ];
 
@@ -155,11 +155,11 @@ function RoleVisual({ role }) {
   if (role.id === "department") {
     return (
       <div className={`relative mb-5 flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl border bg-gradient-to-br sm:h-48 ${role.visualClass}`}>
-        <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-emerald-200/40 blur-2xl" />
-        <div className="absolute -bottom-14 -left-10 h-36 w-36 rounded-full bg-teal-200/40 blur-2xl" />
-        <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-white bg-white/95 text-emerald-600 shadow-xl shadow-emerald-100 transition-transform duration-300 group-hover:-translate-y-1 group-hover:rotate-2 sm:h-28 sm:w-28">
+        <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-indigo-200/40 blur-2xl" />
+        <div className="absolute -bottom-14 -left-10 h-36 w-36 rounded-full bg-violet-200/40 blur-2xl" />
+        <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-white bg-white/95 text-indigo-600 shadow-xl shadow-indigo-100 transition-transform duration-300 group-hover:-translate-y-1 group-hover:rotate-2 sm:h-28 sm:w-28">
           <Wrench className="h-12 w-12 sm:h-14 sm:w-14" aria-hidden="true" />
-          <span className="absolute -right-3 -top-3 flex h-9 w-9 items-center justify-center rounded-xl border-2 border-white bg-emerald-600 text-white shadow-md">
+          <span className="absolute -right-3 -top-3 flex h-9 w-9 items-center justify-center rounded-xl border-2 border-white bg-indigo-600 text-white shadow-md">
             <CheckCircle className="h-5 w-5" aria-hidden="true" />
           </span>
         </div>
