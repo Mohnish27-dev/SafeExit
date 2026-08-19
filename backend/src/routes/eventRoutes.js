@@ -8,7 +8,7 @@ const router = express.Router();
 router.get(
   '/',
   protect,
-  authorizeRoles('Admin', 'Caretaker', 'Guard', 'Warden', 'ChiefWarden', 'Department'),
+  authorizeRoles('Admin', 'Caretaker', 'Guard', 'Warden', 'ChiefWarden'),
   streamStaffEvents
 );
 

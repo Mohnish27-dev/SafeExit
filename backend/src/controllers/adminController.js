@@ -1,6 +1,5 @@
 const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
-const Complaint = require('../models/Complaint');
 const SOSAlert = require('../models/SOSAlert');
 const { getOverdueStudentIds } = require('../utils/overdue');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
@@ -19,8 +18,7 @@ const getOverview = async (req, res) => {
       totalWardens,
       activeSOS,
       pendingOutings,
-      studentsOut,
-      openComplaints
+      studentsOut
     ] = await Promise.all([
       User.countDocuments({ role: 'Student' }),
       User.countDocuments({ role: 'Student', campusStatus: 'Inside' }),
@@ -33,8 +31,7 @@ const getOverview = async (req, res) => {
       User.countDocuments({ role: 'Warden' }),
       SOSAlert.countDocuments({ status: 'Active' }),
       OutingRequest.countDocuments({ status: 'Pending' }),
-      OutingRequest.countDocuments({ status: 'Out' }),
-      Complaint.countDocuments({ status: { $in: ['Open', 'In Progress'] } })
+      OutingRequest.countDocuments({ status: 'Out' })
     ]);
 
     // Overdue students are still stored 'Outside' — subtract so the tiles are disjoint.
@@ -53,8 +50,7 @@ const getOverview = async (req, res) => {
       wardens: { total: totalWardens },
       activeSOS,
       pendingOutings,
-      studentsOut,
-      openComplaints
+      studentsOut
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -70,7 +66,7 @@ const getUsers = async (req, res) => {
     if (req.user.role === 'Guard') filter.role = 'Student';
 
     const guardFields = 'name studentId campusStatus lastSeenAt photo';
-    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender managedHostel managedDepartment campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
+    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender managedHostel campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
 
     const users = await User.find(filter)
       .select(req.user.role === 'Guard' ? guardFields : allFields)
@@ -92,9 +88,6 @@ const getUsers = async (req, res) => {
 // Trim, lowercase, strip whitespace — must match the login pages' helper.
 const buildStaffLoginId = (id) => (id || '').trim().toLowerCase().replace(/\s+/g, '');
 
-// Maintenance departments a Department account can service (mirrors Complaint.category).
-const DEPARTMENT_CATEGORIES = ['Electrical', 'Plumbing', 'Cleaning', 'Wifi', 'Furniture'];
-
 // One caretaker account per hostel; exceptId lets a caretaker re-save its own hostel without a duplicate conflict.
 const findCaretakerForHostel = (managedHostel, exceptId) => {
   const filter = { role: 'Caretaker', managedHostel };
@@ -114,17 +107,10 @@ const wardenHostelClashMessage = async (hostel, exceptId) => {
   return `${hostel} hostel already has a warden account (${existing.loginId}). Share that ID with the new warden, or reset its PIN — don't create a second one.`;
 };
 
-// One Department account per category; exceptId lets an account re-save its own department.
-const findDepartmentForCategory = (managedDepartment, exceptId) => {
-  const filter = { role: 'Department', managedDepartment };
-  if (exceptId) filter._id = { $ne: exceptId };
-  return User.findOne(filter);
-};
-
 // POST /api/admin/staff — private (Admin)
 const createStaff = async (req, res) => {
   try {
-    const { name, staffId, role, pin, phoneNumber, managedHostel, managedDepartment } = req.body;
+    const { name, staffId, role, pin, phoneNumber, managedHostel } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Name is required.' });
@@ -133,8 +119,8 @@ const createStaff = async (req, res) => {
       return res.status(400).json({ message: 'A staff ID is required.' });
     }
     // Admins come only from the .env allowlist — this endpoint can't mint one.
-    if (!['Caretaker', 'Warden', 'ChiefWarden', 'Guard', 'Department'].includes(role)) {
-      return res.status(400).json({ message: 'Role must be Caretaker, Warden, Chief Warden, Guard, or Department.' });
+    if (!['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(role)) {
+      return res.status(400).json({ message: 'Role must be Caretaker, Warden, Chief Warden, or Guard.' });
     }
     if (!pin || String(pin).trim().length < 4) {
       return res.status(400).json({ message: 'An initial PIN of at least 4 characters is required.' });
@@ -167,18 +153,6 @@ const createStaff = async (req, res) => {
         });
       }
     }
-    // A department account services exactly one category, one account per department.
-    if (role === 'Department') {
-      if (!DEPARTMENT_CATEGORIES.includes(managedDepartment)) {
-        return res.status(400).json({ message: 'Select a valid department.' });
-      }
-      const existing = await findDepartmentForCategory(managedDepartment);
-      if (existing) {
-        return res.status(409).json({
-          message: `The ${managedDepartment} department already has an account (${existing.loginId}). Share that ID, or reset its PIN — don't create a second one.`,
-        });
-      }
-    }
 
     const loginId = buildStaffLoginId(staffId);
     const exists = await User.findOne({ $or: [{ loginId }, { email: loginId }] });
@@ -197,8 +171,6 @@ const createStaff = async (req, res) => {
       // auto-approval rules and the gender-wide SOS scope.
       managedHostel: role === 'Caretaker' || role === 'Warden' ? canonicalHostelName(managedHostel) : undefined,
       managedGender: role === 'Caretaker' || role === 'Warden' ? genderForHostel(managedHostel) : undefined,
-      // Department accounts carry the maintenance category they service.
-      managedDepartment: role === 'Department' ? managedDepartment : undefined,
     });
 
     res.status(201).json({
@@ -210,7 +182,6 @@ const createStaff = async (req, res) => {
       phoneNumber: user.phoneNumber,
       managedHostel: user.managedHostel,
       managedGender: user.managedGender,
-      managedDepartment: user.managedDepartment,
       createdAt: user.createdAt,
     });
   } catch (error) {
@@ -228,7 +199,7 @@ const resetStaffPin = async (req, res) => {
 
     const user = await User.findById(req.params.id);
     // Staff only — never resets a student's or another admin's credentials.
-    if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard', 'Department'].includes(user.role)) {
+    if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 
@@ -247,32 +218,10 @@ const resetStaffPin = async (req, res) => {
 // PATCH /api/admin/staff/:id/scope — private (Admin); an unassigned caretaker sees no students until scoped.
 const updateStaffScope = async (req, res) => {
   try {
-    const { managedHostel, managedDepartment } = req.body;
+    const { managedHostel } = req.body;
     const user = await User.findById(req.params.id);
-    if (!user || !['Caretaker', 'Warden', 'Department'].includes(user.role)) {
+    if (!user || !['Caretaker', 'Warden'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
-    }
-
-    // Department accounts are re-scoped by category, keeping one account per department.
-    if (user.role === 'Department') {
-      if (!DEPARTMENT_CATEGORIES.includes(managedDepartment)) {
-        return res.status(400).json({ message: 'Select a valid department.' });
-      }
-      const clash = await findDepartmentForCategory(managedDepartment, user._id);
-      if (clash) {
-        return res.status(409).json({
-          message: `The ${managedDepartment} department already has an account (${clash.loginId}). Remove or reassign that one first.`,
-        });
-      }
-      user.managedDepartment = managedDepartment;
-      await user.save();
-      return res.json({
-        _id: user._id,
-        name: user.name,
-        loginId: user.loginId,
-        role: user.role,
-        managedDepartment: user.managedDepartment,
-      });
     }
 
     if (!isValidHostel(managedHostel)) {
@@ -319,7 +268,7 @@ const updateStaffScope = async (req, res) => {
 const removeStaff = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard', 'Department'].includes(user.role)) {
+    if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 

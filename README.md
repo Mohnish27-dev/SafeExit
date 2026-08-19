@@ -1,6 +1,6 @@
 # NITP-SafeExit 🚀
 
-NITP-SafeExit is a comprehensive student outing and complaint management system designed for hostels/universities. It streamlines the process of requesting outings, approving them by caretakers, and verifying student exits/entries at the security gate using QR codes. It also features a complaint management system for students to report issues.
+NITP-SafeExit is a comprehensive student outing and hostel safety management system designed for hostels/universities. It streamlines the process of requesting outings, approving them by caretakers, and verifying student exits/entries at the security gate using QR codes. It also covers leave applications, SOS alerts, and delay notices.
 
 ## 📋 Features
 
@@ -11,8 +11,6 @@ NITP-SafeExit is a comprehensive student outing and complaint management system 
 - **QR Code Verification**:
   - Approved requests generate a unique QR code for the student.
   - Security guards scan the QR code to mark students as "Out" or "Returned" at the gate.
-- **Complaint System**:
-  - Students can lodge complaints directly from their dashboard.
 - **Secure Authentication**:
   - Built with JWT and `bcryptjs` for secure password hashing and session management.
   - Includes boilerplate for WebAuthn/Passkeys integration (`@simplewebauthn`).
@@ -42,8 +40,8 @@ SafeExit/
 │   │   ├── config/           # Database config
 │   │   ├── controllers/      # Route handlers
 │   │   ├── middlewares/      # Auth & Role middlewares
-│   │   ├── models/           # Mongoose schemas (User, OutingRequest, Complaint)
-│   │   ├── routes/           # API routes (auth, outing, complaint)
+│   │   ├── models/           # Mongoose schemas (User, OutingRequest, LeaveApplication)
+│   │   ├── routes/           # API routes (auth, outing, leave)
 │   │   └── utils/            # Utilities (JWT generation)
 │   └── package.json
 │

@@ -7,7 +7,6 @@ import {
   Clock3,
   DoorOpen,
   Info,
-  MessageSquareWarning,
   RefreshCw,
   Siren,
   Sparkles,
@@ -113,10 +112,9 @@ function AnalyticsSkeleton() {
   );
 }
 
-function TrendChart({ outings, complaints, sos }) {
+function TrendChart({ outings, sos }) {
   const series = [
     { name: "Outings", color: "#4f46e5", values: outings },
-    { name: "Complaints", color: "#f59e0b", values: complaints },
     { name: "SOS", color: "#e11d48", values: sos },
   ];
   const width = 900;
@@ -147,7 +145,7 @@ function TrendChart({ outings, complaints, sos }) {
           viewBox={`0 0 ${width} ${height}`}
           className="min-w-[650px]"
           role="img"
-          aria-label="Daily outing, complaint, and SOS activity trend"
+          aria-label="Daily outing and SOS activity trend"
         >
           <defs>
             <linearGradient id="outing-area" x1="0" x2="0" y1="0" y2="1">
@@ -240,41 +238,6 @@ function DistributionBars({ rows, labelFor = (row) => row.type, color = "bg-indi
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function ComplaintCategoryChart({ rows }) {
-  const max = Math.max(1, ...rows.map((row) => row.total));
-
-  if (!rows.length) {
-    return <p className="mt-8 rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">No complaints in this period.</p>;
-  }
-
-  return (
-    <div className="mt-6 space-y-5">
-      {rows.map((row) => (
-        <div key={row.category}>
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="font-semibold text-slate-700">{row.category}</span>
-            <span className="font-bold text-slate-900">{row.total}</span>
-          </div>
-          <div className="flex h-3 overflow-hidden rounded-full bg-slate-100" style={{ width: `${Math.max(12, (row.total / max) * 100)}%` }}>
-            {row.resolved > 0 && <span className="bg-emerald-500" style={{ width: `${(row.resolved / row.total) * 100}%` }} title={`${row.resolved} resolved`} />}
-            {row.inProgress > 0 && <span className="bg-amber-400" style={{ width: `${(row.inProgress / row.total) * 100}%` }} title={`${row.inProgress} in progress`} />}
-            {row.open > 0 && <span className="bg-rose-500" style={{ width: `${(row.open / row.total) * 100}%` }} title={`${row.open} open`} />}
-            {row.rejected > 0 && <span className="bg-slate-400" style={{ width: `${(row.rejected / row.total) * 100}%` }} title={`${row.rejected} rejected`} />}
-          </div>
-          <p className="mt-1.5 text-[11px] font-medium text-slate-400">
-            {row.resolved} resolved · {row.inProgress} in progress · {row.open} open
-          </p>
-        </div>
-      ))}
-      <div className="flex flex-wrap gap-4 border-t border-slate-100 pt-4 text-[11px] font-semibold text-slate-500">
-        <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" /> Resolved</span>
-        <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-400" /> In progress</span>
-        <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-rose-500" /> Open</span>
-      </div>
     </div>
   );
 }
@@ -410,11 +373,9 @@ export default function AnalyticsView() {
     if (!analytics) return null;
     const peakWeekday = [...analytics.outings.byWeekday].sort((a, b) => b.count - a.count)[0];
     const peakHour = [...analytics.outings.byHour].sort((a, b) => b.count - a.count)[0];
-    const topComplaint = analytics.complaints.byCategory[0];
     const topSos = analytics.sos.byType[0];
     const weekdayName = WEEKDAYS.find((item) => item.day === peakWeekday?.day)?.label;
-    const complaintBacklog = analytics.complaints.open + analytics.complaints.inProgress;
-    return { peakWeekday, peakHour, topComplaint, topSos, weekdayName, complaintBacklog };
+    return { peakWeekday, peakHour, topSos, weekdayName };
   }, [analytics]);
 
   if (loading && !analytics) return <AnalyticsSkeleton />;
@@ -430,7 +391,7 @@ export default function AnalyticsView() {
     );
   }
 
-  const { outings, complaints, sos, period } = analytics;
+  const { outings, sos, period } = analytics;
 
   return (
     <section className="space-y-6">
@@ -442,7 +403,7 @@ export default function AnalyticsView() {
             </span>
             <h1 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Student activity analytics</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-indigo-100/75">
-              Actual gate outings, maintenance complaints, and emergency signals in one operational view.
+              Actual gate outings and emergency signals in one operational view.
             </p>
           </div>
           <button
@@ -477,10 +438,9 @@ export default function AnalyticsView() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <MetricCard icon={DoorOpen} label="Actual outings" value={outings.total} detail={`${outings.averagePerDay} per day · ${outings.overdueRate}% late returns`} tone="indigo" />
         <MetricCard icon={UserRound} label="Students going out" value={outings.uniqueStudents} detail={`${outings.averagePerStudent} outings per active student`} tone="cyan" />
-        <MetricCard icon={MessageSquareWarning} label="Complaints raised" value={complaints.total} detail={`${complaints.resolutionRate}% resolved · ${computed.complaintBacklog} pending`} tone="amber" />
         <MetricCard icon={Siren} label="SOS signals" value={sos.total} detail={`${sos.active} active · ${sos.resolved} resolved`} tone="rose" />
       </div>
 
@@ -488,11 +448,11 @@ export default function AnalyticsView() {
         <SectionHeading
           eyebrow="Combined trend"
           title="Daily campus activity"
-          description="Compare actual outings with newly raised complaints and SOS alerts. Hover chart points for exact values."
+          description="Daily actual outings alongside SOS alerts. Hover chart points for exact values."
           action={<span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500">Last {period.days} days</span>}
         />
         <div className="mt-5">
-          <TrendChart outings={outings.trend} complaints={complaints.trend} sos={sos.trend} />
+          <TrendChart outings={outings.trend} sos={sos.trend} />
         </div>
       </div>
 
@@ -530,22 +490,7 @@ export default function AnalyticsView() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-3xl border border-white/80 bg-white p-5 shadow-sm sm:p-6">
-          <SectionHeading
-            eyebrow="Maintenance"
-            title="Complaints by category"
-            description="Bar length shows volume; color segments show the current workflow status."
-            action={<span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">{complaints.resolutionRate}% resolved</span>}
-          />
-          <ComplaintCategoryChart rows={complaints.byCategory} />
-          <div className="mt-5 grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-3 text-center">
-            <div><p className="text-lg font-black text-slate-900">{complaints.open}</p><p className="text-[10px] font-bold uppercase text-slate-400">Open</p></div>
-            <div className="border-x border-slate-200"><p className="text-lg font-black text-slate-900">{complaints.inProgress}</p><p className="text-[10px] font-bold uppercase text-slate-400">In progress</p></div>
-            <div><p className="text-lg font-black text-slate-900">{complaints.averageResolutionHours}h</p><p className="text-[10px] font-bold uppercase text-slate-400">Avg. resolve</p></div>
-          </div>
-        </div>
-
+      <div className="grid gap-6">
         <div className="rounded-3xl border border-white/80 bg-white p-5 shadow-sm sm:p-6">
           <SectionHeading
             eyebrow="Safety"
@@ -565,9 +510,8 @@ export default function AnalyticsView() {
 
       <div className="rounded-3xl border border-indigo-100 bg-white p-5 shadow-sm sm:p-6">
         <SectionHeading eyebrow="Automatic readout" title="What deserves attention" description="Quick interpretations of the selected period; validate context before taking action." action={<Sparkles className="h-5 w-5 text-indigo-500" />} />
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <InsightCard icon={CalendarRange} title={computed.weekdayName ? `${computed.weekdayName} is the busiest day` : "No outing peak yet"} description={computed.peakWeekday ? `${computed.peakWeekday.count} actual outings occurred on this weekday in the selected period.` : "There is not enough outing activity to establish a pattern."} />
-          <InsightCard icon={MessageSquareWarning} title={computed.topComplaint ? `${computed.topComplaint.category} leads complaints` : "No complaint category peak"} description={computed.topComplaint ? `${computed.topComplaint.total} reports, with ${computed.topComplaint.open + computed.topComplaint.inProgress} still requiring work.` : "No complaints were raised in this period."} tone="amber" />
           <InsightCard icon={Siren} title={computed.topSos ? `${SOS_LABELS[computed.topSos.type] || computed.topSos.type} is the top SOS type` : "No SOS pattern detected"} description={computed.topSos ? `${computed.topSos.count} of ${sos.total} SOS signals were classified this way.` : "No SOS alerts were raised in this period."} tone="rose" />
           <InsightCard icon={outings.overdueReturns ? AlertTriangle : CheckCircle2} title={outings.overdueReturns ? `${outings.overdueReturns} late returns to review` : "No late returns recorded"} description={outings.total ? `${outings.overdueRate}% of actual outings in this period were returned late.` : "There were no actual outings in this period."} tone={outings.overdueReturns ? "rose" : "emerald"} />
         </div>

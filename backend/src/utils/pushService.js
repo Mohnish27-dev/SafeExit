@@ -104,11 +104,6 @@ const notifyStudent = (studentId, payload) => {
   return notifyUsers({ role: 'Student', _id: studentId }, payload);
 };
 
-// Notify the department staff account(s) servicing a complaint category.
-const notifyDepartment = (category, payload) =>
-  notifyUsers({ role: 'Department', managedDepartment: category }, payload);
-
-
 const notifyWarden = (wardenId, payload) => {
   if (!wardenId) return Promise.resolve();
   return notifyUsers({ role: 'Warden', _id: wardenId }, payload);
@@ -150,6 +145,5 @@ module.exports = {
   notifyStudent,
   notifyHostelStaffAndAdmins,
   notifyCaretakersAndAdmins,
-  notifyDepartment,
   VAPID_PUBLIC_KEY,
 };

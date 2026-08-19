@@ -27,7 +27,6 @@ import {
 } from "lucide-react";
 import ProfileView from "./components/ProfileView";
 import MovementLogsView from "./components/MovementLogsView";
-import ComplaintsView from "./components/ComplaintsView";
 import AutoApprovedView from "./components/AutoApprovedView";
 import RequestsView from "./components/RequestsView";
 import SOSAlertsView from "./components/SOSAlertsView";
@@ -83,30 +82,6 @@ const mapPending = (o) => ({
   initials: initials(o.student?.name),
 });
 
-const complaintTone = (category) => {
-  switch (category) {
-    case "Electrical":
-      return { tone: "bg-amber-100 text-amber-500", icon: AlertTriangle };
-    case "Plumbing":
-      return { tone: "bg-sky-100 text-sky-500", icon: AlertCircle };
-    case "Cleaning":
-      return { tone: "bg-emerald-100 text-emerald-500", icon: Sparkles };
-    case "Wifi":
-      return { tone: "bg-indigo-100 text-indigo-500", icon: Wifi };
-    case "Furniture":
-      return { tone: "bg-orange-100 text-orange-500", icon: Armchair };
-    default:
-      return { tone: "bg-slate-100 text-slate-500", icon: AlertCircle };
-  }
-};
-
-const statusToneFor = (status) =>
-  status === "Resolved"
-    ? "bg-emerald-100 text-emerald-600"
-    : status === "In Progress"
-    ? "bg-amber-100 text-amber-600"
-    : "bg-rose-100 text-rose-600";
-
 const mapLeavePending = (l) => ({
   id: l._id,
   name: l.student?.name || "Unknown Student",
@@ -141,28 +116,6 @@ const mapLeaveHistory = (l) => ({
   remarks: l.remarks || "",
   decidedAt: l.decidedAt || l.updatedAt,
 });
-
-const mapReport = (c) => {
-  const { tone, icon } = complaintTone(c.category);
-  return {
-    id: c._id,
-    title: c.description || c.category,
-    by: c.student?.name || "Unknown Student",
-    // Where the student lives — shown on the oversight card.
-    hostelName: c.student?.hostelName || "",
-    roomNumber: c.roomNumber || c.student?.roomNumber || "",
-    // The department handling this category, and how to reach them.
-    departmentName: c.department?.name || c.category,
-    departmentPhone: c.department?.phoneNumber || "",
-    time: c.createdAt
-      ? new Date(c.createdAt).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-      : "—",
-    status: c.status || "Open",
-    tone,
-    icon,
-    statusTone: statusToneFor(c.status),
-  };
-};
 
 // Module scope so these aren't recreated every render.
 const handleTilePointerMove = (e) => {
@@ -256,13 +209,9 @@ export default function CaretakerDashboardPage() {
 
   const [pending, setPending] = useState([]);
   const [approved, setApproved] = useState([]);
-  const [reports, setReports] = useState([]);
-  const [resolvedReports, setResolvedReports] = useState([]);
 
   const [loadingRequests, setLoadingRequests] = useState(true);
-  const [loadingReports, setLoadingReports] = useState(true);
   const [requestsError, setRequestsError] = useState("");
-  const [reportsError, setReportsError] = useState("");
 
   const [leavePending, setLeavePending] = useState([]);
   const [loadingLeave, setLoadingLeave] = useState(true);
@@ -374,21 +323,6 @@ export default function CaretakerDashboardPage() {
     }
   }, [t]);
 
-  const loadReports = useCallback(async () => {
-    setLoadingReports(true);
-    setReportsError("");
-    try {
-      const data = await apiFetch("/complaint");
-      const open = data.filter((c) => c.status !== "Resolved");
-      setReports(open.map(mapReport));
-      setResolvedReports(data.filter((c) => c.status === "Resolved").map(mapReport));
-    } catch (err) {
-      setReportsError(err.message || t("couldNotLoadComplaints"));
-    } finally {
-      setLoadingReports(false);
-    }
-  }, [t]);
-
   const loadLeaveApplications = useCallback(async () => {
     setLoadingLeave(true);
     setLeaveError("");
@@ -416,10 +350,9 @@ export default function CaretakerDashboardPage() {
 
   useEffect(() => {
     loadRequests();
-    loadReports();
     loadLeaveApplications();
     loadLeaveHistory();
-  }, [loadRequests, loadReports, loadLeaveApplications, loadLeaveHistory]);
+  }, [loadRequests, loadLeaveApplications, loadLeaveHistory]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -436,18 +369,6 @@ export default function CaretakerDashboardPage() {
     const interval = setInterval(loadRequests, 30000);
     return () => clearInterval(interval);
   }, [loadRequests]);
-
-  useEffect(() => {
-    return subscribeToStaffEvents({
-      "complaint:created": loadReports,
-      "complaint:updated": loadReports,
-    });
-  }, [loadReports]);
-
-  useEffect(() => {
-    const interval = setInterval(loadReports, 30000);
-    return () => clearInterval(interval);
-  }, [loadReports]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -477,7 +398,7 @@ export default function CaretakerDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["sos", "overdue", "delays", "complaints", "leave", "requests", "approved", "profile"].includes(target)) {
+    if (target && ["sos", "overdue", "delays", "leave", "requests", "approved", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -819,7 +740,7 @@ export default function CaretakerDashboardPage() {
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div>
                 <p className="font-bold">Your hostel isn&apos;t configured yet</p>
-                <p className="text-sm">Until an admin assigns you to a hostel, you won&apos;t see any student requests, leave applications, complaints, or alerts. Please contact the admin.</p>
+                <p className="text-sm">Until an admin assigns you to a hostel, you won&apos;t see any student requests, leave applications, or alerts. Please contact the admin.</p>
               </div>
             </div>
           )}
@@ -910,14 +831,6 @@ export default function CaretakerDashboardPage() {
                     icon: CalendarDays,
                     className: 'wd-attn--leave',
                     onClick: () => setView('leave'),
-                  },
-                  reports.length > 0 && {
-                    key: 'complaints',
-                    label: t("complaints"),
-                    count: reports.length,
-                    icon: MessageSquare,
-                    className: 'wd-attn--complaints',
-                    onClick: () => setView('complaints'),
                   },
                 ].filter(Boolean);
 
@@ -1211,59 +1124,6 @@ export default function CaretakerDashboardPage() {
                 />
               </div>
             </div>
-
-            <div className="sd-luxe-panel sd-enter rounded-4xl p-5 sm:p-6 shadow-xl" style={{ animationDelay: "0.34s" }}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="sd-kicker">{t("complaints")}</p>
-                  <h2 className="sd-title sd-title-sm mt-2">{t("recentReports")}</h2>
-                </div>
-                <span className="sd-tag">{t("priority")}</span>
-              </div>
-              <div className="mt-5 space-y-3">
-                {loadingReports ? (
-                  <p className="text-sm text-slate-500">{t("loadingComplaints")}</p>
-                ) : reportsError ? (
-                  <p className="text-sm font-semibold text-rose-600">{reportsError}</p>
-                ) : reports.length === 0 ? (
-                  <div className="sd-empty py-10">
-                    <div className="relative mx-auto mb-4 flex h-14 w-14 items-center justify-center">
-                      <span className="sd-ring" aria-hidden="true" />
-                      <span className="sd-ring sd-ring--2" aria-hidden="true" />
-                      <span className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 text-white">
-                        <MessageSquare className="h-5 w-5" />
-                      </span>
-                    </div>
-                    <p className="sd-micro">{t("noOpenComplaints")}</p>
-                  </div>
-                ) : (
-                  reports.map((comp, i) => (
-                  // Row taps through to Complaints view; pill is display-only.
-                  <button
-                    key={comp.id}
-                    onClick={() => setView('complaints')}
-                    className="sd-row sd-luxe-rise w-full text-left cursor-pointer"
-                    style={{ "--accent": "#f97316", animationDelay: `${0.08 + i * 0.06}s` }}
-                  >
-                    <span className="sd-row__accent" aria-hidden="true" />
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${comp.tone}`}>
-                        <comp.icon className="h-5 w-5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="sd-card-title text-slate-900 truncate">{comp.title}</p>
-                        <p className="sd-micro">{comp.by} • {comp.time}</p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className={`text-[10px] font-bold px-3 py-1 rounded-md ${comp.statusTone}`}>{comp.status}</span>
-                      <ArrowRight className="h-4 w-4 text-slate-400" />
-                    </div>
-                  </button>
-                  ))
-                )}
-              </div>
-            </div>
               </section>
             </>
           )}
@@ -1293,15 +1153,6 @@ export default function CaretakerDashboardPage() {
               displayName={displayName}
               onLogout={handleLogout}
               onSignatureSaved={(signature) => setUser((u) => ({ ...(u || {}), signature }))}
-            />
-          )}
-          {view === 'complaints' && (
-            <ComplaintsView
-              reports={reports}
-              resolvedReports={resolvedReports}
-              loading={loadingReports}
-              error={reportsError}
-              onRefresh={loadReports}
             />
           )}
           {view === 'leave' && (
@@ -1346,13 +1197,6 @@ export default function CaretakerDashboardPage() {
               </span>
               {t("safetyAlerts")}
             </button>
-            <button onClick={() => setView('complaints')} className={`sd-navx ${view === 'complaints' ? 'sd-navx--active' : ''}`}>
-              <span className="sd-navx__icon relative">
-                <MessageSquare className="h-5 w-5" />
-                {reports.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
-              </span>
-              {t("complaints")}
-            </button>
             <button onClick={() => setView('logs')} className={`sd-navx ${view === 'logs' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ScrollText className="h-5 w-5" /></span>{t("movementLogs")}</button>
             <button onClick={() => setView('profile')} className={`sd-navx ${view === 'profile' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><User className="h-5 w-5" /></span>{tc("profile")}</button>
           </nav>
@@ -1381,21 +1225,6 @@ export default function CaretakerDashboardPage() {
                       <button onClick={() => openOutingApproval(r.id)} className="rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500">{tc("approve")}</button>
                       <button onClick={() => rejectRequest(r.id)} className="rounded-xl border border-rose-300 px-3 py-1.5 text-sm font-bold text-rose-600 hover:bg-rose-50 transition-colors">{tc("reject")}</button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activePanel === 'alerts' && (
-              <div className="space-y-3">
-                {reports.length === 0 ? <p className="sd-micro">{t("noReports")}</p> : reports.map((rep, i) => (
-                  <div key={rep.id} className="sd-row sd-luxe-rise" style={{ "--accent": "#f97316", animationDelay: `${0.05 + i * 0.05}s` }}>
-                    <span className="sd-row__accent" aria-hidden="true" />
-                    <div>
-                      <p className="sd-card-title text-[0.9rem]">{rep.title}</p>
-                      <p className="sd-micro">{rep.by} • {rep.time}</p>
-                    </div>
-                    <span className={`text-[10px] font-bold px-3 py-1 rounded-md ${rep.statusTone}`}>{rep.status}</span>
                   </div>
                 ))}
               </div>
@@ -1584,13 +1413,6 @@ export default function CaretakerDashboardPage() {
             {sosCount > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
           </span>
           <span className="sd-navx__label">{t("navAlerts")}</span>
-        </button>
-        <button onClick={() => setView('complaints')} className={`sd-navx ${view === 'complaints' ? 'sd-navx--active' : ''}`}>
-          <span className="sd-navx__icon relative">
-            <MessageSquare className="h-5 w-5" />
-            {reports.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{reports.length}</span>}
-          </span>
-          <span className="sd-navx__label">{t("navComplaints")}</span>
         </button>
       </nav>
 

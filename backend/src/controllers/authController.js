@@ -184,7 +184,6 @@ const authUser = async (req, res) => {
         studentId: user.studentId,
         managedGender: user.managedGender,
         managedHostel: user.managedHostel,
-        managedDepartment: user.managedDepartment,
         // Flag only, never the bytes: this response is cached into sessionStorage per tab,
         // and only the capture screens need the actual image (they read /auth/profile).
         hasSignature: Boolean(user.signature),
@@ -221,7 +220,6 @@ const getUserProfile = async (req, res) => {
       hostelName: user.hostelName,
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,
-      managedDepartment: user.managedDepartment,
       photo: user.photo,
       // The owner's own signature bytes; every capture UI reads them from here.
       signature: user.signature,
@@ -383,7 +381,6 @@ const refreshSession = async (req, res) => {
       gender: user.gender,
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,
-      managedDepartment: user.managedDepartment,
       hasSignature: Boolean(user.signature),
       webAuthnRegistered: user.webAuthnRegistered,
       token,
