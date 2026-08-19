@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Scanner } from '@yudiel/react-qr-scanner';
@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   Bell,
   CalendarDays,
+  Check,
   ChevronRight,
   Clock3,
   Loader2,
@@ -20,6 +21,7 @@ import {
   Sunrise,
   SunMedium,
   Sunset,
+  Usb,
   UserCheck,
   UserRound,
   X,
@@ -27,17 +29,30 @@ import {
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
 import { parseScannedQr } from "@/app/lib/qrPayload.mjs";
+import { deriveGateDirection, readControlBarcode } from "@/app/lib/gateFlow.mjs";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
 import useCountUp from "@/app/hooks/useCountUp";
+import useHardwareScanner from "@/app/hooks/useHardwareScanner";
+import GateScanSimulator from "@/app/components/GateScanSimulator";
 
 const defaultProfile = {
   name: "Security Guard",
   roleLabel: "Security Guard",
 };
+
+// A trigger pull commonly yields 2-3 identical reads. Without this, a confirmed exit
+// is instantly re-read and flipped straight back to an entry.
+const DUPLICATE_SCAN_MS = 3000;
+// An outward-facing gate monitor must not hold a student's photo after they walk off —
+// the next student is already standing in front of it.
+const PENDING_SCAN_TIMEOUT_MS = 25000;
+// Just long enough for the guard to register the result before the screen returns to idle.
+const SUCCESS_FLASH_MS = 2200;
+
 
 const formatClock = (value) => {
   if (!value) return "N/A";
@@ -104,14 +119,23 @@ export default function SecurityDashboardPage() {
   // Authoritative pre-confirm preview from the backend, for BOTH directions.
   const [scanPreview, setScanPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [scanMode, setScanMode] = useState(null);
   const [scans, setScans] = useState([]);
   const [counts, setCounts] = useState({ inside: 0, outside: 0, overdue: 0 });
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
+  // Brief post-commit confirmation, so a guard watching a wall monitor sees that the
+  // movement was actually written rather than guessing from the card disappearing.
+  const [flash, setFlash] = useState(null);
   // Shown inside the scanner modal when a QR is neither format; the camera stays
   // open so the guard can simply re-aim.
   const [scanError, setScanError] = useState("");
+
+  // Last accepted student payload, for de-duplicating a scanner's repeat reads.
+  const lastScanRef = useRef({ value: "", at: 0 });
+  // State lags a burst of scans, so the in-flight guard has to be a ref: two CONFIRM
+  // reads 20ms apart would both see `logging === false` and double-post.
+  const confirmInFlightRef = useRef(false);
+
 
   // Recent scans + Inside/Outside/Overdue counts; backend overlays live 'Overdue'.
   const loadScans = useCallback(async () => {
@@ -141,31 +165,58 @@ export default function SecurityDashboardPage() {
     return () => clearInterval(t);
   }, [loadScans]);
 
+  // The gate runs one scanner and no exit/entry switch: a student's live campusStatus
+  // admits exactly one legal move, so the direction is read off the preview rather than
+  // chosen by the guard. Until the preview lands this reads 'exit', matching the User
+  // schema default of 'Inside'.
+  const derivedMode =
+    scanPreview?.student && deriveGateDirection(scanPreview.student.campusStatus) === "IN"
+      ? "entry"
+      : "exit";
+
+  const clearPendingScan = () => {
+    setScanResult(null);
+    setScanPreview(null);
+    setLogError("");
+    setScanError("");
+  };
+
   // Persist the in-progress scan as a real gate movement, then refresh the feed.
   const confirmScan = async () => {
+    if (confirmInFlightRef.current) return;
     if (!scanResult?.id && !scanResult?.sid) {
       setScanResult(null);
       return;
     }
+    // Never commit while the verdict is still loading, or against a denied exit — the
+    // CONFIRM barcode reaches this directly, bypassing the button's disabled state.
+    if (previewLoading) return;
+    if (derivedMode === "exit" && scanPreview?.exit && !scanPreview.exit.allowed) return;
+
+    confirmInFlightRef.current = true;
     setLogging(true);
     setLogError("");
-    const direction = scanMode === "exit" ? "OUT" : "IN";
+    const studentName = scanResult.name;
     try {
+      // 'AUTO' — the server re-derives the direction from the status it reads inside
+      // the same atomic flip, so a preview that went stale cannot log a wrong movement.
       await apiFetch("/scan", {
         method: "POST",
         body: JSON.stringify({
           student: scanResult.sid,
           studentId: scanResult.id,
-          direction,
+          direction: "AUTO",
         }),
       });
       setScanResult(null);
       setScanPreview(null);
+      setFlash({ mode: derivedMode, name: studentName });
       await loadScans();
     } catch (err) {
       setLogError(err.message || t("couldNotLogScan"));
     } finally {
       setLogging(false);
+      confirmInFlightRef.current = false;
     }
   };
 
@@ -185,50 +236,102 @@ export default function SecurityDashboardPage() {
     [scans, t, dateLocale]
   );
 
-  const handleScan = async (result) => {
-    if (result && result[0]) {
-      // Accepts the SafeExit QR and the college ID card alike; both reduce to an
-      // identifier the backend resolves against the student record.
-      const parsed = parseScannedQr(result[0].rawValue);
-      if (!parsed) {
-        // Never log rawValue — an ID card carries DOB, address and phone number.
-        setScanError(t("unreadableQr"));
-        return;
-      }
+  // Single entry point for every scan source. The camera and the hardware scanner both
+  // funnel through here so the two devices can never drift apart in behaviour.
+  const processRawScan = async (rawValue) => {
+    // Printed control barcodes let a guard holding a scanner confirm without reaching
+    // for a keyboard. They act only on what is already pending on this screen, so they
+    // are checked before de-duplication — two students confirmed seconds apart send the
+    // identical payload and must both be honoured.
+    const control = readControlBarcode(rawValue);
+    if (control === "CONFIRM") {
+      if (scanResult) await confirmScan();
+      return;
+    }
+    if (control === "CANCEL") {
+      clearPendingScan();
+      return;
+    }
 
-      setScanError("");
-      setScanResult(parsed);
-      setIsScanning(false);
+    const at = Date.now();
+    if (lastScanRef.current.value === rawValue && at - lastScanRef.current.at < DUPLICATE_SCAN_MS) {
+      return;
+    }
+    lastScanRef.current = { value: rawValue, at };
 
-      setScanPreview(null);
-      setPreviewLoading(true);
-      try {
-        const params = new URLSearchParams();
-        if (parsed.sid) params.set("sid", parsed.sid);
-        if (parsed.id) params.set("studentId", parsed.id);
-        // Authenticated (Guard/Admin) — also carries the student's face photo.
-        const preview = await apiFetch(`/scan/preview?${params.toString()}`);
-        setScanPreview(preview);
-        if (preview?.student) {
-          setScanResult((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  sid: preview.student._id || prev.sid,
-                  id: preview.student.studentId || prev.id,
-                  name: preview.student.name || prev.name,
-                  photo: preview.student.photo || "",
-                }
-              : prev
-          );
-        }
-      } catch (e) {
-        console.error("Failed to load scan preview:", e);
-      } finally {
-        setPreviewLoading(false);
+    // Accepts the SafeExit QR and the college ID card alike; both reduce to an
+    // identifier the backend resolves against the student record.
+    const parsed = parseScannedQr(rawValue);
+    if (!parsed) {
+      // Never log rawValue — an ID card carries DOB, address and phone number.
+      setScanError(t("unreadableQr"));
+      return;
+    }
+
+    setScanError("");
+    setLogError("");
+    setFlash(null);
+    setScanResult(parsed);
+    setIsScanning(false);
+
+    setScanPreview(null);
+    setPreviewLoading(true);
+
+    try {
+      const params = new URLSearchParams();
+      if (parsed.sid) params.set("sid", parsed.sid);
+      if (parsed.id) params.set("studentId", parsed.id);
+      // Authenticated (Guard/Admin) — also carries the student's face photo.
+      const preview = await apiFetch(`/scan/preview?${params.toString()}`);
+      setScanPreview(preview);
+      if (preview?.student) {
+        setScanResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                sid: preview.student._id || prev.sid,
+                id: preview.student.studentId || prev.id,
+                name: preview.student.name || prev.name,
+                photo: preview.student.photo || "",
+              }
+            : prev
+        );
       }
+    } catch (e) {
+      console.error("Failed to load scan preview:", e);
+    } finally {
+      setPreviewLoading(false);
     }
   };
+
+  // The camera library reports an array of detected barcodes; unwrap it to the same raw
+  // string a hardware scanner would have typed.
+  const handleCameraScan = (result) => {
+    const raw = result?.[0]?.rawValue;
+    if (raw) processRawScan(raw);
+  };
+
+  // Always listening, so the guard never arms anything: a hardware scanner in HID mode
+  // just types, and a scan mid-card simply replaces the pending student with the next.
+  useHardwareScanner(processRawScan, { enabled: authorized });
+
+  // Stale pending scan cleanup. Not while logging, or a slow request would have the
+  // card yanked out from under it.
+  useEffect(() => {
+    if (!scanResult || logging) return;
+    const timer = setTimeout(() => {
+      setScanResult(null);
+      setScanPreview(null);
+      setLogError("");
+    }, PENDING_SCAN_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [scanResult, logging]);
+
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(null), SUCCESS_FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [flash]);
 
   useEffect(() => {
     const storedProfile = getStoredUser();
@@ -384,34 +487,42 @@ export default function SecurityDashboardPage() {
                   {t("realtime")}
                 </span>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-4 flex-1">
+              <div className="mt-4 flex-1">
                 <div
                   onPointerMove={handleTilePointerMove}
                   onPointerLeave={handleTilePointerLeave}
                   className="sd-tile sd-luxe-rise h-full"
                   style={{
                     animationDelay: "0.24s",
-                    "--tint": "linear-gradient(160deg, rgba(14,165,233,0.13) 0%, rgba(99,102,241,0.09) 100%)",
+                    "--tint": "linear-gradient(160deg, rgba(14,165,233,0.13) 0%, rgba(45,212,191,0.09) 100%)",
                     "--glow": "rgba(14,165,233,0.5)",
                     "--tile-border": "rgba(56,189,248,0.5)",
                   }}
                 >
-                  <div onClick={() => { setScanMode('exit'); setScanError(""); setIsScanning(true); }} className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center cursor-pointer">
+                  {/* One control, no direction choice: the backend derives exit vs entry
+                      from the student's live status, so there is nothing to pick wrong. */}
+                  <div className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <span
                       className="sd-lift-lg flex h-16 w-16 items-center justify-center rounded-full text-white"
                       style={{
-                        background: "linear-gradient(145deg, #0369a1 0%, #38bdf8 55%, #6366f1 100%)",
+                        background: "linear-gradient(145deg, #0369a1 0%, #38bdf8 55%, #2dd4bf 100%)",
                         boxShadow: "0 12px 24px -10px rgba(14,165,233,0.55)",
                       }}
                     >
-                      <LogOut className="h-8 w-8" />
+                      <ScanLine className="h-8 w-8" />
                     </span>
-                    <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanExit")}</h3>
-                    <p className="sd-lift-md sd-body mt-1.5 text-xs leading-snug">{t("scanExitDesc")}</p>
+                    <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanGate")}</h3>
+                    <p className="sd-lift-md sd-body mt-1.5 text-xs leading-snug">{t("scanGateDesc")}</p>
+
+                    <span className="sd-lift-md mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-emerald-700">
+                      <Usb className="h-3.5 w-3.5" />
+                      {t("scannerArmed")}
+                    </span>
+
                     <button
-                      onClick={() => { setScanMode('exit'); setScanError(""); setIsScanning(true); }}
-                      className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
+                      onClick={() => { setScanError(""); setIsScanning(true); }}
+                      className="sd-magnetic mt-4 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
                       style={{ background: "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)" }}
                       onPointerMove={(e) => {
                         const el = e.currentTarget;
@@ -425,52 +536,7 @@ export default function SecurityDashboardPage() {
                       }}
                     >
                       <ScanLine className="h-5 w-5" />
-                      {t("scanExit")}
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  onPointerMove={handleTilePointerMove}
-                  onPointerLeave={handleTilePointerLeave}
-                  className="sd-tile sd-luxe-rise h-full"
-                  style={{
-                    animationDelay: "0.3s",
-                    "--tint": "linear-gradient(160deg, rgba(16,185,129,0.13) 0%, rgba(45,212,191,0.09) 100%)",
-                    "--glow": "rgba(16,185,129,0.5)",
-                    "--tile-border": "rgba(45,212,191,0.5)",
-                  }}
-                >
-                  <div onClick={() => { setScanMode('entry'); setScanError(""); setIsScanning(true); }} className="sd-tile__inner h-full flex flex-col items-center justify-center p-5 text-center cursor-pointer">
-                    <span className="sd-tile__glare" aria-hidden="true" />
-                    <span
-                      className="sd-lift-lg flex h-16 w-16 items-center justify-center rounded-full text-white"
-                      style={{
-                        background: "linear-gradient(145deg, #047857 0%, #10b981 55%, #2dd4bf 100%)",
-                        boxShadow: "0 12px 24px -10px rgba(16,185,129,0.55)",
-                      }}
-                    >
-                      <LogIn className="h-8 w-8" />
-                    </span>
-                    <h3 className="sd-lift-md sd-card-title mt-3 text-base">{t("scanEntry")}</h3>
-                    <p className="sd-lift-md sd-body mt-1.5 text-xs leading-snug">{t("scanEntryDesc")}</p>
-                    <button
-                      onClick={() => { setScanMode('entry'); setScanError(""); setIsScanning(true); }}
-                      className="sd-magnetic mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-semibold uppercase tracking-[0.15em] text-white shadow-lg transition-shadow duration-300 hover:shadow-2xl cursor-pointer"
-                      style={{ background: "linear-gradient(135deg, #10b981 0%, #0d9488 100%)" }}
-                      onPointerMove={(e) => {
-                        const el = e.currentTarget;
-                        const rect = el.getBoundingClientRect();
-                        el.style.setProperty("--mag-x", `${(e.clientX - (rect.left + rect.width / 2)) * 0.2}px`);
-                        el.style.setProperty("--mag-y", `${(e.clientY - (rect.top + rect.height / 2)) * 0.2}px`);
-                      }}
-                      onPointerLeave={(e) => {
-                        e.currentTarget.style.setProperty("--mag-x", "0px");
-                        e.currentTarget.style.setProperty("--mag-y", "0px");
-                      }}
-                    >
-                      <ScanLine className="h-5 w-5" />
-                      {t("scanEntry")}
+                      {t("useCamera")}
                     </button>
                   </div>
                 </div>
@@ -670,7 +736,7 @@ export default function SecurityDashboardPage() {
               <span className="grd-corner grd-corner--bl" style={{ "--grd-bracket": "rgba(45,212,191,0.85)" }} aria-hidden="true" />
               <span className="grd-corner grd-corner--br" style={{ "--grd-bracket": "rgba(45,212,191,0.85)" }} aria-hidden="true" />
               <Scanner
-                onScan={handleScan}
+                onScan={handleCameraScan}
                 onError={(error) => console.error(error)}
                 components={{ audio: false, finder: true }}
               />
@@ -704,6 +770,17 @@ export default function SecurityDashboardPage() {
             </div>
 
             <div className="flex flex-col items-center p-4 sm:p-5">
+              {/* The guard no longer picks a direction, so the derived one has to be
+                  unmissable — it is the one thing they can no longer verify by memory. */}
+              <span
+                className={`-mt-9 mb-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-extrabold uppercase tracking-[0.18em] text-white shadow-lg ${
+                  derivedMode === "exit" ? "bg-sky-500 shadow-sky-500/40" : "bg-emerald-500 shadow-emerald-500/40"
+                }`}
+              >
+                {derivedMode === "exit" ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                {derivedMode === "exit" ? t("goingOut") : t("comingIn")}
+              </span>
+
               <div className="w-full border-b border-slate-100 pb-4">
                 <h2 className="sd-title sd-title-sm">{scanResult.name || t("unknownStudent")}</h2>
                 <p className="sd-micro grd-mono mt-1 uppercase tracking-widest">
@@ -714,7 +791,7 @@ export default function SecurityDashboardPage() {
               <div className="mt-4 mb-4 w-full space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("status")}</span>
-                  {scanMode === 'exit' ? (
+                  {derivedMode === 'exit' ? (
                     (() => {
                       if (previewLoading) {
                         return (
@@ -763,10 +840,10 @@ export default function SecurityDashboardPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    {scanMode === 'exit' ? t("validWindow") : t("loggedTime")}
+                    {derivedMode === 'exit' ? t("validWindow") : t("loggedTime")}
                   </span>
                   <span className="text-sm font-semibold text-slate-800">
-                    {scanMode === 'exit'
+                    {derivedMode === 'exit'
                       ? (scanPreview?.exit?.pass
                           ? `${formatClock(scanPreview.exit.pass.windowStart)} to ${formatClock(scanPreview.exit.pass.windowEnd)}`
                           : t("na"))
@@ -774,7 +851,7 @@ export default function SecurityDashboardPage() {
                     }
                   </span>
                 </div>
-                {scanMode === 'entry' && (
+                {derivedMode === 'entry' && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("allowedReturn")}</span>
                     <span className="text-sm font-semibold text-slate-800">
@@ -784,11 +861,11 @@ export default function SecurityDashboardPage() {
                     </span>
                   </div>
                 )}
-                {((scanMode === 'exit' && scanPreview?.exit?.passType) || (scanMode === 'entry' && scanPreview?.activePass?.passType)) && (
+                {((derivedMode === 'exit' && scanPreview?.exit?.passType) || (derivedMode === 'entry' && scanPreview?.activePass?.passType)) && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("passType")}</span>
                     <span className="text-sm font-semibold text-slate-800">
-                      {(scanMode === 'exit' ? scanPreview.exit.passType : scanPreview.activePass.passType) === 'Leave'
+                      {(derivedMode === 'exit' ? scanPreview.exit.passType : scanPreview.activePass.passType) === 'Leave'
                         ? t("leavePass")
                         : t("outingPass")}
                     </span>
@@ -802,25 +879,22 @@ export default function SecurityDashboardPage() {
 
               {(() => {
                 const exitBlocked =
-                  scanMode === "exit" && !previewLoading && scanPreview?.exit && !scanPreview.exit.allowed;
-                const exitBlockedMsg =
+                  derivedMode === "exit" && !previewLoading && scanPreview?.exit && !scanPreview.exit.allowed;
+                const blockedMsg =
                   scanPreview?.exit?.reason === "expired"
                     ? t("exitBlockedExpired")
                     : scanPreview?.exit?.reason === "not-yet-valid"
                       ? t("exitBlockedNotYetValid")
                       : t("exitBlockedNoPass");
 
-                const entryBlocked =
-                  scanMode === "entry" && !previewLoading && scanPreview?.student &&
-                  scanPreview.student.campusStatus === "Inside";
-                const entryBlockedMsg = t("entryBlockedInside");
-
-                const isBlocked = exitBlocked || entryBlocked;
-                const blockedMsg = exitBlocked ? exitBlockedMsg : entryBlockedMsg;
+                // There is no entry-blocked case any more: derivedMode is read from the
+                // same campusStatus the backend gates on, so 'entry' can only appear for
+                // a student the DB reports as Outside/Overdue. The atomic flip in
+                // createScanLog still answers 409 if that changed since the preview.
 
                 return (
                   <>
-                    {isBlocked && (
+                    {exitBlocked && (
                       <p className="mb-3 w-full rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">
                         {blockedMsg}
                       </p>
@@ -835,9 +909,9 @@ export default function SecurityDashboardPage() {
                       </button>
                       <button
                         onClick={confirmScan}
-                        disabled={logging || previewLoading || isBlocked}
+                        disabled={logging || previewLoading || exitBlocked}
                         className={`flex-1 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-                          scanMode === 'exit'
+                          derivedMode === 'exit'
                             ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"
                             : "bg-emerald-500 shadow-emerald-500/30 hover:bg-emerald-600"
                         }`}
@@ -846,11 +920,11 @@ export default function SecurityDashboardPage() {
                           ? t("logging")
                           : exitBlocked
                             ? t("exitDenied")
-                            : entryBlocked
-                              ? t("entryDenied")
-                              : scanMode === 'exit' ? t("logExit") : t("logEntry")}
+                            : derivedMode === 'exit' ? t("logExit") : t("logEntry")}
                       </button>
                     </div>
+                    {/* The guard can keep the scanner in hand instead of reaching for the mouse. */}
+                    <p className="mt-3 text-[0.68rem] font-semibold text-slate-400">{t("scanToConfirmHint")}</p>
                   </>
                 );
               })()}
@@ -859,6 +933,30 @@ export default function SecurityDashboardPage() {
         </div>
       )}
 
+      {/* Committed-movement confirmation. A guard watching from arm's length needs to
+          know the log was written, not infer it from the card vanishing. */}
+      {flash && !scanResult && (
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-55 flex justify-center px-4">
+          <div
+            className={`sd-enter flex items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-2xl ${
+              flash.mode === "exit" ? "bg-sky-600" : "bg-emerald-600"
+            }`}
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">
+              <Check className="h-5 w-5" />
+            </span>
+            <span className="text-left">
+              <span className="block text-sm font-extrabold">
+                {flash.mode === "exit" ? t("exitLogged") : t("entryLogged")}
+              </span>
+              <span className="block text-xs font-semibold text-white/85">{flash.name || t("unknownStudent")}</span>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Dev-only. Renders null in production builds. */}
+      <GateScanSimulator />
     </main>
   );
 }

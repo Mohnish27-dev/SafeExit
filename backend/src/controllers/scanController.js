@@ -23,6 +23,14 @@ const clockLabel = (minutes) => {
 
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// A student's campusStatus admits exactly one legal move, which is what lets a gate
+// station run a single scanner with no exit/entry mode switch: 'Inside' can only
+// leave, 'Outside'/'Overdue' can only return. Anything else is treated as inside, to
+// match the User schema default. Mirrors deriveGateDirection in
+// safeexit/src/app/lib/gateFlow.mjs, and must stay consistent with `allowedFrom` below.
+const deriveDirection = (campusStatus) =>
+  campusStatus === 'Outside' || campusStatus === 'Overdue' ? 'IN' : 'OUT';
+
 // Prefer _id; fall back to trimmed case-insensitive roll match so QR whitespace/case can't 404.
 const resolveStudent = async ({ student, studentId }) => {
   let studentDoc = null;
@@ -87,10 +95,11 @@ const resolveOutPass = async (studentId) => {
 // POST /api/scan — private (Guard/Admin)
 const createScanLog = async (req, res) => {
   // punctuality is decided server-side; never read from the body.
-  const { studentId, student, direction, outing, gate } = req.body;
+  const { studentId, student, direction: requestedDirection, outing, gate } = req.body;
 
-  if (!direction || !['IN', 'OUT'].includes(direction)) {
-    return res.status(400).json({ message: 'A valid direction (IN/OUT) is required' });
+  // 'AUTO' lets a single-scanner gate station omit the direction entirely.
+  if (!requestedDirection || !['IN', 'OUT', 'AUTO'].includes(requestedDirection)) {
+    return res.status(400).json({ message: 'A valid direction (IN/OUT/AUTO) is required' });
   }
 
   try {
@@ -99,6 +108,13 @@ const createScanLog = async (req, res) => {
     if (!studentDoc) {
       return res.status(404).json({ message: 'Student not found for this QR code' });
     }
+
+    // Derived here rather than trusted from the client, which may be acting on a
+    // preview that has since gone stale. The atomic flip below is still the lock, so a
+    // concurrent scan at another gate loses the race and gets the usual 409 instead of
+    // writing a log in the wrong direction.
+    const direction =
+      requestedDirection === 'AUTO' ? deriveDirection(studentDoc.campusStatus) : requestedDirection;
 
     // OUT requires a DB-verified Approved pass (QR status is never trusted); IN stays permissive.
     let linkedPass = null;
