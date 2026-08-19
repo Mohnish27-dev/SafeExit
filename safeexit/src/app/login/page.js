@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, Headphones, ShieldCheck, GraduationCap, UserCog, UserCheck, Crown, Lock, CheckCircle, ArrowLeft, ArrowRight, LogIn, Wrench } from "lucide-react";
+import { Shield, Headphones, ShieldCheck, GraduationCap, UserCog, UserCheck, Crown, Lock, CheckCircle, ArrowLeft, ArrowRight, LogIn } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import caretakerIllustration from "../../../public/images/login/caretaker.png";
@@ -16,7 +16,6 @@ const ROLE_PIN_KEYS = {
   student: "safeexit_quick_pin",
   caretaker: "safeexit_quick_pin_caretaker",
   warden: "safeexit_quick_pin_warden",
-  department: "safeexit_quick_pin_department",
   "chief-warden": CHIEF_WARDEN_PIN_KEY,
 };
 
@@ -24,7 +23,6 @@ const ROLE_LOGIN_PATH = {
   student: "/login/student",
   caretaker: "/login/caretaker",
   warden: "/login/warden",
-  department: "/login/department",
   "chief-warden": "/login/chief-warden",
   security: "/login/security",
 };
@@ -33,7 +31,6 @@ const ROLE_DASHBOARD = {
   student: "/dashboard/student",
   caretaker: "/dashboard/caretaker",
   warden: "/dashboard/warden",
-  department: "/dashboard/department",
   "chief-warden": "/dashboard/chief-warden",
   security: "/dashboard/security",
   admin: "/dashboard/admin",
@@ -77,7 +74,7 @@ const allRoles = [
     title: "Caretaker",
     icon: UserCog,
     image: STAFF_ILLUSTRATION,
-    description: "Review requests, handle complaints and monitor students.",
+    description: "Review requests, handle student needs and monitor students.",
     href: "/login/caretaker",
     eyebrow: "Hostel operations",
     features: ["Request review", "Student support"],
@@ -100,29 +97,17 @@ const allRoles = [
     visualClass: "from-purple-50 via-fuchsia-50/60 to-white border-purple-100",
     imageClass: "scale-[1.24] group-hover:scale-[1.29]",
   },
-  {
-    id: "department",
-    title: "Complaint Department",
-    icon: Wrench,
-    description: "Review assigned complaints and keep students updated on progress.",
-    href: "/login/department",
-    eyebrow: "Complaint resolution",
-    features: ["Assigned complaints", "Progress updates"],
-    accentClass: "bg-emerald-600",
-    iconClass: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-    visualClass: "from-emerald-50 via-teal-50 to-white border-emerald-100",
-  },
 ];
 
-const STAFF_ROLE_IDS = new Set(["security", "caretaker", "warden", "department"]);
+const STAFF_ROLE_IDS = new Set(["security", "caretaker", "warden"]);
 
 const staffCategory = {
   id: "staff",
   title: "Staff",
   icon: UserCog,
-  description: "Access tools for security, hostel and complaint operations.",
+  description: "Access tools for security and hostel operations.",
   eyebrow: "Staff access",
-  features: ["Four dedicated roles", "Secure role-based tools"],
+  features: ["Three dedicated roles", "Secure role-based tools"],
   accentClass: "bg-violet-600",
   iconClass: "bg-violet-50 text-violet-700 ring-violet-100",
 };
@@ -132,7 +117,7 @@ const primaryButtonClass =
 
 function RoleVisual({ role }) {
   if (role.id === "staff") {
-    const staffIcons = [ShieldCheck, UserCog, UserCheck, Wrench];
+    const staffIcons = [ShieldCheck, UserCog, UserCheck];
 
     return (
       <div className="relative mb-5 flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-br from-indigo-50 via-violet-50 to-white sm:h-48">
@@ -147,21 +132,6 @@ function RoleVisual({ role }) {
               <Icon className="h-7 w-7 sm:h-8 sm:w-8" />
             </div>
           ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (role.id === "department") {
-    return (
-      <div className={`relative mb-5 flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl border bg-gradient-to-br sm:h-48 ${role.visualClass}`}>
-        <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-emerald-200/40 blur-2xl" />
-        <div className="absolute -bottom-14 -left-10 h-36 w-36 rounded-full bg-teal-200/40 blur-2xl" />
-        <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-white bg-white/95 text-emerald-600 shadow-xl shadow-emerald-100 transition-transform duration-300 group-hover:-translate-y-1 group-hover:rotate-2 sm:h-28 sm:w-28">
-          <Wrench className="h-12 w-12 sm:h-14 sm:w-14" aria-hidden="true" />
-          <span className="absolute -right-3 -top-3 flex h-9 w-9 items-center justify-center rounded-xl border-2 border-white bg-emerald-600 text-white shadow-md">
-            <CheckCircle className="h-5 w-5" aria-hidden="true" />
-          </span>
         </div>
       </div>
     );

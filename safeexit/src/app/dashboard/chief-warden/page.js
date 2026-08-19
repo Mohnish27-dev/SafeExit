@@ -13,7 +13,6 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquareText,
-  MessageSquareWarning,
   RefreshCw,
   ShieldCheck,
   Siren,
@@ -28,7 +27,6 @@ import AuthLoading from "@/app/components/AuthGate";
 import SOSAlertsView from "../caretaker/components/SOSAlertsView";
 import ApplicationsView from "./components/ApplicationsView";
 import MovementLogsView from "./components/MovementLogsView";
-import ComplaintsView from "./components/ComplaintsView";
 import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
 import DelayNoticesView from "../caretaker/components/DelayNoticesView";
 import DelayNoticeToast from "../caretaker/components/DelayNoticeToast";
@@ -41,7 +39,6 @@ const NAV = [
   { key: "sos", label: "SOS", icon: Siren },
   { key: "overdue", label: "Overdue", icon: Clock3 },
   { key: "delays", label: "Delays", icon: MessageSquareText },
-  { key: "complaints", label: "Complaints", icon: MessageSquareWarning },
 ];
 
 function StatCard({ icon: Icon, label, value, note, tone }) {
@@ -80,7 +77,6 @@ function HostelCard({ hostel }) {
         <span>Pending leave <b className="float-right text-slate-900">{hostel.leaves.pending}</b></span>
         <span>Leave forwarded <b className="float-right text-slate-900">{hostel.leaves.forwarded}</b></span>
         <span>Active SOS <b className="float-right text-rose-600">{hostel.activeSOS}</b></span>
-        <span>Open complaints <b className="float-right text-orange-600">{hostel.openComplaints}</b></span>
       </div>
 
       <div className="mt-4 border-t border-slate-100 pt-3 text-xs font-semibold text-slate-500">
@@ -130,7 +126,7 @@ export default function ChiefWardenDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["overview", "outings", "leaves", "movements", "sos", "overdue", "delays", "complaints"].includes(target)) {
+    if (target && ["overview", "outings", "leaves", "movements", "sos", "overdue", "delays"].includes(target)) {
       // One-shot read of the URL on mount, mirroring the caretaker/warden dashboards.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setView(target);
@@ -183,7 +179,6 @@ export default function ChiefWardenDashboardPage() {
     { icon: Siren, label: "Active SOS", value: overview?.activeSOS ?? "—", note: "Across boys' and girls' hostels", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: Footprints, label: "Pending Outings", value: overview?.outings?.pending ?? "—", note: `${overview?.outings?.forwarded ?? 0} currently with wardens`, tone: "border-sky-200 bg-sky-50 text-sky-700" },
     { icon: FileText, label: "Pending Leave", value: overview?.leaves?.pending ?? "—", note: `${overview?.leaves?.forwarded ?? 0} currently with wardens`, tone: "border-violet-200 bg-violet-50 text-violet-700" },
-    { icon: MessageSquareWarning, label: "Open Complaints", value: overview?.openComplaints ?? "—", note: "Open or in progress", tone: "border-orange-200 bg-orange-50 text-orange-700" },
     { icon: Building2, label: "All Students", value: students.total ?? "—", note: `${overview?.hostels?.length ?? 0} campus hostels`, tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];
 
@@ -216,7 +211,7 @@ export default function ChiefWardenDashboardPage() {
           {view === "overview" && (
             <section className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{stats.map((card) => <StatCard key={card.label} {...card} />)}</div>
-              <div><div className="mb-4"><h2 className="text-xl font-black text-slate-900">Every Campus Hostel</h2><p className="text-sm font-medium text-slate-500">Operational status, responsible staff, requests, safety alerts, and complaints in one view.</p></div>{loading && !overview ? <div className="py-16 text-center font-semibold text-slate-500">Loading hostel details…</div> : <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{overview?.hostels?.map((hostel) => <HostelCard key={hostel.name} hostel={hostel} />)}</div>}</div>
+              <div><div className="mb-4"><h2 className="text-xl font-black text-slate-900">Every Campus Hostel</h2><p className="text-sm font-medium text-slate-500">Operational status, responsible staff, requests, and safety alerts in one view.</p></div>{loading && !overview ? <div className="py-16 text-center font-semibold text-slate-500">Loading hostel details…</div> : <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{overview?.hostels?.map((hostel) => <HostelCard key={hostel.name} hostel={hostel} />)}</div>}</div>
             </section>
           )}
           {view === "outings" && <ApplicationsView type="outing" />}
@@ -225,7 +220,6 @@ export default function ChiefWardenDashboardPage() {
           {view === "sos" && <SOSAlertsView readOnly />}
           {view === "overdue" && <OverdueStudentsView />}
           {view === "delays" && <DelayNoticesView onCountChange={setDelayCount} />}
-          {view === "complaints" && <ComplaintsView />}
         </div>
       </div>
       <DelayNoticeToast onView={() => setView("delays")} />

@@ -1,7 +1,6 @@
 const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
 const LeaveApplication = require('../models/LeaveApplication');
-const Complaint = require('../models/Complaint');
 const SOSAlert = require('../models/SOSAlert');
 const { HOSTELS } = require('../config/hostels');
 const { getOverdueStudentIds } = require('../utils/overdue');
@@ -11,7 +10,6 @@ const makeHostelSummary = (hostel) => ({
   gender: hostel.gender,
   students: { total: 0, inside: 0, outside: 0, overdue: 0 },
   activeSOS: 0,
-  openComplaints: 0,
   outings: { pending: 0, forwarded: 0 },
   leaves: { pending: 0, forwarded: 0 },
   caretaker: null,
@@ -28,7 +26,6 @@ const getOverview = async (req, res) => {
       students,
       hostelStaff,
       activeAlerts,
-      openComplaints,
       pendingOutings,
       forwardedOutings,
       pendingLeaves,
@@ -40,7 +37,6 @@ const getOverview = async (req, res) => {
         .select('name role managedHostel')
         .lean(),
       SOSAlert.find({ status: 'Active' }).select('student').lean(),
-      Complaint.find({ status: { $in: ['Open', 'In Progress'] } }).select('student').lean(),
       // Do not count stale rows that have not yet gone through the lazy expiry
       // sweep performed by their full-list endpoints.
       OutingRequest.find({ status: 'Pending', outTime: { $gte: now } }).select('student').lean(),
@@ -84,7 +80,6 @@ const getOverview = async (req, res) => {
     };
 
     addRowsToHostel(activeAlerts, (hostel) => { hostel.activeSOS += 1; });
-    addRowsToHostel(openComplaints, (hostel) => { hostel.openComplaints += 1; });
     addRowsToHostel(pendingOutings, (hostel) => { hostel.outings.pending += 1; });
     addRowsToHostel(forwardedOutings, (hostel) => { hostel.outings.forwarded += 1; });
     addRowsToHostel(pendingLeaves, (hostel) => { hostel.leaves.pending += 1; });
@@ -93,7 +88,6 @@ const getOverview = async (req, res) => {
     res.json({
       students: studentsSummary,
       activeSOS: activeAlerts.length,
-      openComplaints: openComplaints.length,
       outings: { pending: pendingOutings.length, forwarded: forwardedOutings.length },
       leaves: { pending: pendingLeaves.length, forwarded: forwardedLeaves.length },
       hostels,

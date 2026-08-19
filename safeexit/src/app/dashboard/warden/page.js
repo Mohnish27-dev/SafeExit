@@ -41,7 +41,6 @@ import {
 import ForwardedRequestsView from "./components/ForwardedRequestsView";
 import ForwardedLeaveView from "./components/ForwardedLeaveView";
 import SOSAlertsView from "../caretaker/components/SOSAlertsView";
-import ComplaintsView from "../caretaker/components/ComplaintsView";
 // Wardens get the same read-only movement log as caretakers; /scan already scopes by managedHostel.
 import MovementLogsView from "../caretaker/components/MovementLogsView";
 import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
@@ -121,39 +120,6 @@ const mapLeaveHistory = (l) => ({
   decidedAt: l.decidedAt || l.updatedAt,
 });
 
-const complaintTone = (category) => {
-  switch (category) {
-    case "Electrical": return "bg-amber-100 text-amber-500";
-    case "Plumbing": return "bg-sky-100 text-sky-500";
-    case "Cleaning": return "bg-emerald-100 text-emerald-500";
-    case "Wifi": return "bg-indigo-100 text-indigo-500";
-    case "Furniture": return "bg-orange-100 text-orange-500";
-    default: return "bg-slate-100 text-slate-500";
-  }
-};
-
-const statusToneFor = (status) =>
-  status === "Resolved" ? "bg-emerald-100 text-emerald-600"
-  : status === "In Progress" ? "bg-amber-100 text-amber-600"
-  : "bg-rose-100 text-rose-600";
-
-const mapReport = (c) => ({
-  id: c._id,
-  title: c.description || c.category,
-  by: c.student?.name || "Unknown Student",
-  hostelName: c.student?.hostelName || "",
-  roomNumber: c.roomNumber || c.student?.roomNumber || "",
-  departmentName: c.department?.name || c.category,
-  departmentPhone: c.department?.phoneNumber || "",
-  time: c.createdAt
-    ? new Date(c.createdAt).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-    : "—",
-  status: c.status || "Open",
-  tone: complaintTone(c.category),
-  icon: MessageSquare,
-  statusTone: statusToneFor(c.status),
-});
-
 export default function WardenDashboardPage() {
   const router = useRouter();
   const { checked, authorized } = useRequireAuth("warden");
@@ -194,7 +160,7 @@ export default function WardenDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["requests", "leave", "sos", "overdue", "delays", "complaints", "logs", "profile"].includes(target)) {
+    if (target && ["requests", "leave", "sos", "overdue", "delays", "logs", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -204,8 +170,6 @@ export default function WardenDashboardPage() {
   const [leavePending, setLeavePending] = useState([]);
   const [outingHistory, setOutingHistory] = useState([]);
   const [leaveHistory, setLeaveHistory] = useState([]);
-  const [reports, setReports] = useState([]);
-  const [resolvedReports, setResolvedReports] = useState([]);
   const [sosCount, setSosCount] = useState(0);
   const [overdueCount, setOverdueCount] = useState(0);
   // Students who reported they'll be late. Separate from overdueCount because a
@@ -215,10 +179,8 @@ export default function WardenDashboardPage() {
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [loadingLeave, setLoadingLeave] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const [loadingReports, setLoadingReports] = useState(true);
   const [requestsError, setRequestsError] = useState("");
   const [leaveError, setLeaveError] = useState("");
-  const [reportsError, setReportsError] = useState("");
 
   const loadRequests = useCallback(async () => {
     setLoadingRequests(true);
@@ -260,20 +222,6 @@ export default function WardenDashboardPage() {
     }
   }, []);
 
-  const loadReports = useCallback(async () => {
-    setLoadingReports(true);
-    setReportsError("");
-    try {
-      const data = await apiFetch("/complaint");
-      setReports(data.filter((c) => c.status !== "Resolved").map(mapReport));
-      setResolvedReports(data.filter((c) => c.status === "Resolved").map(mapReport));
-    } catch (err) {
-      setReportsError(err.message || "Could not load complaints.");
-    } finally {
-      setLoadingReports(false);
-    }
-  }, []);
-
   const loadSosCount = useCallback(async () => {
     try {
       const data = await apiFetch("/sos?status=Active");
@@ -305,11 +253,10 @@ export default function WardenDashboardPage() {
     loadRequests();
     loadLeave();
     loadHistory();
-    loadReports();
     loadSosCount();
     loadOverdueCount();
     loadDelayCount();
-  }, [loadRequests, loadLeave, loadHistory, loadReports, loadSosCount, loadOverdueCount, loadDelayCount]);
+  }, [loadRequests, loadLeave, loadHistory, loadSosCount, loadOverdueCount, loadDelayCount]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -330,13 +277,6 @@ export default function WardenDashboardPage() {
       "leave:changed": () => { loadLeave(); loadHistory(); },
     });
   }, [loadLeave, loadHistory]);
-
-  useEffect(() => {
-    return subscribeToStaffEvents({
-      "complaint:created": loadReports,
-      "complaint:updated": loadReports,
-    });
-  }, [loadReports]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -494,7 +434,6 @@ export default function WardenDashboardPage() {
     { key: "sos", label: "Alerts", icon: Siren, badge: sosCount },
     { key: "overdue", label: "Overdue", icon: Clock, badge: overdueCount },
     { key: "delays", label: "Delays", icon: MessageSquare, badge: delayCount },
-    { key: "complaints", label: "Complaints", icon: MessageSquare, badge: reports.length },
     { key: "logs", label: "Logs", icon: ScrollText },
     { key: "profile", label: "Profile", icon: User },
   ];
@@ -561,7 +500,7 @@ export default function WardenDashboardPage() {
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div>
                 <p className="font-bold">Your hostel isn&apos;t configured yet</p>
-                <p className="text-sm">Until an admin assigns you to a hostel, you won&apos;t see any escalated requests, applications, complaints, or alerts. Please contact the admin.</p>
+                <p className="text-sm">Until an admin assigns you to a hostel, you won&apos;t see any escalated requests, applications, or alerts. Please contact the admin.</p>
               </div>
             </div>
           )}
@@ -604,7 +543,6 @@ export default function WardenDashboardPage() {
                   delayCount > 0 && { key: "delays", label: "Delay Notices", count: delayCount, icon: MessageSquare, onClick: () => setView("delays") },
                   pending.length > 0 && { key: "requests", label: "Forwarded Outings", count: pending.length, icon: ClipboardList, onClick: () => setView("requests") },
                   leavePending.length > 0 && { key: "leave", label: "Forwarded Leave", count: leavePending.length, icon: CalendarDays, onClick: () => setView("leave") },
-                  reports.length > 0 && { key: "complaints", label: "Complaints", count: reports.length, icon: MessageSquare, onClick: () => setView("complaints") },
                 ].filter(Boolean);
                 if (attention.length === 0) return null;
                 return (
@@ -643,7 +581,7 @@ export default function WardenDashboardPage() {
                     <div className="min-w-0">
                       <p className="sd-kicker">Daily pulse</p>
                       <h2 className="sd-title sd-title-md mt-1 sm:mt-2">Welcome, <span className="sd-name-live">Warden</span>.</h2>
-                      <p className="sd-body mt-2 hidden max-w-md sm:block">You decide the outing and leave requests caretakers escalate, and keep an eye on your hostel&apos;s complaints and safety alerts.</p>
+                      <p className="sd-body mt-2 hidden max-w-md sm:block">You decide the outing and leave requests caretakers escalate, and keep an eye on your hostel&apos;s safety alerts.</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
@@ -663,7 +601,6 @@ export default function WardenDashboardPage() {
                   { label: "Forwarded Outings", value: pending.length, icon: ClipboardList, onClick: () => setView("requests"), fill: "from-indigo-500 to-cyan-400" },
                   { label: "Forwarded Leave", value: leavePending.length, icon: CalendarDays, onClick: () => setView("leave"), fill: "from-violet-500 to-fuchsia-400" },
                   { label: "Active Alerts", value: sosCount, icon: Siren, onClick: () => setView("sos"), fill: "from-rose-500 to-orange-400" },
-                  { label: "Open Complaints", value: reports.length, icon: MessageSquare, onClick: () => setView("complaints"), fill: "from-amber-500 to-orange-400" },
                 ].map((s, i) => (
                   <button
                     key={s.label}
@@ -734,16 +671,6 @@ export default function WardenDashboardPage() {
           {view === "delays" && <DelayNoticesView onCountChange={setDelayCount} />}
 
           {view === "logs" && <MovementLogsView />}
-
-          {view === "complaints" && (
-            <ComplaintsView
-              reports={reports}
-              resolvedReports={resolvedReports}
-              loading={loadingReports}
-              error={reportsError}
-              onRefresh={loadReports}
-            />
-          )}
 
           {view === "profile" && (
             <section className="sd-luxe-panel sd-enter mx-auto mt-6 w-full max-w-3xl rounded-[2.5rem] p-6 shadow-xl">

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { UserCog, Loader2 } from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
 
-// Caretaker picker shared by the outing, leave, and complaint forms.
+// Caretaker picker shared by the outing and leave forms.
 //
 // Loads the caretakers the student may route to (GET /caretaker/selectable — the server
 // fences this to the student's own gender scope) and pre-selects the student's own

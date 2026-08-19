@@ -6,7 +6,6 @@ const iconTones = {
   ticket: "sf-icon-ticket",
   outings: "sf-icon-outings",
   emergency: "sf-icon-emergency",
-  complaint: "sf-icon-complaint",
   leave: "sf-icon-leave",
   default: "sf-icon-default",
 };

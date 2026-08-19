@@ -168,7 +168,6 @@ export default function AdminDashboardPage() {
     { icon: CalendarDays, label: "Pending Outings", value: overview?.pendingOutings ?? "—", note: "Awaiting caretaker approval", tone: "border-sky-200 bg-sky-50 text-sky-700" },
     // Counts OutingRequest.status === 'Out' (pass-level), distinct from campusStatus 'Outside'.
     { icon: DoorOpen, label: "Gate: Out", value: overview?.studentsOut ?? "—", note: "Outing passes currently 'Out'", tone: "border-cyan-200 bg-cyan-50 text-cyan-700" },
-    { icon: MessageSquareWarning, label: "Open Complaints", value: overview?.openComplaints ?? "—", note: "Unresolved reports", tone: "border-orange-200 bg-orange-50 text-orange-700" },
     { icon: Building2, label: "Total Students", value: s.total ?? "—", note: "Registered on platform", tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];
 

@@ -4,14 +4,12 @@ const variants = {
   ticket: "sf-hero-strip sf-hero-strip--ticket",
   outings: "sf-hero-strip sf-hero-strip--outings",
   emergency: "sf-hero-strip sf-hero-strip--emergency",
-  complaint: "sf-hero-strip sf-hero-strip--complaint",
   leave: "sf-hero-strip sf-hero-strip--leave",
 };
 
 const iconVariants = {
   emergency: "emergency",
   outings: "outings",
-  complaint: "complaint",
   leave: "leave",
 };
 
