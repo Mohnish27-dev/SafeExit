@@ -290,31 +290,31 @@ export default function DepartmentLoginPage() {
   if (appState === "LOADING") return null;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#eef7f4] via-[#e6f3ee] to-[#e0f0ea] relative overflow-hidden">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f4f1ff] via-[#efe8ff] to-[#e9e2ff] relative overflow-hidden">
       <div className="absolute inset-0 z-0">
         <Image src="/images/login/hostel-bg.png" alt="" fill sizes="100vw" className="object-cover opacity-[0.18] pointer-events-none select-none" priority />
       </div>
-      <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-emerald-300/20 blur-3xl z-0" />
-      <div className="absolute top-16 -right-20 h-72 w-72 rounded-full bg-teal-300/25 blur-3xl z-0" />
-      <div className="absolute -bottom-24 left-1/3 h-80 w-80 rounded-full bg-emerald-300/20 blur-3xl z-0" />
+      <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-indigo-300/20 blur-3xl z-0" />
+      <div className="absolute top-16 -right-20 h-72 w-72 rounded-full bg-purple-300/25 blur-3xl z-0" />
+      <div className="absolute -bottom-24 left-1/3 h-80 w-80 rounded-full bg-violet-300/20 blur-3xl z-0" />
 
       <div className="relative z-10 flex-1 flex flex-col items-center px-4 py-6 sm:py-8 animate-fade-in-up">
         <Link href="/" className="flex flex-col items-center gap-1.5 group mb-4 sm:mb-6">
-          <div className="h-12 w-12 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-600/30">
+          <div className="h-12 w-12 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30">
             <Wrench className="h-7 w-7" />
           </div>
           <div className="text-center">
-            <span className="font-sans text-2xl font-bold tracking-tight text-slate-900">NITP-Safe<span className="text-emerald-600">Exit</span></span>
+            <span className="font-sans text-2xl font-bold tracking-tight text-slate-900">NITP-Safe<span className="text-indigo-600">Exit</span></span>
             <p className="text-[11px] font-medium text-slate-500 tracking-wide">Secure Access. Safer Campuses.</p>
           </div>
         </Link>
 
         {appState === "RETURNING_USER" ? (
           // RETURNING DEPARTMENT
-          <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-emerald-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
+          <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 p-8 flex flex-col items-center text-center animate-fade-in-up">
             <div className="relative w-24 h-24 mb-6">
-               <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-500 animate-pulse opacity-20"></div>
-               <div className="w-24 h-24 rounded-full bg-emerald-100 flex items-center justify-center border-4 border-white shadow-lg relative z-10 text-emerald-500">
+               <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 animate-pulse opacity-20"></div>
+               <div className="w-24 h-24 rounded-full bg-indigo-100 flex items-center justify-center border-4 border-white shadow-lg relative z-10 text-indigo-500">
                   <User className="w-10 h-10" />
                </div>
             </div>
@@ -336,7 +336,7 @@ export default function DepartmentLoginPage() {
                   placeholder="••••"
                   autoComplete="off"
                   autoFocus
-                  className="w-full text-center text-3xl font-bold tracking-[0.6em] py-3 pr-12 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors"
+                  className="w-full text-center text-3xl font-bold tracking-[0.6em] py-3 pr-12 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
                 />
                 <button
                   type="button"
@@ -351,7 +351,7 @@ export default function DepartmentLoginPage() {
               <button
                 type="submit"
                 disabled={isProcessing || loginPin.length < 4}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-sm shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isProcessing ? (
                   <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Signing in…</>
@@ -368,21 +368,21 @@ export default function DepartmentLoginPage() {
                 disabled={isProcessing}
                 className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
               >
-                <Fingerprint className="w-5 h-5 text-emerald-600" /> Use fingerprint / FaceID
+                <Fingerprint className="w-5 h-5 text-indigo-600" /> Use fingerprint / FaceID
               </button>
             )}
           </div>
         ) : (
-          <div className="w-full max-w-[500px] bg-white rounded-3xl shadow-2xl shadow-emerald-900/10 border border-white/80 overflow-hidden animate-fade-in-up">
+          <div className="w-full max-w-[500px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-white/80 overflow-hidden animate-fade-in-up">
 
             <div className="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between">
-               <div className={`flex items-center gap-2 ${onboardingStep >= 1 ? "text-emerald-600" : "text-slate-400"}`}>
-                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 1 ? "bg-emerald-100" : "bg-slate-200"}`}>1</div>
+               <div className={`flex items-center gap-2 ${onboardingStep >= 1 ? "text-indigo-600" : "text-slate-400"}`}>
+                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 1 ? "bg-indigo-100" : "bg-slate-200"}`}>1</div>
                  <span className="text-xs font-semibold hidden sm:inline">Details</span>
                </div>
-               <div className={`h-px flex-1 mx-2 ${onboardingStep >= 2 ? "bg-emerald-600" : "bg-slate-200"}`}></div>
-               <div className={`flex items-center gap-2 ${onboardingStep >= 2 ? "text-emerald-600" : "text-slate-400"}`}>
-                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 2 ? "bg-emerald-100" : "bg-slate-200"}`}>2</div>
+               <div className={`h-px flex-1 mx-2 ${onboardingStep >= 2 ? "bg-indigo-600" : "bg-slate-200"}`}></div>
+               <div className={`flex items-center gap-2 ${onboardingStep >= 2 ? "text-indigo-600" : "text-slate-400"}`}>
+                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${onboardingStep >= 2 ? "bg-indigo-100" : "bg-slate-200"}`}>2</div>
                  <span className="text-xs font-semibold hidden sm:inline">Quick Login</span>
                </div>
             </div>
@@ -406,7 +406,7 @@ export default function DepartmentLoginPage() {
                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Department ID</label>
                       <div className="relative">
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><ShieldCheck className="w-4 h-4" /></div>
-                        <input type="text" name="departmentId" value={formData.departmentId} onChange={handleInputChange} placeholder="E.g. DEPT-ELEC" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors" />
+                        <input type="text" name="departmentId" value={formData.departmentId} onChange={handleInputChange} placeholder="E.g. DEPT-ELEC" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
                       </div>
                     </div>
 
@@ -414,12 +414,12 @@ export default function DepartmentLoginPage() {
                       <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">PIN</label>
                       <div className="relative">
                         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Fingerprint className="w-4 h-4" /></div>
-                        <input type="password" name="pin" value={formData.pin} onChange={handleInputChange} placeholder="Enter your PIN" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors" />
+                        <input type="password" name="pin" value={formData.pin} onChange={handleInputChange} placeholder="Enter your PIN" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" />
                       </div>
                     </div>
                   </div>
 
-                  <button type="submit" disabled={isProcessing} className="w-full mt-6 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-sm shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70">
+                  <button type="submit" disabled={isProcessing} className="w-full mt-6 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70">
                     {isProcessing ? "Signing in…" : (<>Continue <ArrowRight className="w-4 h-4" /></>)}
                   </button>
                 </form>
@@ -447,7 +447,7 @@ export default function DepartmentLoginPage() {
                            onChange={(e) => setQuickPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                            placeholder="••••"
                            autoComplete="off"
-                           className="w-full pl-10 pr-11 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-lg font-bold tracking-[0.4em] text-slate-900 placeholder:text-slate-300 placeholder:tracking-[0.4em] focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors"
+                           className="w-full pl-10 pr-11 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-lg font-bold tracking-[0.4em] text-slate-900 placeholder:text-slate-300 placeholder:tracking-[0.4em] focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
                          />
                          <button type="button" onClick={() => setShowSetupPin((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" tabIndex={-1}>
                            {showSetupPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -468,7 +468,7 @@ export default function DepartmentLoginPage() {
                            onChange={(e) => setConfirmQuickPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                            placeholder="••••"
                            autoComplete="off"
-                           className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-lg font-bold tracking-[0.4em] text-slate-900 placeholder:text-slate-300 placeholder:tracking-[0.4em] focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors"
+                           className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-lg font-bold tracking-[0.4em] text-slate-900 placeholder:text-slate-300 placeholder:tracking-[0.4em] focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
                          />
                        </div>
                      </div>
@@ -476,7 +476,7 @@ export default function DepartmentLoginPage() {
                      {/* Optional biometric toggle */}
                      <div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4">
                        <div className="flex items-center gap-3">
-                         <div className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-emerald-600 shrink-0"><Fingerprint className="w-5 h-5" /></div>
+                         <div className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-indigo-600 shrink-0"><Fingerprint className="w-5 h-5" /></div>
                          <div>
                            <p className="text-sm font-bold text-slate-800">Biometric Authentication</p>
                            <p className="text-xs text-slate-500">Optional — Fingerprint / FaceID</p>
@@ -487,7 +487,7 @@ export default function DepartmentLoginPage() {
                          role="switch"
                          aria-checked={enableBiometric}
                          onClick={() => setEnableBiometric((v) => !v)}
-                         className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${enableBiometric ? "bg-emerald-600" : "bg-slate-300"}`}
+                         className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${enableBiometric ? "bg-indigo-600" : "bg-slate-300"}`}
                        >
                          <span className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${enableBiometric ? "translate-x-5" : "translate-x-0"}`} />
                        </button>
