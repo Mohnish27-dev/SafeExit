@@ -217,25 +217,25 @@ export default function PeopleView() {
   };
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/70 bg-white/80 px-5 py-4 shadow-sm backdrop-blur">
-        <div className="flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
-            <Users className="h-6 w-6" />
+    <section className="space-y-4 sm:space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-sm backdrop-blur sm:rounded-3xl sm:px-5 sm:py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 sm:h-12 sm:w-12 sm:rounded-2xl">
+            <Users className="h-5 w-5 sm:h-6 sm:w-6" />
           </span>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">People &amp; Status</h2>
-            <p className="text-sm text-slate-600">{visible.length} {ROLE_PLURALS[role]}</p>
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">People &amp; Status</h2>
+            <p className="text-xs text-slate-600 sm:text-sm">{visible.length} {ROLE_PLURALS[role]}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <div className="relative min-w-0 flex-1 sm:flex-none">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name / id / email"
-              className="w-56 rounded-full border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
+              className="w-full rounded-full border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none sm:w-56"
             />
           </div>
           {isStaffTab && (
@@ -243,7 +243,7 @@ export default function PeopleView() {
               onClick={openAdd}
               disabled={addDisabled}
               title={allHostelsTaken ? `Every hostel already has a ${role.toLowerCase()} account.` : chiefWardenExists ? "Only one Chief Warden account is allowed." : undefined}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus className="h-4 w-4" /> Add {ROLE_LABELS[role]}
             </button>
@@ -251,12 +251,12 @@ export default function PeopleView() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => { setRole(t.key); setSearch(""); }}
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition sm:gap-2 sm:px-4 sm:py-2 sm:text-sm ${
               role === t.key ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white shadow" : "bg-white text-slate-500 hover:bg-slate-100"
             }`}
           >
@@ -278,9 +278,9 @@ export default function PeopleView() {
           <p className="text-sm text-slate-400">They will appear here once registered.</p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
           {visible.map((p) => (
-            <article key={p._id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <article key={p._id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:rounded-3xl sm:p-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 font-bold text-white">
                   {getInitials(p.name)}
@@ -385,7 +385,7 @@ export default function PeopleView() {
       {/* Add staff modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
                 <UserPlus className="h-5 w-5 text-indigo-600" /> Add {ROLE_LABELS[role]}
@@ -453,7 +453,7 @@ export default function PeopleView() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Initial PIN</label>
                   <input
@@ -499,7 +499,7 @@ export default function PeopleView() {
       {/* Reset PIN modal */}
       {resetTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="max-h-[calc(100vh-2rem)] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
                 <KeyRound className="h-5 w-5 text-indigo-600" /> Reset PIN
@@ -548,7 +548,7 @@ export default function PeopleView() {
       {/* Assign scope modal (caretaker/warden hostel) */}
       {scopeTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="max-h-[calc(100vh-2rem)] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
                 <UserCog className="h-5 w-5 text-indigo-600" /> Assign Hostel
