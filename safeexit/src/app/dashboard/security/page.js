@@ -29,7 +29,7 @@ import {
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
 import { parseScannedQr } from "@/app/lib/qrPayload.mjs";
-import { deriveGateDirection, readControlBarcode } from "@/app/lib/gateFlow.mjs";
+import { canAutoCommit, deriveGateDirection, isExitDenied, readControlBarcode } from "@/app/lib/gateFlow.mjs";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
@@ -44,12 +44,18 @@ const defaultProfile = {
   roleLabel: "Security Guard",
 };
 
-// A trigger pull commonly yields 2-3 identical reads. Without this, a confirmed exit
-// is instantly re-read and flipped straight back to an entry.
 const DUPLICATE_SCAN_MS = 3000;
-// An outward-facing gate monitor must not hold a student's photo after they walk off —
-// the next student is already standing in front of it.
+
+// Set to 0 to fall back to confirming every movement by hand.
+const AUTO_COMMIT_MS = 2500;
+
+const RECOMMIT_COOLDOWN_MS = 10000;
+
+const AUTO_COMMIT_TICK_MS = 200;
+
 const PENDING_SCAN_TIMEOUT_MS = 25000;
+
+const DENIED_SCAN_DISMISS_MS = 1500;
 // Just long enough for the guard to register the result before the screen returns to idle.
 const SUCCESS_FLASH_MS = 2200;
 
@@ -130,11 +136,21 @@ export default function SecurityDashboardPage() {
   // open so the guard can simply re-aim.
   const [scanError, setScanError] = useState("");
 
+  const [autoCommitAt, setAutoCommitAt] = useState(null);
+  // Whole seconds left, for the button readout only.
+  const [autoCommitLeft, setAutoCommitLeft] = useState(0);
+
+  const [justLogged, setJustLogged] = useState(false);
+
   // Last accepted student payload, for de-duplicating a scanner's repeat reads.
   const lastScanRef = useRef({ value: "", at: 0 });
   // State lags a burst of scans, so the in-flight guard has to be a ref: two CONFIRM
   // reads 20ms apart would both see `logging === false` and double-post.
   const confirmInFlightRef = useRef(false);
+
+  const pendingRef = useRef(null);
+
+  const lastCommitRef = useRef({ key: "", at: 0 });
 
 
   // Recent scans + Inside/Outside/Overdue counts; backend overlays live 'Overdue'.
@@ -174,51 +190,91 @@ export default function SecurityDashboardPage() {
       ? "entry"
       : "exit";
 
-  const clearPendingScan = () => {
+
+  const exitBlocked = !previewLoading && isExitDenied(scanPreview);
+
+
+  const disarmAutoCommit = useCallback(() => {
+    pendingRef.current = null;
+    setAutoCommitAt(null);
+    setAutoCommitLeft(0);
+  }, []);
+
+  const clearPendingScan = useCallback(() => {
+    disarmAutoCommit();
     setScanResult(null);
     setScanPreview(null);
     setLogError("");
     setScanError("");
-  };
+    setJustLogged(false);
+  }, [disarmAutoCommit]);
 
-  // Persist the in-progress scan as a real gate movement, then refresh the feed.
-  const confirmScan = async () => {
+
+  const commitScan = useCallback(async (payload, { detached = false } = {}) => {
+    const { sid, id, name, mode = "exit" } = payload || {};
     if (confirmInFlightRef.current) return;
-    if (!scanResult?.id && !scanResult?.sid) {
-      setScanResult(null);
-      return;
-    }
-    // Never commit while the verdict is still loading, or against a denied exit — the
-    // CONFIRM barcode reaches this directly, bypassing the button's disabled state.
-    if (previewLoading) return;
-    if (derivedMode === "exit" && scanPreview?.exit && !scanPreview.exit.allowed) return;
+    if (!sid && !id) return;
 
     confirmInFlightRef.current = true;
-    setLogging(true);
-    setLogError("");
-    const studentName = scanResult.name;
+    disarmAutoCommit();
+    if (!detached) {
+      setLogging(true);
+      setLogError("");
+    }
+    lastCommitRef.current = { key: sid || id, at: Date.now() };
     try {
       // 'AUTO' — the server re-derives the direction from the status it reads inside
       // the same atomic flip, so a preview that went stale cannot log a wrong movement.
       await apiFetch("/scan", {
         method: "POST",
         body: JSON.stringify({
-          student: scanResult.sid,
-          studentId: scanResult.id,
+          student: sid,
+          studentId: id,
           direction: "AUTO",
         }),
       });
-      setScanResult(null);
-      setScanPreview(null);
-      setFlash({ mode: derivedMode, name: studentName });
+      if (!detached) {
+        setScanResult(null);
+        setScanPreview(null);
+        setJustLogged(false);
+      }
+      setFlash({ mode, name, at: Date.now() });
       await loadScans();
     } catch (err) {
-      setLogError(err.message || t("couldNotLogScan"));
+      // A detached failure has no card left to annotate, and naming the student is the
+      // only way the guard can tell which movement of the last few did not stick.
+      if (detached) setFlash({ mode, name, at: Date.now(), error: t("couldNotLogFor", { name: name || t("unknownStudent") }) });
+      else setLogError(err.message || t("couldNotLogScan"));
     } finally {
-      setLogging(false);
+      if (!detached) setLogging(false);
       confirmInFlightRef.current = false;
     }
-  };
+  }, [disarmAutoCommit, loadScans, t]);
+
+  useEffect(() => {
+    if (!autoCommitAt) return;
+    const fire = setTimeout(() => {
+
+      if (pendingRef.current?.armed) commitScan(pendingRef.current);
+    }, Math.max(0, autoCommitAt - Date.now()));
+    const tick = setInterval(() => {
+      setAutoCommitLeft(Math.max(0, Math.ceil((autoCommitAt - Date.now()) / 1000)));
+    }, AUTO_COMMIT_TICK_MS);
+    return () => {
+      clearTimeout(fire);
+      clearInterval(tick);
+    };
+  }, [autoCommitAt, commitScan]);
+
+
+  useEffect(() => {
+    if (!scanResult) return;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") clearPendingScan();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [scanResult, clearPendingScan]);
 
   const recentScans = useMemo(
     () =>
@@ -236,16 +292,13 @@ export default function SecurityDashboardPage() {
     [scans, t, dateLocale]
   );
 
-  // Single entry point for every scan source. The camera and the hardware scanner both
-  // funnel through here so the two devices can never drift apart in behaviour.
+
   const processRawScan = async (rawValue) => {
-    // Printed control barcodes let a guard holding a scanner confirm without reaching
-    // for a keyboard. They act only on what is already pending on this screen, so they
-    // are checked before de-duplication — two students confirmed seconds apart send the
-    // identical payload and must both be honoured.
+
     const control = readControlBarcode(rawValue);
     if (control === "CONFIRM") {
-      if (scanResult) await confirmScan();
+
+      if (pendingRef.current) await commitScan(pendingRef.current);
       return;
     }
     if (control === "CANCEL") {
@@ -268,12 +321,20 @@ export default function SecurityDashboardPage() {
       return;
     }
 
+    setFlash(null);
+
+    if (pendingRef.current?.armed) {
+      await commitScan(pendingRef.current, { detached: true });
+    }
+
     setScanError("");
     setLogError("");
-    setFlash(null);
+    setJustLogged(false);
     setScanResult(parsed);
     setIsScanning(false);
 
+    // Nothing is committable until the preview says so — not even by hand.
+    disarmAutoCommit();
     setScanPreview(null);
     setPreviewLoading(true);
 
@@ -296,9 +357,37 @@ export default function SecurityDashboardPage() {
               }
             : prev
         );
+
+        const mode = deriveGateDirection(preview.student.campusStatus) === "IN" ? "entry" : "exit";
+        const denied = isExitDenied(preview);
+
+        if (!denied) {
+          const pending = {
+            sid: preview.student._id || parsed.sid,
+            id: preview.student.studentId || parsed.id,
+            name: preview.student.name || parsed.name,
+            mode,
+            armed: false,
+          };
+
+          const cooling =
+            lastCommitRef.current.key === (pending.sid || pending.id) &&
+            Date.now() - lastCommitRef.current.at < RECOMMIT_COOLDOWN_MS;
+
+          pending.armed = AUTO_COMMIT_MS > 0 && canAutoCommit(preview) && !cooling;
+          pendingRef.current = pending;
+          if (pending.armed) {
+            setAutoCommitAt(Date.now() + AUTO_COMMIT_MS);
+            setAutoCommitLeft(Math.ceil(AUTO_COMMIT_MS / 1000));
+          }
+          setJustLogged(cooling);
+        }
       }
     } catch (e) {
       console.error("Failed to load scan preview:", e);
+      // No verdict and no photo, so nothing arms — but the guard keeps the manual
+      // commit they have always had for an unverified card.
+      pendingRef.current = { sid: parsed.sid, id: parsed.id, name: parsed.name, mode: "exit", armed: false };
     } finally {
       setPreviewLoading(false);
     }
@@ -312,20 +401,17 @@ export default function SecurityDashboardPage() {
   };
 
   // Always listening, so the guard never arms anything: a hardware scanner in HID mode
-  // just types, and a scan mid-card simply replaces the pending student with the next.
+  // just types, and a scan mid-card commits the pending student before showing the next.
   useHardwareScanner(processRawScan, { enabled: authorized });
 
-  // Stale pending scan cleanup. Not while logging, or a slow request would have the
-  // card yanked out from under it.
+
+
   useEffect(() => {
     if (!scanResult || logging) return;
-    const timer = setTimeout(() => {
-      setScanResult(null);
-      setScanPreview(null);
-      setLogError("");
-    }, PENDING_SCAN_TIMEOUT_MS);
+    const dwell = exitBlocked ? DENIED_SCAN_DISMISS_MS : PENDING_SCAN_TIMEOUT_MS;
+    const timer = setTimeout(clearPendingScan, dwell);
     return () => clearTimeout(timer);
-  }, [scanResult, logging]);
+  }, [scanResult, logging, exitBlocked, clearPendingScan]);
 
   useEffect(() => {
     if (!flash) return;
@@ -749,7 +835,7 @@ export default function SecurityDashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-md sm:p-4">
           <div className="sd-enter relative max-h-[94dvh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white text-center shadow-2xl">
             <button
-              onClick={() => { setScanResult(null); setScanPreview(null); }}
+              onClick={clearPendingScan}
               aria-label={tc("cancel")}
               className="absolute top-3 right-3 z-10 cursor-pointer rounded-full bg-white/95 p-2.5 text-slate-600 shadow-lg transition hover:bg-white sm:top-4 sm:right-4"
             >
@@ -803,7 +889,8 @@ export default function SecurityDashboardPage() {
                       }
                       if (scanPreview?.exit) {
                         const { allowed, reason } = scanPreview.exit;
-                        const label = allowed
+                        const isAllowed = allowed === true;
+                        const label = isAllowed
                           ? t("approved")
                           : reason === "expired"
                             ? t("expiredPass")
@@ -812,7 +899,7 @@ export default function SecurityDashboardPage() {
                               : t("noApprovedOuting");
                         return (
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                            allowed ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                            isAllowed ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
                           }`}>
                             {label}
                           </span>
@@ -878,8 +965,6 @@ export default function SecurityDashboardPage() {
               )}
 
               {(() => {
-                const exitBlocked =
-                  derivedMode === "exit" && !previewLoading && scanPreview?.exit && !scanPreview.exit.allowed;
                 const blockedMsg =
                   scanPreview?.exit?.reason === "expired"
                     ? t("exitBlockedExpired")
@@ -887,10 +972,9 @@ export default function SecurityDashboardPage() {
                       ? t("exitBlockedNotYetValid")
                       : t("exitBlockedNoPass");
 
-                // There is no entry-blocked case any more: derivedMode is read from the
-                // same campusStatus the backend gates on, so 'entry' can only appear for
-                // a student the DB reports as Outside/Overdue. The atomic flip in
-                // createScanLog still answers 409 if that changed since the preview.
+
+
+                const counting = autoCommitAt !== null && !logging;
 
                 return (
                   <>
@@ -901,30 +985,51 @@ export default function SecurityDashboardPage() {
                     )}
                     <div className="flex gap-3 w-full">
                       <button
-                        onClick={() => { setLogError(""); setScanResult(null); setScanPreview(null); }}
+                        onClick={clearPendingScan}
                         disabled={logging}
                         className="flex-1 py-3.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
                       >
                         {tc("cancel")}
                       </button>
                       <button
-                        onClick={confirmScan}
+                        onClick={() => commitScan(pendingRef.current)}
                         disabled={logging || previewLoading || exitBlocked}
-                        className={`flex-1 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                        className={`relative flex-1 overflow-hidden py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                           derivedMode === 'exit'
                             ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"
                             : "bg-emerald-500 shadow-emerald-500/30 hover:bg-emerald-600"
                         }`}
                       >
-                        {logging
-                          ? t("logging")
-                          : exitBlocked
-                            ? t("exitDenied")
-                            : derivedMode === 'exit' ? t("logExit") : t("logEntry")}
+                        {/* Drains over exactly the window the commit is scheduled for, so
+                            the guard can see how long they have to stop it. Keyed on the
+                            deadline: a re-render must not restart the animation. */}
+                        {counting && (
+                          <span
+                            key={autoCommitAt}
+                            className="grd-drain absolute inset-0 bg-white/25"
+                            style={{ "--grd-dur": `${AUTO_COMMIT_MS}ms` }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span className="relative">
+                          {logging
+                            ? t("logging")
+                            : exitBlocked
+                              ? t("exitDenied")
+                              : counting
+                                ? t("autoLoggingIn", { s: autoCommitLeft })
+                                : derivedMode === 'exit' ? t("logExit") : t("logEntry")}
+                        </span>
                       </button>
                     </div>
-                    {/* The guard can keep the scanner in hand instead of reaching for the mouse. */}
-                    <p className="mt-3 text-[0.68rem] font-semibold text-slate-400">{t("scanToConfirmHint")}</p>
+                    {/* Says what is about to happen, which differs per state — the one
+                        thing the guard can no longer infer from having to act. */}
+                    {(() => {
+                      if (counting) return <p className="mt-3 text-[0.68rem] font-semibold text-slate-400">{t("scanToConfirmHint")}</p>;
+                      if (exitBlocked || previewLoading) return null;
+                      if (justLogged) return <p className="mt-3 text-[0.68rem] font-semibold text-amber-600">{t("justLoggedHint")}</p>;
+                      return <p className="mt-3 text-[0.68rem] font-semibold text-slate-400">{t("pressToLogHint")}</p>;
+                    })()}
                   </>
                 );
               })()}
@@ -933,26 +1038,43 @@ export default function SecurityDashboardPage() {
         </div>
       )}
 
-      {/* Committed-movement confirmation. A guard watching from arm's length needs to
-          know the log was written, not infer it from the card vanishing. */}
-      {flash && !scanResult && (
-        <div className="pointer-events-none fixed inset-x-0 top-4 z-55 flex justify-center px-4">
-          <div
-            className={`sd-enter flex items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-2xl ${
-              flash.mode === "exit" ? "bg-sky-600" : "bg-emerald-600"
+      {flash && (
+        <>
+          <span
+            key={flash.at}
+            className={`grd-wash pointer-events-none fixed inset-0 z-54 ${
+              flash.error ? "bg-rose-500" : flash.mode === "exit" ? "bg-sky-500" : "bg-emerald-500"
             }`}
+            aria-hidden="true"
+          />
+          <div
+            className={`pointer-events-none fixed inset-x-0 z-55 flex justify-center px-4 ${
+              scanResult ? "bottom-4" : "top-4"
+            }`}
+            role="status"
+            aria-live="polite"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">
-              <Check className="h-5 w-5" />
-            </span>
-            <span className="text-left">
-              <span className="block text-sm font-extrabold">
-                {flash.mode === "exit" ? t("exitLogged") : t("entryLogged")}
+            <div
+              className={`sd-enter flex items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-2xl ${
+                flash.error ? "bg-rose-600" : flash.mode === "exit" ? "bg-sky-600" : "bg-emerald-600"
+              }`}
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">
+                {flash.error ? <X className="h-5 w-5" /> : <Check className="h-5 w-5" />}
               </span>
-              <span className="block text-xs font-semibold text-white/85">{flash.name || t("unknownStudent")}</span>
-            </span>
+              <span className="text-left">
+                <span className="block text-sm font-extrabold">
+                  {flash.error
+                    ? flash.error
+                    : flash.mode === "exit" ? t("exitLogged") : t("entryLogged")}
+                </span>
+                {!flash.error && (
+                  <span className="block text-xs font-semibold text-white/85">{flash.name || t("unknownStudent")}</span>
+                )}
+              </span>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Dev-only. Renders null in production builds. */}

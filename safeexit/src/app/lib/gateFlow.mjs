@@ -32,3 +32,14 @@ export const readControlBarcode = (rawValue) => {
 // decides what the guard sees before confirming.
 export const deriveGateDirection = (campusStatus) =>
   campusStatus === "Outside" || campusStatus === "Overdue" ? "IN" : "OUT";
+
+export const canAutoCommit = (preview) => {
+  if (!preview?.student) return false;
+  if (deriveGateDirection(preview.student.campusStatus) === "IN") return true;
+  return preview.exit?.allowed === true;
+};
+
+export const isExitDenied = (preview) => {
+  if (deriveGateDirection(preview?.student?.campusStatus) === "IN") return false;
+  return preview?.exit ? preview.exit.allowed !== true : false;
+};
