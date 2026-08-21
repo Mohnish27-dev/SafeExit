@@ -35,29 +35,30 @@ import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
 import DelayNoticesView from "../caretaker/components/DelayNoticesView";
 import DelayNoticeToast from "../caretaker/components/DelayNoticeToast";
 
+// `short` keeps every tab on one line in the 4-across phone nav.
 const NAV = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "analytics", label: "Analytics", icon: ChartNoAxesCombined },
-  { key: "sos", label: "SOS Alerts", icon: Siren },
-  { key: "overdue", label: "Overdue", icon: Clock3 },
-  { key: "delays", label: "Delays", icon: MessageSquareText },
-  { key: "logs", label: "Movement Logs", icon: ScrollText },
-  { key: "people", label: "People", icon: Users },
+  { key: "overview", label: "Overview", short: "Overview", icon: LayoutDashboard },
+  { key: "analytics", label: "Analytics", short: "Analytics", icon: ChartNoAxesCombined },
+  { key: "sos", label: "SOS Alerts", short: "SOS", icon: Siren },
+  { key: "overdue", label: "Overdue", short: "Overdue", icon: Clock3 },
+  { key: "delays", label: "Delays", short: "Delays", icon: MessageSquareText },
+  { key: "logs", label: "Movement Logs", short: "Logs", icon: ScrollText },
+  { key: "people", label: "People", short: "People", icon: Users },
 ];
 
 function StatCard({ icon: Icon, label, value, note, tone }) {
   return (
-    <div className={`rounded-3xl border p-5 shadow-sm ${tone}`}>
-      <div className="flex items-center gap-4">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 shadow-sm">
-          <Icon className="h-6 w-6" />
+    <div className={`rounded-2xl border p-3 shadow-sm sm:rounded-3xl sm:p-5 ${tone}`}>
+      <div className="flex items-center gap-2.5 sm:gap-4">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-sm sm:h-12 sm:w-12 sm:rounded-2xl">
+          <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
         </span>
-        <div>
-          <p className="text-3xl font-bold leading-none text-slate-900">{value}</p>
-          <p className="mt-1 text-sm font-semibold text-slate-700">{label}</p>
+        <div className="min-w-0">
+          <p className="text-xl font-bold leading-none text-slate-900 sm:text-3xl">{value}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-700 sm:text-sm">{label}</p>
         </div>
       </div>
-      {note && <p className="mt-3 text-xs font-medium text-slate-500">{note}</p>}
+      {note && <p className="mt-2 text-[10px] font-medium leading-4 text-slate-500 sm:mt-3 sm:text-xs">{note}</p>}
     </div>
   );
 }
@@ -175,18 +176,18 @@ export default function AdminDashboardPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#eef2ff] via-[#f5f7ff] to-[#eaf2ff] text-slate-900">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+    <main className="min-h-screen overflow-x-hidden bg-gradient-to-br from-[#eef2ff] via-[#f5f7ff] to-[#eaf2ff] text-slate-900">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
         {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/70 bg-white/80 px-5 py-4 shadow-xl backdrop-blur">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-700 to-cyan-500 text-white shadow-lg">
-              <Shield className="h-7 w-7" />
+        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-xl backdrop-blur sm:gap-4 sm:rounded-3xl sm:px-5 sm:py-4">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-700 to-cyan-500 text-white shadow-lg sm:h-14 sm:w-14">
+              <Shield className="h-6 w-6 sm:h-7 sm:w-7" />
             </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Command Center</p>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">NITP-SafeExit Admin</h1>
-              <p className="text-sm font-medium text-slate-500">Welcome back, {greetingName}</p>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-xs sm:tracking-[0.35em]">Command Center</p>
+              <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">NITP-SafeExit Admin</h1>
+              <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">Welcome back, {greetingName}</p>
             </div>
           </div>
 
@@ -202,7 +203,7 @@ export default function AdminDashboardPage() {
             </div>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
+              className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-100 sm:rounded-2xl sm:px-4 sm:py-2.5"
             >
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Logout</span>
@@ -211,25 +212,25 @@ export default function AdminDashboardPage() {
         </header>
 
         {/* Date + refresh strip */}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2">
-              <CalendarDays className="h-4 w-4 text-slate-400" /> {formattedDate}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 sm:mt-4 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600 sm:text-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 sm:gap-2 sm:px-4 sm:py-2">
+              <CalendarDays className="h-3.5 w-3.5 text-slate-400 sm:h-4 sm:w-4" /> {formattedDate}
             </span>
-            <span suppressHydrationWarning className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2">
-              <Clock3 className="h-4 w-4 text-slate-400" /> {formattedTime}
+            <span suppressHydrationWarning className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 sm:gap-2 sm:px-4 sm:py-2">
+              <Clock3 className="h-3.5 w-3.5 text-slate-400 sm:h-4 sm:w-4" /> {formattedTime}
             </span>
           </div>
           <button
             onClick={loadOverview}
-            className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-600 transition hover:bg-indigo-100"
+            className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-100 sm:gap-2 sm:px-4 sm:py-2 sm:text-sm"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
+            <RefreshCw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${refreshing ? "animate-spin" : ""}`} /> Refresh
           </button>
         </div>
 
-        {/* Nav tabs */}
-        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/70 bg-white/80 p-2 shadow-sm backdrop-blur sm:grid-cols-3 lg:grid-cols-7">
+        {/* Nav tabs — 4 across on phones so all seven stay visible without a scroll */}
+        <nav className="mt-3 grid grid-cols-4 gap-1.5 rounded-2xl border border-white/70 bg-white/80 p-1.5 shadow-sm backdrop-blur sm:mt-4 sm:grid-cols-3 sm:gap-2 sm:rounded-3xl sm:p-2 lg:grid-cols-7">
           {NAV.map((item) => {
             const active = view === item.key;
             const badge = item.key === "sos"
@@ -243,14 +244,15 @@ export default function AdminDashboardPage() {
               <button
                 key={item.key}
                 onClick={() => setView(item.key)}
-                className={`relative flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-semibold transition ${
+                className={`relative flex flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-bold leading-tight transition sm:flex-row sm:gap-2 sm:rounded-2xl sm:px-3 sm:py-3 sm:text-sm sm:font-semibold ${
                   active ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white shadow-md" : "text-slate-500 hover:bg-slate-100"
                 }`}
               >
-                <item.icon className="h-5 w-5" />
-                {item.label}
+                <item.icon className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="sm:hidden">{item.short}</span>
+                <span className="hidden sm:inline">{item.label}</span>
                 {badge ? (
-                  <span className={`ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${active ? "bg-white/25 text-white" : item.key === "delays" ? "bg-amber-500 text-white" : "bg-rose-500 text-white"}`}>
+                  <span className={`absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold sm:static sm:ml-1 sm:h-5 sm:min-w-5 sm:px-1.5 sm:text-[11px] ${active ? "bg-white/25 text-white" : item.key === "delays" ? "bg-amber-500 text-white" : "bg-rose-500 text-white"}`}>
                     {badge}
                   </span>
                 ) : null}
@@ -260,50 +262,50 @@ export default function AdminDashboardPage() {
         </nav>
 
         {error && (
-          <div className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-            <AlertTriangle className="h-4 w-4" /> {error}
+          <div className="mt-3 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 sm:mt-4">
+            <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
           </div>
         )}
 
         {/* Views */}
-        <div className="mt-6 flex-1">
+        <div className="mt-4 flex-1 sm:mt-6">
           {view === "overview" && (
-            <section className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="space-y-4 sm:space-y-6">
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
                 {stats.map((card) => (
                   <StatCard key={card.label} {...card} />
                 ))}
               </div>
 
-              <div className="grid gap-6 lg:grid-cols-2">
+              <div className="grid gap-3 sm:gap-6 lg:grid-cols-2">
                 <button
                   onClick={() => setView("sos")}
-                  className="flex items-center justify-between gap-4 rounded-3xl border border-rose-200 bg-rose-50/80 p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  className="flex items-center justify-between gap-4 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:rounded-3xl sm:p-6"
                 >
-                  <div className="flex items-center gap-4">
-                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
-                      <Siren className="h-7 w-7" />
+                  <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 sm:h-14 sm:w-14 sm:rounded-2xl">
+                      <Siren className="h-5 w-5 sm:h-7 sm:w-7" />
                     </span>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-400">Emergencies</p>
-                      <h2 className="text-xl font-bold text-slate-900">{overview?.activeSOS ?? 0} Active SOS</h2>
-                      <p className="text-sm text-slate-600">Review and respond to live alerts.</p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-rose-400 sm:text-xs sm:tracking-[0.3em]">Emergencies</p>
+                      <h2 className="text-base font-bold text-slate-900 sm:text-xl">{overview?.activeSOS ?? 0} Active SOS</h2>
+                      <p className="text-xs text-slate-600 sm:text-sm">Review and respond to live alerts.</p>
                     </div>
                   </div>
                 </button>
 
                 <button
                   onClick={() => setView("logs")}
-                  className="flex items-center justify-between gap-4 rounded-3xl border border-indigo-200 bg-indigo-50/80 p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  className="flex items-center justify-between gap-4 rounded-2xl border border-indigo-200 bg-indigo-50/80 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:rounded-3xl sm:p-6"
                 >
-                  <div className="flex items-center gap-4">
-                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
-                      <ScrollText className="h-7 w-7" />
+                  <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 sm:h-14 sm:w-14 sm:rounded-2xl">
+                      <ScrollText className="h-5 w-5 sm:h-7 sm:w-7" />
                     </span>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-400">Gate Activity</p>
-                      <h2 className="text-xl font-bold text-slate-900">Movement Logs</h2>
-                      <p className="text-sm text-slate-600">All entry / exit scans across campus.</p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-400 sm:text-xs sm:tracking-[0.3em]">Gate Activity</p>
+                      <h2 className="text-base font-bold text-slate-900 sm:text-xl">Movement Logs</h2>
+                      <p className="text-xs text-slate-600 sm:text-sm">All entry / exit scans across campus.</p>
                     </div>
                   </div>
                 </button>

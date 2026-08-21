@@ -96,24 +96,24 @@ export default function SOSAlertsView({ onChange }) {
   const activeCount = alerts.filter((a) => a.status === "Active").length;
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-rose-200 bg-rose-50/70 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <span className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
-            <BellRing className="h-6 w-6" />
+    <section className="space-y-4 sm:space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/70 px-4 py-3 sm:rounded-3xl sm:px-5 sm:py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 sm:h-12 sm:w-12 sm:rounded-2xl">
+            <BellRing className="h-5 w-5 sm:h-6 sm:w-6" />
             {activeCount > 0 && <span className="absolute -right-1 -top-1 h-3 w-3 animate-ping rounded-full bg-rose-500" />}
           </span>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">Emergency SOS Feed</h2>
-            <p className="text-sm text-slate-600">{activeCount} active · auto-refreshing every 8s</p>
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">Emergency SOS Feed</h2>
+            <p className="text-xs text-slate-600 sm:text-sm">{activeCount} active · auto-refreshing every 8s</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
           {FILTERS.map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`rounded-full px-4 py-1.5 text-xs font-bold transition ${
+              className={`rounded-full px-3 py-1.5 text-xs font-bold transition sm:px-4 ${
                 filter === f ? "bg-slate-900 text-white" : "bg-white text-slate-500 hover:bg-slate-100"
               }`}
             >
