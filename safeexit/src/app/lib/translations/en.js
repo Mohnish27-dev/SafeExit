@@ -136,9 +136,15 @@ const en = {
     couldNotLoadRequests: "Could not load requests",
     leaveApplications: "Leave Applications",
     leaveApplicationsDesc: "Review multi-day leave requests before departure.",
-    // Short forms for the mobile bottom nav, where full labels wrap to three lines.
+    // Short forms for the mobile bottom nav, which carries the same seven tabs as
+    // the desktop bar in ~50px columns — the full labels wrap to three lines there.
+    navHome: "Home",
+    navRequests: "Requests",
+    navDelays: "Delays",
     navLeave: "Leave",
     navAlerts: "Alerts",
+    navLogs: "Logs",
+    navProfile: "Profile",
     manageLeave: "Manage Leave Applications",
     loadingLeave: "Loading leave applications…",
     noPendingLeave: "No pending leave applications",

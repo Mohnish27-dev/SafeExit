@@ -136,9 +136,15 @@ const hi = {
     couldNotLoadRequests: "रिक्वेस्ट लोड नहीं हो पाईं",
     leaveApplications: "लीव एप्लीकेशन",
     leaveApplicationsDesc: "जाने से पहले मल्टी-डे लीव रिक्वेस्ट रिव्यू करें।",
-    // Short forms for the mobile bottom nav, where full labels wrap to three lines.
+    // Short forms for the mobile bottom nav, which carries the same seven tabs as
+    // the desktop bar in ~50px columns — the full labels wrap to three lines there.
+    navHome: "होम",
+    navRequests: "रिक्वेस्ट",
+    navDelays: "देरी",
     navLeave: "लीव",
     navAlerts: "अलर्ट",
+    navLogs: "लॉग",
+    navProfile: "प्रोफाइल",
     manageLeave: "लीव एप्लीकेशन मैनेज करें",
     loadingLeave: "लीव एप्लीकेशन लोड हो रही हैं…",
     noPendingLeave: "कोई पेंडिंग लीव एप्लीकेशन नहीं",
