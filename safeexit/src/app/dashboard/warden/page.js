@@ -438,7 +438,7 @@ export default function WardenDashboardPage() {
     { key: "profile", label: "Profile", icon: User },
   ];
 
-  // Keep six comfortably tappable phone tabs. Profile lives behind the header avatar,
+  // Five comfortably tappable phone tabs. Profile lives behind the header avatar,
   // movement logs remain available from the full-width home shortcut, and delay
   // notices surface via the "needs your attention" tile whenever any are pending.
   const mobileNavItems = navItems.filter((n) => !["profile", "logs", "delays"].includes(n.key));
@@ -596,16 +596,20 @@ export default function WardenDashboardPage() {
                 </div>
               </section>
 
-              <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {/* Three tiles: one row from lg, and the last one widens to close the
+                  odd slot on tablets instead of leaving a gap. */}
+              <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {[
                   { label: "Forwarded Outings", value: pending.length, icon: ClipboardList, onClick: () => setView("requests"), fill: "from-indigo-500 to-cyan-400" },
                   { label: "Forwarded Leave", value: leavePending.length, icon: CalendarDays, onClick: () => setView("leave"), fill: "from-violet-500 to-fuchsia-400" },
                   { label: "Active Alerts", value: sosCount, icon: Siren, onClick: () => setView("sos"), fill: "from-rose-500 to-orange-400" },
-                ].map((s, i) => (
+                ].map((s, i, arr) => (
                   <button
                     key={s.label}
                     onClick={s.onClick}
-                    className="sd-luxe-panel sd-enter flex items-center gap-4 rounded-3xl p-5 text-left shadow-lg transition hover:-translate-y-0.5"
+                    className={`sd-luxe-panel sd-enter flex items-center gap-4 rounded-3xl p-5 text-left shadow-lg transition hover:-translate-y-0.5 ${
+                      i === arr.length - 1 ? "sm:col-span-2 lg:col-span-1" : ""
+                    }`}
                     style={{ animationDelay: `${0.1 + i * 0.05}s` }}
                   >
                     <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br ${s.fill} text-white shadow`}>
@@ -844,8 +848,8 @@ export default function WardenDashboardPage() {
         </div>
       )}
 
-      {/* Mobile nav — all tabs fit now; Profile lives behind the header avatar */}
-      <nav className="sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-60 grid grid-cols-6 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
+      {/* Mobile nav — one column per mobileNavItems entry; Profile lives behind the header avatar */}
+      <nav className="sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-60 grid grid-cols-5 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">
         {mobileNavItems.map((n) => (
           <button key={n.key} onClick={() => setView(n.key)} className={`sd-navx ${view === n.key ? "sd-navx--active" : ""}`}>
             <span className="sd-navx__icon relative">

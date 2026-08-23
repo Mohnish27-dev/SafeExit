@@ -910,7 +910,9 @@ export default function CaretakerDashboardPage() {
                 <h2 className="sd-title sd-title-sm mt-2">{t("respondFaster")}</h2>
               </div>
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-4">
+            {/* Boys' caretaker gets four tiles, which tile evenly. The girls' set is five,
+                so its lead tile spans two columns and both counts fill their rows exactly. */}
+            <div className={`mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 ${isBoysCaretaker ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
               {(() => {
                 const manageAction = {
                   title: t("manageRequests"),
@@ -969,7 +971,15 @@ export default function CaretakerDashboardPage() {
                 return isBoysCaretaker
                   ? [leaveAction, safetyAction, overdueAction, logsAction]
                   : [manageAction, safetyAction, overdueAction, leaveAction, logsAction];
-              })().map((a, idx) => (
+              })().map((a, idx) => {
+                // Girls' set is five tiles, so its lead one becomes a two-column hero:
+                // badge and copy side by side, same treatment as the student dashboard.
+                const isHero = !isBoysCaretaker && idx === 0;
+                const badgeStyle = { background: a.badgeBg, boxShadow: `0 14px 26px -12px ${a.glow}` };
+                const countBubble = a.badge ? (
+                  <span className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
+                ) : null;
+                return (
                 <button
                   key={idx}
                   onClick={a.onClick}
@@ -981,29 +991,42 @@ export default function CaretakerDashboardPage() {
                     "--glow": a.glow,
                     "--tile-border": a.border,
                   }}
-                  className="sd-tile sd-luxe-rise group block h-full text-left"
+                  className={`sd-tile sd-luxe-rise group block h-full text-left ${
+                    isHero ? "sd-tile--hero col-span-2" : ""
+                  }`}
                 >
+                  {isHero ? (
+                    <div className="sd-tile__inner flex h-full min-h-38 items-center gap-4 p-4 sm:gap-6 sm:p-6">
+                      <span className="sd-tile__glare" aria-hidden="true" />
+                      <span className="sd-act sd-act--hero sd-lift-lg relative shrink-0 shadow-lg" style={badgeStyle}>
+                        <a.icon className="h-7 w-7 sm:h-9 sm:w-9" />
+                        {countBubble}
+                      </span>
+                      <div className="sd-lift-md min-w-0 flex-1">
+                        <span className="sd-act-rule mb-2 block sm:mb-3.5" aria-hidden="true" />
+                        <span className="sd-card-title block leading-snug">{a.title}</span>
+                        <span className="sd-body mt-1 line-clamp-2 sm:mt-2.5 sm:line-clamp-3">{a.desc}</span>
+                      </div>
+                    </div>
+                  ) : (
                   <div className="sd-tile__inner flex min-h-38 flex-col p-4 sm:min-h-52 sm:p-5">
                     <span className="sd-tile__glare" aria-hidden="true" />
                     <div className="flex items-start justify-between">
-                      <span
-                        className="sd-act sd-lift-lg relative shadow-lg"
-                        style={{ background: a.badgeBg, boxShadow: `0 14px 26px -12px ${a.glow}` }}
-                      >
+                      <span className="sd-act sd-lift-lg relative shadow-lg" style={badgeStyle}>
                         <a.icon className="h-6 w-6" />
-                        {a.badge ? (
-                          <span className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
-                        ) : null}
+                        {countBubble}
                       </span>
                     </div>
                     <div className="sd-lift-md mt-auto pt-4 sm:pt-6">
                       <span className="sd-act-rule mb-2 block sm:mb-3" aria-hidden="true" />
-                      <span className="sd-card-title block text-[0.95rem] leading-snug sm:text-[1.05rem]">{a.title}</span>
-                      <span className="sd-body mt-1 hidden text-[0.88rem] leading-relaxed sm:mt-1.5 sm:block">{a.desc}</span>
+                      <span className="sd-card-title block leading-snug">{a.title}</span>
+                      <span className="sd-body mt-1 hidden leading-relaxed sm:mt-1.5 sm:block sm:line-clamp-2">{a.desc}</span>
                     </div>
                   </div>
+                  )}
                 </button>
-              ))}
+                );
+              })}
             </div>
               </section>
 
@@ -1171,7 +1194,8 @@ export default function CaretakerDashboardPage() {
 
           {view === 'logs' && <MovementLogsView />}
 
-          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysCaretaker ? 'grid-cols-7' : 'grid-cols-8'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
+          {/* Six tabs, seven when the Requests tab is shown — one column each, no empty track */}
+          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysCaretaker ? 'grid-cols-6' : 'grid-cols-7'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
             <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span>{tc("home")}</button>
             {!isBoysCaretaker && (
               <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span>{t("requests")}</button>
@@ -1394,8 +1418,9 @@ export default function CaretakerDashboardPage() {
       )}
 
       {/* Mobile nav — Logs lives on the Home tile grid and Profile behind the header avatar,
-          so they're dropped here to keep every tab label on one line. */}
-      <nav className={`sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-4' : 'grid-cols-5'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
+          so they're dropped here to keep every tab label on one line. Three tabs, four
+          when the Requests tab is shown — one column each, no empty track. */}
+      <nav className={`sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-3' : 'grid-cols-4'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
         <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="sd-navx__label">{tc("home")}</span></button>
         {!isBoysCaretaker && (
           <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="sd-navx__label">{t("requests")}</span></button>
