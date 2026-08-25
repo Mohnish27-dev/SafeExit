@@ -33,6 +33,9 @@ services:
       NODE_ENV: production
       # The Next rewrite proxies /api/backend/* to the backend container by service name.
       BACKEND_ORIGIN: "http://backend:5000"
+      # commissioning routes (/scanner-check, /gate-cards) 404 unless this is "1".
+      # Read at runtime by src/proxy.js. Set to "1" only while commissioning a gate.
+      SCANNER_TOOLS: ${SCANNER_TOOLS:-0}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
