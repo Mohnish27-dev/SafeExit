@@ -3289,6 +3289,26 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* Dense variant for the caretaker's phone bar, which carries all seven desktop tabs.
+     At 360px each column is only ~47px, so the icon and label both step down and the
+     horizontal padding goes to zero — the grid track, not padding, does the spacing.
+     Labels keep the ellipsis above, but at this size the short forms all fit. */
+  .sd-navx--dense {
+    gap: 0.2rem;
+    padding: 0.4rem 0;
+    font-size: 0.5rem;
+    letter-spacing: 0.02em;
+  }
+  .sd-navx--dense .sd-navx__icon {
+    height: 1.85rem;
+    width: 1.85rem;
+    border-radius: 0.65rem;
+  }
+  .sd-navx--dense .sd-navx__icon svg {
+    height: 1.05rem;
+    width: 1.05rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3538,6 +3558,71 @@ body {
 .sd-tile:hover .sd-act-rule {
   width: 3.25rem;
   opacity: 1;
+}
+
+/* Quick-action tile description. Carries no type of its own — .sd-body already sets
+   the 1rem/1.75 it wants at the sizes where it's visible. It exists purely as the
+   hook the .sd-qa phone block below hides it by. */
+.sd-act-desc {
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+/* Student quick actions on phones — a compact two-up launcher grid (markup in
+   dashboard/student/page.js). Scoped to .sd-qa AND to the phone range so the shared
+   .sd-tile / .sd-act / .sd-act-arrow rules the caretaker and security dashboards
+   also render with are left exactly as they are. Unlayered, so these beat the
+   Tailwind sizing utilities on the same elements. */
+@media (max-width: 639px) {
+  .sd-qa .sd-tile__inner {
+    min-height: 7rem;
+    border-radius: 1.375rem;
+    box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.4);
+  }
+
+  .sd-qa .sd-act {
+    height: 2.55rem;
+    width: 2.55rem;
+    border-radius: 0.85rem;
+  }
+
+  .sd-qa .sd-act svg {
+    height: 1.25rem;
+    width: 1.25rem;
+  }
+
+  /* A bare glyph rather than the desktop pill — a white chip on a pale tint reads
+     as a smudge at this size. */
+  .sd-qa .sd-act-arrow {
+    height: 1.15rem;
+    width: 1.15rem;
+    background: none;
+    border: 0;
+    box-shadow: none;
+    color: #94a3b8;
+  }
+
+  .sd-qa .sd-act-arrow svg {
+    height: 0.95rem;
+    width: 0.95rem;
+  }
+
+  /* Sized so the longest label ("Leave Application") still holds one line in the
+     ~130px of prose a two-up tile leaves, keeping the rows level. */
+  .sd-qa .sd-card-title {
+    font-size: 0.875rem;
+    letter-spacing: -0.02em;
+  }
+
+  /* Same copy as the wide tiles, set for a ~130px column: at this size the longest
+     description ("Request multi-day leave…") wraps to exactly the 3 lines line-clamp-3
+     allows. The reserve is those 3 lines, so a 2-line card matches a 3-line one and
+     every tile in the grid lands on one height. */
+  .sd-qa .sd-act-desc {
+    font-size: 0.72rem;
+    line-height: 1.45;
+    min-height: 3.14rem;
+  }
 }
 
 /* Guard console layer (grd-*) for the security dashboard */

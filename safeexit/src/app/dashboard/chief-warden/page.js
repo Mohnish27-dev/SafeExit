@@ -41,9 +41,9 @@ const NAV = [
   { key: "delays", label: "Delays", icon: MessageSquareText },
 ];
 
-function StatCard({ icon: Icon, label, value, note, tone }) {
+function StatCard({ icon: Icon, label, value, note, tone, className = "" }) {
   return (
-    <div className={`rounded-3xl border p-5 shadow-sm ${tone}`}>
+    <div className={`rounded-3xl border p-5 shadow-sm ${tone} ${className}`}>
       <div className="flex items-center gap-4">
         <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 shadow-sm"><Icon className="h-5 w-5" /></span>
         <div><p className="text-3xl font-black leading-none text-slate-900">{value}</p><p className="mt-1 text-sm font-bold text-slate-700">{label}</p></div>
@@ -201,8 +201,10 @@ export default function ChiefWardenDashboardPage() {
           <button onClick={loadOverview} disabled={loading} className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh overview</button>
         </div>
 
-        <nav className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-white/80 bg-white/90 p-2 shadow-sm sm:grid-cols-3 lg:grid-cols-8">
-          {NAV.map((item) => <button key={item.key} onClick={() => setView(item.key)} className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold transition ${view === item.key ? "bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow" : "text-slate-500 hover:bg-slate-100"}`}><item.icon className="h-4 w-4" /> {item.label}{item.key === "delays" && delayCount > 0 && <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-black text-white">{delayCount}</span>}</button>)}
+        {/* Tabs grow to fill their row, so an odd count never leaves a gap: two per row on
+            phones, three on tablets, all on one line from lg up. */}
+        <nav className="mt-4 flex flex-wrap gap-2 rounded-3xl border border-white/80 bg-white/90 p-2 shadow-sm">
+          {NAV.map((item) => <button key={item.key} onClick={() => setView(item.key)} className={`flex grow basis-[45%] items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold transition sm:basis-[28%] lg:basis-0 ${view === item.key ? "bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow" : "text-slate-500 hover:bg-slate-100"}`}><item.icon className="h-4 w-4" /> {item.label}{item.key === "delays" && delayCount > 0 && <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-black text-white">{delayCount}</span>}</button>)}
         </nav>
 
         {error && <p className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700"><AlertTriangle className="h-4 w-4" /> {error}</p>}
@@ -210,7 +212,8 @@ export default function ChiefWardenDashboardPage() {
         <div className="mt-6">
           {view === "overview" && (
             <section className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{stats.map((card) => <StatCard key={card.label} {...card} />)}</div>
+              {/* Seven stats in an even grid: the last one widens to close the odd slot. */}
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{stats.map((card, i) => <StatCard key={card.label} {...card} className={i === stats.length - 1 && stats.length % 2 !== 0 ? "sm:col-span-2" : ""} />)}</div>
               <div><div className="mb-4"><h2 className="text-xl font-black text-slate-900">Every Campus Hostel</h2><p className="text-sm font-medium text-slate-500">Operational status, responsible staff, requests, and safety alerts in one view.</p></div>{loading && !overview ? <div className="py-16 text-center font-semibold text-slate-500">Loading hostel details…</div> : <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{overview?.hostels?.map((hostel) => <HostelCard key={hostel.name} hostel={hostel} />)}</div>}</div>
             </section>
           )}

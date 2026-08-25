@@ -647,6 +647,48 @@ export default function CaretakerDashboardPage() {
   // Boys' outings are auto-approved, so a boys' caretaker only approves leave.
   const isBoysCaretaker = managedGender === "Male";
 
+  // Single source of truth for both nav bars. They used to be hand-written twice, which
+  // is how the phone bar drifted to four tabs while the desktop one carried seven —
+  // Delay Notices, Movement Logs and Profile were simply unreachable on a phone. Both
+  // bars now map this list; `short` is the phone label, since the full ones need three
+  // lines in a ~50px column. Badge colour differs for delays (amber, informational)
+  // versus leave/SOS (rose, needs action).
+  const navTabs = [
+    { key: "home", icon: Home, label: tc("home"), short: t("navHome") },
+    !isBoysCaretaker && {
+      key: "requests",
+      icon: ClipboardList,
+      label: t("requests"),
+      short: t("navRequests"),
+    },
+    {
+      key: "delays",
+      icon: Clock,
+      label: t("delayNotices"),
+      short: t("navDelays"),
+      count: delayCount,
+      countClass: "bg-amber-500",
+    },
+    {
+      key: "leave",
+      icon: CalendarDays,
+      label: t("leaveApplications"),
+      short: t("navLeave"),
+      count: leavePending.length,
+      countClass: "bg-rose-500",
+    },
+    {
+      key: "sos",
+      icon: Siren,
+      label: t("safetyAlerts"),
+      short: t("navAlerts"),
+      count: sosCount,
+      countClass: "bg-rose-500",
+    },
+    { key: "logs", icon: ScrollText, label: t("movementLogs"), short: t("navLogs") },
+    { key: "profile", icon: User, label: tc("profile"), short: t("navProfile") },
+  ].filter(Boolean);
+
   const handleLogout = () => logout(router, { role: "caretaker" });
 
   // Push notification banner state; null until permission API is checked.
@@ -910,7 +952,10 @@ export default function CaretakerDashboardPage() {
                 <h2 className="sd-title sd-title-sm mt-2">{t("respondFaster")}</h2>
               </div>
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-4">
+            {/* Phones: two-up compact launchers. From lg every tile sits side by side —
+                five for the girls' set, four for the boys' — the same equal-tile row the
+                student dashboard uses, so nothing is a stretched odd one out. */}
+            <div className={`mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-5 ${isBoysCaretaker ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
               {(() => {
                 const manageAction = {
                   title: t("manageRequests"),
@@ -969,7 +1014,16 @@ export default function CaretakerDashboardPage() {
                 return isBoysCaretaker
                   ? [leaveAction, safetyAction, overdueAction, logsAction]
                   : [manageAction, safetyAction, overdueAction, leaveAction, logsAction];
-              })().map((a, idx) => (
+              })().map((a, idx) => {
+                // Girls' set is five tiles, so at sm — where the grid is two columns — the
+                // lead one spans both to avoid an orphan. It drops back to a single column
+                // at lg, where all five sit side by side. Boys' four tile evenly throughout.
+                const featured = !isBoysCaretaker && idx === 0;
+                const badgeStyle = { background: a.badgeBg, boxShadow: `0 14px 26px -12px ${a.glow}` };
+                const countBubble = a.badge ? (
+                  <span className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
+                ) : null;
+                return (
                 <button
                   key={idx}
                   onClick={a.onClick}
@@ -981,29 +1035,35 @@ export default function CaretakerDashboardPage() {
                     "--glow": a.glow,
                     "--tile-border": a.border,
                   }}
-                  className="sd-tile sd-luxe-rise group block h-full text-left"
+                  className={`sd-tile sd-qa sd-luxe-rise group block h-full text-left ${
+                    featured ? "sm:col-span-2 lg:col-span-1" : ""
+                  }`}
                 >
-                  <div className="sd-tile__inner flex min-h-38 flex-col p-4 sm:min-h-52 sm:p-5">
+                  {/* One shape at every size — badge top-left, copy pinned to the bottom by
+                      mt-auto: a compact two-up card on phones, a row of equal tiles at lg.
+                      Same structure as the student dashboard's quick actions. The sm:
+                      reserves keep the wide tiles' titles and copy on a shared baseline. */}
+                  <div className="sd-tile__inner flex h-full flex-col items-start p-3.5 sm:min-h-52 sm:p-5">
                     <span className="sd-tile__glare" aria-hidden="true" />
-                    <div className="flex items-start justify-between">
-                      <span
-                        className="sd-act sd-lift-lg relative shadow-lg"
-                        style={{ background: a.badgeBg, boxShadow: `0 14px 26px -12px ${a.glow}` }}
-                      >
-                        <a.icon className="h-6 w-6" />
-                        {a.badge ? (
-                          <span className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
-                        ) : null}
+                    <span className="sd-act sd-lift-lg relative shrink-0 shadow-lg" style={badgeStyle}>
+                      <a.icon className="h-6 w-6" />
+                      {countBubble}
+                    </span>
+                    <div className="sd-lift-md mt-auto w-full min-w-0 pt-4 sm:pt-6">
+                      <span className="sd-act-rule mb-2 hidden sm:mb-3 sm:block" aria-hidden="true" />
+                      {/* No `block` alongside the clamps — line-clamp supplies display:-webkit-box
+                          and `block` would override it, dropping the clamp entirely. */}
+                      <span className="sd-card-title line-clamp-2 leading-snug sm:min-h-11">
+                        {a.title}
                       </span>
-                    </div>
-                    <div className="sd-lift-md mt-auto pt-4 sm:pt-6">
-                      <span className="sd-act-rule mb-2 block sm:mb-3" aria-hidden="true" />
-                      <span className="sd-card-title block text-[0.95rem] leading-snug sm:text-[1.05rem]">{a.title}</span>
-                      <span className="sd-body mt-1 hidden text-[0.88rem] leading-relaxed sm:mt-1.5 sm:block">{a.desc}</span>
+                      <span className="sd-body sd-act-desc mt-1 line-clamp-3 sm:mt-1.5 sm:min-h-21">
+                        {a.desc}
+                      </span>
                     </div>
                   </div>
                 </button>
-              ))}
+                );
+              })}
             </div>
               </section>
 
@@ -1171,34 +1231,30 @@ export default function CaretakerDashboardPage() {
 
           {view === 'logs' && <MovementLogsView />}
 
-          <nav className={`sd-luxe-panel sd-luxe-rise mt-6 hidden md:grid ${isBoysCaretaker ? 'grid-cols-7' : 'grid-cols-8'} gap-1 rounded-4xl p-2 sm:p-3 backdrop-blur`}>
-            <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span>{tc("home")}</button>
-            {!isBoysCaretaker && (
-              <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span>{t("requests")}</button>
-            )}
-            <button onClick={() => setView('delays')} className={`sd-navx ${view === 'delays' ? 'sd-navx--active' : ''}`}>
-              <span className="sd-navx__icon relative">
-                <Clock className="h-5 w-5" />
-                {delayCount > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-amber-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{delayCount}</span>}
-              </span>
-              {t("delayNotices")}
-            </button>
-            <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
-              <span className="sd-navx__icon relative">
-                <CalendarDays className="h-5 w-5" />
-                {leavePending.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
-              </span>
-              {t("leaveApplications")}
-            </button>
-            <button onClick={() => setView('sos')} className={`sd-navx ${view === 'sos' ? 'sd-navx--active' : ''}`}>
-              <span className="sd-navx__icon relative">
-                <Siren className="h-5 w-5" />
-                {sosCount > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
-              </span>
-              {t("safetyAlerts")}
-            </button>
-            <button onClick={() => setView('logs')} className={`sd-navx ${view === 'logs' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ScrollText className="h-5 w-5" /></span>{t("movementLogs")}</button>
-            <button onClick={() => setView('profile')} className={`sd-navx ${view === 'profile' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><User className="h-5 w-5" /></span>{tc("profile")}</button>
+          {/* Desktop bar — one column per tab in `navTabs`, so no empty track. */}
+          <nav
+            className="sd-luxe-panel sd-luxe-rise mt-6 hidden gap-1 rounded-4xl p-2 backdrop-blur sm:p-3 md:grid"
+            style={{ gridTemplateColumns: `repeat(${navTabs.length}, minmax(0, 1fr))` }}
+          >
+            {navTabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setView(tab.key)}
+                className={`sd-navx ${view === tab.key ? "sd-navx--active" : ""}`}
+              >
+                <span className="sd-navx__icon relative">
+                  <tab.icon className="h-5 w-5" />
+                  {tab.count > 0 && (
+                    <span
+                      className={`absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-white px-1 text-[10px] font-bold text-white ${tab.countClass}`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </span>
+                {tab.label}
+              </button>
+            ))}
           </nav>
         </div>
       </div>
@@ -1393,27 +1449,34 @@ export default function CaretakerDashboardPage() {
         </div>
       )}
 
-      {/* Mobile nav — Logs lives on the Home tile grid and Profile behind the header avatar,
-          so they're dropped here to keep every tab label on one line. */}
-      <nav className={`sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid ${isBoysCaretaker ? 'grid-cols-4' : 'grid-cols-5'} gap-0.5 rounded-[1.75rem] p-1.5 md:hidden`}>
-        <button onClick={() => setView('home')} className={`sd-navx ${view === 'home' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><Home className="h-5 w-5" /></span><span className="sd-navx__label">{tc("home")}</span></button>
-        {!isBoysCaretaker && (
-          <button onClick={() => setView('requests')} className={`sd-navx ${view === 'requests' ? 'sd-navx--active' : ''}`}><span className="sd-navx__icon"><ClipboardList className="h-5 w-5" /></span><span className="sd-navx__label">{t("requests")}</span></button>
-        )}
-        <button onClick={() => setView('leave')} className={`sd-navx ${view === 'leave' ? 'sd-navx--active' : ''}`}>
-          <span className="sd-navx__icon relative">
-            <CalendarDays className="h-5 w-5" />
-            {leavePending.length > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{leavePending.length}</span>}
-          </span>
-          <span className="sd-navx__label">{t("navLeave")}</span>
-        </button>
-        <button onClick={() => setView('sos')} className={`sd-navx ${view === 'sos' ? 'sd-navx--active' : ''}`}>
-          <span className="sd-navx__icon relative">
-            <Siren className="h-5 w-5" />
-            {sosCount > 0 && <span className="absolute -top-2 -right-2 h-4 min-w-4 px-1 rounded-full bg-rose-500 flex items-center justify-center text-[10px] font-bold text-white border-2 border-white">{sosCount}</span>}
-          </span>
-          <span className="sd-navx__label">{t("navAlerts")}</span>
-        </button>
+      {/* Mobile bar — the same tabs as the desktop one, from the same `navTabs` list, so
+          Delay Notices, Movement Logs and Profile are reachable on a phone too. Seven
+          columns (six for the boys' set) is tight, hence the short labels and the
+          sd-navx--dense sizing; the badge sits inside the icon so it can't be clipped by
+          the column edge. */}
+      <nav
+        className="sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid gap-0 rounded-[1.75rem] p-1.5 md:hidden"
+        style={{ gridTemplateColumns: `repeat(${navTabs.length}, minmax(0, 1fr))` }}
+      >
+        {navTabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setView(tab.key)}
+            className={`sd-navx sd-navx--dense ${view === tab.key ? "sd-navx--active" : ""}`}
+          >
+            <span className="sd-navx__icon relative">
+              <tab.icon className="h-5 w-5" />
+              {tab.count > 0 && (
+                <span
+                  className={`absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-white px-0.5 text-[9px] font-bold leading-none text-white ${tab.countClass}`}
+                >
+                  {tab.count}
+                </span>
+              )}
+            </span>
+            <span className="sd-navx__label">{tab.short}</span>
+          </button>
+        ))}
       </nav>
 
       {/* Live "student is running late" popup — refetches on the /delay stream. */}

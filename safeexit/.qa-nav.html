@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&display=swap" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #eef2f7; font-family: Manrope, sans-serif; }
+  .bar { position: fixed; left: .5rem; right: .5rem; bottom: .75rem; display: grid; gap: 0;
+         border-radius: 1.75rem; padding: 0.375rem;
+         background: rgba(255,255,255,.94); border: 1px solid rgba(226,232,240,.9);
+         box-shadow: 0 22px 50px -24px rgba(15,23,42,.35); }
+  .sd-navx { display:flex; flex-direction:column; align-items:center; gap:.45rem;
+    border-radius:1.15rem; padding:.7rem .4rem; font-size:.64rem; font-weight:800;
+    text-transform:uppercase; letter-spacing:.11em; color:#64748b; background:none; border:0; }
+  .sd-navx__icon { display:flex; height:2.5rem; width:2.5rem; align-items:center;
+    justify-content:center; border-radius:.95rem; background:rgba(241,245,249,.9); }
+  .sd-navx--active { color:#4338ca; }
+  .sd-navx--active .sd-navx__icon { background:linear-gradient(145deg,#4338ca,#6366f1); color:#fff;
+    box-shadow:0 18px 32px -12px rgba(67,56,202,.6); }
+
+  @media (max-width: 767px) {
+    .sd-navx { gap:.3rem; padding:.5rem .15rem; font-size:.58rem; letter-spacing:.04em; min-width:0; }
+    .sd-navx__icon { height:2.2rem; width:2.2rem; border-radius:.8rem; }
+    .sd-navx__label { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    /* dense variant under test */
+    .sd-navx--dense { gap:.2rem; padding:.4rem 0; font-size:.5rem; letter-spacing:.02em; }
+    .sd-navx--dense .sd-navx__icon { height:1.85rem; width:1.85rem; border-radius:.65rem; }
+    .sd-navx--dense .sd-navx__icon svg { height:1.05rem; width:1.05rem; }
+  }
+</style>
+<nav class="bar" id="bar"></nav>
+<script>
+const ico = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="height:1.25rem;width:1.25rem"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>';
+// girls' set = all seven tabs, with the short labels from en.js
+const tabs = [
+  {k:'home',   s:'Home'},
+  {k:'requests', s:'Requests'},
+  {k:'delays', s:'Delays', c:3},
+  {k:'leave',  s:'Leave', c:2},
+  {k:'sos',    s:'Alerts', c:2},
+  {k:'logs',   s:'Logs'},
+  {k:'profile',s:'Profile'},
+];
+const bar = document.getElementById('bar');
+bar.style.gridTemplateColumns = `repeat(${tabs.length}, minmax(0, 1fr))`;
+bar.innerHTML = tabs.map(t => `
+  <button class="sd-navx sd-navx--dense ${t.k==='requests'?'sd-navx--active':''}">
+    <span class="sd-navx__icon" style="position:relative">${ico}${t.c?`<span style="position:absolute;right:-.25rem;top:-.25rem;display:flex;height:.875rem;min-width:.875rem;align-items:center;justify-content:center;border-radius:9999px;border:1px solid #fff;padding:0 .125rem;font-size:9px;font-weight:700;line-height:1;color:#fff;background:#f43f5e">${t.c}</span>`:''}</span>
+    <span class="sd-navx__label">${t.s}</span>
+  </button>`).join('');
+</script>

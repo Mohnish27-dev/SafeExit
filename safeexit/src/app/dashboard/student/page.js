@@ -140,7 +140,7 @@ const outingAccent = (outing) => {
 const actions = [
   {
     title: "Make An Outing",
-    description: "Tap to request a café, meal, or market outing and get your gate pass once approved.",
+    description: "Request a café, meal, or market outing.",
     icon: Ticket,
     href: "/dashboard/student/generate-ticket",
     badge: "linear-gradient(145deg, #0f172a 0%, #4338ca 52%, #06b6d4 100%)",
@@ -150,7 +150,7 @@ const actions = [
   },
   {
     title: "My Outings",
-    description: "Track every outing's approval, return, and gate status in one place.",
+    description: "Track approvals, returns, and gate status.",
     icon: ClipboardList,
     href: "/dashboard/student/my-outings",
     badge: "linear-gradient(145deg, #1e40af 0%, #38bdf8 100%)",
@@ -160,7 +160,7 @@ const actions = [
   },
   {
     title: "SOS Alert",
-    description: "Instantly share your live location and details with caretaker and security.",
+    description: "Share your live location with security instantly.",
     icon: Siren,
     href: "/dashboard/student/sos",
     badge: "linear-gradient(145deg, #fb7185 0%, #f43f5e 48%, #e11d48 100%)",
@@ -170,7 +170,7 @@ const actions = [
   },
   {
     title: "Leave Application",
-    description: "Send your caretaker a formal multi-day leave request for festivals or home visits.",
+    description: "Request multi-day leave for festivals or home visits.",
     icon: CalendarDays,
     href: "/dashboard/student/leave-application",
     badge: "linear-gradient(145deg, #6d28d9 0%, #a855f7 55%, #d946ef 100%)",
@@ -180,7 +180,7 @@ const actions = [
   },
   {
     title: "Report Delay",
-    description: "Let your hostel know when an active outing is running late and share your expected return time.",
+    description: "Tell your hostel you're returning late.",
     icon: Clock3,
     href: "/dashboard/student/delay-notice",
     badge: "linear-gradient(145deg, #0f766e 0%, #14b8a6 55%, #2dd4bf 100%)",
@@ -225,7 +225,9 @@ function MagneticButton({ strength = 0.35, className = "", children, ...props })
 }
 
 // 3D tilt tile — pointer written to CSS vars, no per-frame re-render.
-function ActionCard({ action, index }) {
+// `featured` lets the lead action span both columns at sm, where five tiles would
+// otherwise leave an orphan; from lg the grid is 5-across so the span is dropped.
+function ActionCard({ action, index, featured = false }) {
   const handlePointerMove = (e) => {
     const el = e.currentTarget;
     const rect = el.getBoundingClientRect();
@@ -242,12 +244,17 @@ function ActionCard({ action, index }) {
     e.currentTarget.style.setProperty("--ry", "0deg");
   };
 
+  const badgeStyle = {
+    background: action.badge,
+    boxShadow: `0 14px 26px -12px ${action.glow}`,
+  };
+
   return (
     <Link
       href={action.href}
       onPointerMove={handlePointerMove}
       onPointerLeave={resetTilt}
-      className="sd-tile sd-luxe-rise group block h-full"
+      className={`sd-tile sd-qa sd-luxe-rise group block h-full ${featured ? "sm:col-span-2 lg:col-span-1" : ""}`}
       style={{
         animationDelay: `${0.08 + index * 0.08}s`,
         "--tint": action.tint,
@@ -255,29 +262,30 @@ function ActionCard({ action, index }) {
         "--tile-border": action.border,
       }}
     >
-      <div className="sd-tile__inner flex min-h-0 flex-col p-3.5 sm:min-h-[15rem] sm:p-5">
+      {/* One column at every size: badge top-left, arrow top-right, copy pinned to the
+          bottom by mt-auto. Phones get a compact two-up card carrying the same title
+          and description as the wide tiles, just scaled down by the .sd-qa phone block
+          in globals.css. Only the hover rule is dropped there. */}
+      <div className="sd-tile__inner flex h-full flex-col items-start p-3.5 sm:min-h-[13rem] sm:p-5">
         <span className="sd-tile__glare" aria-hidden="true" />
 
-        {/* Top row: gradient badge left, reveal arrow right */}
-        <div className="flex items-start justify-between">
-          <span
-            className="sd-act sd-lift-lg shadow-lg"
-            style={{ background: action.badge, boxShadow: `0 14px 26px -12px ${action.glow}` }}
-          >
-            <action.icon className="h-5 w-5 sm:h-6 sm:w-6" />
-          </span>
-          <span className="sd-act-arrow sd-lift-sm">
-            <ArrowUpRight className="h-4 w-4" />
-          </span>
-        </div>
+        <span className="sd-act-arrow sd-lift-sm absolute right-3 top-3 sm:right-5 sm:top-5">
+          <ArrowUpRight className="h-4 w-4" />
+        </span>
 
-        {/* Description hidden on phones — tile acts as a compact launcher */}
-        <div className="sd-lift-md mt-auto pt-3 sm:pt-6">
+        <span className="sd-act sd-lift-lg shrink-0 shadow-lg" style={badgeStyle}>
+          <action.icon className="h-6 w-6" />
+        </span>
+
+        {/* The sm: reserves keep the five wide tiles level. Phones get their own
+            (tighter) description reserve from `.sd-qa .sd-act-desc`, so every card in
+            the two-up grid lands on the same height whether its copy runs 2 or 3 lines. */}
+        <div className="sd-lift-md mt-auto w-full min-w-0 pt-4 sm:pt-6">
           <span className="sd-act-rule mb-2 hidden sm:mb-3 sm:block" aria-hidden="true" />
-          <span className="sd-card-title block truncate text-[0.9rem] leading-snug sm:text-[1.05rem]">
+          <span className="sd-card-title line-clamp-2 leading-snug sm:min-h-[2.75rem]">
             {action.title}
           </span>
-          <span className="sd-body mt-1.5 hidden text-[0.88rem] leading-relaxed sm:block sm:line-clamp-2 sm:min-h-[2.9rem]">
+          <span className="sd-body sd-act-desc mt-1 line-clamp-3 sm:mt-1.5 sm:min-h-[5.25rem]">
             {action.description}
           </span>
         </div>
@@ -1216,9 +1224,12 @@ export default function StudentDashboardPage() {
                 Ready
               </span>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
+            {/* Phones: two-up compact launchers — 5 tiles fill 2/2/1, the last sitting
+                alone in the left column. From sm the lead tile spans both columns so
+                there's no orphan; from lg it's 5-across. */}
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-5 lg:grid-cols-5">
               {actions.map((action, index) => (
-                <ActionCard key={action.title} action={action} index={index} />
+                <ActionCard key={action.title} action={action} index={index} featured={index === 0} />
               ))}
             </div>
           </section>
@@ -1444,8 +1455,9 @@ export default function StudentDashboardPage() {
             </div>
           </section>
 
-          {/* Bottom bar: floating on phones, inline panel on desktop */}
-          <nav className="sd-luxe-panel sd-luxe-rise fixed inset-x-3 bottom-3 z-40 grid grid-cols-6 gap-0.5 rounded-3xl p-1.5 backdrop-blur md:static md:inset-x-auto md:mt-6 md:gap-1 md:rounded-4xl md:p-3">
+          {/* Bottom bar: floating on phones, inline panel on desktop.
+              Column count tracks navItems.length so no track is left empty. */}
+          <nav className="sd-luxe-panel sd-luxe-rise fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 gap-0.5 rounded-3xl p-1.5 backdrop-blur md:static md:inset-x-auto md:mt-6 md:gap-1 md:rounded-4xl md:p-3">
             {navItems.map((item) => (
               <Link
                 key={item.label}
@@ -1455,7 +1467,7 @@ export default function StudentDashboardPage() {
                 <span className="sd-navx__icon">
                   <item.icon className="h-5 w-5" />
                 </span>
-                {item.label}
+                <span className="sd-navx__label">{item.label}</span>
               </Link>
             ))}
           </nav>
