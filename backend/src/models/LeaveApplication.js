@@ -91,5 +91,26 @@ const leaveApplicationSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Indexes — mirrors models/OutingRequest.js; see the notes there.
+
+// createLeaveApplication's active-application block, plus the gate scan's
+// resolveApprovedPass/resolveOutPass. {student:1} prefix serves getMyLeaveApplications.
+leaveApplicationSchema.index({ student: 1, status: 1, createdAt: -1 });
+
+// getPendingLeaveApplications — the caretaker queue, oldest first.
+leaveApplicationSchema.index({ status: 1, createdAt: 1 });
+
+// getForwardedLeaveApplications — the warden's action queue.
+leaveApplicationSchema.index({ forwardedTo: 1, status: 1, forwardedAt: 1 });
+
+// The targetCaretaker branch of the caretaker scope filter (utils/hostelScope.js).
+leaveApplicationSchema.index({ targetCaretaker: 1 });
+
+// getAllLeaveApplications — unfiltered campus-wide list.
+leaveApplicationSchema.index({ createdAt: -1 });
+
+// getLeaveHistory / getWardenLeaveHistory sort.
+leaveApplicationSchema.index({ decidedAt: -1 });
+
 const LeaveApplication = mongoose.model('LeaveApplication', leaveApplicationSchema);
 module.exports = LeaveApplication;

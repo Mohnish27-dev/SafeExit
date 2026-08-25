@@ -12,7 +12,7 @@ const {
   resolveTargetCaretaker,
   resolveWardenForHostel,
 } = require('../utils/hostelScope');
-const { ownSignature, sendSignatureRequired } = require('../utils/signature');
+const { fetchOwnSignature, sendSignatureRequired } = require('../utils/signature');
 
 // 'Forwarded' counts as live too — an application sitting with the warden must block a
 // second one just like a Pending one does, or a student could stack approvals.
@@ -79,7 +79,7 @@ const createLeaveApplication = async (req, res) => {
     // KEEP THIS AHEAD of the active-leave query below: the frontend re-submits automatically
     // once the student captures a signature in response to this 428, which is only safe
     // while the rejection happens before any document is created or state is touched.
-    const studentSignature = ownSignature(req.user);
+    const studentSignature = await fetchOwnSignature(req.user);
     if (!studentSignature) {
       return sendSignatureRequired(
         res,
@@ -196,7 +196,11 @@ const createLeaveApplication = async (req, res) => {
 // GET /api/leave/myrequests — private (Student)
 const getMyLeaveApplications = async (req, res) => {
   try {
-    const applications = await LeaveApplication.find({ student: req.user._id }).sort({ createdAt: -1 });
+    // studentSignature dropped for the same reason as getMyOutingRequests: 15s poll, and
+    // the leave-application view only renders the caretaker/warden signature.
+    const applications = await LeaveApplication.find({ student: req.user._id })
+      .select('-studentSignature')
+      .sort({ createdAt: -1 });
     await expireStaleApplications(applications);
     res.json(applications);
   } catch (error) {
@@ -274,16 +278,19 @@ const updateLeaveStatus = async (req, res) => {
     });
   }
 
-  // Approving mints a pass, so it carries the caretaker's saved signature. (Rejection needs none.)
-  const caretakerSignature = status === 'Approved' ? ownSignature(req.user) : null;
-  if (status === 'Approved' && !caretakerSignature) {
-    return sendSignatureRequired(
-      res,
-      'Add your signature in your profile before approving applications.'
-    );
-  }
-
+  // Approving mints a pass, so it carries the caretaker's saved signature. (Rejection
+  // needs none.) Inside the try: this is a DB read now, so a failure belongs on the
+  // same 500 path as every other query in this handler.
   try {
+    const caretakerSignature =
+      status === 'Approved' ? await fetchOwnSignature(req.user) : null;
+    if (status === 'Approved' && !caretakerSignature) {
+      return sendSignatureRequired(
+        res,
+        'Add your signature in your profile before approving applications.'
+      );
+    }
+
     const application = await LeaveApplication.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (!application) {
@@ -473,19 +480,23 @@ const updateWardenLeaveStatus = async (req, res) => {
     return res.status(400).json({ message: 'Status can only be set to Approved or Rejected.' });
   }
 
-  const wardenSignature = status === 'Approved' ? ownSignature(req.user) : null;
-  if (status === 'Approved' && !wardenSignature) {
-    return sendSignatureRequired(
-      res,
-      'Add your signature in your profile before approving applications.'
-    );
-  }
-
   if (status === 'Rejected' && !remarks) {
     return res.status(400).json({ message: 'A reason is required when rejecting a leave application.' });
   }
 
+  // See updateLeaveStatus: the signature read moved inside the try with the queries.
+  // It only fires on 'Approved' and the remarks check only on 'Rejected', so the two
+  // are mutually exclusive and reordering them changes no response.
   try {
+    const wardenSignature =
+      status === 'Approved' ? await fetchOwnSignature(req.user) : null;
+    if (status === 'Approved' && !wardenSignature) {
+      return sendSignatureRequired(
+        res,
+        'Add your signature in your profile before approving applications.'
+      );
+    }
+
     const application = await LeaveApplication.findById(req.params.id).populate(
       'student',
       'gender hostelName'

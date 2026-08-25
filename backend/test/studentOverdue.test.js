@@ -26,9 +26,12 @@ test('student outing history derives overdue while preserving the stored Out sta
     toObject: () => ({ _id: 'outing-1', status: 'Out', inTime: dueAt }),
   };
 
-  OutingRequest.find = () => ({
-    sort: async () => [request],
-  });
+  // Chainable double, mirroring the real find().select().sort() — the assertions below
+  // are about the isOverdue derivation, not the query shape.
+  OutingRequest.find = () => {
+    const chain = { select: () => chain, sort: async () => [request] };
+    return chain;
+  };
   t.after(() => { OutingRequest.find = originalFind; });
 
   const req = { user: { _id: 'student-1' } };
@@ -51,9 +54,10 @@ test('student outing history does not mark a future return time overdue', async 
     toObject: () => ({ _id: 'outing-2', status: 'Out', inTime: dueAt }),
   };
 
-  OutingRequest.find = () => ({
-    sort: async () => [request],
-  });
+  OutingRequest.find = () => {
+    const chain = { select: () => chain, sort: async () => [request] };
+    return chain;
+  };
   t.after(() => { OutingRequest.find = originalFind; });
 
   const res = responseRecorder();

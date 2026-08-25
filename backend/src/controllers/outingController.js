@@ -16,7 +16,7 @@ const {
   resolveTargetCaretaker,
   resolveWardenForHostel,
 } = require('../utils/hostelScope');
-const { ownSignature, sendSignatureRequired } = require('../utils/signature');
+const { fetchOwnSignature, sendSignatureRequired } = require('../utils/signature');
 const DelayNotice = require('../models/DelayNotice');
 
 const clockLabel = (minutes) => {
@@ -87,7 +87,7 @@ const createOutingRequest = async (req, res) => {
     // KEEP THIS FIRST: the frontend re-submits automatically after the student captures a
     // signature in response to this 428, which is only safe while the rejection happens
     // before any document is created or state is touched.
-    const studentSignature = ownSignature(req.user);
+    const studentSignature = await fetchOwnSignature(req.user);
     if (!studentSignature) {
       return sendSignatureRequired(
         res,
@@ -204,7 +204,13 @@ const createOutingRequest = async (req, res) => {
 // GET /api/outing/myrequests — private (Student)
 const getMyOutingRequests = async (req, res) => {
   try {
-    const requests = await OutingRequest.find({ student: req.user._id }).sort({ createdAt: -1 });
+    // studentSignature is dropped: this endpoint is polled every 15s by the student
+    // dashboard and my-outings, and neither renders the student's own signature back at
+    // them — they only show the caretaker/warden one as proof of approval. Those two
+    // stay. (getAllOutingRequests drops all three the same way.)
+    const requests = await OutingRequest.find({ student: req.user._id })
+      .select('-studentSignature')
+      .sort({ createdAt: -1 });
     await expireStaleRequests(requests);
     res.json(requests.map((request) => ({
       ...request.toObject(),
@@ -310,16 +316,19 @@ const updateRequestStatus = async (req, res) => {
     });
   }
 
-  // Approving mints a pass, so it carries the caretaker's saved signature. (Rejection needs none.)
-  const caretakerSignature = status === 'Approved' ? ownSignature(req.user) : null;
-  if (status === 'Approved' && !caretakerSignature) {
-    return sendSignatureRequired(
-      res,
-      'Add your signature in your profile before approving requests.'
-    );
-  }
-
+  // Approving mints a pass, so it carries the caretaker's saved signature. (Rejection
+  // needs none.) Inside the try: this is a DB read now, so a failure belongs on the
+  // same 500 path as every other query in this handler.
   try {
+    const caretakerSignature =
+      status === 'Approved' ? await fetchOwnSignature(req.user) : null;
+    if (status === 'Approved' && !caretakerSignature) {
+      return sendSignatureRequired(
+        res,
+        'Add your signature in your profile before approving requests.'
+      );
+    }
+
     const request = await OutingRequest.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (request) {
@@ -523,15 +532,17 @@ const updateWardenRequestStatus = async (req, res) => {
     return res.status(400).json({ message: 'Status can only be set to Approved or Rejected.' });
   }
 
-  const wardenSignature = status === 'Approved' ? ownSignature(req.user) : null;
-  if (status === 'Approved' && !wardenSignature) {
-    return sendSignatureRequired(
-      res,
-      'Add your signature in your profile before approving requests.'
-    );
-  }
-
+  // See updateRequestStatus: the signature read moved inside the try with the queries.
   try {
+    const wardenSignature =
+      status === 'Approved' ? await fetchOwnSignature(req.user) : null;
+    if (status === 'Approved' && !wardenSignature) {
+      return sendSignatureRequired(
+        res,
+        'Add your signature in your profile before approving requests.'
+      );
+    }
+
     const request = await OutingRequest.findById(req.params.id).populate('student', 'gender hostelName');
 
     if (!request) {

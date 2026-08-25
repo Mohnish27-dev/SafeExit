@@ -44,5 +44,15 @@ const scanLogSchema = new mongoose.Schema({
   timestamps: true
 });
 
+
+// getScanLogs default — no filter, newest first.
+scanLogSchema.index({ createdAt: -1 });
+
+// The caretaker/warden hostel scope, which filters student:{$in:[...]} then sorts.
+scanLogSchema.index({ student: 1, createdAt: -1 });
+
+// getScanLogs with ?direction=IN|OUT.
+scanLogSchema.index({ direction: 1, createdAt: -1 });
+
 const ScanLog = mongoose.model('ScanLog', scanLogSchema);
 module.exports = ScanLog;

@@ -39,5 +39,18 @@ const sosAlertSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Indexes. The SOS views poll hardest of anything in the app — every 8s on both the
+// admin and caretaker dashboards — so these matter more than the low write volume
+// suggests.
+
+// getMySOSAlerts — the student's own alerts.
+sosAlertSchema.index({ student: 1, createdAt: -1 });
+
+// getSOSAlerts with ?status= (the dashboards' Active filter), 8s poll.
+sosAlertSchema.index({ status: 1, createdAt: -1 });
+
+// getSOSAlerts unfiltered, and the analytics $match on createdAt.
+sosAlertSchema.index({ createdAt: -1 });
+
 const SOSAlert = mongoose.model('SOSAlert', sosAlertSchema);
 module.exports = SOSAlert;

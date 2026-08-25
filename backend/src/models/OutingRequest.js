@@ -122,5 +122,35 @@ const outingRequestSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Indexes. Every query below was a full collection scan before these existed, which is
+// what made the polled dashboards (15s student, 30s caretaker) expensive on the on-prem
+// Mongo. Writes here are a few hundred a day, so the index count is cheap.
+
+// createOutingRequest's active-pass block, and the gate scan's pass resolution
+// (findOne({student, status}).sort({createdAt:-1}) in controllers/scanController.js).
+// The {student:1} prefix also serves getMyOutingRequests — a student's own rows number
+// in the tens, so the small in-memory sort for its createdAt order costs nothing.
+outingRequestSchema.index({ student: 1, status: 1, createdAt: -1 });
+
+// getPendingRequests — the caretaker queue, oldest first.
+outingRequestSchema.index({ status: 1, createdAt: 1 });
+
+// getOverdueOutings and the 5-minute overdue sweep, both keyed on status:'Out'.
+outingRequestSchema.index({ status: 1, inTime: 1 });
+
+// getForwardedRequests — the warden's action queue.
+outingRequestSchema.index({ forwardedTo: 1, status: 1, forwardedAt: 1 });
+
+// The targetCaretaker branch of the caretaker scope filter (utils/hostelScope.js).
+outingRequestSchema.index({ targetCaretaker: 1 });
+
+// getAllOutingRequests — chief-warden campus-wide list, polled every 30s with no filter,
+// so the sort is all it can be served by.
+outingRequestSchema.index({ createdAt: -1 });
+
+// The history endpoints' sort. DECIDED_FILTER has no selective predicate, so without
+// this a caretaker opening history scans and blocking-sorts the whole collection.
+outingRequestSchema.index({ decidedAt: -1 });
+
 const OutingRequest = mongoose.model('OutingRequest', outingRequestSchema);
 module.exports = OutingRequest;
