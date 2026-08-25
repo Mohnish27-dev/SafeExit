@@ -109,6 +109,16 @@ cd SafeExit
    ```env
    NEXT_PUBLIC_API_URL=http://localhost:5000/api
    ```
+   To use the gate commissioning tools, add the flag below. Both routes return
+   **404 unless it is set**, in dev and in production alike:
+   ```env
+   # /scanner-check — inspect the exact payload a USB scanner sends
+   # /gate-cards    — print the CONFIRM / CANCEL control barcodes
+   SCANNER_TOOLS=1
+   ```
+   It is read at runtime (no `NEXT_PUBLIC_` prefix, so it never reaches the
+   browser bundle) — flipping it needs a restart, not a rebuild. In Docker, set it
+   per-deploy: `SCANNER_TOOLS=1 docker compose up -d frontend`.
 4. Start the frontend development server:
    ```bash
    npm run dev
