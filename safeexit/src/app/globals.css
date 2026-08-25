@@ -3697,6 +3697,26 @@ body {
   letter-spacing: 0.02em;
 }
 
+.grd-drain {
+  transform-origin: left center;
+  animation: grd-drain var(--grd-dur, 2500ms) linear forwards;
+}
+
+@keyframes grd-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+
+.grd-wash {
+  animation: grd-wash 420ms ease-out forwards;
+}
+
+@keyframes grd-wash {
+  from { opacity: 0.5; }
+  to { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .grd-radar::before,
   .grd-glow-border::before,
@@ -3709,6 +3729,10 @@ body {
   }
   .grd-pulse__beat {
     stroke-dasharray: none;
+  }
+
+  .grd-wash {
+    animation-duration: 1ms;
   }
 }
 
