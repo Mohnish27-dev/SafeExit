@@ -13,10 +13,17 @@ const {
   scopedStudentFilter,
   forwardedToFilter,
   requestInScope,
+  canReadSignatures,
   resolveTargetCaretaker,
   resolveWardenForHostel,
 } = require('../utils/hostelScope');
-const { fetchOwnSignature, sendSignatureRequired } = require('../utils/signature');
+const {
+  fetchOwnSignature,
+  sendSignatureRequired,
+  LIST_PROJECTION,
+  signaturePresence,
+  withSignatureFlags,
+} = require('../utils/signature');
 const DelayNotice = require('../models/DelayNotice');
 
 const clockLabel = (minutes) => {
@@ -204,20 +211,51 @@ const createOutingRequest = async (req, res) => {
 // GET /api/outing/myrequests — private (Student)
 const getMyOutingRequests = async (req, res) => {
   try {
-    // studentSignature is dropped: this endpoint is polled every 15s by the student
-    // dashboard and my-outings, and neither renders the student's own signature back at
-    // them — they only show the caretaker/warden one as proof of approval. Those two
-    // stay. (getAllOutingRequests drops all three the same way.)
     const requests = await OutingRequest.find({ student: req.user._id })
-      .select('-studentSignature')
+      .select(LIST_PROJECTION)
       .sort({ createdAt: -1 });
     await expireStaleRequests(requests);
-    res.json(requests.map((request) => ({
+
+    // my-outings shows an "approved & signed by" badge off these two flags and fetches the
+    // image from /:id/signatures when the card expands.
+    const presence = await signaturePresence(
+      OutingRequest,
+      requests.map((r) => r._id),
+      ['caretakerSignature', 'wardenSignature']
+    );
+
+    res.json(requests.map((request) => withSignatureFlags({
       ...request.toObject(),
       // Live display state only. The stored status remains 'Out' until the gate
       // records a return, preserving the movement lifecycle and audit history.
       isOverdue: request.status === 'Out' && isReturnLate(request.inTime),
-    })));
+    }, presence)));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/outing/:id/signatures — private (owner student / routed staff)
+// Signature bytes for one request, kept off every list response. Immutable once stamped,
+// so the client caches what it fetches.
+const getOutingSignatures = async (req, res) => {
+  try {
+    const request = await OutingRequest.findById(req.params.id)
+      .select('student targetCaretaker forwardedTo studentSignature caretakerSignature wardenSignature')
+      .populate('student', 'gender hostelName');
+
+    if (!request) {
+      return res.status(404).json({ message: 'Request not found' });
+    }
+    if (!canReadSignatures(req.user, request, request.student)) {
+      return res.status(403).json({ message: 'This request is not in your scope.' });
+    }
+
+    res.json({
+      studentSignature: request.studentSignature || null,
+      caretakerSignature: request.caretakerSignature || null,
+      wardenSignature: request.wardenSignature || null,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -248,13 +286,22 @@ const getAllOutingRequests = async (req, res) => {
 const getPendingRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
+      .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .sort({ createdAt: 1 });
 
     await expireStaleRequests(requests);
     const stillPending = requests.filter((r) => r.status === 'Pending');
 
-    res.json(stillPending);
+    // The approval modal shows the student's signature before the caretaker signs off; the
+    // flag tells it whether there is one to fetch.
+    const presence = await signaturePresence(
+      OutingRequest,
+      stillPending.map((r) => r._id),
+      ['studentSignature']
+    );
+
+    res.json(stillPending.map((r) => withSignatureFlags(r.toObject(), presence)));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -276,6 +323,7 @@ const getOverdueOutings = async (req, res) => {
       ...(canViewEmergencyContacts ? ['guardianPhoneNumber', 'closeContacts'] : []),
     ].join(' ');
     const outings = await OutingRequest.find({ status: 'Out', ...scope })
+      .select(LIST_PROJECTION)
       .populate('student', studentFields)
       .sort({ inTime: 1 })
       .lean();
@@ -468,6 +516,7 @@ const forwardOutingRequest = async (req, res) => {
 const getForwardedRequests = async (req, res) => {
   try {
     const requests = await OutingRequest.find(forwardedToFilter(req.user))
+      .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedBy', 'name')
       .sort({ forwardedAt: 1 });
@@ -492,6 +541,7 @@ const getCaretakerRequestHistory = async (req, res) => {
         await scopedStudentFilter(req.user),
       ],
     })
+      .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedTo', 'name')
       .populate('approvedBy', 'name role')
@@ -511,6 +561,7 @@ const getWardenRequestHistory = async (req, res) => {
     const requests = await OutingRequest.find({
       $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)],
     })
+      .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedBy', 'name')
       .populate('approvedBy', 'name role')
@@ -673,6 +724,7 @@ const streamOutingEvents = (req, res) => {
 module.exports = {
   createOutingRequest,
   getMyOutingRequests,
+  getOutingSignatures,
   getAllOutingRequests,
   getPendingRequests,
   getOverdueOutings,

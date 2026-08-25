@@ -82,7 +82,7 @@ const mapForwardedLeave = (l) => ({
   leaveDate: l.leaveDate,
   returnDate: l.returnDate,
   submittedAt: l.createdAt,
-  studentSignature: l.studentSignature || null,
+  hasStudentSignature: Boolean(l.hasStudentSignature),
   forwardedBy: l.forwardedBy?.name || "",
   forwardedNote: l.forwardedNote || "",
   initials: initials(l.student?.name),

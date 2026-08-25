@@ -36,6 +36,7 @@ import DelayNoticeToast from "./components/DelayNoticeToast";
 import LeaveApplicationsView from "./components/LeaveApplicationsView";
 import SignatureCapture from "@/app/components/SignatureCapture";
 import { isSignatureRequiredError } from "@/app/lib/signatureImage";
+import { useSignatures } from "@/app/lib/signatures";
 import { apiFetch } from "@/app/lib/api";
 import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
@@ -78,7 +79,7 @@ const mapPending = (o) => ({
   outingType: o.outingType || "",
   out: formatTime(o.outTime),
   return: formatTime(o.inTime),
-  studentSignature: o.studentSignature || null,
+  hasStudentSignature: Boolean(o.hasStudentSignature),
   initials: initials(o.student?.name),
 });
 
@@ -94,11 +95,11 @@ const mapLeavePending = (l) => ({
   leaveDate: l.leaveDate,
   returnDate: l.returnDate,
   submittedAt: l.createdAt,
-  studentSignature: l.studentSignature || null,
-  caretakerSignature: l.caretakerSignature || null,
-  // Present only when a warden decided the escalation — it's what distinguishes a
+  hasStudentSignature: Boolean(l.hasStudentSignature),
+  hasCaretakerSignature: Boolean(l.hasCaretakerSignature),
+  // Set only when a warden decided the escalation — it's what distinguishes a
   // warden-signed pass from a caretaker-signed one in the viewer.
-  wardenSignature: l.wardenSignature || null,
+  hasWardenSignature: Boolean(l.hasWardenSignature),
   initials: initials(l.student?.name),
 });
 
@@ -420,14 +421,33 @@ export default function CaretakerDashboardPage() {
   // Hydrated by the /auth/profile call this dashboard already makes on mount.
   const mySignature = user?.signature || null;
 
+  // The student's signature is fetched when the approval dialog opens, not carried by the
+  // pending list (see lib/signatures.js).
+  const { signatures: approvalSignatures, error: approvalSignatureError } = useSignatures(
+    approvalTarget?.kind === "leave" ? "leave" : "outing",
+    approvalTarget?.id,
+    Boolean(approvalTarget?.hasStudentSignature)
+  );
+  const approvalStudentSignature = approvalSignatures?.studentSignature || null;
+
   const openOutingApproval = (id) => {
     const req = pending.find((p) => p.id === id);
-    setApprovalTarget({ kind: "outing", id, name: req?.name || "", studentSignature: req?.studentSignature || null });
+    setApprovalTarget({
+      kind: "outing",
+      id,
+      name: req?.name || "",
+      hasStudentSignature: Boolean(req?.hasStudentSignature),
+    });
   };
 
   const openLeaveApproval = (id) => {
     const req = leavePending.find((l) => l.id === id);
-    setApprovalTarget({ kind: "leave", id, name: req?.name || "", studentSignature: req?.studentSignature || null });
+    setApprovalTarget({
+      kind: "leave",
+      id,
+      name: req?.name || "",
+      hasStudentSignature: Boolean(req?.hasStudentSignature),
+    });
   };
 
   const closeApproval = () => {
@@ -1313,15 +1333,25 @@ export default function CaretakerDashboardPage() {
                 : `Add your signature once — it will be attached to every ${approvalTarget.kind === "leave" ? "application" : "request"} you approve from now on.`}
             </p>
 
-            {approvalTarget.studentSignature && (
+            {approvalTarget.hasStudentSignature && (
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student signature</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={approvalTarget.studentSignature}
-                  alt="Student signature"
-                  className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
-                />
+                {approvalStudentSignature ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={approvalStudentSignature}
+                    alt="Student signature"
+                    className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
+                  />
+                ) : approvalSignatureError ? (
+                  // Say so rather than leaving a skeleton spinning — the caretaker is about
+                  // to sign off and should know the evidence didn't load.
+                  <p className="mt-1.5 text-xs font-semibold text-amber-600">
+                    Could not load the student&rsquo;s signature. Reopen this dialog to retry.
+                  </p>
+                ) : (
+                  <div className="mt-1.5 h-14 w-32 rounded-lg border border-slate-200 bg-white animate-pulse" />
+                )}
               </div>
             )}
 

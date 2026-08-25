@@ -41,10 +41,55 @@ const fetchOwnSignature = async (user) => {
 const sendSignatureRequired = (res, message) =>
   res.status(SIGNATURE_REQUIRED_STATUS).json({ code: SIGNATURE_REQUIRED_CODE, message });
 
+// ---- List projections ----
+//
+// List endpoints never return signature bytes: they are polled every 15-30s and a row can
+// carry three ~15KB blobs. They return has*Signature booleans instead, and the UI fetches
+// the bytes from GET /:id/signatures when a card expands or a modal opens.
+
+const SIGNATURE_FIELDS = ['studentSignature', 'caretakerSignature', 'wardenSignature'];
+const LIST_PROJECTION = SIGNATURE_FIELDS.map((f) => `-${f}`).join(' ');
+
+const FLAG_FOR = {
+  studentSignature: 'hasStudentSignature',
+  caretakerSignature: 'hasCaretakerSignature',
+  wardenSignature: 'hasWardenSignature',
+};
+
+// Which of these rows carry which signature, without pulling any blob into Node: Mongo
+// evaluates the filter and the projection returns ids only. `fields` is the subset the
+// caller's view actually needs a flag for.
+const signaturePresence = async (Model, ids, fields) => {
+  const presence = {};
+  if (!ids.length) return presence;
+  await Promise.all(
+    fields.map(async (field) => {
+      const rows = await Model.find(
+        { _id: { $in: ids }, [field]: { $nin: [null, ''] } },
+        { _id: 1 }
+      ).lean();
+      presence[field] = new Set(rows.map((r) => String(r._id)));
+    })
+  );
+  return presence;
+};
+
+const withSignatureFlags = (obj, presence) => {
+  const out = { ...obj };
+  for (const [field, ids] of Object.entries(presence)) {
+    out[FLAG_FOR[field]] = ids.has(String(obj._id));
+  }
+  return out;
+};
+
 module.exports = {
   isSignatureDataUrl,
   fetchOwnSignature,
   sendSignatureRequired,
+  SIGNATURE_FIELDS,
+  LIST_PROJECTION,
+  signaturePresence,
+  withSignatureFlags,
   SIGNATURE_REQUIRED_CODE,
   SIGNATURE_REQUIRED_STATUS,
   MAX_SIGNATURE_BYTES,

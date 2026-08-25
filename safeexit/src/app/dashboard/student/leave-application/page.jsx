@@ -35,6 +35,7 @@ import AuthLoading from "@/app/components/AuthGate";
 import CaretakerSelect from "@/app/components/student/CaretakerSelect";
 import GateQrInstruction from "@/app/components/student/GateQrInstruction";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
+import ApprovalSignature from "@/app/components/ApprovalSignature";
 import { isSignatureRequiredError } from "@/app/lib/signatureImage";
 import {
   CAMPUS_TIMEZONE,
@@ -846,19 +847,12 @@ export default function LeaveApplicationPage() {
                             </div>
                           )}
                    
-                          {(a.wardenSignature || a.caretakerSignature) && (
-                            <div className="mt-3 pt-3 border-t border-emerald-100">
-                              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-                                <CheckCircle2 size={12} /> Approved &amp; signed by {a.wardenSignature ? "warden" : "caretaker"}
-                              </p>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={a.wardenSignature || a.caretakerSignature}
-                                alt={a.wardenSignature ? "Warden signature" : "Caretaker signature"}
-                                className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
-                              />
-                            </div>
-                          )}
+                          <ApprovalSignature
+                            kind="leave"
+                            id={a._id}
+                            hasWarden={a.hasWardenSignature}
+                            hasCaretaker={a.hasCaretakerSignature}
+                          />
                           {statusKey === "pending" && (
                             <div className="mt-3 pt-3 border-t border-amber-100 flex items-start gap-2.5">
                               <Loader2 size={15} className="text-amber-500 shrink-0 mt-0.5 animate-spin" />

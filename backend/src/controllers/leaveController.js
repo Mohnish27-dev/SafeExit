@@ -9,10 +9,17 @@ const {
   scopedStudentFilter,
   forwardedToFilter,
   requestInScope,
+  canReadSignatures,
   resolveTargetCaretaker,
   resolveWardenForHostel,
 } = require('../utils/hostelScope');
-const { fetchOwnSignature, sendSignatureRequired } = require('../utils/signature');
+const {
+  fetchOwnSignature,
+  sendSignatureRequired,
+  LIST_PROJECTION,
+  signaturePresence,
+  withSignatureFlags,
+} = require('../utils/signature');
 
 // 'Forwarded' counts as live too — an application sitting with the warden must block a
 // second one just like a Pending one does, or a student could stack approvals.
@@ -196,13 +203,42 @@ const createLeaveApplication = async (req, res) => {
 // GET /api/leave/myrequests — private (Student)
 const getMyLeaveApplications = async (req, res) => {
   try {
-    // studentSignature dropped for the same reason as getMyOutingRequests: 15s poll, and
-    // the leave-application view only renders the caretaker/warden signature.
     const applications = await LeaveApplication.find({ student: req.user._id })
-      .select('-studentSignature')
+      .select(LIST_PROJECTION)
       .sort({ createdAt: -1 });
     await expireStaleApplications(applications);
-    res.json(applications);
+
+    const presence = await signaturePresence(
+      LeaveApplication,
+      applications.map((a) => a._id),
+      ['caretakerSignature', 'wardenSignature']
+    );
+
+    res.json(applications.map((a) => withSignatureFlags(a.toObject(), presence)));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/leave/:id/signatures — private (owner student / routed staff)
+const getLeaveSignatures = async (req, res) => {
+  try {
+    const application = await LeaveApplication.findById(req.params.id)
+      .select('student targetCaretaker forwardedTo studentSignature caretakerSignature wardenSignature')
+      .populate('student', 'gender hostelName');
+
+    if (!application) {
+      return res.status(404).json({ message: 'Leave application not found' });
+    }
+    if (!canReadSignatures(req.user, application, application.student)) {
+      return res.status(403).json({ message: 'This application is not in your scope.' });
+    }
+
+    res.json({
+      studentSignature: application.studentSignature || null,
+      caretakerSignature: application.caretakerSignature || null,
+      wardenSignature: application.wardenSignature || null,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -231,13 +267,22 @@ const getAllLeaveApplications = async (req, res) => {
 const getPendingLeaveApplications = async (req, res) => {
   try {
     const applications = await LeaveApplication.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
+      .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .sort({ leaveDate: 1 });
 
     await expireStaleApplications(applications);
     const stillPending = applications.filter((a) => a.status === 'Pending');
 
-    res.json(stillPending);
+    // The letter viewer renders the student's signature, and the decided-state block the
+    // caretaker's or warden's.
+    const presence = await signaturePresence(
+      LeaveApplication,
+      stillPending.map((a) => a._id),
+      ['studentSignature', 'caretakerSignature', 'wardenSignature']
+    );
+
+    res.json(stillPending.map((a) => withSignatureFlags(a.toObject(), presence)));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -256,12 +301,20 @@ const getLeaveHistory = async (req, res) => {
         await scopedStudentFilter(req.user),
       ],
     })
+      .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedTo', 'name')
       .populate('approvedBy', 'name role')
       .sort({ decidedAt: -1, updatedAt: -1 });
 
-    res.json(applications.map(withDecisionMeta));
+    // Same viewer as /leave/pending — mapLeaveHistory spreads mapLeavePending.
+    const presence = await signaturePresence(
+      LeaveApplication,
+      applications.map((a) => a._id),
+      ['studentSignature', 'caretakerSignature', 'wardenSignature']
+    );
+
+    res.json(applications.map((a) => withSignatureFlags(withDecisionMeta(a), presence)));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -436,6 +489,7 @@ const forwardLeaveApplication = async (req, res) => {
 const getForwardedLeaveApplications = async (req, res) => {
   try {
     const applications = await LeaveApplication.find(forwardedToFilter(req.user))
+      .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedBy', 'name')
       .sort({ forwardedAt: 1 });
@@ -444,7 +498,14 @@ const getForwardedLeaveApplications = async (req, res) => {
     await expireStaleApplications(applications);
     const stillForwarded = applications.filter((a) => a.status === 'Forwarded');
 
-    res.json(stillForwarded);
+    // ForwardedLeaveView renders the student's signature in the letter.
+    const presence = await signaturePresence(
+      LeaveApplication,
+      stillForwarded.map((a) => a._id),
+      ['studentSignature']
+    );
+
+    res.json(stillForwarded.map((a) => withSignatureFlags(a.toObject(), presence)));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -459,6 +520,7 @@ const getWardenLeaveHistory = async (req, res) => {
     const applications = await LeaveApplication.find({
       $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)],
     })
+      .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedBy', 'name')
       .populate('approvedBy', 'name role')
@@ -630,6 +692,7 @@ const streamLeaveEvents = (req, res) => {
 module.exports = {
   createLeaveApplication,
   getMyLeaveApplications,
+  getLeaveSignatures,
   getAllLeaveApplications,
   getPendingLeaveApplications,
   getLeaveHistory,

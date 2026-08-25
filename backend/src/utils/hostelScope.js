@@ -90,6 +90,24 @@ function studentInGenderScope(user, student) {
   return scopeGenders(user.managedGender).includes(student.gender);
 }
 
+// Read scope for one row's signature bytes (GET /:id/signatures). Deliberately wider than
+// requestInScope, which answers "may this staff member DECIDE this row": a warden's history
+// covers their whole hostel, not only what was forwarded to them. Guards get nothing — no
+// guard view renders a signature, and /scan/preview already carries what the gate needs.
+function canReadSignatures(user, doc, student) {
+  if (!user || !doc) return false;
+
+  const ownerId = doc.student && (doc.student._id || doc.student);
+  if (ownerId && String(ownerId) === String(user._id)) return true;
+
+  if (['Admin', 'ChiefWarden'].includes(user.role)) return true;
+  if (!HOSTEL_SCOPED_ROLES.includes(user.role)) return false;
+
+  if (doc.targetCaretaker && String(doc.targetCaretaker) === String(user._id)) return true;
+  if (doc.forwardedTo && String(doc.forwardedTo) === String(user._id)) return true;
+  return studentInScope(user, student);
+}
+
 
 async function resolveTargetCaretaker(student, requestedCaretakerId) {
   const studentGender = student.gender || genderForHostel(student.hostelName);
@@ -141,4 +159,5 @@ module.exports = {
   resolveWardenForHostel,
   genderScopedStudentFilter,
   studentInGenderScope,
+  canReadSignatures,
 };

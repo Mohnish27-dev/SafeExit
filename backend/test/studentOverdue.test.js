@@ -26,9 +26,12 @@ test('student outing history derives overdue while preserving the stored Out sta
     toObject: () => ({ _id: 'outing-1', status: 'Out', inTime: dueAt }),
   };
 
-  // Chainable double, mirroring the real find().select().sort() — the assertions below
-  // are about the isOverdue derivation, not the query shape.
-  OutingRequest.find = () => {
+  // find() has two shapes in this handler: the list query, chained .select().sort(), and
+  // signaturePresence's id-only probe, find(filter, projection).lean(). These fixtures
+  // carry no signatures, so the probe returns nothing. The assertions below are about the
+  // isOverdue derivation, not the query shape.
+  OutingRequest.find = (filter, projection) => {
+    if (projection) return { lean: async () => [] };
     const chain = { select: () => chain, sort: async () => [request] };
     return chain;
   };
@@ -54,7 +57,8 @@ test('student outing history does not mark a future return time overdue', async 
     toObject: () => ({ _id: 'outing-2', status: 'Out', inTime: dueAt }),
   };
 
-  OutingRequest.find = () => {
+  OutingRequest.find = (filter, projection) => {
+    if (projection) return { lean: async () => [] };
     const chain = { select: () => chain, sort: async () => [request] };
     return chain;
   };

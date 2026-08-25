@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, X, CalendarDays, Loader2, RefreshCcw, MapPin, Clock3, AlertTriangle, FileText, CheckCircle2, XCircle, ArrowUpRight } from "lucide-react";
 import { useTranslation } from "@/app/lib/i18n";
+import { useSignatures } from "@/app/lib/signatures";
 
 const handleTilePointerMove = (e) => {
   const el = e.currentTarget;
@@ -99,6 +100,9 @@ export default function LeaveApplicationsView({
 
   // Viewer can open from any tab, so search both lists.
   const viewing = [...pending, ...history].find((r) => r.id === viewingId) || null;
+
+  // Signature bytes for the open letter only — the lists carry has*Signature flags.
+  const { signatures: viewingSignatures } = useSignatures("leave", viewingId, Boolean(viewingId));
 
   // Tabs key off the frozen `decision`, not `status` — a pass the student cancelled after
   // approval keeps its Approved verdict and stays in that tab.
@@ -466,13 +470,17 @@ export default function LeaveApplicationsView({
                   journey at my own responsibility.
                 </p>
                 <p className="mt-5">Yours sincerely,</p>
-                {viewing.studentSignature && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={viewing.studentSignature}
-                    alt="Student signature"
-                    className="mt-1 h-14 w-auto"
-                  />
+                {viewing.hasStudentSignature && (
+                  viewingSignatures?.studentSignature ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={viewingSignatures.studentSignature}
+                      alt="Student signature"
+                      className="mt-1 h-14 w-auto"
+                    />
+                  ) : (
+                    <div className="mt-1 h-14 w-32 bg-slate-100 animate-pulse rounded" />
+                  )
                 )}
                 <p className="mt-1 font-bold">{viewing.name}</p>
                 {viewing.roll && <p>{viewing.roll}</p>}
@@ -507,17 +515,25 @@ export default function LeaveApplicationsView({
                   <p className="sd-micro mt-2 text-slate-400">{decidedByLabel(viewing)}</p>
                 )}
 
-                {viewing.decision === "Approved" && (viewing.wardenSignature || viewing.caretakerSignature) && (
+                {viewing.decision === "Approved" && (viewing.hasWardenSignature || viewing.hasCaretakerSignature) && (
                   <div className="mt-3">
                     <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
-                      {viewing.wardenSignature ? t("signedByWarden") : t("signedByCaretaker")}
+                      {viewing.hasWardenSignature ? t("signedByWarden") : t("signedByCaretaker")}
                     </p>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={viewing.wardenSignature || viewing.caretakerSignature}
-                      alt={viewing.wardenSignature ? "Warden signature" : "Caretaker signature"}
-                      className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
-                    />
+                    {(viewing.hasWardenSignature
+                      ? viewingSignatures?.wardenSignature
+                      : viewingSignatures?.caretakerSignature) ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={viewing.hasWardenSignature
+                          ? viewingSignatures.wardenSignature
+                          : viewingSignatures.caretakerSignature}
+                        alt={viewing.hasWardenSignature ? "Warden signature" : "Caretaker signature"}
+                        className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
+                      />
+                    ) : (
+                      <div className="mt-1.5 h-14 w-32 rounded-lg border border-slate-200 bg-slate-50 animate-pulse" />
+                    )}
                   </div>
                 )}
               </div>
