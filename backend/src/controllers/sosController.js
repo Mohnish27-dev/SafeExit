@@ -1,5 +1,6 @@
 const SOSAlert = require('../models/SOSAlert');
 const sseHub = require('../utils/sseHub');
+const { readPageParams, sendPage } = require('../utils/pagination');
 const { notifyCaretakersAndAdmins } = require('../utils/pushService');
 const { genderScopedStudentFilter, studentInGenderScope } = require('../utils/hostelScope');
 
@@ -68,16 +69,33 @@ const createSOSAlert = async (req, res) => {
 // GET /api/sos/mine — private (Student)
 const getMySOSAlerts = async (req, res) => {
   try {
-    const alerts = await SOSAlert.find({ student: req.user._id }).sort({ createdAt: -1 });
-    res.json(alerts);
+    const { limit, skip } = readPageParams(req);
+    const filter = { student: req.user._id };
+    const alerts = await SOSAlert.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    return sendPage(res, alerts, {
+      limit,
+      skip,
+      label: 'sos/mine',
+      count: () => SOSAlert.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
 // GET /api/sos — private (Admin/Caretaker/Guard)
+//
+// Bounded, but note the ordering: newest first, so a truncated response withholds the
+// OLDEST alerts. An unresolved alert from last month can therefore fall off the end —
+// the dashboard should pass ?status=Active (which shrinks the filter) rather than rely
+// on scrolling a campus-wide history.
 const getSOSAlerts = async (req, res) => {
   try {
+    const { limit, skip } = readPageParams(req);
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
 
@@ -88,8 +106,16 @@ const getSOSAlerts = async (req, res) => {
       // are limited to the four staff roles responsible for escalation and follow-up.
       .populate('student', sosStudentFieldsFor(req.user.role))
       .populate('handledBy', 'name role')
-      .sort({ createdAt: -1 });
-    res.json(alerts);
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    return sendPage(res, alerts, {
+      limit,
+      skip,
+      label: 'sos/list',
+      count: () => SOSAlert.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -133,25 +159,7 @@ const updateSOSStatus = async (req, res) => {
 
 // GET /api/sos/stream — private (Admin/Caretaker/Guard), SSE
 const streamSOSEvents = (req, res) => {
-  req.socket.setTimeout(0);
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  res.write('retry: 3000\n\n');
-
-  sseHub.addClient(res);
-
-  // Keeps proxies from killing the idle connection.
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
-    sseHub.removeClient(res);
-  });
+  sseHub.attach(req, res);
 };
 
 module.exports = {

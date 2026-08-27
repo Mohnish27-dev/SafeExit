@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, X, CalendarDays, History, Loader2, RefreshCcw, ArrowUpRight, MapPin, FileText } from "lucide-react";
 import DecisionHistoryList from "./DecisionHistoryList";
+import { useSignatures } from "@/app/lib/signatures";
 
 const formatDate = (value) =>
   value ? new Date(value).toLocaleDateString("en-US", { day: "2-digit", month: "short" }) : "—";
@@ -53,6 +54,9 @@ export default function ForwardedLeaveView({
   const [tab, setTab] = useState("pending");
   const [viewingId, setViewingId] = useState(null);
   const viewing = pending.find((r) => r.id === viewingId) || null;
+
+  // Signature bytes for the open letter only — the list carries has*Signature flags.
+  const { signatures: viewingSignatures } = useSignatures("leave", viewingId, Boolean(viewingId));
 
   const closeViewer = () => setViewingId(null);
 
@@ -219,13 +223,17 @@ export default function ForwardedLeaveView({
                   journey at my own responsibility.
                 </p>
                 <p className="mt-5">Yours sincerely,</p>
-                {viewing.studentSignature && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={viewing.studentSignature}
-                    alt="Student signature"
-                    className="mt-1 h-14 w-auto"
-                  />
+                {viewing.hasStudentSignature && (
+                  viewingSignatures?.studentSignature ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={viewingSignatures.studentSignature}
+                      alt="Student signature"
+                      className="mt-1 h-14 w-auto"
+                    />
+                  ) : (
+                    <div className="mt-1 h-14 w-32 bg-slate-100 animate-pulse rounded" />
+                  )
                 )}
                 <p className="mt-1 font-bold">{viewing.name}</p>
                 {viewing.roll && <p>{viewing.roll}</p>}

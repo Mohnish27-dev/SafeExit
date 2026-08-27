@@ -1,6 +1,7 @@
 const DelayNotice = require('../models/DelayNotice');
 const OutingRequest = require('../models/OutingRequest');
 const sseHub = require('../utils/sseHub');
+const { readPageParams, sendPage } = require('../utils/pagination');
 const { notifyHostelStaffAndAdmins, notifyStudent } = require('../utils/pushService');
 const { scopedStudentFilter, studentInScope } = require('../utils/hostelScope');
 const { isReturnLate } = require('../utils/outingRules');
@@ -116,10 +117,20 @@ const createDelayNotice = async (req, res) => {
 // GET /api/delay/mine — private (Student)
 const getMyDelayNotices = async (req, res) => {
   try {
-    const notices = await DelayNotice.find({ student: req.user._id })
+    const { limit, skip } = readPageParams(req);
+    const filter = { student: req.user._id };
+    const notices = await DelayNotice.find(filter)
       .populate('acknowledgedBy', 'name role')
-      .sort({ createdAt: -1 });
-    res.json(notices);
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    return sendPage(res, notices, {
+      limit,
+      skip,
+      label: 'delay/mine',
+      count: () => DelayNotice.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -128,15 +139,23 @@ const getMyDelayNotices = async (req, res) => {
 // GET /api/delay — private (Admin/Caretaker/Guard/Warden/ChiefWarden)
 const getDelayNotices = async (req, res) => {
   try {
+    const { limit, skip } = readPageParams(req);
     const filter = { ...(await scopedStudentFilter(req.user)) };
     if (req.query.status) filter.status = req.query.status;
 
     const notices = await DelayNotice.find(filter)
       .populate('student', DELAY_STUDENT_FIELDS)
       .populate('acknowledgedBy', 'name role')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-    res.json(notices);
+    return sendPage(res, notices, {
+      limit,
+      skip,
+      label: 'delay/list',
+      count: () => DelayNotice.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -198,25 +217,7 @@ const acknowledgeDelayNotice = async (req, res) => {
 
 // GET /api/delay/stream — private (staff), SSE
 const streamDelayEvents = (req, res) => {
-  req.socket.setTimeout(0);
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  res.write('retry: 3000\n\n');
-
-  sseHub.addClient(res);
-
-  // Keeps proxies from killing the idle connection.
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
-    sseHub.removeClient(res);
-  });
+  sseHub.attach(req, res);
 };
 
 module.exports = {

@@ -19,22 +19,34 @@ const {
   resetPassword,
 } = require('../controllers/passwordResetController');
 const { protect } = require('../middlewares/authMiddleware');
-const { authLimiter, registerLimiter, otpLimiter } = require('../middlewares/rateLimit');
+const {
+  authLimiter,
+  registerLimiter,
+  registerIpBackstop,
+  otpLimiter,
+  otpIpBackstop,
+  profileLimiter,
+} = require('../middlewares/rateLimit');
 
-router.post('/otp/send', otpLimiter, sendOtp);
+// The mail-sending and registration routes carry two limiters each: a coarse per-IP
+// backstop, then the real per-email/per-verified-token one. Order matters only for which
+// message the caller sees first; see middlewares/rateLimit.js for why the precise limit
+// cannot be keyed on IP here.
+router.post('/otp/send', otpIpBackstop, otpLimiter, sendOtp);
 router.post('/otp/verify', authLimiter, verifyOtp);
 
 // forgot sends mail (otpLimiter); verify-otp/reset are credential checks (authLimiter).
-router.post('/password/forgot', otpLimiter, requestPasswordReset);
+router.post('/password/forgot', otpIpBackstop, otpLimiter, requestPasswordReset);
 router.post('/password/verify-otp', authLimiter, verifyResetOtp);
 router.post('/password/reset', authLimiter, resetPassword);
 
-router.post('/register', registerLimiter, registerUser);
+router.post('/register', registerIpBackstop, registerLimiter, registerUser);
 router.post('/login', authLimiter, authUser);
 router.post('/logout', logoutUser);
 router.post('/refresh', protect, refreshSession);
 router.get('/profile', protect, getUserProfile);
-router.patch('/profile', protect, updateUserProfile);
+// profileLimiter because this is the 2mb-body photo endpoint, per-user keyed.
+router.patch('/profile', protect, profileLimiter, updateUserProfile);
 
 router.post('/webauthn/register/options', protect, getRegistrationOptions);
 router.post('/webauthn/register/verify', protect, verifyRegistration);

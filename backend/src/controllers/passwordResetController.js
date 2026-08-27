@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const EmailOtp = require('../models/EmailOtp');
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
-const { sendMail, isMailConfigured } = require('../utils/mailer');
+const { sendMailWithin, isMailConfigured } = require('../utils/mailer');
 const { isValidStudentEmail, normalizeEmail } = require('../config/emailPolicy');
 
 // Student password recovery. Shares the EmailOtp collection with registration, keyed on (email, purpose) so the two flows' codes never clobber each other.
@@ -70,16 +70,31 @@ const requestPasswordReset = async (req, res) => {
       { upsert: true, setDefaultsOnInsert: true }
     );
 
-    const { delivered } = await sendMail({
+    // Bounded wait — same reasoning as otpController.sendOtp; see utils/mailer.js.
+    const { delivered, pending, error } = await sendMailWithin({
       to: email,
       subject: 'Your NITP-SafeExit password reset code',
       text: `Your NITP-SafeExit password reset code is ${otp}. It expires in 10 minutes. If you did not request a password reset, you can ignore this email — your password will not change.`,
       html: `<p>Your NITP-SafeExit password reset code is <strong style="font-size:20px;letter-spacing:3px">${otp}</strong>.</p><p>It expires in 10 minutes. If you didn't request a password reset, you can safely ignore this email — your password will not change.</p>`,
     });
 
+    // Confirmed failure inside the deadline: drop the row so the stamped lastSentAt doesn't
+    // hold this student behind the 60s cooldown for a code that never arrived.
+    if (error) {
+      console.error(`[password-reset] send to ${email} failed: ${error.message}`);
+      try {
+        await EmailOtp.deleteOne({ email, purpose: PURPOSE });
+      } catch {
+        // Best-effort; the student can still retry once the cooldown lapses.
+      }
+      return res.status(502).json({
+        message: 'We could not send the reset email just now. Please try again in a moment.',
+      });
+    }
+
     const body = { message: 'Password reset code sent to your college email.' };
     // Dev-only fallback when SMTP isn't configured; never in prod.
-    if (!delivered && !isMailConfigured() && process.env.NODE_ENV !== 'production') {
+    if (!delivered && !pending && !isMailConfigured() && process.env.NODE_ENV !== 'production') {
       body.devOtp = otp;
     }
     return res.status(200).json(body);

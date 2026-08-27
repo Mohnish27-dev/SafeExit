@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const REQ_USER_PROJECTION =
+  '-password -photo -signature -webAuthnCredentials -currentChallenge';
+
 const protect = async (req, res, next) => {
   let token;
 
@@ -14,7 +17,7 @@ const protect = async (req, res, next) => {
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findById(decoded.id).select('-password');
+      req.user = await User.findById(decoded.id).select(REQ_USER_PROJECTION);
       next();
     } catch (error) {
       console.error(error);

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, History as HistoryIcon, Loader2, LogIn, LogOut, Search } from "lucide-react";
-import { apiFetch } from "@/app/lib/api";
+import { apiFetch, apiFetchWithHeaders } from "@/app/lib/api";
 import SecurityBottomNav from "../components/SecurityBottomNav";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
@@ -26,12 +26,20 @@ export default function SecurityHistoryPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [totalCount, setTotalCount] = useState(null);
+  const [isTruncated, setIsTruncated] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch("/scan?limit=200");
+      const { data, headers } = await apiFetchWithHeaders("/scan?limit=200");
       setLogs(data);
+      
+      const total = headers.get("X-Total-Count");
+      const truncated = headers.get("X-Truncated") === "true";
+      setTotalCount(total ? parseInt(total, 10) : null);
+      setIsTruncated(truncated);
+      
       setError("");
     } catch (err) {
       setError(err.message || "Could not load scan history");
@@ -80,7 +88,11 @@ export default function SecurityHistoryPage() {
               <div>
                 <span className="sd-kicker">{t("gateLog")}</span>
                 <h1 className="sd-title sd-title-md mt-1">{t("scanHistory")}</h1>
-                <p className="sd-body mt-0.5 text-sm">{visible.length} {t("movements")}</p>
+                <p className="sd-body mt-0.5 text-sm">
+                  {isTruncated
+                    ? (search || direction !== "all" ? `Showing ${visible.length} matches in newest ${logs.length} of ${totalCount}` : `Showing newest ${logs.length} of ${totalCount}`)
+                    : (search || direction !== "all" ? `Showing ${visible.length} of ${logs.length}` : `${logs.length} ${t("movements")}`)}
+                </p>
               </div>
             </div>
 

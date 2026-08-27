@@ -4,6 +4,8 @@
 // base64 PNG data URL, same storage style as User.photo. Request documents carry a
 // snapshot copy stamped by the server at submit/approval time.
 
+const User = require('../models/User');
+
 // A drawn pad signature base64s to ~10-20KB as a PNG. An uploaded photo is JPEG and the
 // client resizes it to fit; this leaves margin above the client's ~320KB target.
 const MAX_SIGNATURE_BYTES = 400 * 1024;
@@ -22,18 +24,72 @@ const isSignatureDataUrl = (value) =>
 const SIGNATURE_REQUIRED_CODE = 'SIGNATURE_REQUIRED';
 const SIGNATURE_REQUIRED_STATUS = 428;
 
-// The caller's own saved signature, or null. `protect` already loads the full user
-// document onto req.user, so this costs no extra query.
-const ownSignature = (user) =>
-  isSignatureDataUrl(user && user.signature) ? user.signature : null;
+// The caller's own saved signature, or null.
+//
+// This used to read req.user.signature, because `protect` loaded the whole user
+// document. It no longer does: a signature is up to 400KB of base64 and carrying it on
+// every authenticated request put it on the students' 15s dashboard polls too (see
+// middlewares/authMiddleware.js). Only the submit and approve paths actually stamp a
+// signature, so they pay for it here — one _id lookup with a single-field projection,
+// a few hundred times a day rather than a few hundred times a minute.
+const fetchOwnSignature = async (user) => {
+  if (!user || !user._id) return null;
+  const row = await User.findById(user._id).select('signature').lean();
+  return isSignatureDataUrl(row && row.signature) ? row.signature : null;
+};
 
 const sendSignatureRequired = (res, message) =>
   res.status(SIGNATURE_REQUIRED_STATUS).json({ code: SIGNATURE_REQUIRED_CODE, message });
 
+// ---- List projections ----
+//
+// List endpoints never return signature bytes: they are polled every 15-30s and a row can
+// carry three ~15KB blobs. They return has*Signature booleans instead, and the UI fetches
+// the bytes from GET /:id/signatures when a card expands or a modal opens.
+
+const SIGNATURE_FIELDS = ['studentSignature', 'caretakerSignature', 'wardenSignature'];
+const LIST_PROJECTION = SIGNATURE_FIELDS.map((f) => `-${f}`).join(' ');
+
+const FLAG_FOR = {
+  studentSignature: 'hasStudentSignature',
+  caretakerSignature: 'hasCaretakerSignature',
+  wardenSignature: 'hasWardenSignature',
+};
+
+// Which of these rows carry which signature, without pulling any blob into Node: Mongo
+// evaluates the filter and the projection returns ids only. `fields` is the subset the
+// caller's view actually needs a flag for.
+const signaturePresence = async (Model, ids, fields) => {
+  const presence = {};
+  if (!ids.length) return presence;
+  await Promise.all(
+    fields.map(async (field) => {
+      const rows = await Model.find(
+        { _id: { $in: ids }, [field]: { $nin: [null, ''] } },
+        { _id: 1 }
+      ).lean();
+      presence[field] = new Set(rows.map((r) => String(r._id)));
+    })
+  );
+  return presence;
+};
+
+const withSignatureFlags = (obj, presence) => {
+  const out = { ...obj };
+  for (const [field, ids] of Object.entries(presence)) {
+    out[FLAG_FOR[field]] = ids.has(String(obj._id));
+  }
+  return out;
+};
+
 module.exports = {
   isSignatureDataUrl,
-  ownSignature,
+  fetchOwnSignature,
   sendSignatureRequired,
+  SIGNATURE_FIELDS,
+  LIST_PROJECTION,
+  signaturePresence,
+  withSignatureFlags,
   SIGNATURE_REQUIRED_CODE,
   SIGNATURE_REQUIRED_STATUS,
   MAX_SIGNATURE_BYTES,

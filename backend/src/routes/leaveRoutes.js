@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   createLeaveApplication,
   getMyLeaveApplications,
+  getLeaveSignatures,
   getAllLeaveApplications,
   getPendingLeaveApplications,
   getLeaveHistory,
@@ -38,6 +39,14 @@ router.get('/warden-history', protect, authorizeRoles('Warden'), getWardenLeaveH
 router.get('/stream', protect, authorizeRoles('Caretaker', 'Warden'), streamLeaveEvents);
 
 router.patch('/:id/cancel', protect, authorizeRoles('Student'), cancelLeaveApplication);
+
+// Signature bytes for one application; the controller re-checks scope per row.
+router.get(
+  '/:id/signatures',
+  protect,
+  authorizeRoles('Student', 'Caretaker', 'Warden', 'ChiefWarden', 'Admin'),
+  getLeaveSignatures
+);
 
 router.patch('/:id/status', protect, authorizeRoles('Caretaker'), updateLeaveStatus);
 

@@ -70,6 +70,16 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
+userSchema.index({ role: 1, hostelName: 1 }, { collation: { locale: 'en', strength: 2 } });
+userSchema.index({ role: 1, managedHostel: 1 }, { collation: { locale: 'en', strength: 2 } });
+
+// Plain (simple-collation) counterparts, for the callers that don't use collation:
+// hostelScope.genderScopedStudentFilter and the scanController gender fallback...
+userSchema.index({ role: 1, gender: 1 });
+// ...and utils/pushService.js, whose role+managedGender fan-out runs on every SOS,
+// every new request, and every overdue sweep tick.
+userSchema.index({ role: 1, managedGender: 1 });
+
 userSchema.pre('save', async function() {
   if (!this.isModified('password')) {
     return;

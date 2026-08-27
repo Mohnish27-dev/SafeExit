@@ -30,6 +30,7 @@ import { getFirstName } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
+import ApprovalSignature from "@/app/components/ApprovalSignature";
 
 const statusConfig = {
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
@@ -108,8 +109,9 @@ export default function MyOutings() {
           returnPunctuality: o.returnPunctuality || null,
           actualOutTime: fmtTime(o.actualOutTime),
           actualInTime: fmtTime(o.actualInTime),
-          caretakerSignature: o.caretakerSignature || null,
-          wardenSignature: o.wardenSignature || null,
+          // Flags only — the image comes from /outing/:id/signatures when the card expands.
+          hasCaretakerSignature: Boolean(o.hasCaretakerSignature),
+          hasWardenSignature: Boolean(o.hasWardenSignature),
         }));
         setOutings(mapped);
       } catch (err) {
@@ -331,19 +333,12 @@ export default function MyOutings() {
                           )}
                         </div>
                       )}
-                      {(outing.wardenSignature || outing.caretakerSignature) && (
-                        <div className="pt-3 mt-1 border-t border-emerald-100">
-                          <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-                            <CheckCircle2 size={12} /> Approved &amp; signed by {outing.wardenSignature ? "warden" : "caretaker"}
-                          </p>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={outing.wardenSignature || outing.caretakerSignature}
-                            alt={outing.wardenSignature ? "Warden signature" : "Caretaker signature"}
-                            className="mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1"
-                          />
-                        </div>
-                      )}
+                      <ApprovalSignature
+                        kind="outing"
+                        id={outing._id}
+                        hasWarden={outing.hasWardenSignature}
+                        hasCaretaker={outing.hasCaretakerSignature}
+                      />
                       {outing.status === "rejected" && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
                           <AlertCircle size={15} className="text-rose-500 shrink-0 mt-0.5" />

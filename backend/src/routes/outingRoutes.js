@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   createOutingRequest,
   getMyOutingRequests,
+  getOutingSignatures,
   getAllOutingRequests,
   getPendingRequests,
   getOverdueOutings,
@@ -52,6 +53,15 @@ router.get(
 );
 
 router.patch('/:id/cancel', protect, authorizeRoles('Student'), cancelOutingRequest);
+
+// Signature bytes for one request, kept out of every list response. The controller
+// re-checks scope per row, so the role list here is only the outer fence.
+router.get(
+  '/:id/signatures',
+  protect,
+  authorizeRoles('Student', 'Caretaker', 'Warden', 'ChiefWarden', 'Admin'),
+  getOutingSignatures
+);
 
 router.patch('/:id/status', protect, authorizeRoles('Caretaker', 'Guard'), updateRequestStatus);
 

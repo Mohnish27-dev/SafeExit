@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const EmailOtp = require('../models/EmailOtp');
 const User = require('../models/User');
-const { sendMail, isMailConfigured } = require('../utils/mailer');
+const { sendMailWithin, isMailConfigured } = require('../utils/mailer');
 const { isValidStudentEmail, normalizeEmail } = require('../config/emailPolicy');
 
 const OTP_TTL_MS = 10 * 60 * 1000; // code valid 10 minutes
@@ -61,16 +61,37 @@ const sendOtp = async (req, res) => {
       { upsert: true, setDefaultsOnInsert: true }
     );
 
-    const { delivered } = await sendMail({
+    // Bounded wait: a provider that refuses us fails fast and the student is told so; a
+    // merely slow one stops holding this request open (see utils/mailer.js).
+    const { delivered, pending, error } = await sendMailWithin({
       to: email,
       subject: 'Your NITP-SafeExit verification code',
       text: `Your NITP-SafeExit verification code is ${otp}. It expires in 10 minutes. If you did not request this, you can ignore this email.`,
       html: `<p>Your NITP-SafeExit verification code is <strong style="font-size:20px;letter-spacing:3px">${otp}</strong>.</p><p>It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`,
     });
 
+    // A confirmed failure inside the deadline. The OTP row is already written, but saying
+    // "code sent" here would leave the student waiting on mail that will never arrive.
+    // 502 (not 500) because the failure is the upstream mail service, not this app.
+    if (error) {
+      console.error(`[otp] send to ${email} failed: ${error.message}`);
+      // Drop the row we just wrote. It stamped lastSentAt, which would hold this student
+      // behind the 60s resend cooldown for a code that was never delivered. Nothing usable
+      // is lost: the upsert above already overwrote any previous otpHash, so the earlier
+      // code was dead the moment this request ran.
+      try {
+        await EmailOtp.deleteOne({ email, purpose: PURPOSE });
+      } catch {
+        // Best-effort; the student can still retry once the cooldown lapses.
+      }
+      return res.status(502).json({
+        message: 'We could not send the verification email just now. Please try again in a moment.',
+      });
+    }
+
     const body = { message: 'Verification code sent to your college email.' };
     // Dev-only fallback when SMTP isn't configured; never once SMTP is live.
-    if (!delivered && !isMailConfigured() && process.env.NODE_ENV !== 'production') {
+    if (!delivered && !pending && !isMailConfigured() && process.env.NODE_ENV !== 'production') {
       body.devOtp = otp;
     }
     return res.status(200).json(body);

@@ -10,11 +10,11 @@ import {
   Search,
   UsersRound,
 } from "lucide-react";
-import { apiFetch } from "@/app/lib/api";
-import { getInitials } from "@/app/lib/userProfile";
+import { apiFetch, apiFetchWithHeaders } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "../components/SecurityBottomNav";
+import StudentAvatar from "../components/StudentAvatar";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
 import LanguageSwitcher from "@/app/components/LanguageSwitcher";
 
@@ -67,12 +67,20 @@ function SecurityStudentsContent() {
   const [statusFilter, setStatusFilter] = useState(initialFilter);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [totalCount, setTotalCount] = useState(null);
+  const [isTruncated, setIsTruncated] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch("/admin/users?role=Student");
+      const { data, headers } = await apiFetchWithHeaders("/admin/users?role=Student");
       setStudents(data);
+      
+      const total = headers.get("X-Total-Count");
+      const truncated = headers.get("X-Truncated") === "true";
+      setTotalCount(total ? parseInt(total, 10) : null);
+      setIsTruncated(truncated);
+      
       setError("");
     } catch (err) {
       setError(err.message || "Could not load students");
@@ -128,7 +136,11 @@ function SecurityStudentsContent() {
               <div>
                 <span className="sd-kicker">{t("liveRoster")}</span>
                 <h1 className="sd-title sd-title-md mt-1">{t("students")}</h1>
-                <p className="sd-body mt-0.5 text-sm">{visible.length} {t("registered")}</p>
+                <p className="sd-body mt-0.5 text-sm">
+                  {isTruncated
+                    ? (search || statusFilter ? `Showing ${visible.length} matches in newest ${students.length} of ${totalCount}` : `Showing newest ${students.length} of ${totalCount}`)
+                    : (search || statusFilter ? `Showing ${visible.length} of ${students.length}` : `${students.length} ${t("registered")}`)}
+                </p>
               </div>
             </div>
 
@@ -207,14 +219,12 @@ function SecurityStudentsContent() {
                     <div className="sd-tile__inner p-5">
                       <span className="sd-tile__glare" aria-hidden="true" />
                       <div className="flex items-center gap-3">
-                        <div className="sd-lift-lg relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 font-bold text-white">
-                          {s.photo ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={s.photo} alt={s.name} className="h-full w-full object-cover" />
-                          ) : (
-                            getInitials(s.name)
-                          )}
-                        </div>
+                        <StudentAvatar
+                          id={s._id}
+                          name={s.name}
+                          hasPhoto={s.hasPhoto}
+                          className="sd-lift-lg relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 font-bold text-white"
+                        />
                         <div className="sd-lift-md min-w-0 flex-1">
                           <p className="sd-card-title truncate text-[0.95rem]">{s.name}</p>
                           <p className="sd-micro truncate">{s.studentId || "—"}</p>
