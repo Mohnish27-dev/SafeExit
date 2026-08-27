@@ -7,24 +7,7 @@ const sseHub = require('../utils/sseHub');
 // Keeping one connection per dashboard tab avoids exhausting the browser's
 // HTTP/1.1 per-origin connection pool and blocking ordinary API requests.
 const streamStaffEvents = (req, res) => {
-  req.socket.setTimeout(0);
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  res.write('retry: 3000\n\n');
-
-  sseHub.addClient(res);
-
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
-    sseHub.removeClient(res);
-  });
+  sseHub.attach(req, res);
 };
 
 module.exports = { streamStaffEvents };

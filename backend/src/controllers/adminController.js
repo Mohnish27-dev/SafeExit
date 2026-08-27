@@ -2,7 +2,14 @@ const User = require('../models/User');
 const OutingRequest = require('../models/OutingRequest');
 const SOSAlert = require('../models/SOSAlert');
 const { getOverdueStudentIds } = require('../utils/overdue');
+const { readPageParams, sendPage } = require('../utils/pagination');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
+
+// 'Overdue' is a derived overlay that the gate scan never writes — it only ever stores
+// 'Inside' or 'Outside'. But the User enum permits it and legacy rows may carry it, so
+// "not inside" is the union of both. Counting bare 'Outside' would leave such a row in
+// `total` and in none of the three tiles. Matches caretakerController's occupancy query.
+const OUTSIDE_STATUSES = ['Outside', 'Overdue'];
 
 // GET /api/admin/overview — private (Admin)
 const getOverview = async (req, res) => {
@@ -22,7 +29,7 @@ const getOverview = async (req, res) => {
     ] = await Promise.all([
       User.countDocuments({ role: 'Student' }),
       User.countDocuments({ role: 'Student', campusStatus: 'Inside' }),
-      User.countDocuments({ role: 'Student', campusStatus: 'Outside' }),
+      User.countDocuments({ role: 'Student', campusStatus: { $in: OUTSIDE_STATUSES } }),
       // 'Overdue' is never stored — derived live from passes still 'Out' past their return window.
       getOverdueStudentIds(),
       User.countDocuments({ role: 'Guard' }),
@@ -57,7 +64,13 @@ const getOverview = async (req, res) => {
   }
 };
 
-// GET /api/admin/users?role= — private (Admin)
+// GET /api/admin/users?role= — private (Admin/Guard)
+//
+// `photo` is deliberately NOT selected here. Face photos are base64 data URLs of a few
+// hundred KB each, so including them turned a roster of 400 students into a multi-hundred-
+// megabyte JSON document — built in memory, serialised, and held until the socket drained,
+// on an endpoint the security dashboard polls. `hasPhoto` tells the client which rows have
+// one; the bytes come from GET /api/admin/users/:id/photo when a row is actually opened.
 const getUsers = async (req, res) => {
   try {
     const filter = {};
@@ -65,21 +78,99 @@ const getUsers = async (req, res) => {
     // Guards may only browse students, and only non-confidential fields.
     if (req.user.role === 'Guard') filter.role = 'Student';
 
-    const guardFields = 'name studentId campusStatus lastSeenAt photo';
-    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender managedHostel campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt photo';
+    const guardFields = 'name studentId campusStatus lastSeenAt';
+    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender managedHostel campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt';
 
+    const { limit, skip } = readPageParams(req);
     const users = await User.find(filter)
       .select(req.user.role === 'Guard' ? guardFields : allFields)
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
+
+    // Which of these rows has a photo, without transferring any. The filter examines the
+    // field server-side but the projection is _id only, so nothing but ObjectIds crosses
+    // the wire. Scoped to the page's ids, so this second query stays as bounded as the first.
+    const ids = users.map((u) => u._id);
+    const withPhoto = await User.find({ _id: { $in: ids }, photo: { $nin: [null, ''] } })
+      .select('_id')
+      .lean();
+    const photoIds = new Set(withPhoto.map((u) => String(u._id)));
 
     // Overlay derived (never persisted) 'Overdue' onto late students.
     const overdueIds = await getOverdueStudentIds();
     for (const u of users) {
       if (overdueIds.has(String(u._id))) u.campusStatus = 'Overdue';
+      u.hasPhoto = photoIds.has(String(u._id));
     }
 
-    res.json(users);
+    return sendPage(res, users, {
+      limit,
+      skip,
+      label: 'admin/users',
+      count: () => User.countDocuments(filter),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/admin/users/:id/photo — private (Admin/Guard)
+//
+// One student's face photo, on demand. Returned as JSON carrying the stored data URL
+// rather than raw image bytes, so the client fetches it through apiFetch with its
+// tab-scoped Bearer token. An <img src> would have to fall back to the shared cookie,
+// and per the note in authMiddleware.js cookies are not tab-scoped: a browser with a
+// second role logged in elsewhere would authorise the request as the wrong user.
+const getUserPhoto = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('role photo').lean();
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Mirrors the roster fence in getUsers: a guard may only look at students.
+    if (req.user.role === 'Guard' && user.role !== 'Student') {
+      return res.status(403).json({ message: 'Not authorised to view this photo.' });
+    }
+
+    // Immutable per upload and only ever read by staff, so let the browser keep it for
+    // the session — this endpoint exists to be called once per row that gets opened.
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json({ photo: user.photo || null });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/admin/students/counts — private (Admin/Guard)
+//
+// The security dashboard needs three numbers, and used to get them by downloading every
+// student row every 15 seconds and tallying campusStatus client-side. That is the most
+// expensive possible way to count, and once getUsers became paginated it was also wrong:
+// a campus past PAGE_DEFAULT_LIMIT would have shown the tally of the first page only.
+// These are index-served counts, so the answer costs the same at 40 students or 4000.
+const getStudentCounts = async (req, res) => {
+  try {
+    const [total, inside, outside, overdueIds] = await Promise.all([
+      User.countDocuments({ role: 'Student' }),
+      User.countDocuments({ role: 'Student', campusStatus: 'Inside' }),
+      User.countDocuments({ role: 'Student', campusStatus: { $in: OUTSIDE_STATUSES } }),
+      getOverdueStudentIds(),
+    ]);
+
+    // Same disjoint-tiles rule as getOverview: an overdue student is still stored
+    // 'Outside', so it has to come back out of that bucket.
+    const overdue = overdueIds.size;
+
+    res.json({
+      total,
+      inside,
+      outside: Math.max(0, outside - overdue),
+      overdue,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -282,6 +373,8 @@ const removeStaff = async (req, res) => {
 module.exports = {
   getOverview,
   getUsers,
+  getUserPhoto,
+  getStudentCounts,
   createStaff,
   resetStaffPin,
   updateStaffScope,

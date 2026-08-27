@@ -1,5 +1,7 @@
 const LeaveApplication = require('../models/LeaveApplication');
+const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const sseHub = require('../utils/sseHub');
+const { readPageParams, sendPage } = require('../utils/pagination');
 const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
 const {
   getLeaveSubmissionTimingViolation,
@@ -23,7 +25,21 @@ const {
 
 // 'Forwarded' counts as live too — an application sitting with the warden must block a
 // second one just like a Pending one does, or a student could stack approvals.
-const ACTIVE_LEAVE_STATUSES = ['Pending', 'Approved', 'Forwarded', 'Out'];
+// Sourced from config/passStatuses.js because the unique partial index in
+// models/LeaveApplication.js filters on the same list; if the two drift, the index enforces
+// a different rule than this check and the double-submit race reopens.
+const ACTIVE_LEAVE_STATUSES = ACTIVE_PASS_STATUSES;
+
+// Shared by the pre-check below and the E11000 branch in the catch, so a student who loses
+// the insert race sees exactly the message they'd have seen by arriving a moment later.
+const blockingLeaveMessage = (status) =>
+  status === 'Out'
+    ? 'You are currently on leave. Return to campus and get scanned back in at the gate before applying for new leave.'
+    : status === 'Approved'
+    ? 'You already have an approved leave pass. Complete or cancel that leave before applying again.'
+    : status === 'Forwarded'
+    ? 'Your leave application is with the warden for a decision. Wait for the outcome or cancel it before applying again.'
+    : 'You already have a leave application awaiting approval. Wait for a decision or cancel it before applying again.';
 
 // A row counts as "decided" if it carries a frozen verdict, or — for rows written before
 // `decision` existed — if its status still happens to be the verdict. The second clause is
@@ -49,26 +65,40 @@ const withDecisionMeta = (doc) => {
 };
 
 // Lazy read-time expiry of Pending/Forwarded/Approved passes whose leaveDate passed;
-// Out/Returned/Rejected/Cancelled are never touched. Saves are best-effort per doc.
+// Out/Returned/Rejected/Cancelled are never touched.
 // Forwarded must expire here too: it blocks new applications, so a stale one sitting
 // with the warden would otherwise lock the student out indefinitely.
+//
+// One updateMany for the whole page rather than a save() per row — see the twin comment
+// in outingController.js for why a read path must not fan out N writes.
 const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
 const expireStaleApplications = async (applications) => {
   const list = Array.isArray(applications) ? applications : [applications];
   const now = Date.now();
-  await Promise.all(
-    list.map(async (appDoc) => {
-      if (!appDoc) return;
-      if (!EXPIRABLE_STATUSES.includes(appDoc.status)) return;
-      if (now <= new Date(appDoc.leaveDate).getTime()) return;
-      appDoc.status = 'Expired';
-      try {
-        await appDoc.save();
-      } catch (err) {
-        // Lost-race save is fine; next read retries the persist.
-      }
-    })
+  const stale = list.filter(
+    (doc) =>
+      doc &&
+      EXPIRABLE_STATUSES.includes(doc.status) &&
+      now > new Date(doc.leaveDate).getTime()
   );
+  if (!stale.length) return applications;
+
+  try {
+    // The status guard makes this a no-op for any row a concurrent request already moved
+    // on (a cancel, a warden decision), so expiry can never overwrite a real decision.
+    await LeaveApplication.updateMany(
+      { _id: { $in: stale.map((doc) => doc._id) }, status: { $in: EXPIRABLE_STATUSES } },
+      { $set: { status: 'Expired' } }
+    );
+  } catch (err) {
+    // A read must not fail because a bookkeeping write did; the next read retries it.
+    console.warn(`[leave] lazy expiry write failed: ${err.message}`);
+  }
+
+  for (const doc of stale) {
+    doc.status = 'Expired';
+    if (typeof doc.unmarkModified === 'function') doc.unmarkModified('status');
+  }
   return applications;
 };
 
@@ -142,17 +172,8 @@ const createLeaveApplication = async (req, res) => {
     const blockingLeave = existingActive.find((doc) => ACTIVE_LEAVE_STATUSES.includes(doc.status));
 
     if (blockingLeave) {
-      const message =
-        blockingLeave.status === 'Out'
-          ? 'You are currently on leave. Return to campus and get scanned back in at the gate before applying for new leave.'
-          : blockingLeave.status === 'Approved'
-          ? 'You already have an approved leave pass. Complete or cancel that leave before applying again.'
-          : blockingLeave.status === 'Forwarded'
-          ? 'Your leave application is with the warden for a decision. Wait for the outcome or cancel it before applying again.'
-          : 'You already have a leave application awaiting approval. Wait for a decision or cancel it before applying again.';
-
       return res.status(409).json({
-        message,
+        message: blockingLeaveMessage(blockingLeave.status),
         status: blockingLeave.status,
         activeLeaveId: blockingLeave._id,
       });
@@ -196,6 +217,23 @@ const createLeaveApplication = async (req, res) => {
 
     res.status(201).json(application);
   } catch (error) {
+    // Lost the insert race — a concurrent POST from the same student committed first and
+    // the unique partial index on {student} filtered to ACTIVE_LEAVE_STATUSES rejected
+    // this one. Answer with the same 409 the pre-check would have produced.
+    if (error && error.code === 11000) {
+      const blocking = await LeaveApplication.findOne({
+        student: req.user._id,
+        status: { $in: ACTIVE_LEAVE_STATUSES },
+      }).select('_id status');
+
+      return res.status(409).json({
+        message: blocking
+          ? blockingLeaveMessage(blocking.status)
+          : 'You already have a live leave application. Wait for a decision or cancel it before applying again.',
+        status: blocking ? blocking.status : undefined,
+        activeLeaveId: blocking ? blocking._id : undefined,
+      });
+    }
     res.status(500).json({ message: error.message });
   }
 };
@@ -203,9 +241,13 @@ const createLeaveApplication = async (req, res) => {
 // GET /api/leave/myrequests — private (Student)
 const getMyLeaveApplications = async (req, res) => {
   try {
-    const applications = await LeaveApplication.find({ student: req.user._id })
+    const { limit, skip } = readPageParams(req);
+    const filter = { student: req.user._id };
+    const applications = await LeaveApplication.find(filter)
       .select(LIST_PROJECTION)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
     await expireStaleApplications(applications);
 
     const presence = await signaturePresence(
@@ -214,7 +256,12 @@ const getMyLeaveApplications = async (req, res) => {
       ['caretakerSignature', 'wardenSignature']
     );
 
-    res.json(applications.map((a) => withSignatureFlags(a.toObject(), presence)));
+    return sendPage(res, applications.map((a) => withSignatureFlags(a.toObject(), presence)), {
+      limit,
+      skip,
+      label: 'leave/myrequests',
+      count: () => LeaveApplication.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -245,8 +292,11 @@ const getLeaveSignatures = async (req, res) => {
 };
 
 // GET /api/leave/all — private (ChiefWarden). Campus-wide, read-only oversight.
+// Unfiltered and grows with every application the campus has ever filed, so it is
+// bounded hard — see utils/pagination.js.
 const getAllLeaveApplications = async (req, res) => {
   try {
+    const { limit, skip } = readPageParams(req);
     const applications = await LeaveApplication.find({})
       .select('-studentSignature -caretakerSignature -wardenSignature')
       .populate('student', 'name studentId roomNumber hostelName department year')
@@ -254,10 +304,17 @@ const getAllLeaveApplications = async (req, res) => {
       .populate('forwardedTo', 'name')
       .populate('forwardedBy', 'name')
       .populate('approvedBy', 'name role')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     await expireStaleApplications(applications);
-    res.json(applications);
+    return sendPage(res, applications, {
+      limit,
+      skip,
+      label: 'leave/all',
+      count: () => LeaveApplication.estimatedDocumentCount(),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -266,10 +323,14 @@ const getAllLeaveApplications = async (req, res) => {
 // GET /api/leave/pending — private (Caretaker)
 const getPendingLeaveApplications = async (req, res) => {
   try {
-    const applications = await LeaveApplication.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
+    const { limit, skip } = readPageParams(req);
+    const filter = { status: 'Pending', ...(await scopedStudentFilter(req.user)) };
+    const applications = await LeaveApplication.find(filter)
       .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
-      .sort({ leaveDate: 1 });
+      .sort({ leaveDate: 1 })
+      .skip(skip)
+      .limit(limit);
 
     await expireStaleApplications(applications);
     const stillPending = applications.filter((a) => a.status === 'Pending');
@@ -282,7 +343,15 @@ const getPendingLeaveApplications = async (req, res) => {
       ['studentSignature', 'caretakerSignature', 'wardenSignature']
     );
 
-    res.json(stillPending.map((a) => withSignatureFlags(a.toObject(), presence)));
+    // `fetched` is the window, not stillPending.length — expiry above can drop rows, and a
+    // short *result* from a full window must not read as "nothing more to fetch".
+    return sendPage(res, stillPending.map((a) => withSignatureFlags(a.toObject(), presence)), {
+      limit,
+      skip,
+      fetched: applications.length,
+      label: 'leave/pending',
+      count: () => LeaveApplication.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -295,17 +364,21 @@ const getPendingLeaveApplications = async (req, res) => {
 // scan can't erase the record of what was approved.
 const getLeaveHistory = async (req, res) => {
   try {
-    const applications = await LeaveApplication.find({
+    const { limit, skip } = readPageParams(req);
+    const filter = {
       $and: [
         { $or: [DECIDED_FILTER, { status: 'Forwarded' }] },
         await scopedStudentFilter(req.user),
       ],
-    })
+    };
+    const applications = await LeaveApplication.find(filter)
       .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedTo', 'name')
       .populate('approvedBy', 'name role')
-      .sort({ decidedAt: -1, updatedAt: -1 });
+      .sort({ decidedAt: -1, updatedAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     // Same viewer as /leave/pending — mapLeaveHistory spreads mapLeavePending.
     const presence = await signaturePresence(
@@ -314,7 +387,16 @@ const getLeaveHistory = async (req, res) => {
       ['studentSignature', 'caretakerSignature', 'wardenSignature']
     );
 
-    res.json(applications.map((a) => withSignatureFlags(withDecisionMeta(a), presence)));
+    return sendPage(
+      res,
+      applications.map((a) => withSignatureFlags(withDecisionMeta(a), presence)),
+      {
+        limit,
+        skip,
+        label: 'leave/history',
+        count: () => LeaveApplication.countDocuments(filter),
+      }
+    );
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -488,11 +570,15 @@ const forwardLeaveApplication = async (req, res) => {
 // GET /api/leave/forwarded — private (Warden); the warden's action queue.
 const getForwardedLeaveApplications = async (req, res) => {
   try {
-    const applications = await LeaveApplication.find(forwardedToFilter(req.user))
+    const { limit, skip } = readPageParams(req);
+    const filter = forwardedToFilter(req.user);
+    const applications = await LeaveApplication.find(filter)
       .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedBy', 'name')
-      .sort({ forwardedAt: 1 });
+      .sort({ forwardedAt: 1 })
+      .skip(skip)
+      .limit(limit);
 
     // A forwarded pass can still go stale while it waits on the warden.
     await expireStaleApplications(applications);
@@ -505,7 +591,13 @@ const getForwardedLeaveApplications = async (req, res) => {
       ['studentSignature']
     );
 
-    res.json(stillForwarded.map((a) => withSignatureFlags(a.toObject(), presence)));
+    return sendPage(res, stillForwarded.map((a) => withSignatureFlags(a.toObject(), presence)), {
+      limit,
+      skip,
+      fetched: applications.length,
+      label: 'leave/forwarded',
+      count: () => LeaveApplication.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -517,16 +609,23 @@ const getForwardedLeaveApplications = async (req, res) => {
 // ids, and returns an empty set for an unassigned warden.
 const getWardenLeaveHistory = async (req, res) => {
   try {
-    const applications = await LeaveApplication.find({
-      $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)],
-    })
+    const { limit, skip } = readPageParams(req);
+    const filter = { $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)] };
+    const applications = await LeaveApplication.find(filter)
       .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedBy', 'name')
       .populate('approvedBy', 'name role')
-      .sort({ decidedAt: -1, updatedAt: -1 });
+      .sort({ decidedAt: -1, updatedAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-    res.json(applications.map(withDecisionMeta));
+    return sendPage(res, applications.map(withDecisionMeta), {
+      limit,
+      skip,
+      label: 'leave/warden-history',
+      count: () => LeaveApplication.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -669,24 +768,7 @@ const cancelLeaveApplication = async (req, res) => {
 
 // GET /api/leave/stream — private (Caretaker), SSE
 const streamLeaveEvents = (req, res) => {
-  req.socket.setTimeout(0);
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  res.write('retry: 3000\n\n');
-
-  sseHub.addClient(res);
-
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
-    sseHub.removeClient(res);
-  });
+  sseHub.attach(req, res);
 };
 
 module.exports = {

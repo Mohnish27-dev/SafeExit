@@ -1,4 +1,5 @@
 const OutingRequest = require('../models/OutingRequest');
+const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
 const {
   isDeparturePassed,
@@ -9,6 +10,7 @@ const {
   isReturnLate,
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
+const { readPageParams, sendPage } = require('../utils/pagination');
 const {
   scopedStudentFilter,
   forwardedToFilter,
@@ -58,28 +60,54 @@ const withDecisionMeta = (doc) => {
 
 // 'Forwarded' counts as live too — a request sitting with the warden must block a second
 // one just like a Pending one does, or a student could stack approvals.
-const ACTIVE_STATUSES = ['Pending', 'Approved', 'Forwarded', 'Out'];
+// Sourced from config/passStatuses.js because the unique partial index in
+// models/OutingRequest.js filters on the same list; if the two drift, the index enforces a
+// different rule than this check and the double-submit race reopens.
+const ACTIVE_STATUSES = ACTIVE_PASS_STATUSES;
+
+// Shared by the pre-check below and the E11000 branch in the catch, so a student who loses
+// the insert race sees exactly the message they'd have seen by arriving a moment later.
+const blockingOutingMessage = (status) =>
+  status === 'Out'
+    ? 'You already have an outing in progress. Log your entry at the gate before creating a new request.'
+    : status === 'Forwarded'
+    ? 'Your outing request is with the warden for a decision. Wait for the outcome or cancel it before creating a new one.'
+    : `You already have a ${String(status).toLowerCase()} outing request. Complete that journey or cancel it before creating a new one.`;
 
 // Lazy read-time expiry of Pending/Forwarded/Approved passes whose departure window
-// closed; Out/Returned/Rejected are never touched. Saves are best-effort per doc.
+// closed; Out/Returned/Rejected are never touched.
 // Forwarded must expire here too: it blocks new requests, so a stale one sitting with
 // the warden would otherwise lock the student out indefinitely.
+//
+// One updateMany for the whole page, not one save() per row. The previous version fanned
+// out N concurrent writes from a *read* path — a full history page meant hundreds of
+// writes racing the gate's own traffic, which is the opposite of what a read should cost.
 const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
 const expireStaleRequests = async (requests) => {
   const list = Array.isArray(requests) ? requests : [requests];
-  await Promise.all(
-    list.map(async (reqDoc) => {
-      if (!reqDoc) return;
-      if (!EXPIRABLE_STATUSES.includes(reqDoc.status)) return;
-      if (!isDeparturePassed(reqDoc.outTime)) return;
-      reqDoc.status = 'Expired';
-      try {
-        await reqDoc.save();
-      } catch (err) {
-        // Lost-race save is fine; next read retries the persist.
-      }
-    })
+  const stale = list.filter(
+    (doc) => doc && EXPIRABLE_STATUSES.includes(doc.status) && isDeparturePassed(doc.outTime)
   );
+  if (!stale.length) return requests;
+
+  try {
+    // The status guard makes this a no-op for any row a concurrent request already moved
+    // on (a cancel, a gate scan), so expiry can never overwrite a real decision.
+    await OutingRequest.updateMany(
+      { _id: { $in: stale.map((doc) => doc._id) }, status: { $in: EXPIRABLE_STATUSES } },
+      { $set: { status: 'Expired' } }
+    );
+  } catch (err) {
+    // A read must not fail because a bookkeeping write did; the next read retries it.
+    console.warn(`[outing] lazy expiry write failed: ${err.message}`);
+  }
+
+  // Reflect it in the documents the caller is about to filter and serialise. Marked clean
+  // afterwards so nothing downstream re-saves a field the database already holds.
+  for (const doc of stale) {
+    doc.status = 'Expired';
+    if (typeof doc.unmarkModified === 'function') doc.unmarkModified('status');
+  }
   return requests;
 };
 
@@ -120,12 +148,7 @@ const createOutingRequest = async (req, res) => {
     const blocking = activeRequests.find((r) => ACTIVE_STATUSES.includes(r.status));
     if (blocking) {
       return res.status(409).json({
-        message:
-          blocking.status === 'Out'
-            ? 'You already have an outing in progress. Log your entry at the gate before creating a new request.'
-            : blocking.status === 'Forwarded'
-            ? 'Your outing request is with the warden for a decision. Wait for the outcome or cancel it before creating a new one.'
-            : `You already have a ${blocking.status.toLowerCase()} outing request. Complete that journey or cancel it before creating a new one.`,
+        message: blockingOutingMessage(blocking.status),
         status: blocking.status,
         activeRequestId: blocking._id,
       });
@@ -204,6 +227,25 @@ const createOutingRequest = async (req, res) => {
 
     res.status(201).json(outingRequest);
   } catch (error) {
+    // Lost the insert race. The pre-check above found nothing blocking, but a concurrent
+    // POST from the same student committed first and the unique partial index on
+    // {student} filtered to ACTIVE_STATUSES rejected this one. That is not a server
+    // error — it is the same "you already have a live request" the pre-check reports, so
+    // re-read the winner and answer identically.
+    if (error && error.code === 11000) {
+      const blocking = await OutingRequest.findOne({
+        student: req.user._id,
+        status: { $in: ACTIVE_STATUSES },
+      }).select('_id status');
+
+      return res.status(409).json({
+        message: blocking
+          ? blockingOutingMessage(blocking.status)
+          : 'You already have a live outing request. Complete that journey or cancel it before creating a new one.',
+        status: blocking ? blocking.status : undefined,
+        activeRequestId: blocking ? blocking._id : undefined,
+      });
+    }
     res.status(500).json({ message: error.message });
   }
 };
@@ -211,9 +253,13 @@ const createOutingRequest = async (req, res) => {
 // GET /api/outing/myrequests — private (Student)
 const getMyOutingRequests = async (req, res) => {
   try {
-    const requests = await OutingRequest.find({ student: req.user._id })
+    const { limit, skip } = readPageParams(req);
+    const filter = { student: req.user._id };
+    const requests = await OutingRequest.find(filter)
       .select(LIST_PROJECTION)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
     await expireStaleRequests(requests);
 
     // my-outings shows an "approved & signed by" badge off these two flags and fetches the
@@ -224,12 +270,21 @@ const getMyOutingRequests = async (req, res) => {
       ['caretakerSignature', 'wardenSignature']
     );
 
-    res.json(requests.map((request) => withSignatureFlags({
-      ...request.toObject(),
-      // Live display state only. The stored status remains 'Out' until the gate
-      // records a return, preserving the movement lifecycle and audit history.
-      isOverdue: request.status === 'Out' && isReturnLate(request.inTime),
-    }, presence)));
+    return sendPage(
+      res,
+      requests.map((request) => withSignatureFlags({
+        ...request.toObject(),
+        // Live display state only. The stored status remains 'Out' until the gate
+        // records a return, preserving the movement lifecycle and audit history.
+        isOverdue: request.status === 'Out' && isReturnLate(request.inTime),
+      }, presence)),
+      {
+        limit,
+        skip,
+        label: 'outing/myrequests',
+        count: () => OutingRequest.countDocuments(filter),
+      }
+    );
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -264,8 +319,12 @@ const getOutingSignatures = async (req, res) => {
 // GET /api/outing/all — private (ChiefWarden). Campus-wide, read-only oversight.
 // Signatures are intentionally omitted from this list response; the dashboard needs
 // operational details, not large immutable image snapshots.
+//
+// The worst list in the app: no filter at all, growing by every pass the campus has
+// ever issued. Bounded hard — see utils/pagination.js.
 const getAllOutingRequests = async (req, res) => {
   try {
+    const { limit, skip } = readPageParams(req);
     const requests = await OutingRequest.find({})
       .select('-studentSignature -caretakerSignature -wardenSignature')
       .populate('student', 'name studentId roomNumber hostelName department year')
@@ -273,10 +332,17 @@ const getAllOutingRequests = async (req, res) => {
       .populate('forwardedTo', 'name')
       .populate('forwardedBy', 'name')
       .populate('approvedBy', 'name role')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     await expireStaleRequests(requests);
-    res.json(requests);
+    return sendPage(res, requests, {
+      limit,
+      skip,
+      label: 'outing/all',
+      count: () => OutingRequest.estimatedDocumentCount(),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -285,10 +351,14 @@ const getAllOutingRequests = async (req, res) => {
 // GET /api/outing/pending — private (Caretaker/Guard)
 const getPendingRequests = async (req, res) => {
   try {
-    const requests = await OutingRequest.find({ status: 'Pending', ...(await scopedStudentFilter(req.user)) })
+    const { limit, skip } = readPageParams(req);
+    const filter = { status: 'Pending', ...(await scopedStudentFilter(req.user)) };
+    const requests = await OutingRequest.find(filter)
       .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
-      .sort({ createdAt: 1 });
+      .sort({ createdAt: 1 })
+      .skip(skip)
+      .limit(limit);
 
     await expireStaleRequests(requests);
     const stillPending = requests.filter((r) => r.status === 'Pending');
@@ -301,12 +371,26 @@ const getPendingRequests = async (req, res) => {
       ['studentSignature']
     );
 
-    res.json(stillPending.map((r) => withSignatureFlags(r.toObject(), presence)));
+    // `fetched` is the window, not stillPending.length — expiry above can drop rows, and
+    // a short *result* from a full window must not read as "nothing more to fetch".
+    return sendPage(res, stillPending.map((r) => withSignatureFlags(r.toObject(), presence)), {
+      limit,
+      skip,
+      fetched: requests.length,
+      label: 'outing/pending',
+      count: () => OutingRequest.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
+// GET /api/outing/overdue — private (staff)
+//
+// Deliberately *not* paginated. Its filter is `status: 'Out'`, so the result is bounded by
+// how many students are off campus right now — it cannot grow with deployment age. And
+// because the overdue test runs after the fetch, a window would produce a page of zero
+// overdue rows while later ones held real cases, which is a worse failure than the size.
 const getOverdueOutings = async (req, res) => {
   try {
     const scope = await scopedStudentFilter(req.user);
@@ -515,16 +599,26 @@ const forwardOutingRequest = async (req, res) => {
 // GET /api/outing/forwarded — private (Warden); the warden's action queue.
 const getForwardedRequests = async (req, res) => {
   try {
-    const requests = await OutingRequest.find(forwardedToFilter(req.user))
+    const { limit, skip } = readPageParams(req);
+    const filter = forwardedToFilter(req.user);
+    const requests = await OutingRequest.find(filter)
       .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedBy', 'name')
-      .sort({ forwardedAt: 1 });
+      .sort({ forwardedAt: 1 })
+      .skip(skip)
+      .limit(limit);
 
     await expireStaleRequests(requests);
     const stillForwarded = requests.filter((r) => r.status === 'Forwarded');
 
-    res.json(stillForwarded);
+    return sendPage(res, stillForwarded, {
+      limit,
+      skip,
+      fetched: requests.length,
+      label: 'outing/forwarded',
+      count: () => OutingRequest.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -535,19 +629,28 @@ const getForwardedRequests = async (req, res) => {
 // `decision`, not `status`, so a later cancel/expire/gate scan can't erase the record.
 const getCaretakerRequestHistory = async (req, res) => {
   try {
-    const requests = await OutingRequest.find({
+    const { limit, skip } = readPageParams(req);
+    const filter = {
       $and: [
         { $or: [DECIDED_FILTER, { status: 'Forwarded' }] },
         await scopedStudentFilter(req.user),
       ],
-    })
+    };
+    const requests = await OutingRequest.find(filter)
       .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedTo', 'name')
       .populate('approvedBy', 'name role')
-      .sort({ decidedAt: -1, updatedAt: -1 });
+      .sort({ decidedAt: -1, updatedAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-    res.json(requests.map(withDecisionMeta));
+    return sendPage(res, requests.map(withDecisionMeta), {
+      limit,
+      skip,
+      label: 'outing/history',
+      count: () => OutingRequest.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -558,16 +661,23 @@ const getCaretakerRequestHistory = async (req, res) => {
 // same record.
 const getWardenRequestHistory = async (req, res) => {
   try {
-    const requests = await OutingRequest.find({
-      $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)],
-    })
+    const { limit, skip } = readPageParams(req);
+    const filter = { $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)] };
+    const requests = await OutingRequest.find(filter)
       .select(LIST_PROJECTION)
       .populate('student', 'name studentId roomNumber hostelName')
       .populate('forwardedBy', 'name')
       .populate('approvedBy', 'name role')
-      .sort({ decidedAt: -1, updatedAt: -1 });
+      .sort({ decidedAt: -1, updatedAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-    res.json(requests.map(withDecisionMeta));
+    return sendPage(res, requests.map(withDecisionMeta), {
+      limit,
+      skip,
+      label: 'outing/warden-history',
+      count: () => OutingRequest.countDocuments(filter),
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -700,25 +810,7 @@ const cancelOutingRequest = async (req, res) => {
 
 // GET /api/outing/stream — private (Caretaker/Guard), SSE
 const streamOutingEvents = (req, res) => {
-  req.socket.setTimeout(0);
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-  res.write('retry: 3000\n\n');
-
-  sseHub.addClient(res);
-
-  // Keeps proxies from killing the idle connection.
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
-    sseHub.removeClient(res);
-  });
+  sseHub.attach(req, res);
 };
 
 module.exports = {

@@ -154,22 +154,23 @@ export default function SecurityDashboardPage() {
 
 
   // Recent scans + Inside/Outside/Overdue counts; backend overlays live 'Overdue'.
+  //
+  // The counts come from /admin/students/counts, not from tallying the roster. This runs
+  // every 15 seconds, and downloading every student row to add up three numbers scaled
+  // with the size of the campus — and would have counted only the first page once the
+  // roster endpoint became paginated.
   const loadScans = useCallback(async () => {
     try {
-      const [logs, students] = await Promise.all([
+      const [logs, tally] = await Promise.all([
         apiFetch("/scan?limit=100"),
-        apiFetch("/admin/users?role=Student"),
+        apiFetch("/admin/students/counts"),
       ]);
       setScans(logs);
-
-      const tally = { inside: 0, outside: 0, overdue: 0 };
-      for (const s of students) {
-        const status = (s.campusStatus || "").toLowerCase();
-        if (status === "inside") tally.inside += 1;
-        else if (status === "overdue") tally.overdue += 1;
-        else tally.outside += 1; // 'outside' and any unknown status
-      }
-      setCounts(tally);
+      setCounts({
+        inside: tally.inside || 0,
+        outside: tally.outside || 0,
+        overdue: tally.overdue || 0,
+      });
     } catch {
       /* guard may briefly be unauthenticated; ignore and retry on next tick */
     }

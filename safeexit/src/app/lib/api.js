@@ -43,3 +43,21 @@ export const apiFetch = async (path, options = {}) => {
   }
   return data;
 };
+
+// Same as apiFetch, but returns { data, headers } so callers can read pagination headers
+export const apiFetchWithHeaders = async (path, options = {}) => {
+  const res = await fetch(`${getApiBase()}${path}`, {
+    credentials: "include",
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers || {}) },
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.message || `Request failed (${res.status})`);
+    err.status = res.status;
+    if (data.code) err.code = data.code;
+    throw err;
+  }
+  return { data, headers: res.headers };
+};

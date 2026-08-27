@@ -19,7 +19,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { apiFetch } from "@/app/lib/api";
+import { apiFetch, apiFetchWithHeaders } from "@/app/lib/api";
 import { getInitials } from "@/app/lib/userProfile";
 import { HOSTELS, HOSTEL_GENDER_LABEL } from "@/app/lib/hostels";
 
@@ -69,12 +69,20 @@ export default function PeopleView() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [totalCount, setTotalCount] = useState(null);
+  const [isTruncated, setIsTruncated] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch(`/admin/users?role=${role}`);
+      const { data, headers } = await apiFetchWithHeaders(`/admin/users?role=${role}`);
       setPeople(data);
+      
+      const total = headers.get("X-Total-Count");
+      const truncated = headers.get("X-Truncated") === "true";
+      setTotalCount(total ? parseInt(total, 10) : null);
+      setIsTruncated(truncated);
+      
       setError("");
     } catch (err) {
       setError(err.message || "Could not load users");
@@ -225,7 +233,11 @@ export default function PeopleView() {
           </span>
           <div className="min-w-0">
             <h2 className="text-base font-bold text-slate-900 sm:text-lg">People &amp; Status</h2>
-            <p className="text-xs text-slate-600 sm:text-sm">{visible.length} {ROLE_PLURALS[role]}</p>
+            <p className="text-xs text-slate-600 sm:text-sm">
+              {isTruncated 
+                ? (search ? `Showing ${visible.length} matches in newest ${people.length} of ${totalCount}` : `Showing newest ${people.length} of ${totalCount}`)
+                : (search ? `Showing ${visible.length} of ${people.length}` : visible.length)} {ROLE_PLURALS[role]}
+            </p>
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
