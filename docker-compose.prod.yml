@@ -1,0 +1,34 @@
+# Production Compose file — Uses pre-built images from Docker Hub.
+# This prevents EC2 from freezing during high-memory Next.js builds.
+
+services:
+  backend:
+    image: ${DOCKER_USERNAME}/safeexit-backend:latest
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+    ports:
+      - "127.0.0.1:5000:5000"
+    networks:
+      - safeexit
+
+  frontend:
+    image: ${DOCKER_USERNAME}/safeexit-frontend:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BACKEND_ORIGIN: "http://backend:5000"
+      SCANNER_TOOLS: ${SCANNER_TOOLS:-0}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - safeexit
+
+networks:
+  safeexit:
+    driver: bridge
