@@ -45,6 +45,48 @@ const report = async (model, label) => {
   return dupes.length;
 };
 
+const reportCrossCollection = async () => {
+  const activeOutingStudents = await OutingRequest.distinct('student', {
+    status: { $in: ACTIVE_PASS_STATUSES },
+  });
+  if (!activeOutingStudents.length) {
+    console.log('OK  cross-collection: no student holds both an active outing and an active leave.');
+    return 0;
+  }
+  const crossHolders = await LeaveApplication.distinct('student', {
+    student: { $in: activeOutingStudents },
+    status: { $in: ACTIVE_PASS_STATUSES },
+  });
+  if (!crossHolders.length) {
+    console.log('OK  cross-collection: no student holds both an active outing and an active leave.');
+    return 0;
+  }
+
+  console.log(
+    `\nPROBLEM  cross-collection: ${crossHolders.length} student(s) hold BOTH an active outing AND an active leave.`
+  );
+  for (const sId of crossHolders) {
+    console.log(`  student ${sId}:`);
+    const outings = await OutingRequest.find({ student: sId, status: { $in: ACTIVE_PASS_STATUSES } })
+      .select('_id status createdAt destination')
+      .lean();
+    for (const o of outings) {
+      console.log(
+        `      [Outing] ${o._id}  ${String(o.status).padEnd(9)}  created ${new Date(o.createdAt).toISOString()}  ${o.destination || ''}`
+      );
+    }
+    const leaves = await LeaveApplication.find({ student: sId, status: { $in: ACTIVE_PASS_STATUSES } })
+      .select('_id status createdAt destination')
+      .lean();
+    for (const l of leaves) {
+      console.log(
+        `      [Leave]  ${l._id}  ${String(l.status).padEnd(9)}  created ${new Date(l.createdAt).toISOString()}  ${l.destination || ''}`
+      );
+    }
+  }
+  return crossHolders.length;
+};
+
 const main = async () => {
   if (!process.env.MONGO_URI) {
     console.error('MONGO_URI is not set. Run this from the backend/ directory with its .env in place.');
@@ -55,7 +97,9 @@ const main = async () => {
   console.log(`Connected. Active statuses treated as live: ${ACTIVE_PASS_STATUSES.join(', ')}\n`);
 
   const problems =
-    (await report(OutingRequest, 'outing requests')) + (await report(LeaveApplication, 'leave applications'));
+    (await report(OutingRequest, 'outing requests')) +
+    (await report(LeaveApplication, 'leave applications')) +
+    (await reportCrossCollection());
 
   await mongoose.disconnect();
 

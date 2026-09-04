@@ -1,5 +1,7 @@
 const OutingRequest = require('../models/OutingRequest');
+const LeaveApplication = require('../models/LeaveApplication');
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
+const { expireStaleRequests, expireStaleApplications } = require('../utils/passExpiry');
 const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
 const {
   isDeparturePassed,
@@ -74,42 +76,13 @@ const blockingOutingMessage = (status) =>
     ? 'Your outing request is with the warden for a decision. Wait for the outcome or cancel it before creating a new one.'
     : `You already have a ${String(status).toLowerCase()} outing request. Complete that journey or cancel it before creating a new one.`;
 
-// Lazy read-time expiry of Pending/Forwarded/Approved passes whose departure window
-// closed; Out/Returned/Rejected are never touched.
-// Forwarded must expire here too: it blocks new requests, so a stale one sitting with
-// the warden would otherwise lock the student out indefinitely.
-//
-// One updateMany for the whole page, not one save() per row. The previous version fanned
-// out N concurrent writes from a *read* path — a full history page meant hundreds of
-// writes racing the gate's own traffic, which is the opposite of what a read should cost.
-const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
-const expireStaleRequests = async (requests) => {
-  const list = Array.isArray(requests) ? requests : [requests];
-  const stale = list.filter(
-    (doc) => doc && EXPIRABLE_STATUSES.includes(doc.status) && isDeparturePassed(doc.outTime)
-  );
-  if (!stale.length) return requests;
+const blockingLeaveForOutingMessage = (status) =>
+  status === 'Out'
+    ? 'You are currently on leave outside campus. Log your entry at the gate before creating an outing request.'
+    : status === 'Forwarded'
+    ? 'Your leave application is with the warden for a decision. Wait for the outcome or cancel it before requesting an outing.'
+    : `You already have an active leave application (${String(status).toLowerCase()}). Complete or cancel that leave before requesting an outing.`;
 
-  try {
-    // The status guard makes this a no-op for any row a concurrent request already moved
-    // on (a cancel, a gate scan), so expiry can never overwrite a real decision.
-    await OutingRequest.updateMany(
-      { _id: { $in: stale.map((doc) => doc._id) }, status: { $in: EXPIRABLE_STATUSES } },
-      { $set: { status: 'Expired' } }
-    );
-  } catch (err) {
-    // A read must not fail because a bookkeeping write did; the next read retries it.
-    console.warn(`[outing] lazy expiry write failed: ${err.message}`);
-  }
-
-  // Reflect it in the documents the caller is about to filter and serialise. Marked clean
-  // afterwards so nothing downstream re-saves a field the database already holds.
-  for (const doc of stale) {
-    doc.status = 'Expired';
-    if (typeof doc.unmarkModified === 'function') doc.unmarkModified('status');
-  }
-  return requests;
-};
 
 // POST /api/outing — private (Student)
 const createOutingRequest = async (req, res) => {
@@ -151,6 +124,20 @@ const createOutingRequest = async (req, res) => {
         message: blockingOutingMessage(blocking.status),
         status: blocking.status,
         activeRequestId: blocking._id,
+      });
+    }
+
+    const activeLeaves = await LeaveApplication.find({
+      student: req.user._id,
+      status: { $in: ACTIVE_STATUSES },
+    });
+    await expireStaleApplications(activeLeaves);
+    const blockingLeave = activeLeaves.find((l) => ACTIVE_STATUSES.includes(l.status));
+    if (blockingLeave) {
+      return res.status(409).json({
+        message: blockingLeaveForOutingMessage(blockingLeave.status),
+        status: blockingLeave.status,
+        activeLeaveId: blockingLeave._id,
       });
     }
 
@@ -348,7 +335,7 @@ const getAllOutingRequests = async (req, res) => {
   }
 };
 
-// GET /api/outing/pending — private (Caretaker/Guard)
+// GET /api/outing/pending — private (Caretaker)
 const getPendingRequests = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
@@ -437,7 +424,7 @@ const getOverdueOutings = async (req, res) => {
   }
 };
 
-// PATCH /api/outing/:id/status — private (Caretaker/Guard)
+// PATCH /api/outing/:id/status — private (Caretaker)
 const updateRequestStatus = async (req, res) => {
   const { status, remarks } = req.body;
 

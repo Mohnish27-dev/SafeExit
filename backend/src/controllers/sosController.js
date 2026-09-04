@@ -11,6 +11,9 @@ const sosStudentFieldsFor = (role) =>
     ? `${SOS_STUDENT_FIELDS} phoneNumber guardianPhoneNumber closeContacts`
     : SOS_STUDENT_FIELDS;
 
+const VALID_SOS_TYPES = new Set(['harassment', 'medical', 'unsafe', 'stalking', 'other']);
+const DEFAULT_SOS_TYPE = 'other';
+
 // POST /api/sos — private (Student)
 const createSOSAlert = async (req, res) => {
   const { type, note, location, coords } = req.body;
@@ -30,10 +33,20 @@ const createSOSAlert = async (req, res) => {
       };
     }
 
+    // Missing, wrong-case, or unrecognized types default to 'other' — an SOS must never fail on a bad type.
+    const rawType = typeof type === 'string' ? type.trim().toLowerCase() : '';
+    const safeType = VALID_SOS_TYPES.has(rawType) ? rawType : DEFAULT_SOS_TYPE;
+
+    let safeNote = typeof note === 'string' ? note.trim() : (note || '');
+    if (typeof type === 'string' && type.trim() && !VALID_SOS_TYPES.has(rawType)) {
+      const typeAnnotation = `[Reported type: ${type.trim()}]`;
+      safeNote = safeNote ? `${safeNote} ${typeAnnotation}` : typeAnnotation;
+    }
+
     const alert = await SOSAlert.create({
       student: req.user._id,
-      type,
-      note,
+      type: safeType,
+      note: safeNote || undefined,
       location,
       coords: safeCoords
     });
@@ -54,7 +67,7 @@ const createSOSAlert = async (req, res) => {
     // gender scope, plus all admins, so an away hostel caretaker can never bottleneck it.
     notifyCaretakersAndAdmins(req.user.gender, {
       title: '🚨 SOS ALERT',
-      body: `${req.user.name} has raised an emergency${type ? ` (${type})` : ''}!${safeCoords ? ' 📍 Location attached' : ''}`,
+      body: `${req.user.name} has raised an emergency (${safeType})!${safeCoords ? ' 📍 Location attached' : ''}`,
       url: '/dashboard/caretaker?view=sos',
       adminUrl: '/dashboard/admin?view=sos',
       urgency: 'high',

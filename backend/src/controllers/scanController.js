@@ -155,23 +155,27 @@ const createScanLog = async (req, res) => {
           });
         }
       } else {
+        // Outing outTime is a departure deadline (early exit OK until outTime).
+        // Past departure deadline: persist 'Expired'.
+        if (isDeparturePassed(windowStart)) {
+          linkedPass.doc.status = 'Expired';
+          await linkedPass.doc.save();
+          return res.status(403).json({
+            message:
+              'This outing pass has expired — its approved departure deadline has already passed. Exit denied; the student must file a new request.',
+            outTime: windowStart,
+            inTime: windowEnd,
+            campusStatus: studentDoc.campusStatus,
+          });
+        }
+
         // Judge the current moment against the gender/type departure window; gender comes from the DB, never the QR.
+        // Before it opens: leave the pass untouched so it can be used once the window opens.
         const policy = resolveOutingPolicy(studentDoc.gender, linkedPass.doc.outingType);
         if (!isWithinDepartureWindow(studentDoc.gender, linkedPass.doc.outingType, new Date())) {
           const windowText = `${clockLabel(policy.departStartMinutes)}-${clockLabel(
             policy.departEndMinutes
           )}`;
-          // Past window end: persist 'Expired'; before it opens: leave the pass untouched.
-          if (isDeparturePassed(windowStart)) {
-            linkedPass.doc.status = 'Expired';
-            await linkedPass.doc.save();
-            return res.status(403).json({
-              message: `This outing pass has expired — its departure window (${windowText}, campus time) has already passed. Exit denied; the student must file a new request.`,
-              outTime: windowStart,
-              inTime: windowEnd,
-              campusStatus: studentDoc.campusStatus,
-            });
-          }
           return res.status(403).json({
             message: `This outing may only be used to exit between ${windowText} (campus time). Exit denied until the window opens.`,
             outTime: windowStart,
@@ -209,6 +213,20 @@ const createScanLog = async (req, res) => {
       // Stamp actual gate-exit time so student dashboards can show it without reading scan logs.
       if (linkedPass.passType === 'Outing') linkedPass.doc.actualOutTime = new Date();
       await linkedPass.doc.save();
+
+      // Burn any conflicting approved pass in the other collection so a student who
+      // departed on one pass cannot exit twice after returning.
+      if (linkedPass.passType === 'Outing') {
+        await LeaveApplication.updateMany(
+          { student: studentDoc._id, status: 'Approved' },
+          { $set: { status: 'Expired', remarks: 'Superseded by outing departure' } }
+        );
+      } else if (linkedPass.passType === 'Leave') {
+        await OutingRequest.updateMany(
+          { student: studentDoc._id, status: 'Approved' },
+          { $set: { status: 'Expired', remarks: 'Superseded by leave departure' } }
+        );
+      }
     } else if (direction === 'IN') {
       linkedPass = await resolveOutPass(studentDoc._id);
       if (linkedPass) {
@@ -287,12 +305,14 @@ const previewScan = async (req, res) => {
           exit = { allowed: true, reason: null, passType: 'Leave', pass: window };
         }
       } else {
-        if (isWithinDepartureWindow(studentDoc.gender, approvedPass.doc.outingType, new Date())) {
-          exit = { allowed: true, reason: null, passType: 'Outing', pass: window };
-        } else if (isDeparturePassed(window.windowStart)) {
+        if (isDeparturePassed(window.windowStart)) {
           exit = { allowed: false, reason: 'expired', passType: 'Outing', pass: window };
-        } else {
+        } else if (
+          !isWithinDepartureWindow(studentDoc.gender, approvedPass.doc.outingType, new Date())
+        ) {
           exit = { allowed: false, reason: 'not-yet-valid', passType: 'Outing', pass: window };
+        } else {
+          exit = { allowed: true, reason: null, passType: 'Outing', pass: window };
         }
       }
     }

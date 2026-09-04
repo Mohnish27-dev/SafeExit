@@ -127,12 +127,12 @@ export default function SOSAlert() {
       // Persist the alert so caretakers / admins see it live in their console.
       const alert = await apiFetch("/sos", {
         method: "POST",
-        body: JSON.stringify({ type: selected, note, coords: coordsRef.current || undefined }),
+        body: JSON.stringify({ type: selected || "other", note, coords: coordsRef.current || undefined }),
       });
       setAlertId("SOS-" + String(alert._id).slice(-6).toUpperCase());
       setStage("sent");
     } catch (err) {
-      // On network blip: still confirm locally, but record the failed dispatch.
+      // On network blip: record the failed dispatch with clear warning.
       setSendError(err.message || "Could not reach the server");
       setAlertId("SOS-" + Math.random().toString(36).substring(2, 8).toUpperCase());
       setStage("sent");
@@ -146,22 +146,30 @@ export default function SOSAlert() {
       <StudentFeatureCentered className="student-feature-page--emergency">
         <StudentFeaturePanel className="p-8 text-center animate-scale-in border-rose-100">
           <div className="relative inline-block mb-6">
-            <div className="w-20 h-20 rounded-full bg-linear-to-br from-rose-100 to-pink-100 flex items-center justify-center mx-auto">
-              <CheckCircle2 size={40} className="text-rose-500" />
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${sendError ? "bg-amber-100" : "bg-linear-to-br from-rose-100 to-pink-100"}`}>
+              {sendError ? <AlertTriangle size={40} className="text-amber-600" /> : <CheckCircle2 size={40} className="text-rose-500" />}
             </div>
-            <div className="sos-glow absolute inset-0 rounded-full opacity-30" />
+            {!sendError && <div className="sos-glow absolute inset-0 rounded-full opacity-30" />}
           </div>
-          <p className="sf-eyebrow text-rose-500 mb-1">Alert Dispatched</p>
-          <h2 className="font-sora text-2xl font-bold sf-gradient-text--danger mb-2">Help is on the way</h2>
-          <p className="text-slate-500 text-sm mb-6">Your emergency alert has been sent to the responsible safety staff.</p>
+          <p className={`sf-eyebrow mb-1 ${sendError ? "text-amber-600" : "text-rose-500"}`}>
+            {sendError ? "Dispatch Incomplete" : "Alert Dispatched"}
+          </p>
+          <h2 className="font-sora text-2xl font-bold sf-gradient-text--danger mb-2">
+            {sendError ? "Action Required" : "Help is on the way"}
+          </h2>
+          <p className="text-slate-500 text-sm mb-6">
+            {sendError
+              ? "We could not reach the server to dispatch this alert. Please contact campus staff directly."
+              : "Your emergency alert has been sent to the responsible safety staff."}
+          </p>
 
           <div className="rounded-2xl p-4 mb-4 text-left space-y-2.5 bg-linear-to-br from-rose-50 to-pink-50 border border-rose-100">
             {[
               { label: "Alert ID", value: alertId, highlight: true },
-              { label: "Type", value: alertTypes.find((a) => a.type === selected)?.label },
+              { label: "Type", value: alertTypes.find((a) => a.type === selected)?.label || "Other Emergency" },
               { label: "Time", value: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) },
               { label: "Location", value: locStatus === "captured" ? "Shared" : "Not available", success: locStatus === "captured" },
-              { label: "Notified", value: "Caretaker + Security", success: true },
+              { label: "Notified", value: sendError ? "Failed to reach server" : "Caretaker + Security", success: !sendError, highlight: !!sendError },
             ].map(({ label, value, highlight, success }) => (
               <div key={label} className="flex justify-between">
                 <span className="text-xs text-slate-400 font-semibold">{label}</span>
@@ -176,10 +184,12 @@ export default function SOSAlert() {
             ))}
           </div>
 
-          <div className="sf-notice sf-notice--warn mb-6 text-left">
-            <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-800">Stay in a safe location. Caretaker and security will reach you shortly.</p>
-          </div>
+          {!sendError && (
+            <div className="sf-notice sf-notice--warn mb-6 text-left">
+              <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">Stay in a safe location. Caretaker and security will reach you shortly.</p>
+            </div>
+          )}
 
           {sendError && (
             <div className="sf-notice sf-notice--warn mb-6 text-left border-rose-200 bg-rose-50">
@@ -190,9 +200,20 @@ export default function SOSAlert() {
             </div>
           )}
 
-          <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-danger w-full">
-            Back to Dashboard
-          </button>
+          {sendError ? (
+            <div className="flex gap-3">
+              <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-secondary flex-1">
+                Back to Dashboard
+              </button>
+              <button type="button" onClick={handleSend} className="sf-btn-danger flex-1 sf-btn-danger--pulse">
+                Retry SOS
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-danger w-full">
+              Back to Dashboard
+            </button>
+          )}
         </StudentFeaturePanel>
       </StudentFeatureCentered>
     );

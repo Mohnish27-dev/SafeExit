@@ -55,7 +55,9 @@ const forwardedToFilter = (user) => ({
 });
 
 function requestInScope(user, request, student) {
-  if (!isHostelScoped(user)) return true; // Admin/Guard unrestricted
+  if (!user) return false;
+  if (user.role === 'Admin') return true;
+  if (!isHostelScoped(user)) return false; // Guard/Student have no decision authority
 
   if (user.role === 'Warden') {
     return !!request && !!request.forwardedTo && String(request.forwardedTo) === String(user._id);
