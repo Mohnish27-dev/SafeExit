@@ -230,6 +230,7 @@ export default function StudentLoginPage() {
         : p.roomNumber
         ? `Room ${p.roomNumber}`
         : "—",
+      hostelName: p.hostelBlock || p.hostelName || "",
       room: p.roomNumber,
       mobile: p.phoneNumber,
       photo: p.photo,
@@ -1660,8 +1661,9 @@ export default function StudentLoginPage() {
                           <option value="2nd">2nd Year</option>
                           <option value="3rd">3rd Year</option>
                           <option value="4th">4th Year</option>
-                          <option value="4th">PhD</option>
                           <option value="4th">M.Tech</option>
+                          <option value="4th">MCA</option>
+                          <option value="4th">PhD</option>
                         </select>
                       </div>
                     </div>

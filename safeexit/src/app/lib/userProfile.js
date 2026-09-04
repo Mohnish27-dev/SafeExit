@@ -1,3 +1,5 @@
+import { genderForHostel } from "./hostels";
+
 const USER_PROFILE_KEY = "safeexit:user";
 
 export const defaultStudentProfile = {
@@ -9,6 +11,8 @@ export const defaultStudentProfile = {
   rollNo: "—",
   email: "student@nitp.ac.in",
   hostel: "—",
+  hostelName: "",
+  gender: "",
   room: "",
   mobile: "",
   // Flag only. This store deliberately holds signature *flags*, never signature bytes —
@@ -88,12 +92,17 @@ export const normalizeStudentProfile = (stored) => {
   const rollNo = stored.rollNo || (isEmailId ? "" : stored.id) || defaultStudentProfile.rollNo;
   const email = stored.email || (isEmailId ? stored.id : `${stored.name.toLowerCase().replace(/\s+/g, ".")}@nitp.ac.in`);
 
+  const hostelName = stored.hostelName || "";
+  const gender = stored.gender || (hostelName ? genderForHostel(hostelName) : "") || defaultStudentProfile.gender;
+
   return {
     ...defaultStudentProfile,
     ...stored,
     subtitle,
     rollNo,
     email,
+    gender,
+    hostelName,
     roleLabel: stored.roleLabel || "Student",
     room: stored.room || getRoomFromProfile(stored),
   };

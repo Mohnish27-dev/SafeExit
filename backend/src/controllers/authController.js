@@ -379,6 +379,7 @@ const refreshSession = async (req, res) => {
       guardianPhoneNumber: user.guardianPhoneNumber,
       closeContacts: user.closeContacts,
       gender: user.gender,
+      hostelName: user.hostelName,
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,
       hasSignature: Boolean(user.signature),

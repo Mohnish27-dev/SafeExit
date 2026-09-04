@@ -31,7 +31,6 @@ import {
   Sunset,
   Ticket,
   TrendingUp,
-  UserRound,
   X,
   ZoomIn,
   ZoomOut,
@@ -356,12 +355,6 @@ export default function StudentDashboardPage() {
   const [photoError, setPhotoError] = useState("");
   const photoInputRef = useRef(null);
 
-  // Gender backfill prompt for pre-`gender` accounts (curfew rules need it).
-  const [genderDismissed, setGenderDismissed] = useState(false);
-  const [genderDraft, setGenderDraft] = useState("");
-  const [savingGender, setSavingGender] = useState(false);
-  const [genderError, setGenderError] = useState("");
-
   // Hostel backfill for accounts created before hostel was mandatory. Without it the
   // caretaker's residence-scoped views can't see this student at all — including the
   // Out Now roster while they're off campus.
@@ -469,12 +462,27 @@ export default function StudentDashboardPage() {
         if (cancelled || !me) return;
         // Restore both server-backed media fields after every login path; sessionStorage
         // carries only the signature flag and may not contain the photo.
-        setProfile((prev) => ({
-          ...prev,
-          ...(me.studentId ? { rollNo: me.studentId, sid: me._id } : null),
-          photo: me.photo || prev.photo || null,
-          signature: me.signature || null,
-        }));
+        setProfile((prev) => {
+          const next = {
+            ...prev,
+            ...(me.studentId ? { rollNo: me.studentId, sid: me._id } : null),
+            gender: me.gender || prev.gender || "",
+            hostelName: me.hostelName || prev.hostelName || "",
+            photo: me.photo || prev.photo || null,
+            signature: me.signature || null,
+          };
+          const stored = getStoredUser();
+          if (stored) {
+            setStoredUser({
+              ...stored,
+              ...next,
+              hostel: next.hostelName
+                ? `Block ${next.hostelName}${stored.room ? `, Room ${stored.room}` : ""}`
+                : stored.hostel,
+            });
+          }
+          return next;
+        });
       } catch {
         /* not authenticated — keep local profile */
       }
@@ -790,28 +798,6 @@ export default function StudentDashboardPage() {
     }
   };
 
-  const handleSaveGender = async () => {
-    if (!genderDraft) {
-      setGenderError("Please select a gender.");
-      return;
-    }
-    setSavingGender(true);
-    setGenderError("");
-    try {
-      const updated = await apiFetch("/auth/profile", {
-        method: "PATCH",
-        body: JSON.stringify({ gender: genderDraft }),
-      });
-      const merged = { ...getStoredUser(), gender: updated.gender };
-      setStoredUser(merged);
-      setProfile((prev) => ({ ...prev, gender: updated.gender }));
-    } catch (err) {
-      setGenderError(err?.message || "Couldn't save your gender. Please try again.");
-    } finally {
-      setSavingGender(false);
-    }
-  };
-
   const handleSaveHostel = async () => {
     if (!hostelDraft) {
       setHostelError("Please select your hostel.");
@@ -972,59 +958,6 @@ export default function StudentDashboardPage() {
                 </div>
               </div>
               {hostelError && <p className="text-xs text-rose-500 mt-3">{hostelError}</p>}
-            </section>
-          )}
-
-          {mounted && !profile.gender && !genderDismissed && (
-            <section className="sd-luxe-panel sd-luxe-rise mt-4 rounded-4xl p-4 shadow-xl border border-indigo-100 sm:mt-6 sm:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
-                    <UserRound className="h-5.5 w-5.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="sd-card-title text-slate-900 text-base">Complete your profile</p>
-                    <p className="sd-micro mt-0.5">
-                      Add your gender so Leave Applications can apply the right rules for you.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <select
-                    value={genderDraft}
-                    onChange={(e) => {
-                      setGenderDraft(e.target.value);
-                      setGenderError("");
-                    }}
-                    disabled={savingGender}
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors disabled:opacity-50"
-                  >
-                    <option value="">Select Gender</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleSaveGender}
-                    disabled={savingGender || !genderDraft}
-                    className="sf-btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {savingGender ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGenderDismissed(true)}
-                    disabled={savingGender}
-                    title="Dismiss"
-                    className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-              {genderError && <p className="text-xs text-rose-500 mt-3">{genderError}</p>}
             </section>
           )}
 
