@@ -1,5 +1,7 @@
 const LeaveApplication = require('../models/LeaveApplication');
+const OutingRequest = require('../models/OutingRequest');
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
+const { expireStaleRequests, expireStaleApplications } = require('../utils/passExpiry');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
@@ -64,43 +66,13 @@ const withDecisionMeta = (doc) => {
   return obj;
 };
 
-// Lazy read-time expiry of Pending/Forwarded/Approved passes whose leaveDate passed;
-// Out/Returned/Rejected/Cancelled are never touched.
-// Forwarded must expire here too: it blocks new applications, so a stale one sitting
-// with the warden would otherwise lock the student out indefinitely.
-//
-// One updateMany for the whole page rather than a save() per row — see the twin comment
-// in outingController.js for why a read path must not fan out N writes.
-const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
-const expireStaleApplications = async (applications) => {
-  const list = Array.isArray(applications) ? applications : [applications];
-  const now = Date.now();
-  const stale = list.filter(
-    (doc) =>
-      doc &&
-      EXPIRABLE_STATUSES.includes(doc.status) &&
-      now > new Date(doc.leaveDate).getTime()
-  );
-  if (!stale.length) return applications;
+const blockingOutingForLeaveMessage = (status) =>
+  status === 'Out'
+    ? 'You already have an outing in progress. Log your entry at the gate before applying for leave.'
+    : status === 'Forwarded'
+    ? 'Your outing request is with the warden for a decision. Wait for the outcome or cancel it before applying for leave.'
+    : `You already have an active outing request (${String(status).toLowerCase()}). Complete that journey or cancel it before applying for leave.`;
 
-  try {
-    // The status guard makes this a no-op for any row a concurrent request already moved
-    // on (a cancel, a warden decision), so expiry can never overwrite a real decision.
-    await LeaveApplication.updateMany(
-      { _id: { $in: stale.map((doc) => doc._id) }, status: { $in: EXPIRABLE_STATUSES } },
-      { $set: { status: 'Expired' } }
-    );
-  } catch (err) {
-    // A read must not fail because a bookkeeping write did; the next read retries it.
-    console.warn(`[leave] lazy expiry write failed: ${err.message}`);
-  }
-
-  for (const doc of stale) {
-    doc.status = 'Expired';
-    if (typeof doc.unmarkModified === 'function') doc.unmarkModified('status');
-  }
-  return applications;
-};
 
 // POST /api/leave — private (Student)
 const createLeaveApplication = async (req, res) => {
@@ -176,6 +148,20 @@ const createLeaveApplication = async (req, res) => {
         message: blockingLeaveMessage(blockingLeave.status),
         status: blockingLeave.status,
         activeLeaveId: blockingLeave._id,
+      });
+    }
+
+    const existingOutings = await OutingRequest.find({
+      student: req.user._id,
+      status: { $in: ACTIVE_LEAVE_STATUSES },
+    });
+    await expireStaleRequests(existingOutings);
+    const blockingOuting = existingOutings.find((doc) => ACTIVE_LEAVE_STATUSES.includes(doc.status));
+    if (blockingOuting) {
+      return res.status(409).json({
+        message: blockingOutingForLeaveMessage(blockingOuting.status),
+        status: blockingOuting.status,
+        activeRequestId: blockingOuting._id,
       });
     }
 

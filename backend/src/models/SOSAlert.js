@@ -10,6 +10,9 @@ const sosAlertSchema = new mongoose.Schema({
   type: {
     type: String,
     enum: ['harassment', 'medical', 'unsafe', 'stalking', 'other'],
+    default: 'other',
+    lowercase: true,
+    trim: true,
     required: true
   },
   note: {

@@ -27,7 +27,7 @@ router.get('/myrequests', protect, authorizeRoles('Student'), getMyOutingRequest
 
 router.get('/all', protect, authorizeRoles('ChiefWarden'), getAllOutingRequests);
 
-router.get('/pending', protect, authorizeRoles('Caretaker', 'Guard'), getPendingRequests);
+router.get('/pending', protect, authorizeRoles('Caretaker'), getPendingRequests);
 
 router.get(
   '/overdue',
@@ -63,7 +63,7 @@ router.get(
   getOutingSignatures
 );
 
-router.patch('/:id/status', protect, authorizeRoles('Caretaker', 'Guard'), updateRequestStatus);
+router.patch('/:id/status', protect, authorizeRoles('Caretaker'), updateRequestStatus);
 
 // Caretaker escalates up; warden decides.
 router.patch('/:id/forward', protect, authorizeRoles('Caretaker'), forwardOutingRequest);
