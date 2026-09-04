@@ -64,6 +64,11 @@ const tryRestoreSession = async () => {
             email: data.email,
             room: data.roomNumber,
             mobile: data.phoneNumber,
+            gender: data.gender,
+            hostelName: data.hostelName,
+            hostel: data.hostelName
+              ? `Block ${data.hostelName}${data.roomNumber ? `, Room ${data.roomNumber}` : ""}`
+              : undefined,
           }
         : {}),
       hasSignature: Boolean(data.hasSignature),
