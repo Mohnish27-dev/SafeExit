@@ -22,6 +22,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
+  // Absolute base for social-preview image URLs. Without it Next resolves them
+  // against localhost, which breaks the share card for /team when someone posts
+  // the credits link. NEXT_PUBLIC_* is inlined at BUILD time, so on the college
+  // server this has to be passed as a Docker build ARG, not a runtime env.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "NITP-SafeExit | Privacy-First Smart Hostel Access",
   description: "NITP-SafeExit replaces unsafe physical hostel registers with a secure digital outing system that protects student privacy and tracks audit trails.",
   icons: {

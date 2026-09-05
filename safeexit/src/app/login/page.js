@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, Headphones, ShieldCheck, GraduationCap, UserCog, UserCheck, Crown, Lock, CheckCircle, ArrowLeft, ArrowRight, LogIn } from "lucide-react";
+import { Shield, Headphones, ShieldCheck, GraduationCap, UserCog, UserCheck, Crown, Lock, CheckCircle, ArrowLeft, ArrowRight, LogIn, Users } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import caretakerIllustration from "../../../public/images/login/caretaker.png";
 import { getToken } from "@/app/lib/auth";
 import { getStoredUser } from "@/app/lib/userProfile";
 import { CHIEF_WARDEN_PIN_KEY } from "@/app/lib/chiefWardenQuickLogin";
+import { TEAM } from "@/app/lib/team";
 
 // Per-role Quick Login PIN keys — presence tells which roles this device is set up for
 const ROLE_PIN_KEYS = {
@@ -508,6 +509,17 @@ export default function LoginRoleSelect() {
             </p>
           </div>
         </div>
+
+        {/* The installed PWA starts here, so this is the only screen every role
+            reliably passes through — the team credit has to live on it. */}
+        <Link
+          href="/team"
+          className="group mt-3 inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/70 px-4 py-2 text-xs font-semibold text-slate-600 backdrop-blur-sm transition-all hover:border-indigo-200 hover:text-indigo-600 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2"
+        >
+          <Users className="h-3.5 w-3.5 text-indigo-500" aria-hidden="true" />
+          Built by <span className="font-bold">{TEAM.name}</span>
+          <span className="text-slate-400 transition-transform group-hover:translate-x-0.5">→</span>
+        </Link>
       </footer>
     </div>
   );
