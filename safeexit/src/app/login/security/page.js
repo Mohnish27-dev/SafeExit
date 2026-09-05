@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import TeamCreditLink from "@/app/components/TeamCreditLink";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 import { makeQuickLogin } from "@/app/lib/quickLogin";
@@ -639,6 +640,9 @@ export default function SecurityLoginPage() {
             <p className="text-xs font-semibold text-indigo-600">
               Thank you for keeping the campus safe!
             </p>
+            {/* Once quick login is on, this page — not /login — is where a
+                returning guard lands, so the team credit lives here too. */}
+            <TeamCreditLink className="mt-2" />
           </div>
         </footer>
       </main>
