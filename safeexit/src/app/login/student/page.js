@@ -43,6 +43,7 @@ import {
   clearQuickLogin,
 } from "@/app/lib/quickLogin";
 import { HOSTELS } from "@/app/lib/hostels";
+import TeamCreditLink from "@/app/components/TeamCreditLink";
 import SignatureCapture from "@/app/components/SignatureCapture";
 import {
   clampCropOffset,
@@ -2157,6 +2158,10 @@ export default function StudentLoginPage() {
             </div>
           </div>
         )}
+
+        {/* Once quick login is on, this page — not /login — is where a returning
+            student lands, so the team credit has to be reachable from here too. */}
+        <TeamCreditLink className="mt-6 mb-2" />
       </div>
     </div>
   );

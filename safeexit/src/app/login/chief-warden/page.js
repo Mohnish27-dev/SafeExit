@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import TeamCreditLink from "@/app/components/TeamCreditLink";
 import {
   ArrowLeft,
   ArrowRight,
@@ -231,7 +232,7 @@ export default function ChiefWardenLoginPage() {
   if (appState === "LOADING") return null;
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 px-4 py-10">
+    <main className="relative flex min-h-screen flex-col items-center justify-center gap-6 overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 px-4 py-10">
       <div className="absolute inset-0 opacity-40" aria-hidden="true">
         <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-cyan-500/30 blur-3xl" />
         <div className="absolute -right-20 bottom-0 h-96 w-96 rounded-full bg-indigo-500/30 blur-3xl" />
@@ -294,6 +295,10 @@ export default function ChiefWardenLoginPage() {
           </div>
         )}
       </section>
+
+      {/* Once quick login is on, this page — not /login — is where a returning
+          chief warden lands, so the team credit has to be reachable from here. */}
+      <TeamCreditLink className="relative" />
     </main>
   );
 }

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import TeamCreditLink from "@/app/components/TeamCreditLink";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 import { makeQuickLogin } from "@/app/lib/quickLogin";
@@ -499,6 +500,10 @@ export default function CaretakerLoginPage() {
             </div>
           </div>
         )}
+
+        {/* Once quick login is on, this page — not /login — is where a returning
+            user lands, so the team credit has to be reachable from here too. */}
+        <TeamCreditLink className="mt-6 mb-2" />
       </div>
     </div>
   );
