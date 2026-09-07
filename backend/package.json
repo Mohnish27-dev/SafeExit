@@ -10,7 +10,12 @@
     "migrate:loginid": "node scripts/migrateStaffLoginId.js",
     "check:duplicates": "node scripts/checkActivePassDuplicates.js",
     "lint": "eslint src/**/*.js",
-    "test": "node --test"
+    "test": "node --test",
+    "pg:schema": "node scripts/applySchema.js schema",
+    "pg:constraints": "node scripts/applySchema.js constraints",
+    "pg:validate": "node scripts/applySchema.js validate",
+    "pg:check": "node scripts/applySchema.js check",
+    "pg:inventory": "node scripts/mongoInventory.js"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +34,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.7.1",
     "nodemailer": "^6.10.1",
+    "pg": "^8.23.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

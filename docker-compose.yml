@@ -1,8 +1,42 @@
-# NITP-SafeExit — two app containers on a private network.
+# NITP-SafeExit — app containers on a private network.
 # nginx + certbot live on the HOST and reverse-proxy into these published ports.
-# MongoDB is Atlas (cloud), so there is no database service here.
+#
+# The database is moving from MongoDB Atlas to PostgreSQL on the campus network. During
+# the migration both exist: MONGO_URI still points at Atlas (nothing reads Postgres yet),
+# and the postgres service below is the local development target for the new schema.
+#
+# At cutover, the college's own PostgreSQL replaces this container: drop the service,
+# point DATABASE_URL at their host, and the rest of the file is unchanged. Keeping the
+# service here means development never depends on reaching the campus network.
 
 services:
+  # Development database only. NOT a production deployment — the college runs their own
+  # PostgreSQL on the ARP network and that is what DATABASE_URL points at in production.
+  # Pinned to 16-alpine; the schema is deliberately written for 9.5+ with zero extensions,
+  # so it applies unchanged if the college turns out to run 12 or 14.
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-safeexit}
+      POSTGRES_USER: ${POSTGRES_USER:-safeexit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-safeexit_dev}
+      # Deterministic collation, so ORDER BY on names matches the college server.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    # Loopback only. Nothing outside this machine reaches the dev database.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Without this, backend starts before Postgres finishes initdb and exits on connect.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-safeexit} -d ${POSTGRES_DB:-safeexit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - safeexit
+
   backend:
     build:
       context: ./backend
@@ -16,6 +50,9 @@ services:
     # Only exposed to the host loopback; nginx reaches it, the public internet does not.
     ports:
       - "127.0.0.1:5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - safeexit
 
@@ -46,3 +83,6 @@ services:
 networks:
   safeexit:
     driver: bridge
+
+volumes:
+  pgdata:
