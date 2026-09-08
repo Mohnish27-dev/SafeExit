@@ -1,5 +1,5 @@
-const OutingRequest = require('../models/OutingRequest');
-const LeaveApplication = require('../models/LeaveApplication');
+const { Op } = require('sequelize');
+const { OutingRequest, LeaveApplication, DelayNotice } = require('../models');
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { expireStaleRequests, expireStaleApplications } = require('../utils/passExpiry');
 const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
@@ -13,8 +13,10 @@ const {
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
+const { estimatedRowCount } = require('../utils/rowCount');
 const {
-  scopedStudentFilter,
+  passScope,
+  mergeWhere,
   forwardedToFilter,
   requestInScope,
   canReadSignatures,
@@ -24,11 +26,9 @@ const {
 const {
   fetchOwnSignature,
   sendSignatureRequired,
-  LIST_PROJECTION,
   signaturePresence,
   withSignatureFlags,
 } = require('../utils/signature');
-const DelayNotice = require('../models/DelayNotice');
 
 const clockLabel = (minutes) => {
   const h24 = Math.floor(minutes / 60);
@@ -38,15 +38,38 @@ const clockLabel = (minutes) => {
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 };
 
+const QUEUE_STUDENT_FIELDS = ['id', 'name', 'studentId', 'roomNumber', 'hostelName'];
+const WIDE_STUDENT_FIELDS = [...QUEUE_STUDENT_FIELDS, 'department', 'year'];
+const SIGNATURE_ATTRIBUTES = [
+  'studentSignature', 'studentSignatureMime',
+  'caretakerSignature', 'caretakerSignatureMime',
+  'wardenSignature', 'wardenSignatureMime',
+];
+
+// History lists sort on decidedAt, which is NULL for anything still with the warden.
+//
+// This is one of the few places the two databases genuinely disagree. MongoDB sorts a
+// missing or null field as the LOWEST value, so a descending sort put undecided rows at
+// the bottom. Postgres treats NULL as the HIGHEST, so a bare DESC would float every
+// Forwarded row to the top of the history and push the newest decisions off the first
+// page. NULLS LAST restores the order the dashboards were built around.
+const NEWEST_DECISION_FIRST = [
+  ['decidedAt', 'DESC NULLS LAST'],
+  ['updatedAt', 'DESC NULLS LAST'],
+];
+
 // A row counts as "decided" if it carries a frozen verdict, or — for rows written before
 // `decision` existed — if its status still happens to be the verdict. The second clause is
 // what keeps pre-existing history visible without a migration. Auto-approved outings never
 // get a `decision` (no human ruled on them) and are excluded outright.
+//
+// `autoApproved: false` rather than "not true": the column is NOT NULL DEFAULT false, so
+// unlike the Mongo field it can never be absent, and the two spellings are now identical.
 const DECIDED_FILTER = {
-  autoApproved: { $ne: true },
-  $or: [
-    { decision: { $in: ['Approved', 'Rejected'] } },
-    { decision: { $exists: false }, status: { $in: ['Approved', 'Rejected'] } },
+  autoApproved: false,
+  [Op.or]: [
+    { decision: { [Op.in]: ['Approved', 'Rejected'] } },
+    { decision: null, status: { [Op.in]: ['Approved', 'Rejected'] } },
   ],
 };
 
@@ -54,7 +77,7 @@ const DECIDED_FILTER = {
 const LAPSED_STATUSES = ['Cancelled', 'Expired'];
 
 const withDecisionMeta = (doc) => {
-  const obj = doc.toObject();
+  const obj = doc.toJSON();
   obj.decision = obj.decision || (['Approved', 'Rejected'].includes(obj.status) ? obj.status : null);
   obj.lapsed = LAPSED_STATUSES.includes(obj.status) ? obj.status : null;
   return obj;
@@ -62,13 +85,22 @@ const withDecisionMeta = (doc) => {
 
 // 'Forwarded' counts as live too — a request sitting with the warden must block a second
 // one just like a Pending one does, or a student could stack approvals.
-// Sourced from config/passStatuses.js because the unique partial index in
-// models/OutingRequest.js filters on the same list; if the two drift, the index enforces a
-// different rule than this check and the double-submit race reopens.
+// Sourced from config/passStatuses.js because the partial unique index
+// one_active_outing_per_student filters on the same list; if the two drift, the index
+// enforces a different rule than this check and the double-submit race reopens.
 const ACTIVE_STATUSES = ACTIVE_PASS_STATUSES;
 
-// Shared by the pre-check below and the E11000 branch in the catch, so a student who loses
-// the insert race sees exactly the message they'd have seen by arriving a moment later.
+// The database's name for that index. A unique violation carrying it is the lost
+// double-submit race, not a bug — see the catch in createOutingRequest.
+const ONE_ACTIVE_OUTING_CONSTRAINT = 'one_active_outing_per_student';
+
+const isOneActivePassViolation = (error, constraint) =>
+  error?.name === 'SequelizeUniqueConstraintError' &&
+  (error.parent?.constraint === constraint || error.parent?.constraint === undefined);
+
+// Shared by the pre-check below and the unique-violation branch in the catch, so a student
+// who loses the insert race sees exactly the message they'd have seen by arriving a moment
+// later.
 const blockingOutingMessage = (status) =>
   status === 'Out'
     ? 'You already have an outing in progress. Log your entry at the gate before creating a new request.'
@@ -94,7 +126,7 @@ const createOutingRequest = async (req, res) => {
     //
     // KEEP THIS FIRST: the frontend re-submits automatically after the student captures a
     // signature in response to this 428, which is only safe while the rejection happens
-    // before any document is created or state is touched.
+    // before any row is created or state is touched.
     const studentSignature = await fetchOwnSignature(req.user);
     if (!studentSignature) {
       return sendSignatureRequired(
@@ -112,9 +144,8 @@ const createOutingRequest = async (req, res) => {
       });
     }
 
-    const activeRequests = await OutingRequest.find({
-      student: req.user._id,
-      status: { $in: ACTIVE_STATUSES },
+    const activeRequests = await OutingRequest.findAll({
+      where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_STATUSES } },
     });
 
     await expireStaleRequests(activeRequests);
@@ -123,13 +154,12 @@ const createOutingRequest = async (req, res) => {
       return res.status(409).json({
         message: blockingOutingMessage(blocking.status),
         status: blocking.status,
-        activeRequestId: blocking._id,
+        activeRequestId: blocking.id,
       });
     }
 
-    const activeLeaves = await LeaveApplication.find({
-      student: req.user._id,
-      status: { $in: ACTIVE_STATUSES },
+    const activeLeaves = await LeaveApplication.findAll({
+      where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_STATUSES } },
     });
     await expireStaleApplications(activeLeaves);
     const blockingLeave = activeLeaves.find((l) => ACTIVE_STATUSES.includes(l.status));
@@ -137,11 +167,11 @@ const createOutingRequest = async (req, res) => {
       return res.status(409).json({
         message: blockingLeaveForOutingMessage(blockingLeave.status),
         status: blockingLeave.status,
-        activeLeaveId: blockingLeave._id,
+        activeLeaveId: blockingLeave.id,
       });
     }
 
-    // Gender comes from the authenticated user doc, never the body.
+    // Gender comes from the authenticated user row, never the body.
     const gender = req.user.gender;
     const resolvedType = normalizeOutingType(gender, outingType);
     const policy = resolveOutingPolicy(gender, resolvedType);
@@ -182,7 +212,7 @@ const createOutingRequest = async (req, res) => {
     }
 
     const outingRequest = await OutingRequest.create({
-      student: req.user._id,
+      studentId: req.user._id,
       destination,
       purpose,
       outingType: resolvedType,
@@ -190,20 +220,21 @@ const createOutingRequest = async (req, res) => {
       inTime,
       status: autoApproved ? 'Approved' : 'Pending',
       autoApproved,
+      // The setter decodes this data URL into bytea plus its mime type.
       studentSignature,
-      targetCaretaker: targetCaretaker ? targetCaretaker._id : undefined,
+      targetCaretaker: targetCaretaker ? targetCaretaker.id : null,
     });
 
     sseHub.broadcast('outing:changed', {
       reason: 'created',
-      id: outingRequest._id,
+      id: outingRequest.id,
       status: outingRequest.status,
     });
 
     if (!autoApproved) {
       // Route to the chosen caretaker when resolved; else fall back to hostel routing.
       const scope = targetCaretaker
-        ? { caretakerId: targetCaretaker._id }
+        ? { caretakerId: targetCaretaker.id }
         : { hostelName: req.user.hostelName, gender };
       notifyCaretakers(scope, {
         title: '🔔 New Outing Request',
@@ -215,22 +246,26 @@ const createOutingRequest = async (req, res) => {
     res.status(201).json(outingRequest);
   } catch (error) {
     // Lost the insert race. The pre-check above found nothing blocking, but a concurrent
-    // POST from the same student committed first and the unique partial index on
-    // {student} filtered to ACTIVE_STATUSES rejected this one. That is not a server
-    // error — it is the same "you already have a live request" the pre-check reports, so
-    // re-read the winner and answer identically.
-    if (error && error.code === 11000) {
+    // POST from the same student committed first and one_active_outing_per_student — the
+    // partial unique index filtered to ACTIVE_STATUSES — rejected this one. That is not a
+    // server error; it is the same "you already have a live request" the pre-check
+    // reports, so re-read the winner and answer identically.
+    //
+    // The Mongo version matched error.code === 11000. Postgres raises a named
+    // SequelizeUniqueConstraintError, so the check can now assert WHICH constraint fired
+    // rather than treating every duplicate-key error as this one.
+    if (isOneActivePassViolation(error, ONE_ACTIVE_OUTING_CONSTRAINT)) {
       const blocking = await OutingRequest.findOne({
-        student: req.user._id,
-        status: { $in: ACTIVE_STATUSES },
-      }).select('_id status');
+        where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_STATUSES } },
+        attributes: ['id', 'status'],
+      });
 
       return res.status(409).json({
         message: blocking
           ? blockingOutingMessage(blocking.status)
           : 'You already have a live outing request. Complete that journey or cancel it before creating a new one.',
         status: blocking ? blocking.status : undefined,
-        activeRequestId: blocking ? blocking._id : undefined,
+        activeRequestId: blocking ? blocking.id : undefined,
       });
     }
     res.status(500).json({ message: error.message });
@@ -241,26 +276,29 @@ const createOutingRequest = async (req, res) => {
 const getMyOutingRequests = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { student: req.user._id };
-    const requests = await OutingRequest.find(filter)
-      .select(LIST_PROJECTION)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const where = { studentId: req.user._id };
+    // Signature bytes are excluded by the model's defaultScope, so this list is narrow
+    // without having to remember a projection.
+    const requests = await OutingRequest.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+    });
     await expireStaleRequests(requests);
 
     // my-outings shows an "approved & signed by" badge off these two flags and fetches the
     // image from /:id/signatures when the card expands.
     const presence = await signaturePresence(
       OutingRequest,
-      requests.map((r) => r._id),
+      requests.map((r) => r.id),
       ['caretakerSignature', 'wardenSignature']
     );
 
     return sendPage(
       res,
       requests.map((request) => withSignatureFlags({
-        ...request.toObject(),
+        ...request.toJSON(),
         // Live display state only. The stored status remains 'Out' until the gate
         // records a return, preserving the movement lifecycle and audit history.
         isOverdue: request.status === 'Out' && isReturnLate(request.inTime),
@@ -269,7 +307,7 @@ const getMyOutingRequests = async (req, res) => {
         limit,
         skip,
         label: 'outing/myrequests',
-        count: () => OutingRequest.countDocuments(filter),
+        count: () => OutingRequest.count({ where }),
       }
     );
   } catch (error) {
@@ -282,9 +320,12 @@ const getMyOutingRequests = async (req, res) => {
 // so the client caches what it fetches.
 const getOutingSignatures = async (req, res) => {
   try {
-    const request = await OutingRequest.findById(req.params.id)
-      .select('student targetCaretaker forwardedTo studentSignature caretakerSignature wardenSignature')
-      .populate('student', 'gender hostelName');
+    // The one place that opts back in to the bytes. Naming the attributes explicitly
+    // overrides the defaultScope exclusion for this query only.
+    const request = await OutingRequest.findByPk(req.params.id, {
+      attributes: ['id', 'studentId', 'targetCaretaker', 'forwardedTo', ...SIGNATURE_ATTRIBUTES],
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+    });
 
     if (!request) {
       return res.status(404).json({ message: 'Request not found' });
@@ -312,23 +353,29 @@ const getOutingSignatures = async (req, res) => {
 const getAllOutingRequests = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const requests = await OutingRequest.find({})
-      .select('-studentSignature -caretakerSignature -wardenSignature')
-      .populate('student', 'name studentId roomNumber hostelName department year')
-      .populate('targetCaretaker', 'name')
-      .populate('forwardedTo', 'name')
-      .populate('forwardedBy', 'name')
-      .populate('approvedBy', 'name role')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const requests = await OutingRequest.findAll({
+      include: [
+        { association: 'student', attributes: WIDE_STUDENT_FIELDS },
+        { association: 'targetCaretakerUser', attributes: ['id', 'name'] },
+        { association: 'forwardedToUser', attributes: ['id', 'name'] },
+        { association: 'forwardedByUser', attributes: ['id', 'name'] },
+        { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
+      ],
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     await expireStaleRequests(requests);
     return sendPage(res, requests, {
       limit,
       skip,
       label: 'outing/all',
-      count: () => OutingRequest.estimatedDocumentCount(),
+      // The analogue of Mongo's estimatedDocumentCount: this is the one list with no
+      // predicate at all, so an exact count would seq-scan the whole table just to fill
+      // in a header. See utils/rowCount.js.
+      count: () => estimatedRowCount(OutingRequest),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -339,13 +386,17 @@ const getAllOutingRequests = async (req, res) => {
 const getPendingRequests = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { status: 'Pending', ...(await scopedStudentFilter(req.user)) };
-    const requests = await OutingRequest.find(filter)
-      .select(LIST_PROJECTION)
-      .populate('student', 'name studentId roomNumber hostelName')
-      .sort({ createdAt: 1 })
-      .skip(skip)
-      .limit(limit);
+    const scope = passScope(OutingRequest, req.user, QUEUE_STUDENT_FIELDS);
+    const where = mergeWhere(scope.where, { status: 'Pending' });
+
+    const requests = await OutingRequest.findAll({
+      where,
+      include: scope.include,
+      order: [['createdAt', 'ASC']],
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     await expireStaleRequests(requests);
     const stillPending = requests.filter((r) => r.status === 'Pending');
@@ -354,18 +405,18 @@ const getPendingRequests = async (req, res) => {
     // flag tells it whether there is one to fetch.
     const presence = await signaturePresence(
       OutingRequest,
-      stillPending.map((r) => r._id),
+      stillPending.map((r) => r.id),
       ['studentSignature']
     );
 
     // `fetched` is the window, not stillPending.length — expiry above can drop rows, and
     // a short *result* from a full window must not read as "nothing more to fetch".
-    return sendPage(res, stillPending.map((r) => withSignatureFlags(r.toObject(), presence)), {
+    return sendPage(res, stillPending.map((r) => withSignatureFlags(r.toJSON(), presence)), {
       limit,
       skip,
       fetched: requests.length,
       label: 'outing/pending',
-      count: () => OutingRequest.countDocuments(filter),
+      count: () => OutingRequest.count({ where, include: scope.include, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -380,40 +431,44 @@ const getPendingRequests = async (req, res) => {
 // overdue rows while later ones held real cases, which is a worse failure than the size.
 const getOverdueOutings = async (req, res) => {
   try {
-    const scope = await scopedStudentFilter(req.user);
     const canViewEmergencyContacts = ['Admin', 'Caretaker', 'Warden', 'ChiefWarden']
       .includes(req.user.role);
     const studentFields = [
-      'name',
-      'studentId',
-      'roomNumber',
-      'hostelName',
-      'phoneNumber',
-      'department',
-      'year',
-      ...(canViewEmergencyContacts ? ['guardianPhoneNumber', 'closeContacts'] : []),
-    ].join(' ');
-    const outings = await OutingRequest.find({ status: 'Out', ...scope })
-      .select(LIST_PROJECTION)
-      .populate('student', studentFields)
-      .sort({ inTime: 1 })
-      .lean();
+      'id', 'name', 'studentId', 'roomNumber', 'hostelName', 'phoneNumber', 'department', 'year',
+      ...(canViewEmergencyContacts ? ['guardianPhoneNumber'] : []),
+    ];
 
-    const overdue = outings.filter((o) => isReturnLate(o.inTime));
+    const scope = passScope(OutingRequest, req.user, studentFields);
+    // closeContacts was a word in a projection string when it was an embedded array. It is
+    // a table, so the wider staff view is a nested include and a guard's query never joins
+    // it at all.
+    if (canViewEmergencyContacts) {
+      scope.include[0].include = [{ association: 'closeContacts' }];
+    }
+
+    const outings = await OutingRequest.findAll({
+      where: mergeWhere(scope.where, { status: 'Out' }),
+      include: scope.include,
+      order: [['inTime', 'ASC']],
+      subQuery: false,
+    });
+
+    const overdue = outings.filter((o) => isReturnLate(o.inTime)).map((o) => o.toJSON());
 
     // Attach any delay notice the student filed, so the dashboards can tell
     // "late but explained" apart from "late and unaccounted for". One lookup for
     // the whole page, not one per row.
     if (overdue.length) {
-      const notices = await DelayNotice.find({ trip: { $in: overdue.map((o) => o._id) } })
-        .populate('acknowledgedBy', 'name role')
-        .sort({ createdAt: -1 })
-        .lean();
+      const notices = await DelayNotice.findAll({
+        where: { outingId: { [Op.in]: overdue.map((o) => o._id) } },
+        include: [{ association: 'acknowledgedByUser', attributes: ['id', 'name', 'role'] }],
+        order: [['createdAt', 'DESC']],
+      });
 
       const byTrip = new Map();
       for (const n of notices) {
-        const key = String(n.trip);
-        if (!byTrip.has(key)) byTrip.set(key, n); // newest wins (sorted desc)
+        const key = String(n.outingId);
+        if (!byTrip.has(key)) byTrip.set(key, n.toJSON()); // newest wins (sorted desc)
       }
       for (const o of overdue) o.delayNotice = byTrip.get(String(o._id)) || null;
     }
@@ -448,7 +503,9 @@ const updateRequestStatus = async (req, res) => {
       );
     }
 
-    const request = await OutingRequest.findById(req.params.id).populate('student', 'gender hostelName');
+    const request = await OutingRequest.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+    });
 
     if (request) {
       // Server-side scope re-check: the caretaker must be the routed target (or, for
@@ -474,7 +531,7 @@ const updateRequestStatus = async (req, res) => {
 
         sseHub.broadcast('outing:changed', {
           reason: 'expired',
-          id: request._id,
+          id: request.id,
           status: 'Expired',
         });
 
@@ -501,15 +558,15 @@ const updateRequestStatus = async (req, res) => {
         request.caretakerSignature = caretakerSignature;
       }
 
-      const updatedRequest = await request.save();
+      await request.save();
 
       sseHub.broadcast('outing:changed', {
         reason: 'status',
-        id: updatedRequest._id,
-        status: updatedRequest.status,
+        id: request.id,
+        status: request.status,
       });
 
-      res.json(updatedRequest);
+      res.json(request);
     } else {
       res.status(404).json({ message: 'Request not found' });
     }
@@ -518,14 +575,14 @@ const updateRequestStatus = async (req, res) => {
   }
 };
 
+// PATCH /api/outing/:id/forward — private (Caretaker)
 const forwardOutingRequest = async (req, res) => {
   const { note } = req.body;
 
   try {
-    const request = await OutingRequest.findById(req.params.id).populate(
-      'student',
-      'gender hostelName name'
-    );
+    const request = await OutingRequest.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName', 'name'] }],
+    });
 
     if (!request) {
       return res.status(404).json({ message: 'Request not found' });
@@ -546,7 +603,7 @@ const forwardOutingRequest = async (req, res) => {
     if (isDeparturePassed(request.outTime)) {
       request.status = 'Expired';
       await request.save();
-      sseHub.broadcast('outing:changed', { reason: 'expired', id: request._id, status: 'Expired' });
+      sseHub.broadcast('outing:changed', { reason: 'expired', id: request.id, status: 'Expired' });
       return res.status(409).json({
         message: 'This request has expired — the departure time has already passed. It can no longer be forwarded.',
         status: 'Expired',
@@ -562,22 +619,22 @@ const forwardOutingRequest = async (req, res) => {
     }
 
     request.status = 'Forwarded';
-    request.forwardedTo = warden._id;
+    request.forwardedTo = warden.id;
     request.forwardedBy = req.user._id;
-    request.forwardedNote = note || undefined;
+    request.forwardedNote = note || null;
     request.forwardedAt = new Date();
 
-    const updated = await request.save();
+    await request.save();
 
-    sseHub.broadcast('outing:changed', { reason: 'forwarded', id: updated._id, status: 'Forwarded' });
+    sseHub.broadcast('outing:changed', { reason: 'forwarded', id: request.id, status: 'Forwarded' });
 
-    notifyWarden(warden._id, {
+    notifyWarden(warden.id, {
       title: '⬆️ Outing Forwarded to You',
       body: `${req.user.name} forwarded ${request.student.name}'s outing request for your decision.`,
       url: '/dashboard/warden?view=requests',
     });
 
-    res.json(updated);
+    res.json(request);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -587,14 +644,18 @@ const forwardOutingRequest = async (req, res) => {
 const getForwardedRequests = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = forwardedToFilter(req.user);
-    const requests = await OutingRequest.find(filter)
-      .select(LIST_PROJECTION)
-      .populate('student', 'name studentId roomNumber hostelName')
-      .populate('forwardedBy', 'name')
-      .sort({ forwardedAt: 1 })
-      .skip(skip)
-      .limit(limit);
+    const where = forwardedToFilter(req.user);
+    const requests = await OutingRequest.findAll({
+      where,
+      include: [
+        { association: 'student', attributes: QUEUE_STUDENT_FIELDS },
+        { association: 'forwardedByUser', attributes: ['id', 'name'] },
+      ],
+      order: [['forwardedAt', 'ASC']],
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     await expireStaleRequests(requests);
     const stillForwarded = requests.filter((r) => r.status === 'Forwarded');
@@ -604,7 +665,7 @@ const getForwardedRequests = async (req, res) => {
       skip,
       fetched: requests.length,
       label: 'outing/forwarded',
-      count: () => OutingRequest.countDocuments(filter),
+      count: () => OutingRequest.count({ where }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -617,26 +678,29 @@ const getForwardedRequests = async (req, res) => {
 const getCaretakerRequestHistory = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = {
-      $and: [
-        { $or: [DECIDED_FILTER, { status: 'Forwarded' }] },
-        await scopedStudentFilter(req.user),
+    const scope = passScope(OutingRequest, req.user, QUEUE_STUDENT_FIELDS);
+    const where = mergeWhere(scope.where, {
+      [Op.or]: [DECIDED_FILTER, { status: 'Forwarded' }],
+    });
+
+    const requests = await OutingRequest.findAll({
+      where,
+      include: [
+        ...scope.include,
+        { association: 'forwardedToUser', attributes: ['id', 'name'] },
+        { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
       ],
-    };
-    const requests = await OutingRequest.find(filter)
-      .select(LIST_PROJECTION)
-      .populate('student', 'name studentId roomNumber hostelName')
-      .populate('forwardedTo', 'name')
-      .populate('approvedBy', 'name role')
-      .sort({ decidedAt: -1, updatedAt: -1 })
-      .skip(skip)
-      .limit(limit);
+      order: NEWEST_DECISION_FIRST,
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     return sendPage(res, requests.map(withDecisionMeta), {
       limit,
       skip,
       label: 'outing/history',
-      count: () => OutingRequest.countDocuments(filter),
+      count: () => OutingRequest.count({ where, include: scope.include, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -649,21 +713,27 @@ const getCaretakerRequestHistory = async (req, res) => {
 const getWardenRequestHistory = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)] };
-    const requests = await OutingRequest.find(filter)
-      .select(LIST_PROJECTION)
-      .populate('student', 'name studentId roomNumber hostelName')
-      .populate('forwardedBy', 'name')
-      .populate('approvedBy', 'name role')
-      .sort({ decidedAt: -1, updatedAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const scope = passScope(OutingRequest, req.user, QUEUE_STUDENT_FIELDS);
+    const where = mergeWhere(scope.where, DECIDED_FILTER);
+
+    const requests = await OutingRequest.findAll({
+      where,
+      include: [
+        ...scope.include,
+        { association: 'forwardedByUser', attributes: ['id', 'name'] },
+        { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
+      ],
+      order: NEWEST_DECISION_FIRST,
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     return sendPage(res, requests.map(withDecisionMeta), {
       limit,
       skip,
       label: 'outing/warden-history',
-      count: () => OutingRequest.countDocuments(filter),
+      count: () => OutingRequest.count({ where, include: scope.include, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -691,7 +761,9 @@ const updateWardenRequestStatus = async (req, res) => {
       );
     }
 
-    const request = await OutingRequest.findById(req.params.id).populate('student', 'gender hostelName');
+    const request = await OutingRequest.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+    });
 
     if (!request) {
       return res.status(404).json({ message: 'Request not found' });
@@ -712,7 +784,7 @@ const updateWardenRequestStatus = async (req, res) => {
     if (status === 'Approved' && isDeparturePassed(request.outTime)) {
       request.status = 'Expired';
       await request.save();
-      sseHub.broadcast('outing:changed', { reason: 'expired', id: request._id, status: 'Expired' });
+      sseHub.broadcast('outing:changed', { reason: 'expired', id: request.id, status: 'Expired' });
       return res.status(409).json({
         message: 'This request has expired — the departure time has already passed. It can no longer be approved.',
         status: 'Expired',
@@ -734,9 +806,9 @@ const updateWardenRequestStatus = async (req, res) => {
       request.caretakerSignature = wardenSignature;
     }
 
-    const updated = await request.save();
+    await request.save();
 
-    sseHub.broadcast('outing:changed', { reason: 'warden-status', id: updated._id, status: updated.status });
+    sseHub.broadcast('outing:changed', { reason: 'warden-status', id: request.id, status: request.status });
 
     if (request.forwardedBy) {
       notifyCaretakers(
@@ -749,7 +821,7 @@ const updateWardenRequestStatus = async (req, res) => {
       );
     }
 
-    res.json(updated);
+    res.json(request);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -758,13 +830,13 @@ const updateWardenRequestStatus = async (req, res) => {
 // PATCH /api/outing/:id/cancel — private (Student)
 const cancelOutingRequest = async (req, res) => {
   try {
-    const request = await OutingRequest.findById(req.params.id);
+    const request = await OutingRequest.findByPk(req.params.id);
 
     if (!request) {
       return res.status(404).json({ message: 'Request not found' });
     }
 
-    if (request.student.toString() !== req.user._id.toString()) {
+    if (String(request.studentId) !== String(req.user._id)) {
       return res.status(403).json({ message: 'You can only cancel your own outing requests.' });
     }
 
@@ -781,15 +853,15 @@ const cancelOutingRequest = async (req, res) => {
     }
 
     request.status = 'Cancelled';
-    const updatedRequest = await request.save();
+    await request.save();
 
     sseHub.broadcast('outing:changed', {
       reason: 'cancelled',
-      id: updatedRequest._id,
+      id: request.id,
       status: 'Cancelled',
     });
 
-    res.json(updatedRequest);
+    res.json(request);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
