@@ -175,6 +175,18 @@ User.setSignature = (userId, dataUrl, options) => writeBlob(UserSignature, 'sign
 // One-row reads for the two per-row byte endpoints (GET /users/:id/photo and the
 // signature stamping path), so a caller that only wants the bytes does not have to build
 // an include.
+// "Does this user have a signature?" without reading it.
+//
+// Every login response carries a hasSignature flag. Under Mongo that was
+// `Boolean(user.signature)` — free, because the ~40KB of base64 was already sitting on
+// the user document that had just been loaded. Here the bytes are in another table, and
+// loading them to compute a boolean would reintroduce exactly the transfer the split
+// exists to prevent. This is a primary-key existence check that touches no blob.
+User.hasSignature = async (userId, options) => {
+  if (!userId) return false;
+  return (await UserSignature.count({ where: { userId }, ...options })) > 0;
+};
+
 User.getPhoto = async (userId) => {
   const row = await UserPhoto.findByPk(userId);
   return row ? toDataUrl(row.photo, row.mimeType) : null;
