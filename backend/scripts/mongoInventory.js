@@ -23,7 +23,10 @@
 //      the ETL. Finding them now is a quiet afternoon; finding them at cutover is not.
 
 require('dotenv').config();
-const { MongoClient } = require('mongodb');
+// The driver comes from mongoose rather than a direct 'mongodb' dependency: mongoose
+// bundles it, so this can never version-skew against the connection the app itself uses,
+// and package.json does not grow a dependency that exists only for one script.
+const { MongoClient } = require('mongoose').mongo;
 const { ACTIVE_PASS_STATUSES } = require('../src/config/passStatuses');
 const { canonicalHostelName, hostelNames } = require('../src/config/hostels');
 

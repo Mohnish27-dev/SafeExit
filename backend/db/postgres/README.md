@@ -43,14 +43,55 @@ docker compose up -d postgres      # from the repo root
 **WSL** (Ubuntu 24.04 ships PostgreSQL 16; WSL2 forwards `localhost`, so Windows reaches
 it on `127.0.0.1:5432`):
 
+Windows note: run these from **inside** WSL, not by wrapping them in PowerShell quotes.
+PowerShell 5.1 mangles double quotes when passing arguments to a native `.exe`, so a
+`bash -lc "... \"SQL\" ..."` one-liner reaches bash with an unbalanced quote and dies with
+``unexpected EOF while looking for matching `"'``.
+
 ```bash
-wsl -e bash -lc "sudo apt update && sudo apt install -y postgresql && sudo service postgresql start"
-wsl -e bash -lc "sudo -u postgres psql -c \"CREATE ROLE safeexit LOGIN PASSWORD 'safeexit_dev'\""
-wsl -e bash -lc "sudo -u postgres psql -c 'CREATE DATABASE safeexit OWNER safeexit'"
+wsl                                    # then, at the Ubuntu prompt:
+sudo apt update && sudo apt install -y postgresql && sudo service postgresql start
+sudo -u postgres psql -c "CREATE ROLE safeexit LOGIN PASSWORD 'safeexit_dev'"
+sudo -u postgres psql -c "CREATE DATABASE safeexit OWNER safeexit"
+exit
+```
+
+If you would rather stay in PowerShell, the `--%` stop-parsing token passes the rest of the
+line through verbatim. One command per line — `--%` consumes everything after it:
+
+```powershell
+wsl --% -e bash -lc "sudo -u postgres psql -c \"CREATE ROLE safeexit LOGIN PASSWORD 'safeexit_dev'\""
+wsl --% -e bash -lc "sudo -u postgres psql -c \"CREATE DATABASE safeexit OWNER safeexit\""
 ```
 
 `sudo service postgresql start` has to be re-run after a Windows reboot — WSL does not
 start services on its own.
+
+**If Node gets `ECONNREFUSED 127.0.0.1:5432` while psql inside WSL works**, two things are
+usually wrong and both are one-time fixes:
+
+1. *Postgres binds `127.0.0.1` inside WSL.* WSL2 only relays Windows localhost to services
+   bound to `0.0.0.0`, so Node on Windows is refused. Add a drop-in rather than editing
+   `postgresql.conf`:
+   ```bash
+   sudo tee /etc/postgresql/16/main/conf.d/10-safeexit-dev.conf <<< "listen_addresses = '*'"
+   sudo tee -a /etc/postgresql/16/main/pg_hba.conf <<< "host all all 172.16.0.0/12 scram-sha-256"
+   sudo service postgresql restart
+   ```
+   WSL2 is behind NAT and the Windows firewall, so this does not expose 5432 to the campus
+   network. **Do not copy it onto the college server.**
+
+2. *The distro idles out.* WSL2 shuts the VM down seconds after the last `wsl` command, and
+   Postgres goes with it — so a command that worked a minute ago is refused now. Fix it from
+   Windows in `%USERPROFILE%\.wslconfig`, then `wsl --shutdown` once to apply:
+   ```ini
+   [wsl2]
+   vmIdleTimeout=604800000
+   ```
+   `vmIdleTimeout=-1` is *not* honoured — use a large positive value in milliseconds.
+
+Verified on PostgreSQL 16.15 (Ubuntu 24.04, WSL2): `001_schema.sql` applies in 47 statements
+to 13 tables / 60 indexes, and re-runs clean.
 
 **Native Windows:** the EDB installer from postgresql.org, then create the role and
 database with the bundled pgAdmin or `psql`.
