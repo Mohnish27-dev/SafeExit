@@ -235,10 +235,27 @@ const checkConstraints = async (db) => {
     flag('warn', `${badGuardian} guardianPhoneNumber value(s) are not 10-15 digits`,
       'Mongoose only validated on save(), so pre-rule rows were never re-checked.');
   }
+  // $elemMatch, NOT the dotted path. `{'closeContacts.mobileNumber': {$not: /re/}}` also
+  // matches every user with no closeContacts array at all — the path resolves to nothing,
+  // the regex fails to match it, and $not turns that into a hit. That reported 20 bad
+  // contacts on the real data when there are none: it was counting the 20 users who have
+  // not filled the section in. A false blocker at cutover is worse than no check.
   const badContact = await users.countDocuments({
-    'closeContacts.mobileNumber': { $not: /^\d{10,15}$/ },
+    closeContacts: { $elemMatch: { mobileNumber: { $not: /^\d{10,15}$/ } } },
   });
   if (badContact) flag('warn', `${badContact} user(s) have a close contact mobile that is not 10-15 digits`);
+
+  // 002's CHECK is `guardian_phone_number IS NULL OR ~ '^[0-9]{10,15}$'`, so an empty
+  // STRING violates it where a missing field does not. The check above excludes '' as
+  // "not filled in", which is right for Mongo and wrong for Postgres — the ETL has to
+  // map '' to NULL. Count them so that mapping is a known requirement, not a surprise.
+  const emptyStringPhones = await users.countDocuments({
+    $or: [{ guardianPhoneNumber: '' }, { phoneNumber: '' }],
+  });
+  if (emptyStringPhones) {
+    flag('warn', `${emptyStringPhones} user(s) store '' rather than absent for a phone number`,
+      "The ETL must write NULL, not '': users_guardian_phone_format rejects the empty string.");
+  }
 
   // -- close contacts cap of two (structural in Postgres: slot IN (1,2)) ---------------
   const tooManyContacts = await users.countDocuments({ 'closeContacts.2': { $exists: true } });
