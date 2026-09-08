@@ -1,25 +1,48 @@
-const SOSAlert = require('../models/SOSAlert');
+const { SOSAlert } = require('../models');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { notifyCaretakersAndAdmins } = require('../utils/pushService');
-const { genderScopedStudentFilter, studentInGenderScope } = require('../utils/hostelScope');
+const { genderScopedPassScope, mergeWhere, studentInGenderScope } = require('../utils/hostelScope');
 
-const SOS_STUDENT_FIELDS = 'name studentId roomNumber hostelName department year';
+const SOS_STUDENT_FIELDS = ['id', 'name', 'studentId', 'roomNumber', 'hostelName', 'department', 'year'];
+const SOS_CONTACT_FIELDS = [...SOS_STUDENT_FIELDS, 'phoneNumber', 'guardianPhoneNumber'];
 const SOS_CONTACT_ROLES = new Set(['Admin', 'Caretaker', 'Warden', 'ChiefWarden']);
-const sosStudentFieldsFor = (role) =>
-  SOS_CONTACT_ROLES.has(role)
-    ? `${SOS_STUDENT_FIELDS} phoneNumber guardianPhoneNumber closeContacts`
-    : SOS_STUDENT_FIELDS;
+
+// Guards receive the operational identity and location only. Emergency phone details —
+// and the student's nominated close contacts — are limited to the four staff roles
+// responsible for escalation and follow-up.
+//
+// closeContacts used to be part of a projection string because it was an embedded array
+// on the user document. It is a table now, so widening the scope for staff means adding
+// a nested include rather than a word to a string, and a guard's query never joins it.
+const sosStudentInclude = (role, options = {}) => {
+  const privileged = SOS_CONTACT_ROLES.has(role);
+  return {
+    association: 'student',
+    attributes: privileged ? SOS_CONTACT_FIELDS : SOS_STUDENT_FIELDS,
+    ...(privileged ? { include: [{ association: 'closeContacts' }] } : {}),
+    ...options,
+  };
+};
+
+const HANDLER_FIELDS = ['id', 'name', 'role'];
 
 const VALID_SOS_TYPES = new Set(['harassment', 'medical', 'unsafe', 'stalking', 'other']);
 const DEFAULT_SOS_TYPE = 'other';
+
+const loadAlert = (id, role) =>
+  SOSAlert.findByPk(id, {
+    include: [sosStudentInclude(role), { association: 'handledByUser', attributes: HANDLER_FIELDS }],
+  });
 
 // POST /api/sos — private (Student)
 const createSOSAlert = async (req, res) => {
   const { type, note, location, coords } = req.body;
 
   try {
-    // Malformed GPS is silently dropped — an SOS must never fail on bad coords.
+    // Malformed GPS is silently dropped — an SOS must never fail on bad coords. The
+    // `coords` setter on the model applies the same latitude/longitude sanity check, so
+    // this stays belt-and-braces rather than the only guard.
     let safeCoords;
     if (
       coords &&
@@ -44,21 +67,20 @@ const createSOSAlert = async (req, res) => {
     }
 
     const alert = await SOSAlert.create({
-      student: req.user._id,
+      studentId: req.user._id,
       type: safeType,
       note: safeNote || undefined,
       location,
-      coords: safeCoords
+      // Assigning the virtual splits this across coord_lat/coord_lng/coord_accuracy.
+      coords: safeCoords,
     });
 
-    const populated = await alert.populate(
-      'student',
-      `${SOS_STUDENT_FIELDS} phoneNumber guardianPhoneNumber closeContacts`
-    );
+    // Always the full contact form: whoever receives this is escalating it.
+    const populated = await loadAlert(alert.id, 'Admin');
 
     // No student PII in the broadcast — the SSE hub reaches out-of-hostel caretakers too.
     sseHub.broadcast('sos:created', {
-      id: populated._id,
+      id: populated.id,
       type: populated.type,
       status: populated.status,
     });
@@ -83,17 +105,19 @@ const createSOSAlert = async (req, res) => {
 const getMySOSAlerts = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { student: req.user._id };
-    const alerts = await SOSAlert.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const where = { studentId: req.user._id };
+    const alerts = await SOSAlert.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+    });
 
     return sendPage(res, alerts, {
       limit,
       skip,
       label: 'sos/mine',
-      count: () => SOSAlert.countDocuments(filter),
+      count: () => SOSAlert.count({ where }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -109,25 +133,31 @@ const getMySOSAlerts = async (req, res) => {
 const getSOSAlerts = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = {};
-    if (req.query.status) filter.status = req.query.status;
+    const scope = genderScopedPassScope(req.user);
+    const where = mergeWhere(scope.where, req.query.status ? { status: req.query.status } : null);
 
-    Object.assign(filter, await genderScopedStudentFilter(req.user));
+    // The scope decides whether the student join filters and whether it is required; the
+    // caller's role decides which columns come back through it.
+    const scopedStudent = scope.include[0];
+    const include = [
+      sosStudentInclude(req.user.role, { required: scopedStudent.required, where: scopedStudent.where }),
+      { association: 'handledByUser', attributes: HANDLER_FIELDS },
+    ];
 
-    const alerts = await SOSAlert.find(filter)
-      // Guards receive the operational identity/location only. Emergency phone details
-      // are limited to the four staff roles responsible for escalation and follow-up.
-      .populate('student', sosStudentFieldsFor(req.user.role))
-      .populate('handledBy', 'name role')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const alerts = await SOSAlert.findAll({
+      where,
+      include,
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     return sendPage(res, alerts, {
       limit,
       skip,
       label: 'sos/list',
-      count: () => SOSAlert.countDocuments(filter),
+      count: () => SOSAlert.count({ where, include: scope.include, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -139,7 +169,9 @@ const updateSOSStatus = async (req, res) => {
   const { status, resolutionNote } = req.body;
 
   try {
-    const alert = await SOSAlert.findById(req.params.id).populate('student', 'gender hostelName');
+    const alert = await SOSAlert.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+    });
     if (!alert) {
       return res.status(404).json({ message: 'SOS alert not found' });
     }
@@ -155,11 +187,11 @@ const updateSOSStatus = async (req, res) => {
     if (resolutionNote) alert.resolutionNote = resolutionNote;
     alert.handledBy = req.user._id;
 
-    const updated = await alert.save();
-    const populated = await updated.populate('student', sosStudentFieldsFor(req.user.role));
+    await alert.save();
+    const populated = await loadAlert(alert.id, req.user.role);
 
     sseHub.broadcast('sos:updated', {
-      id: populated._id,
+      id: populated.id,
       status: populated.status,
       handledBy: req.user._id,
     });

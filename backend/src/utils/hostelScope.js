@@ -57,10 +57,20 @@ const mergeWhere = (...clauses) => {
 // the caller wants back from the joined user — pass [] for a count, which joins for the
 // filter without transferring any user columns.
 //
+// It takes the MODEL, not just the user, because only two of those five tables have a
+// targetCaretaker column. MongoDB hid that: a filter on a field a document does not have
+// simply matches nothing, so for scan logs, SOS alerts and delay notices the caretaker's
+// `{ targetCaretaker: me }` arm silently never matched, and the `{ targetCaretaker: null }`
+// arm matched every row — the scope quietly degraded to "students in my hostel". Postgres
+// would instead raise "column does not exist", so the degradation is made explicit here.
+// Same behaviour as before; the difference is that now it is a decision rather than a
+// side effect of an untyped query language.
+//
 // NOTE for callers that also paginate: pass `subQuery: false` alongside a limit, or
 // Sequelize wraps the base table in a subquery that the joined-column predicates in
 // `where` cannot see.
-const passScope = (user, studentAttributes) => {
+const passScope = (Model, user, studentAttributes) => {
+  const routable = !!Model.rawAttributes.targetCaretaker;
   const studentInclude = (options = {}) => [
     { association: 'student', ...(studentAttributes ? { attributes: studentAttributes } : {}), ...options },
   ];
@@ -79,22 +89,32 @@ const passScope = (user, studentAttributes) => {
   }
 
   if (user.managedHostel) {
-    // Two ways a caretaker sees a row: it was routed to them explicitly, or nobody was
-    // named and the student lives in their hostel. The second arm reads the JOINED table,
-    // so the join has to be a LEFT one (required:false) — an INNER join here would drop
-    // rows routed to this caretaker whose student belongs to a different hostel, which is
-    // precisely the cross-hostel request the routing exists to allow.
+    const inMyHostel = [
+      { '$student.role$': 'Student' },
+      ciEquals('student.hostel_name', user.managedHostel),
+    ];
+
+    // A table with no routing column has only one rule: the student is mine.
+    if (!routable) {
+      return {
+        where: {},
+        include: studentInclude({
+          required: true,
+          where: { [Op.and]: [{ role: 'Student' }, ciEquals('student.hostel_name', user.managedHostel)] },
+        }),
+      };
+    }
+
+    // Two ways a caretaker sees a routable row: it was routed to them explicitly, or
+    // nobody was named and the student lives in their hostel. The second arm reads the
+    // JOINED table, so the join has to be a LEFT one (required:false) — an INNER join
+    // here would drop rows routed to this caretaker whose student belongs to a different
+    // hostel, which is precisely the cross-hostel request the routing exists to allow.
     return {
       where: {
         [Op.or]: [
           { targetCaretaker: user._id },
-          {
-            [Op.and]: [
-              { targetCaretaker: null },
-              { '$student.role$': 'Student' },
-              ciEquals('student.hostel_name', user.managedHostel),
-            ],
-          },
+          { [Op.and]: [{ targetCaretaker: null }, ...inMyHostel] },
         ],
       },
       include: studentInclude({ required: false }),

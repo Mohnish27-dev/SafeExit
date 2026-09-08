@@ -1,12 +1,14 @@
-const DelayNotice = require('../models/DelayNotice');
-const OutingRequest = require('../models/OutingRequest');
+const { DelayNotice, OutingRequest } = require('../models');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { notifyHostelStaffAndAdmins, notifyStudent } = require('../utils/pushService');
-const { scopedStudentFilter, studentInScope } = require('../utils/hostelScope');
+const { passScope, mergeWhere, studentInScope } = require('../utils/hostelScope');
 const { isReturnLate } = require('../utils/outingRules');
 
-const DELAY_STUDENT_FIELDS = 'name studentId roomNumber hostelName department year phoneNumber';
+const DELAY_STUDENT_FIELDS = [
+  'id', 'name', 'studentId', 'roomNumber', 'hostelName', 'department', 'year', 'phoneNumber',
+];
+const ACK_FIELDS = ['id', 'name', 'role'];
 
 const DELAY_REASONS = ['Traffic', 'Transport', 'Medical', 'Family', 'Weather', 'Other'];
 
@@ -14,9 +16,11 @@ const DELAY_REASONS = ['Traffic', 'Transport', 'Medical', 'Family', 'Weather', '
 // Leave has a mandatory return-date field at application time and is not a
 // short same-day trip like outings, so delay notices are outing-specific.
 const findActiveTrip = async (studentId) => {
-  const outing = await OutingRequest.findOne({ student: studentId, status: 'Out' })
-    .sort({ outTime: -1 })
-    .select('_id inTime');
+  const outing = await OutingRequest.findOne({
+    where: { studentId, status: 'Out' },
+    order: [['outTime', 'DESC']],
+    attributes: ['id', 'inTime'],
+  });
   if (outing) return { trip: outing, tripType: 'Outing', dueAt: outing.inTime };
 
   return null;
@@ -34,6 +38,17 @@ const sanitizeExpectedTime = (value) => {
 
 const trimmed = (value, max) =>
   typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : undefined;
+
+// One place that builds the fully-joined form of a notice, so the create, revise and
+// acknowledge responses cannot drift apart in what they populate.
+const loadNotice = (id, options = {}) =>
+  DelayNotice.findByPk(id, {
+    include: [
+      { association: 'student', attributes: DELAY_STUDENT_FIELDS },
+      { association: 'acknowledgedByUser', attributes: ACK_FIELDS },
+    ],
+    ...options,
+  });
 
 // POST /api/delay — private (Student)
 const createDelayNotice = async (req, res) => {
@@ -53,32 +68,35 @@ const createDelayNotice = async (req, res) => {
       });
     }
 
-    const { trip, tripType, dueAt } = active;
+    const { trip, dueAt } = active;
     const cleanNote = trimmed(note, 300);
     const expected = sanitizeExpectedTime(newExpectedTime);
 
     // One notice per trip: a second filing is the student revising their estimate,
     // so update in place rather than spamming staff with duplicate rows.
-    const existing = await DelayNotice.findOne({ trip: trip._id, status: 'Pending' });
+    const existing = await DelayNotice.findOne({ where: { outingId: trip.id, status: 'Pending' } });
     if (existing) {
       existing.reason = reason;
-      existing.note = cleanNote;
-      existing.newExpectedTime = expected;
-      const revised = await existing.save();
+      existing.note = cleanNote ?? null;
+      existing.newExpectedTime = expected ?? null;
+      await existing.save();
 
       sseHub.broadcast('delay:updated', {
-        id: revised._id,
-        tripType: revised.tripType,
-        status: revised.status,
+        id: existing.id,
+        tripType: existing.tripType,
+        status: existing.status,
       });
 
-      return res.json(revised);
+      return res.json(await loadNotice(existing.id));
     }
 
+    // `trip` and `tripType` are read-only virtuals now — the notice names the column it
+    // means. delay_notices_one_trip CHECKs that exactly one of outing_id/leave_id is set,
+    // and the foreign key means a notice can no longer point at a pass that does not
+    // exist, which the untyped Mongo `trip` ObjectId allowed.
     const notice = await DelayNotice.create({
-      student: req.user._id,
-      trip: trip._id,
-      tripType,
+      studentId: req.user._id,
+      outingId: trip.id,
       reason,
       note: cleanNote,
       newExpectedTime: expected,
@@ -88,7 +106,7 @@ const createDelayNotice = async (req, res) => {
 
     // No student PII in the broadcast — the SSE hub reaches out-of-hostel staff too.
     sseHub.broadcast('delay:created', {
-      id: notice._id,
+      id: notice.id,
       tripType: notice.tripType,
       status: notice.status,
     });
@@ -118,18 +136,20 @@ const createDelayNotice = async (req, res) => {
 const getMyDelayNotices = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { student: req.user._id };
-    const notices = await DelayNotice.find(filter)
-      .populate('acknowledgedBy', 'name role')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const where = { studentId: req.user._id };
+    const notices = await DelayNotice.findAll({
+      where,
+      include: [{ association: 'acknowledgedByUser', attributes: ACK_FIELDS }],
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+    });
 
     return sendPage(res, notices, {
       limit,
       skip,
       label: 'delay/mine',
-      count: () => DelayNotice.countDocuments(filter),
+      count: () => DelayNotice.count({ where }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -140,21 +160,27 @@ const getMyDelayNotices = async (req, res) => {
 const getDelayNotices = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { ...(await scopedStudentFilter(req.user)) };
-    if (req.query.status) filter.status = req.query.status;
+    const scope = passScope(DelayNotice, req.user, DELAY_STUDENT_FIELDS);
+    const where = mergeWhere(scope.where, req.query.status ? { status: req.query.status } : null);
+    const include = [...scope.include, { association: 'acknowledgedByUser', attributes: ACK_FIELDS }];
 
-    const notices = await DelayNotice.find(filter)
-      .populate('student', DELAY_STUDENT_FIELDS)
-      .populate('acknowledgedBy', 'name role')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const notices = await DelayNotice.findAll({
+      where,
+      include,
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+      // Required whenever `where` reaches into a joined table alongside a limit: without
+      // it Sequelize windows the base table in a subquery the join predicates cannot see.
+      subQuery: false,
+    });
 
     return sendPage(res, notices, {
       limit,
       skip,
       label: 'delay/list',
-      count: () => DelayNotice.countDocuments(filter),
+      // distinct, because the scope join must not multiply the count.
+      count: () => DelayNotice.count({ where, include: scope.include, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -166,8 +192,9 @@ const getDelayNotices = async (req, res) => {
 // on the overdue list and the record of a late return stays honest.
 const acknowledgeDelayNotice = async (req, res) => {
   try {
-    const notice = await DelayNotice.findById(req.params.id)
-      .populate('student', 'name gender hostelName');
+    const notice = await DelayNotice.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'name', 'gender', 'hostelName'] }],
+    });
 
     if (!notice) {
       return res.status(404).json({ message: 'Delay notice not found' });
@@ -190,26 +217,21 @@ const acknowledgeDelayNotice = async (req, res) => {
     const ackNote = trimmed(req.body?.acknowledgementNote, 300);
     if (ackNote) notice.acknowledgementNote = ackNote;
 
-    const updated = await notice.save();
+    await notice.save();
 
     sseHub.broadcast('delay:updated', {
-      id: updated._id,
-      status: updated.status,
+      id: notice.id,
+      status: notice.status,
     });
 
     // Close the loop for the student — they know someone saw it.
-    notifyStudent(updated.student._id, {
+    notifyStudent(notice.studentId, {
       title: '✅ Delay Notice Seen',
       body: `${req.user.name} acknowledged your delay notice.${ackNote ? ` "${ackNote}"` : ''}`,
       url: '/dashboard/student/delay-notice',
     });
 
-    const populated = await updated.populate([
-      { path: 'student', select: DELAY_STUDENT_FIELDS },
-      { path: 'acknowledgedBy', select: 'name role' },
-    ]);
-
-    res.json(populated);
+    res.json(await loadNotice(notice.id));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
