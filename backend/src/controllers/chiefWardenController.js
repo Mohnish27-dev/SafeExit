@@ -1,7 +1,5 @@
-const User = require('../models/User');
-const OutingRequest = require('../models/OutingRequest');
-const LeaveApplication = require('../models/LeaveApplication');
-const SOSAlert = require('../models/SOSAlert');
+const { Op } = require('sequelize');
+const { User, OutingRequest, LeaveApplication, SOSAlert } = require('../models');
 const { HOSTELS } = require('../config/hostels');
 const { getOverdueStudentIds } = require('../utils/overdue');
 
@@ -32,17 +30,19 @@ const getOverview = async (req, res) => {
       forwardedLeaves,
       overdueIds,
     ] = await Promise.all([
-      User.find({ role: 'Student' }).select('_id hostelName campusStatus').lean(),
-      User.find({ role: { $in: ['Caretaker', 'Warden'] } })
-        .select('name role managedHostel')
-        .lean(),
-      SOSAlert.find({ status: 'Active' }).select('student').lean(),
+      User.findAll({ where: { role: 'Student' }, attributes: ['id', 'hostelName', 'campusStatus'], raw: true }),
+      User.findAll({
+        where: { role: { [Op.in]: ['Caretaker', 'Warden'] } },
+        attributes: ['id', 'name', 'role', 'managedHostel'],
+        raw: true,
+      }),
+      SOSAlert.findAll({ where: { status: 'Active' }, attributes: ['studentId'], raw: true }),
       // Do not count stale rows that have not yet gone through the lazy expiry
       // sweep performed by their full-list endpoints.
-      OutingRequest.find({ status: 'Pending', outTime: { $gte: now } }).select('student').lean(),
-      OutingRequest.find({ status: 'Forwarded', outTime: { $gte: now } }).select('student').lean(),
-      LeaveApplication.find({ status: 'Pending', leaveDate: { $gte: now } }).select('student').lean(),
-      LeaveApplication.find({ status: 'Forwarded', leaveDate: { $gte: now } }).select('student').lean(),
+      OutingRequest.findAll({ where: { status: 'Pending', outTime: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
+      OutingRequest.findAll({ where: { status: 'Forwarded', outTime: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
+      LeaveApplication.findAll({ where: { status: 'Pending', leaveDate: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
+      LeaveApplication.findAll({ where: { status: 'Forwarded', leaveDate: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
       getOverdueStudentIds(),
     ]);
 
@@ -55,10 +55,10 @@ const getOverview = async (req, res) => {
       const hostel = hostelByName.get(String(student.hostelName || '').trim().toLowerCase());
       if (hostel) {
         hostel.students.total += 1;
-        hostelForStudent.set(String(student._id), hostel);
+        hostelForStudent.set(String(student.id), hostel);
       }
 
-      const isOverdue = overdueIds.has(String(student._id)) || student.campusStatus === 'Overdue';
+      const isOverdue = overdueIds.has(String(student.id)) || student.campusStatus === 'Overdue';
       const state = isOverdue ? 'overdue' : student.campusStatus === 'Outside' ? 'outside' : 'inside';
       studentsSummary[state] += 1;
       if (hostel) hostel.students[state] += 1;
@@ -67,14 +67,15 @@ const getOverview = async (req, res) => {
     for (const staff of hostelStaff) {
       const hostel = hostelByName.get(String(staff.managedHostel || '').trim().toLowerCase());
       if (!hostel) continue;
-      const summary = { _id: staff._id, name: staff.name };
+      // `_id` is the response contract; the hostel cards link to the staff member by it.
+      const summary = { _id: staff.id, name: staff.name };
       if (staff.role === 'Caretaker') hostel.caretaker = summary;
       if (staff.role === 'Warden') hostel.warden = summary;
     }
 
     const addRowsToHostel = (rows, apply) => {
       for (const row of rows) {
-        const hostel = hostelForStudent.get(String(row.student));
+        const hostel = hostelForStudent.get(String(row.studentId));
         if (hostel) apply(hostel);
       }
     };
