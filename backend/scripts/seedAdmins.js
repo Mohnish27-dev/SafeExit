@@ -1,13 +1,14 @@
-// npm run seed:admins — standalone admin provisioning; the server runs the same ensureAdmins on every boot.
+// npm run seed:admins — standalone admin provisioning; the server runs the same
+// ensureAdmins on every boot. Useful when the app is not running, or to re-apply a PIN
+// change from .env without a restart.
 require('dotenv').config();
-const mongoose = require('mongoose');
-const connectDB = require('../src/config/db');
+const { connectPostgres, closePostgres } = require('../src/config/sequelize');
 const { ensureAdmins } = require('../src/utils/ensureAdmins');
 
 const run = async () => {
-  await connectDB();
+  await connectPostgres();
   const { created, updated } = await ensureAdmins();
-  await mongoose.connection.close();
+  await closePostgres();
   console.log(`Done. Admins ensured (created: ${created}, updated: ${updated}).`);
   process.exit(0);
 };

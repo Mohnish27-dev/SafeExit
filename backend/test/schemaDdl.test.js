@@ -4,26 +4,29 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { splitStatements, EXPECTED_TABLES, DDL_DIR, STEPS } = require('../scripts/applySchema');
-const { ACTIVE_PASS_STATUSES } = require('../src/config/passStatuses');
+const {
+  ACTIVE_PASS_STATUSES,
+  OUTING_STATUSES,
+  LEAVE_STATUSES,
+  USER_ROLES,
+  CAMPUS_STATUSES,
+} = require('../src/config/passStatuses');
 const { HOSTELS } = require('../src/config/hostels');
-const User = require('../src/models/User');
-const OutingRequest = require('../src/models/OutingRequest');
-const LeaveApplication = require('../src/models/LeaveApplication');
 
 // Static assertions about the PostgreSQL DDL in backend/db/postgres/. No live database —
 // same style as the rest of this suite.
 //
-// The failure mode these exist for is DRIFT. Once the migration lands, the schema stops
-// being generated from the Mongoose models and becomes a separate hand-written artefact,
-// so nothing automatically notices when somebody adds a pass status, a role, or a hostel
-// on one side and not the other. That is exactly the class of change that reopens the
-// double-submit race quietly — see the note in models/OutingRequest.js.
+// The failure mode these exist for is DRIFT. The schema is no longer generated from the
+// models — it is a hand-written artefact, and a Sequelize text column has no enum to check
+// against — so nothing automatically notices when somebody adds a pass status, a role, or
+// a hostel on one side and not the other. That is exactly the class of change that reopens
+// the double-submit race quietly; see the note in models/OutingRequest.js.
+//
+// The vocabularies now live in config/passStatuses.js so that this test and the
+// application read the same list.
 
 const read = (file) => fs.readFileSync(path.join(DDL_DIR, file), 'utf8');
 const schemaSql = read(STEPS.schema);
-
-// Mongoose stores enum values on the schema path; pull them rather than restating them.
-const enumOf = (model, pathName) => model.schema.path(pathName).enumValues.filter(Boolean);
 
 // The status list inside a partial index's WHERE clause, e.g.
 //   ... WHERE status IN ('Pending','Approved')
@@ -96,29 +99,29 @@ for (const [label, indexName] of [
   });
 }
 
-test('pass status CHECKs match the Mongoose enums', () => {
+test('pass status CHECKs match the declared status vocabularies', () => {
   const outingStatuses = checkValues(
     schemaSql.slice(schemaSql.indexOf('CREATE TABLE IF NOT EXISTS outing_requests')),
     'status'
   );
-  assert.deepEqual([...outingStatuses].sort(), [...enumOf(OutingRequest, 'status')].sort());
+  assert.deepEqual([...outingStatuses].sort(), [...OUTING_STATUSES].sort());
 
   const leaveStatuses = checkValues(
     schemaSql.slice(schemaSql.indexOf('CREATE TABLE IF NOT EXISTS leave_applications')),
     'status'
   );
-  assert.deepEqual([...leaveStatuses].sort(), [...enumOf(LeaveApplication, 'status')].sort());
+  assert.deepEqual([...leaveStatuses].sort(), [...LEAVE_STATUSES].sort());
 });
 
-test('user role and campus status CHECKs match the Mongoose enums', () => {
+test('user role and campus status CHECKs match the declared vocabularies', () => {
   const usersSql = schemaSql.slice(
     schemaSql.indexOf('CREATE TABLE IF NOT EXISTS users'),
     schemaSql.indexOf('CREATE TABLE IF NOT EXISTS close_contacts')
   );
-  assert.deepEqual([...checkValues(usersSql, 'role')].sort(), [...enumOf(User, 'role')].sort());
+  assert.deepEqual([...checkValues(usersSql, 'role')].sort(), [...USER_ROLES].sort());
   assert.deepEqual(
     [...checkValues(usersSql, 'campus_status')].sort(),
-    [...enumOf(User, 'campusStatus')].sort()
+    [...CAMPUS_STATUSES].sort()
   );
 });
 

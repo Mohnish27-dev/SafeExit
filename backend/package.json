@@ -7,7 +7,6 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed:admins": "node scripts/seedAdmins.js",
-    "migrate:loginid": "node scripts/migrateStaffLoginId.js",
     "lint": "eslint src/**/*.js",
     "test": "node --test",
     "pg:schema": "node scripts/applySchema.js schema",
