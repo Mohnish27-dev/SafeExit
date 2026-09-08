@@ -90,6 +90,24 @@ usually wrong and both are one-time fixes:
    ```
    `vmIdleTimeout=-1` is *not* honoured — use a large positive value in milliseconds.
 
+   **`vmIdleTimeout` does not always hold.** On a later session the VM was still shutting
+   down between commands with that setting in place, and `wsl -l --running` reported no
+   running distributions seconds after a successful `pg_isready`. The symptom is confusing
+   because it is intermittent: one command connects, the next gets `ECONNREFUSED`, and the
+   Windows→WSL localhost relay can be broken even while Postgres is listening on
+   `0.0.0.0:5432` inside the distro.
+
+   The reliable workaround is to hold the VM open with a long-running process for as long
+   as you are working, in its own terminal:
+   ```bash
+   wsl -u root -e sh -c "service postgresql start; exec sleep 86400"
+   ```
+   While that is alive, `127.0.0.1:5432` stays reachable from Windows. If only the relay is
+   broken (Postgres is listening but Windows cannot reach it), connecting to the distro's
+   own address also works — `wsl -u root -e sh -c "hostname -I"` gives it — but that address
+   changes on every VM restart, so it is a stopgap for one command rather than something to
+   put in `.env`.
+
 Verified on PostgreSQL 16.15 (Ubuntu 24.04, WSL2): `001_schema.sql` applies in 47 statements
 to 13 tables / 60 indexes, and re-runs clean.
 
