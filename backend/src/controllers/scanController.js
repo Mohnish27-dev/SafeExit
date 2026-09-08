@@ -1,9 +1,8 @@
-const mongoose = require('mongoose');
-const ScanLog = require('../models/ScanLog');
-const User = require('../models/User');
-const OutingRequest = require('../models/OutingRequest');
-const LeaveApplication = require('../models/LeaveApplication');
+const { Op } = require('sequelize');
+const { sequelize, ScanLog, User, OutingRequest, LeaveApplication } = require('../models');
 const sseHub = require('../utils/sseHub');
+const { ciEquals } = require('../utils/ciCompare');
+const { passScope, mergeWhere } = require('../utils/hostelScope');
 const {
   isDeparturePassed,
   isBeforeDeparture,
@@ -21,28 +20,50 @@ const clockLabel = (minutes) => {
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 };
 
-const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Thrown to roll the scan transaction back on a legitimate refusal rather than an error.
+// It carries the payload so the catch can answer with the 409 the old code returned
+// inline, before there was anything to unwind.
+class ScanConflict extends Error {
+  constructor(payload) {
+    super('scan conflict');
+    this.name = 'ScanConflict';
+    this.payload = payload;
+  }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// A 24-character hex string is a MongoDB ObjectId. Every row keeps its legacy_id until
+// 004_drop_legacy_ids.sql runs after cutover, so a QR minted before the migration still
+// resolves during the grace period instead of 404ing at the barrier.
+const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
 
 // A student's campusStatus admits exactly one legal move, which is what lets a gate
 // station run a single scanner with no exit/entry mode switch: 'Inside' can only
 // leave, 'Outside'/'Overdue' can only return. Anything else is treated as inside, to
-// match the User schema default. Mirrors deriveGateDirection in
+// match the users.campus_status default. Mirrors deriveGateDirection in
 // safeexit/src/app/lib/gateFlow.mjs, and must stay consistent with `allowedFrom` below.
 const deriveDirection = (campusStatus) =>
   campusStatus === 'Outside' || campusStatus === 'Overdue' ? 'IN' : 'OUT';
 
-// Prefer _id; fall back to trimmed case-insensitive roll match so QR whitespace/case can't 404.
-const resolveStudent = async ({ student, studentId }) => {
+// Prefer the id; fall back to a trimmed case-insensitive roll match so QR whitespace or
+// casing can't 404. The roll-number path is also how a printed college ID card resolves,
+// which is why students.student_id had to survive the migration byte-exact.
+const resolveStudent = async ({ student, studentId }, options = {}) => {
   let studentDoc = null;
-  if (student && mongoose.isValidObjectId(student)) {
-    studentDoc = await User.findById(student);
+  if (student) {
+    const key = String(student).trim();
+    if (UUID_RE.test(key)) studentDoc = await User.findByPk(key, options);
+    else if (OBJECT_ID_RE.test(key)) studentDoc = await User.findOne({ where: { legacyId: key }, ...options });
   }
   if (!studentDoc && studentId) {
     const roll = String(studentId).trim();
     if (roll) {
       studentDoc = await User.findOne({
-        role: 'Student',
-        studentId: { $regex: `^${escapeRegex(roll)}$`, $options: 'i' },
+        // ciEquals replaces the anchored case-insensitive $regex. It is also safer: a
+        // regex built from user input needed escaping, and a parameterised lower()
+        // comparison has nothing to escape.
+        where: { role: 'Student', [Op.and]: [ciEquals('student_id', roll)] },
+        ...options,
       });
     }
   }
@@ -60,13 +81,18 @@ const isOutingExitOpen = (doc) => !isDeparturePassed(doc.outTime);
 const isLeaveExitOpen = (doc) =>
   !isBeforeDeparture(doc.leaveDate) && !isAfterLeaveCurfew(doc.leaveDate);
 
-// Prefer the pass usable right now (Outing first) so a stale/future pass can't shadow a valid one; else return any approved pass so the caller can give a precise denial reason.
-const resolveApprovedPass = async (studentId) => {
-  const outing = await OutingRequest.findOne({ student: studentId, status: 'Approved' }).sort({
-    createdAt: -1,
+// Prefer the pass usable right now (Outing first) so a stale/future pass can't shadow a
+// valid one; else return any approved pass so the caller can give a precise denial reason.
+const resolveApprovedPass = async (studentId, options = {}) => {
+  const outing = await OutingRequest.findOne({
+    where: { studentId, status: 'Approved' },
+    order: [['createdAt', 'DESC']],
+    ...options,
   });
-  const leave = await LeaveApplication.findOne({ student: studentId, status: 'Approved' }).sort({
-    createdAt: -1,
+  const leave = await LeaveApplication.findOne({
+    where: { studentId, status: 'Approved' },
+    order: [['createdAt', 'DESC']],
+    ...options,
   });
 
   if (outing && isOutingExitOpen(outing)) return { passType: 'Outing', doc: outing };
@@ -78,21 +104,42 @@ const resolveApprovedPass = async (studentId) => {
   return null;
 };
 
-const resolveOutPass = async (studentId) => {
-  const outing = await OutingRequest.findOne({ student: studentId, status: 'Out' }).sort({
-    createdAt: -1,
+const resolveOutPass = async (studentId, options = {}) => {
+  const outing = await OutingRequest.findOne({
+    where: { studentId, status: 'Out' },
+    order: [['createdAt', 'DESC']],
+    ...options,
   });
   if (outing) return { passType: 'Outing', doc: outing };
 
-  const leave = await LeaveApplication.findOne({ student: studentId, status: 'Out' }).sort({
-    createdAt: -1,
+  const leave = await LeaveApplication.findOne({
+    where: { studentId, status: 'Out' },
+    order: [['createdAt', 'DESC']],
+    ...options,
   });
   if (leave) return { passType: 'Leave', doc: leave };
 
   return null;
 };
 
+const modelFor = (passType) => (passType === 'Outing' ? OutingRequest : LeaveApplication);
+
 // POST /api/scan — private (Guard/Admin)
+//
+// ---------------------------------------------------------------------------
+// THE reason this migration was worth doing.
+//
+// In MongoDB this handler performed five sequential, independent writes: the campusStatus
+// flip, the pass save(), the cross-collection supersede, the ScanLog insert, and the guard
+// duty stamp. There was no transaction, because the collections involved gave no way to
+// have one that was worth the operational cost. If the process died between writes 1 and
+// 4 — a deploy, an OOM, the gate station's power — a student was left marked Outside with
+// NO scan log: a gate movement that never happened as far as every dashboard and every
+// audit is concerned, and the one record a hostel gate exists to produce.
+//
+// The whole scan is one transaction now. Either the student moved and there is a log of
+// it, or neither is true.
+// ---------------------------------------------------------------------------
 const createScanLog = async (req, res) => {
   // punctuality is decided server-side; never read from the body.
   const { studentId, student, direction: requestedDirection, outing, gate } = req.body;
@@ -116,10 +163,15 @@ const createScanLog = async (req, res) => {
     const direction =
       requestedDirection === 'AUTO' ? deriveDirection(studentDoc.campusStatus) : requestedDirection;
 
-    // OUT requires a DB-verified Approved pass (QR status is never trusted); IN stays permissive.
+    // ---- Denial checks, before the transaction ----
+    //
+    // These run first and outside it on purpose. Two of them persist an 'Expired' status
+    // and then refuse the exit; that write must SURVIVE the refusal, so that a dashboard
+    // shows the same thing the gate just enforced. Rolling it back with the denial would
+    // put the two back out of step, which is the confusion the write exists to prevent.
     let linkedPass = null;
     if (direction === 'OUT') {
-      linkedPass = await resolveApprovedPass(studentDoc._id);
+      linkedPass = await resolveApprovedPass(studentDoc.id);
 
       if (!linkedPass) {
         return res.status(403).json({
@@ -130,6 +182,13 @@ const createScanLog = async (req, res) => {
       }
 
       const { windowStart, windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
+      // Guarded on the current status so this can never expire a pass that a concurrent
+      // scan has already taken to 'Out'.
+      const expirePass = () =>
+        modelFor(linkedPass.passType).update(
+          { status: 'Expired' },
+          { where: { id: linkedPass.doc.id, status: 'Approved' } }
+        );
 
       if (linkedPass.passType === 'Leave') {
         // Not open yet — leave the pass untouched so it's still usable on its day.
@@ -144,8 +203,7 @@ const createScanLog = async (req, res) => {
 
         // Past curfew: persist 'Expired' so dashboards match what the gate enforced.
         if (isAfterLeaveCurfew(windowStart)) {
-          linkedPass.doc.status = 'Expired';
-          await linkedPass.doc.save();
+          await expirePass();
           return res.status(403).json({
             message:
               'This leave pass has expired — leave passes are only valid until 5:30 PM on the departure day. Exit denied; the student must file a new request.',
@@ -158,8 +216,7 @@ const createScanLog = async (req, res) => {
         // Outing outTime is a departure deadline (early exit OK until outTime).
         // Past departure deadline: persist 'Expired'.
         if (isDeparturePassed(windowStart)) {
-          linkedPass.doc.status = 'Expired';
-          await linkedPass.doc.save();
+          await expirePass();
           return res.status(403).json({
             message:
               'This outing pass has expired — its approved departure deadline has already passed. Exit denied; the student must file a new request.',
@@ -169,8 +226,9 @@ const createScanLog = async (req, res) => {
           });
         }
 
-        // Judge the current moment against the gender/type departure window; gender comes from the DB, never the QR.
-        // Before it opens: leave the pass untouched so it can be used once the window opens.
+        // Judge the current moment against the gender/type departure window; gender comes
+        // from the DB, never the QR. Before it opens: leave the pass untouched so it can
+        // be used once the window opens.
         const policy = resolveOutingPolicy(studentDoc.gender, linkedPass.doc.outingType);
         if (!isWithinDepartureWindow(studentDoc.gender, linkedPass.doc.outingType, new Date())) {
           const windowText = `${clockLabel(policy.departStartMinutes)}-${clockLabel(
@@ -186,110 +244,162 @@ const createScanLog = async (req, res) => {
       }
     }
 
-    // Atomic conditional flip doubles as a lock — two near-simultaneous scans can't both match.
-    const newStatus = direction === 'OUT' ? 'Outside' : 'Inside';
-    const allowedFrom = direction === 'OUT' ? ['Inside'] : ['Outside', 'Overdue'];
-
-    const updatedStudent = await User.findOneAndUpdate(
-      { _id: studentDoc._id, campusStatus: { $in: allowedFrom } },
-      { campusStatus: newStatus, lastSeenAt: new Date() },
-      { new: true }
-    );
-
-    if (!updatedStudent) {
-      return res.status(409).json({
-        message:
-          direction === 'OUT'
-            ? 'This student is already marked outside — an exit has already been logged. Log an entry first.'
-            : 'This student is already inside — an entry has already been logged. Log an exit first.',
-        campusStatus: studentDoc.campusStatus,
-      });
-    }
-
-    // Mutate the pass only after the atomic flip wins the race; punctuality is judged server-side against the pass's return time.
+    // ---- The movement itself: all of it, or none of it ----
     let resolvedPunctuality = 'N/A';
-    if (direction === 'OUT' && linkedPass) {
-      linkedPass.doc.status = 'Out';
-      // Stamp actual gate-exit time so student dashboards can show it without reading scan logs.
-      if (linkedPass.passType === 'Outing') linkedPass.doc.actualOutTime = new Date();
-      await linkedPass.doc.save();
+    let logId = null;
 
-      // Burn any conflicting approved pass in the other collection so a student who
-      // departed on one pass cannot exit twice after returning.
-      if (linkedPass.passType === 'Outing') {
-        await LeaveApplication.updateMany(
-          { student: studentDoc._id, status: 'Approved' },
-          { $set: { status: 'Expired', remarks: 'Superseded by outing departure' } }
-        );
-      } else if (linkedPass.passType === 'Leave') {
-        await OutingRequest.updateMany(
-          { student: studentDoc._id, status: 'Approved' },
-          { $set: { status: 'Expired', remarks: 'Superseded by leave departure' } }
-        );
-      }
-    } else if (direction === 'IN') {
-      linkedPass = await resolveOutPass(studentDoc._id);
-      if (linkedPass) {
-        const { windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
-        resolvedPunctuality = isReturnLate(windowEnd) ? 'Overdue' : 'On-Time';
-        linkedPass.doc.status = 'Returned';
-        // Stamp punctuality and actual gate-entry time — student dashboards read the pass, not scan logs.
-        linkedPass.doc.returnPunctuality = resolvedPunctuality;
-        if (linkedPass.passType === 'Outing') linkedPass.doc.actualInTime = new Date();
-        await linkedPass.doc.save();
-      }
-    }
+    await sequelize.transaction(async (tx) => {
+      // The atomic conditional flip, unchanged in spirit and now genuinely a lock. Under
+      // READ COMMITTED, a second scan arriving concurrently blocks on this row, then
+      // re-evaluates the WHERE against the committed new value — so it matches zero rows
+      // and gets the 409 rather than both scans succeeding.
+      const newStatus = direction === 'OUT' ? 'Outside' : 'Inside';
+      const allowedFrom = direction === 'OUT' ? ['Inside'] : ['Outside', 'Overdue'];
 
-    const log = await ScanLog.create({
-      student: studentDoc._id,
-      guard: req.user._id,
-      direction,
-      // Prefer the server-resolved pass; caller-supplied id kept for backward compat.
-      outing: linkedPass?.passType === 'Outing' ? linkedPass.doc._id : outing || undefined,
-      leave: linkedPass?.passType === 'Leave' ? linkedPass.doc._id : undefined,
-      passType: linkedPass?.passType,
-      punctuality: resolvedPunctuality,
-      gate: gate || 'Main Gate'
+      const [flipped] = await User.update(
+        { campusStatus: newStatus, lastSeenAt: new Date() },
+        {
+          where: { id: studentDoc.id, campusStatus: { [Op.in]: allowedFrom } },
+          transaction: tx,
+        }
+      );
+
+      if (flipped === 0) {
+        // Throwing rolls the transaction back; the catch turns it into the same 409 the
+        // Mongo version returned inline, back when there was nothing to unwind.
+        throw new ScanConflict({
+          message:
+            direction === 'OUT'
+              ? 'This student is already marked outside — an exit has already been logged. Log an entry first.'
+              : 'This student is already inside — an entry has already been logged. Log an exit first.',
+          campusStatus: studentDoc.campusStatus,
+        });
+      }
+
+      // Mutate the pass only after the flip has won the race. The status guard is new and
+      // the transaction is what makes it safe to act on: if a caretaker cancelled this
+      // pass in the moment between resolving it and here, zero rows update and the whole
+      // scan rolls back rather than marking a cancelled pass as Out.
+      if (direction === 'OUT' && linkedPass) {
+        const [used] = await modelFor(linkedPass.passType).update(
+          {
+            status: 'Out',
+            // Stamp actual gate-exit time so student dashboards show it without reading
+            // scan logs. Leave applications have no actual_out_time column.
+            ...(linkedPass.passType === 'Outing' ? { actualOutTime: new Date() } : {}),
+          },
+          { where: { id: linkedPass.doc.id, status: 'Approved' }, transaction: tx }
+        );
+
+        if (used === 0) {
+          throw new ScanConflict({
+            message:
+              'This pass changed while the scan was being processed — it is no longer approved. Nothing was logged; scan again.',
+            campusStatus: studentDoc.campusStatus,
+          });
+        }
+        linkedPass.doc.setDataValue('status', 'Out');
+
+        // Burn any conflicting approved pass in the other table so a student who departed
+        // on one pass cannot exit twice after returning.
+        const other = linkedPass.passType === 'Outing' ? LeaveApplication : OutingRequest;
+        await other.update(
+          {
+            status: 'Expired',
+            remarks: `Superseded by ${linkedPass.passType.toLowerCase()} departure`,
+          },
+          { where: { studentId: studentDoc.id, status: 'Approved' }, transaction: tx }
+        );
+      } else if (direction === 'IN') {
+        linkedPass = await resolveOutPass(studentDoc.id, { transaction: tx });
+        if (linkedPass) {
+          const { windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
+          resolvedPunctuality = isReturnLate(windowEnd) ? 'Overdue' : 'On-Time';
+          await modelFor(linkedPass.passType).update(
+            {
+              status: 'Returned',
+              // Punctuality and the actual gate-entry time live on the pass — student
+              // dashboards read it, not the scan logs.
+              returnPunctuality: resolvedPunctuality,
+              ...(linkedPass.passType === 'Outing' ? { actualInTime: new Date() } : {}),
+            },
+            { where: { id: linkedPass.doc.id, status: 'Out' }, transaction: tx }
+          );
+          linkedPass.doc.setDataValue('status', 'Returned');
+        }
+      }
+
+      const log = await ScanLog.create(
+        {
+          studentId: studentDoc.id,
+          guardId: req.user._id,
+          direction,
+          // Prefer the server-resolved pass; a caller-supplied id is kept for backward
+          // compatibility. scan_logs_one_pass CHECKs that at most one is set.
+          outingId: linkedPass?.passType === 'Outing' ? linkedPass.doc.id : outing || null,
+          leaveId: linkedPass?.passType === 'Leave' ? linkedPass.doc.id : null,
+          passType: linkedPass?.passType ?? null,
+          punctuality: resolvedPunctuality,
+          gate: gate || 'Main Gate',
+        },
+        { transaction: tx }
+      );
+      logId = log.id;
+
+      await User.update(
+        { onDuty: true, lastActiveAt: new Date() },
+        { where: { id: req.user._id }, transaction: tx }
+      );
     });
-
-    await User.findByIdAndUpdate(req.user._id, { onDuty: true, lastActiveAt: new Date() });
 
     // A gate scan flips a pass Approved->Out or Out->Returned, which moves the caretaker's
     // "Out Now" counter. Reuse the outing channel both caretaker dashboards already listen
     // on so the tile updates immediately instead of waiting for the 30s poll.
+    //
+    // Deliberately AFTER the commit: broadcasting from inside the transaction would tell
+    // dashboards to re-read state that no other connection can see yet, and that no other
+    // connection would ever see if the transaction then rolled back.
     sseHub.broadcast('outing:changed', {
       reason: 'scan',
       direction,
-      student: String(studentDoc._id),
+      student: String(studentDoc.id),
       passType: linkedPass?.passType || null,
       status: linkedPass?.doc?.status || null,
     });
 
-    const populated = await log.populate('student', 'name studentId');
+    const populated = await ScanLog.findByPk(logId, {
+      include: [{ association: 'student', attributes: ['id', 'name', 'studentId'] }],
+    });
     res.status(201).json(populated);
   } catch (error) {
+    if (error instanceof ScanConflict) {
+      return res.status(409).json(error.payload || { message: 'Scan conflict.' });
+    }
     res.status(500).json({ message: error.message });
   }
 };
 
-// GET /api/scan/preview — private (Guard/Admin); read-only mirror of the live scan verdict, never trusts the QR.
+// GET /api/scan/preview — private (Guard/Admin); read-only mirror of the live scan
+// verdict, never trusts the QR.
 const previewScan = async (req, res) => {
   const { studentId, sid } = req.query;
 
   try {
-    const studentDoc = await resolveStudent({ student: sid, studentId });
+    // photoRow is included here and nowhere else in this file: the gate's preview card is
+    // the one place a face photo is actually needed, and it is a single-row read.
+    const studentDoc = await resolveStudent({ student: sid, studentId }, { include: ['photoRow'] });
     if (!studentDoc) {
       return res.status(404).json({ message: 'Student not found for this QR code' });
     }
 
-    const activePass = await resolveOutPass(studentDoc._id);
+    const activePass = await resolveOutPass(studentDoc.id);
     const punctuality = activePass
       ? isReturnLate(passWindow(activePass.passType, activePass.doc).windowEnd)
         ? 'Overdue'
         : 'On-Time'
       : 'N/A';
 
-    const approvedPass = await resolveApprovedPass(studentDoc._id);
+    const approvedPass = await resolveApprovedPass(studentDoc.id);
 
     let exit;
     if (!approvedPass) {
@@ -319,7 +429,7 @@ const previewScan = async (req, res) => {
 
     res.json({
       student: {
-        _id: studentDoc._id,
+        _id: studentDoc.id,
         name: studentDoc.name,
         studentId: studentDoc.studentId,
         campusStatus: studentDoc.campusStatus,
@@ -343,32 +453,25 @@ const previewScan = async (req, res) => {
 // GET /api/scan — private (Admin/Caretaker/Warden/Guard)
 const getScanLogs = async (req, res) => {
   try {
-    const filter = {};
-    if (req.query.direction) filter.direction = req.query.direction;
-
-    // Caretakers and wardens only see logs for students in their managed hostel.
-    if (req.user.role === 'Caretaker' || req.user.role === 'Warden') {
-      const hostelFilter = req.user.managedHostel
-        ? { hostelName: req.user.managedHostel }
-        : req.user.managedGender
-        ? { gender: req.user.managedGender }
-        : null;
-      if (!hostelFilter) return res.json([]);
-      // Case-insensitive hostelName match (same collation as hostelScope.ownHostelStudentIds):
-      // without it a casing difference silently returns an empty log for the whole hostel.
-      const students = await User.find({ role: 'Student', ...hostelFilter }, '_id')
-        .collation({ locale: 'en', strength: 2 });
-      filter.student = { $in: students.map((s) => s._id) };
-    }
+    // Caretakers and wardens only see logs for students in their managed hostel. This used
+    // to be hand-rolled here — a User.find(...).collation(...) for every student in the
+    // hostel, then their ids as an $in — separately from utils/hostelScope, which did the
+    // same thing slightly differently. Both are now the same JOIN.
+    const scope = passScope(ScanLog, req.user, [
+      // roomNumber/department are rendered and searched by the movement log view.
+      'id', 'name', 'studentId', 'campusStatus', 'roomNumber', 'hostelName', 'department',
+    ]);
+    const where = mergeWhere(scope.where, req.query.direction ? { direction: req.query.direction } : null);
 
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
 
-    const logs = await ScanLog.find(filter)
-      // roomNumber/department are rendered and searched by the movement log view.
-      .populate('student', 'name studentId campusStatus roomNumber hostelName department')
-      .populate('guard', 'name studentId')
-      .sort({ createdAt: -1 })
-      .limit(limit);
+    const logs = await ScanLog.findAll({
+      where,
+      include: [...scope.include, { association: 'guard', attributes: ['id', 'name', 'studentId'] }],
+      order: [['createdAt', 'DESC']],
+      limit,
+      subQuery: false,
+    });
     res.json(logs);
   } catch (error) {
     res.status(500).json({ message: error.message });
