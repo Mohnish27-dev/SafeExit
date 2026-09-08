@@ -123,6 +123,23 @@ const models = {
 
 for (const model of Object.values(models)) {
   model.prototype.toJSON = idContractToJSON;
+
+  // `_id` on the INSTANCE, not just in the JSON. 181 call sites across the controllers
+  // and the scope helpers compare identities as `String(row.forwardedTo) === String(user._id)`,
+  // and every one of them would silently become String(undefined) === String(undefined)
+  // — which is `true` — if `_id` only existed after serialisation. That is a
+  // fail-open authorisation bug, so the alias is installed where those reads happen.
+  //
+  // Deliberately a prototype getter and NOT an attribute: Sequelize must never think
+  // `_id` is a column, or `where: { _id }` would generate SQL against a column that does
+  // not exist. Query code says `id`; identity comparisons may say either.
+  if (!Object.prototype.hasOwnProperty.call(model.prototype, '_id')) {
+    Object.defineProperty(model.prototype, '_id', {
+      get() {
+        return this.get('id') ?? this.get('userId');
+      },
+    });
+  }
 }
 
 module.exports = { sequelize: getSequelize(), ...models };

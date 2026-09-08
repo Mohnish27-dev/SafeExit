@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middlewares/authMiddleware');
 const { createLimiter } = require('../middlewares/rateLimit');
-const PushSubscription = require('../models/PushSubscription');
+const { PushSubscription } = require('../models');
 const { VAPID_PUBLIC_KEY } = require('../utils/pushService');
 
 // GET /api/push/vapid-key — public (the key is public by definition)
@@ -23,19 +23,19 @@ router.post('/subscribe', protect, createLimiter, async (req, res) => {
 
   try {
     // Upsert by endpoint so a re-subscribing browser doesn't create a duplicate.
-    await PushSubscription.findOneAndUpdate(
-      { 'subscription.endpoint': subscription.endpoint },
+    //
+    // The Mongo version matched on the dotted path 'subscription.endpoint'; here endpoint
+    // is a column with a real UNIQUE constraint, so this is a genuine
+    // INSERT ... ON CONFLICT (endpoint) DO UPDATE — one statement, and two devices
+    // registering the same endpoint at once can no longer both insert.
+    await PushSubscription.upsert(
       {
-        user: req.user._id,
-        subscription: {
-          endpoint: subscription.endpoint,
-          keys: {
-            p256dh: subscription.keys.p256dh,
-            auth: subscription.keys.auth,
-          },
-        },
+        userId: req.user._id,
+        endpoint: subscription.endpoint,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
       },
-      { upsert: true, new: true }
+      { conflictFields: ['endpoint'] }
     );
 
     res.status(201).json({ message: 'Push subscription saved.' });
@@ -54,7 +54,7 @@ router.delete('/subscribe', protect, async (req, res) => {
   }
 
   try {
-    await PushSubscription.deleteOne({ 'subscription.endpoint': endpoint });
+    await PushSubscription.destroy({ where: { endpoint } });
     res.json({ message: 'Push subscription removed.' });
   } catch (err) {
     console.error('Push unsubscribe error:', err.message);
