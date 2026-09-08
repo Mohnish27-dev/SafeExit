@@ -1,185 +1,111 @@
-const mongoose = require('mongoose');
-const { ACTIVE_PASS_STATUSES, ONE_ACTIVE_OUTING_INDEX } = require('../config/passStatuses');
+const { DataTypes } = require('sequelize');
+const { getSequelize } = require('../config/sequelize');
+const { uuidPk, legacyId, timestampFields, blobAttribute, blobColumns } = require('./_shared');
 
-const outingRequestSchema = new mongoose.Schema({
-  student: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  destination: {
-    type: String,
-    required: true
-  },
-  purpose: {
-    type: String,
-    required: true
-  },
-  // With the student's gender, selects the rule set (windows/deadlines live in utils/outingRules.js): Nearby/Market are female-only, General is the single male path.
-  outingType: {
-    type: String,
-    enum: ['Nearby', 'Market', 'General'],
-    default: 'General'
-  },
-  outTime: {
-    type: Date,
-    required: true
-  },
-  inTime: {
-    type: Date,
-    required: true
-  },
-  status: {
-    // Approved -> Expired happens lazily at read time when outTime passes unused.
-    // 'Forwarded' = a caretaker escalated it to the hostel warden 
-    type: String,
-    enum: ['Pending', 'Approved', 'Rejected', 'Out', 'Returned', 'Expired', 'Cancelled', 'Forwarded'],
-    default: 'Pending'
-  },
-  // True when approved by the system rule, not a caretaker (approvedBy stays null).
-  autoApproved: {
-    type: Boolean,
-    default: false
-  },
-  // Stamped when the entry scan closes the trip; student dashboards read this, not scan logs.
-  returnPunctuality: {
-    type: String,
-    enum: ['On-Time', 'Overdue', null],
-    default: null
-  },
-
-  overdueNotifiedAt: {
-    type: Date,
-    default: null
-  },
-
-  // Separate marker for the student's own browser push.
-  studentOverdueNotifiedAt: {
-    type: Date,
-    default: null
-  },
-
-  actualOutTime: {
-    type: Date,
-    default: null
-  },
-  actualInTime: {
-    type: Date,
-    default: null
-  },
-  decision: {
-    type: String,
-    enum: ['Approved', 'Rejected'],
-    default: undefined
-  },
-  decidedAt: {
-    type: Date,
-    default: null
-  },
-  decidedByRole: {
-    type: String,
-    enum: ['Caretaker', 'Warden'],
-    default: undefined
-  },
-  remarks: {
-    type: String
-  },
-  // Drawn signatures (base64 image data URLs), same storage style as User.photo.
-  studentSignature: {
-    type: String
-  },
-  caretakerSignature: {
-    type: String
-  },
-  // The warden's own signature, stamped when a forwarded request is warden-approved.
-  wardenSignature: {
-    type: String
-  },
-  approvedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  targetCaretaker: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-
-  forwardedTo: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  forwardedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  forwardedNote: {
-    type: String
-  },
-  forwardedAt: {
-    type: Date,
-    default: null
-  }
-}, {
-  timestamps: true
-});
-
-// Indexes. Every query below was a full collection scan before these existed, which is
-// what made the polled dashboards (15s student, 30s caretaker) expensive on the on-prem
-// Mongo. Writes here are a few hundred a day, so the index count is cheap.
-
-// createOutingRequest's active-pass block, and the gate scan's pass resolution
-// (findOne({student, status}).sort({createdAt:-1}) in controllers/scanController.js).
-// The {student:1} prefix also serves getMyOutingRequests — a student's own rows number
-// in the tens, so the small in-memory sort for its createdAt order costs nothing.
-outingRequestSchema.index({ student: 1, status: 1, createdAt: -1 });
-
-// getPendingRequests — the caretaker queue, oldest first.
-outingRequestSchema.index({ status: 1, createdAt: 1 });
-
-// getOverdueOutings and the 5-minute overdue sweep, both keyed on status:'Out'.
-outingRequestSchema.index({ status: 1, inTime: 1 });
-
-// getForwardedRequests — the warden's action queue.
-outingRequestSchema.index({ forwardedTo: 1, status: 1, forwardedAt: 1 });
-
-// The targetCaretaker branch of the caretaker scope filter (utils/hostelScope.js).
-outingRequestSchema.index({ targetCaretaker: 1 });
-
-// getAllOutingRequests — chief-warden campus-wide list, polled every 30s with no filter,
-// so the sort is all it can be served by.
-outingRequestSchema.index({ createdAt: -1 });
-
-// The history endpoints' sort. DECIDED_FILTER has no selective predicate, so without
-// this a caretaker opening history scans and blocking-sorts the whole collection.
-outingRequestSchema.index({ decidedAt: -1 });
-
-// ---- The one index that is a correctness guard, not a performance one ----
+// Every index this model relies on lives in db/postgres/001_schema.sql, with the same
+// per-query notes the Mongoose schema carried. Sequelize does NOT declare them here:
+// nothing in this app calls sync(), so an index declared in a model would be a comment
+// that looks like code. test/schemaDdl.test.js pins the DDL instead.
+//
+// The one that is a CORRECTNESS guard rather than a performance one:
+//
+//   CREATE UNIQUE INDEX one_active_outing_per_student ON outing_requests (student_id)
+//     WHERE status IN ('Pending','Approved','Forwarded','Out');
 //
 // createOutingRequest reads the active requests, finds nothing blocking, then creates.
-// Two concurrent POSTs from one student both pass that check and both succeed — two live
-// passes for one student. createLimiter (20/min, per-user) does not prevent it; nothing in
-// application code can, because "no document matching X exists" is not something a single
-// Mongo operation can assert while inserting.
-//
-// So the database asserts it. This makes the second insert fail with E11000, which
-// createOutingRequest converts into the same 409 the pre-check would have returned. The
-// gate scan solves its own version of this with an atomic conditional findOneAndUpdate
-// (see the campusStatus flip in controllers/scanController.js); a create has no document
-// to conditionally update, so a unique index is the equivalent tool.
-//
-// CAVEAT ON $in: only MongoDB 6.0+ accepts $in inside partialFilterExpression. On an older
-// server this index silently fails to build and the race is unguarded again, which is why
-// utils/verifyIndexes.js asserts by name at startup instead of trusting autoIndex.
-// Pre-existing data with two active rows for one student ALSO fails the build — run
-// scripts/checkActivePassDuplicates.js to find and clear those first.
-outingRequestSchema.index(
-  { student: 1 },
+// Two concurrent POSTs from one student both pass that check; only the database can
+// reject the second. It surfaces here as a SequelizeUniqueConstraintError whose
+// `.parent.constraint` is that index name, which the controller turns into the same 409
+// the pre-check would have returned. The status list MUST stay identical to
+// ACTIVE_PASS_STATUSES in config/passStatuses.js — if they drift, the index enforces a
+// different rule than the 409 does and the double-submit race reopens silently.
+
+const SIGNATURE_ATTRIBUTES = ['studentSignature', 'caretakerSignature', 'wardenSignature'];
+
+const OutingRequest = getSequelize().define(
+  'OutingRequest',
   {
-    unique: true,
-    partialFilterExpression: { status: { $in: ACTIVE_PASS_STATUSES } },
-    name: ONE_ACTIVE_OUTING_INDEX,
+    id: uuidPk(),
+    legacyId: legacyId(),
+
+    // The foreign key. The `student` association declared in models/index.js reads
+    // through it, and toJSON collapses the two back into the single `student` field the
+    // API has always returned — an id when nothing was included, the populated object
+    // when it was.
+    studentId: { type: DataTypes.UUID, allowNull: false, field: 'student_id' },
+
+    destination: { type: DataTypes.TEXT, allowNull: false },
+    purpose: { type: DataTypes.TEXT, allowNull: false },
+
+    // With the student's gender, selects the rule set (windows and deadlines live in
+    // utils/outingRules.js): Nearby/Market are female-only, General is the single male
+    // path.
+    outingType: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'General', field: 'outing_type' },
+
+    outTime: { type: DataTypes.DATE, allowNull: false, field: 'out_time' },
+    inTime: { type: DataTypes.DATE, allowNull: false, field: 'in_time' },
+
+    // Approved -> Expired happens lazily at read time when outTime passes unused.
+    // 'Forwarded' = a caretaker escalated it to the hostel warden.
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'Pending' },
+
+    // True when approved by the system rule rather than a caretaker (approvedBy stays null).
+    autoApproved: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'auto_approved' },
+
+    // Stamped when the entry scan closes the trip; student dashboards read this, not the
+    // scan logs.
+    returnPunctuality: { type: DataTypes.TEXT, field: 'return_punctuality' },
+
+    overdueNotifiedAt: { type: DataTypes.DATE, field: 'overdue_notified_at' },
+    // Separate marker for the student's own browser push.
+    studentOverdueNotifiedAt: { type: DataTypes.DATE, field: 'student_overdue_notified_at' },
+
+    actualOutTime: { type: DataTypes.DATE, field: 'actual_out_time' },
+    actualInTime: { type: DataTypes.DATE, field: 'actual_in_time' },
+
+    decision: { type: DataTypes.TEXT },
+    decidedAt: { type: DataTypes.DATE, field: 'decided_at' },
+    decidedByRole: { type: DataTypes.TEXT, field: 'decided_by_role' },
+    remarks: { type: DataTypes.TEXT },
+
+    // Immutable signature snapshots, stamped at submit/approval time. bytea now rather
+    // than base64 text — the getters rebuild the exact data URL the API returns, so
+    // nothing outside this model knows the difference.
+    //
+    // These stay inline rather than moving to a side table (unlike the user's photo and
+    // signature): Postgres TOASTs large values out of the main heap, so a query that does
+    // not name the column never reads those pages. The defaultScope below is what keeps
+    // list endpoints from naming them.
+    ...blobAttribute('studentSignature', 'student_signature', 'image/png'),
+    ...blobAttribute('caretakerSignature', 'caretaker_signature', 'image/png'),
+    ...blobAttribute('wardenSignature', 'warden_signature', 'image/png'),
+
+    approvedBy: { type: DataTypes.UUID, field: 'approved_by' },
+    targetCaretaker: { type: DataTypes.UUID, field: 'target_caretaker' },
+    forwardedTo: { type: DataTypes.UUID, field: 'forwarded_to' },
+    forwardedBy: { type: DataTypes.UUID, field: 'forwarded_by' },
+    forwardedNote: { type: DataTypes.TEXT, field: 'forwarded_note' },
+    forwardedAt: { type: DataTypes.DATE, field: 'forwarded_at' },
+
+    ...timestampFields,
+  },
+  {
+    tableName: 'outing_requests',
+
+    // The structural version of what test/rosterPhotoBudget.test.js and
+    // utils/signature.js LIST_PROJECTION did by convention: a row can carry three
+    // signature blobs and these lists are polled every 15-30 seconds, so no query pulls
+    // them unless it asks. Use .scope('withSignatures') — or name the attributes
+    // explicitly — on the one endpoint that serves the bytes.
+    defaultScope: {
+      attributes: { exclude: SIGNATURE_ATTRIBUTES.flatMap(blobColumns) },
+    },
+    scopes: {
+      withSignatures: {},
+    },
   }
 );
 
-const OutingRequest = mongoose.model('OutingRequest', outingRequestSchema);
+OutingRequest.SIGNATURE_ATTRIBUTES = SIGNATURE_ATTRIBUTES;
+
 module.exports = OutingRequest;

@@ -8,7 +8,6 @@
     "dev": "nodemon src/server.js",
     "seed:admins": "node scripts/seedAdmins.js",
     "migrate:loginid": "node scripts/migrateStaffLoginId.js",
-    "check:duplicates": "node scripts/checkActivePassDuplicates.js",
     "lint": "eslint src/**/*.js",
     "test": "node --test",
     "pg:schema": "node scripts/applySchema.js schema",
@@ -37,6 +36,7 @@
     "mongoose": "^9.7.1",
     "nodemailer": "^6.10.1",
     "pg": "^8.23.0",
+    "sequelize": "^6.37.8",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

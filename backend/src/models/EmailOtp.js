@@ -1,29 +1,51 @@
-const mongoose = require('mongoose');
+const { DataTypes, Op } = require('sequelize');
 const bcrypt = require('bcryptjs');
+const { getSequelize } = require('../config/sequelize');
+const { uuidPk, legacyId, timestampFields } = require('./_shared');
 
-// Stores only a bcrypt hash of the OTP so a DB leak can't be replayed; TTL index + attempt counter cap brute force.
-const emailOtpSchema = new mongoose.Schema(
+// Stores only a bcrypt hash of the OTP, so a database leak cannot be replayed; the
+// attempt counter caps brute force. One live code per email+purpose — a resend overwrites
+// via the UNIQUE (email, purpose) constraint.
+const EmailOtp = getSequelize().define(
+  'EmailOtp',
   {
-    email: { type: String, required: true, lowercase: true, trim: true, index: true },
-    otpHash: { type: String, required: true },
-    purpose: { type: String, default: 'student-registration' },
-    attempts: { type: Number, default: 0 },
-    lastSentAt: { type: Date, default: Date.now },
-    expiresAt: { type: Date, required: true },
+    id: uuidPk(),
+    legacyId: legacyId(),
+
+    email: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      // The schema CHECKs email = lower(email); Mongoose did it with `lowercase: true`.
+      set(value) {
+        this.setDataValue('email', typeof value === 'string' ? value.trim().toLowerCase() : value);
+      },
+    },
+    otpHash: { type: DataTypes.TEXT, allowNull: false, field: 'otp_hash' },
+    purpose: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'student-registration' },
+    attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    lastSentAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW, field: 'last_sent_at' },
+    expiresAt: { type: DataTypes.DATE, allowNull: false, field: 'expires_at' },
+
+    ...timestampFields,
   },
-  { timestamps: true }
+  { tableName: 'email_otps' }
 );
 
-// One live code per email+purpose — a resend overwrites.
-emailOtpSchema.index({ email: 1, purpose: 1 }, { unique: true });
-emailOtpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// An OTP hash is not something to hand back in a response, and nothing ever asked for it.
+EmailOtp.jsonHidden = new Set(['otpHash']);
 
-emailOtpSchema.statics.hashOtp = function (otp) {
-  return bcrypt.hash(String(otp), 10);
-};
+EmailOtp.hashOtp = (otp) => bcrypt.hash(String(otp), 10);
 
-emailOtpSchema.methods.matchOtp = function (otp) {
+EmailOtp.prototype.matchOtp = function (otp) {
   return bcrypt.compare(String(otp), this.otpHash);
 };
 
-module.exports = mongoose.model('EmailOtp', emailOtpSchema);
+// MongoDB expired these with a TTL index. Postgres has no TTL, and pg_cron was
+// deliberately not adopted — utils/overdueSweep.js already ticks every five minutes, so
+// it calls this. The email_otps_expires index is what keeps it cheap.
+//
+// This is a tidy-up, not a security boundary: expiry is checked at read time regardless
+// of when the sweep last ran, so a row that outlives its expiresAt is never accepted.
+EmailOtp.purgeExpired = () => EmailOtp.destroy({ where: { expiresAt: { [Op.lt]: new Date() } } });
+
+module.exports = EmailOtp;

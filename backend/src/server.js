@@ -1,9 +1,7 @@
-const mongoose = require('mongoose');
 const app = require('./app');
-const connectDB = require('./config/db');
+const { connectPostgres, closePostgres } = require('./config/sequelize');
 const { ensureAdmins } = require('./utils/ensureAdmins');
 const { startOverdueSweep } = require('./utils/overdueSweep');
-const { verifyIndexes } = require('./utils/verifyIndexes');
 const sseHub = require('./utils/sseHub');
 const { closeMailer } = require('./utils/mailer');
 
@@ -47,7 +45,9 @@ const shutdown = async (signal) => {
 
     // Flushes the pooled SMTP connections; a queued verification email still goes out.
     await closeMailer();
-    await mongoose.connection.close(false);
+    // Drains the connection pool. Without it the process holds open sockets that the
+    // college's Postgres counts against max_connections until they time out server-side.
+    await closePostgres();
     console.log('[shutdown] database connection closed.');
 
     clearTimeout(forced);
@@ -80,7 +80,7 @@ process.on('uncaughtException', (err) => {
   shutdown('uncaughtException');
 });
 
-connectDB().then(async () => {
+connectPostgres().then(async () => {
   // Idempotent; unchanged .env = no writes.
   try {
     const { created, updated } = await ensureAdmins();
@@ -91,22 +91,12 @@ connectDB().then(async () => {
     console.error('Admin seeding failed:', err.message);
   }
 
-  // Boot-time proof that the one-active-pass unique indexes exist. They are the only thing
-  // stopping two concurrent submissions from minting two live passes, and their build fails
-  // silently on MongoDB < 6.0 or on pre-existing duplicate data. Deliberately a loud
-  // warning rather than a hard exit: a hostel gate that refuses to boot is worse than one
-  // running with a known-open race, and the operator needs the app up to clear the data
-  // that is blocking the build.
-  try {
-    const ok = await verifyIndexes();
-    if (!ok) {
-      console.error(
-        '[startup] Continuing WITHOUT the one-active-pass guard. Fix the above, then restart.'
-      );
-    }
-  } catch (err) {
-    console.error('[startup] Index verification could not run:', err.message);
-  }
+  // The one-active-pass guard used to need proving at boot: on MongoDB a partial unique
+  // index with $in in its filter fails to build SILENTLY on servers below 6.0 and on
+  // pre-existing duplicate data, so utils/verifyIndexes.js asserted it by name on every
+  // start. In Postgres the index is DDL — db/postgres/001_schema.sql either applied it or
+  // that migration failed loudly, and `npm run pg:check` re-proves it on demand. There is
+  // nothing left for the server to verify, so those 116 lines are gone rather than ported.
 
   httpServer = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
