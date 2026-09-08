@@ -1,14 +1,13 @@
-const User = require('../models/User');
-const OutingRequest = require('../models/OutingRequest');
-const SOSAlert = require('../models/SOSAlert');
+const { Op } = require('sequelize');
+const { sequelize, User, UserPhoto, WebauthnCredential, OutingRequest, SOSAlert } = require('../models');
 const { getOverdueStudentIds } = require('../utils/overdue');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
 
 // 'Overdue' is a derived overlay that the gate scan never writes — it only ever stores
-// 'Inside' or 'Outside'. But the User enum permits it and legacy rows may carry it, so
-// "not inside" is the union of both. Counting bare 'Outside' would leave such a row in
-// `total` and in none of the three tiles. Matches caretakerController's occupancy query.
+// 'Inside' or 'Outside'. But the campus_status CHECK permits it and legacy rows may carry
+// it, so "not inside" is the union of both. Counting bare 'Outside' would leave such a row
+// in `total` and in none of the three tiles. Matches caretakerController's occupancy query.
 const OUTSIDE_STATUSES = ['Outside', 'Overdue'];
 
 // GET /api/admin/overview — private (Admin)
@@ -27,18 +26,18 @@ const getOverview = async (req, res) => {
       pendingOutings,
       studentsOut
     ] = await Promise.all([
-      User.countDocuments({ role: 'Student' }),
-      User.countDocuments({ role: 'Student', campusStatus: 'Inside' }),
-      User.countDocuments({ role: 'Student', campusStatus: { $in: OUTSIDE_STATUSES } }),
+      User.count({ where: { role: 'Student' } }),
+      User.count({ where: { role: 'Student', campusStatus: 'Inside' } }),
+      User.count({ where: { role: 'Student', campusStatus: { [Op.in]: OUTSIDE_STATUSES } } }),
       // 'Overdue' is never stored — derived live from passes still 'Out' past their return window.
       getOverdueStudentIds(),
-      User.countDocuments({ role: 'Guard' }),
-      User.countDocuments({ role: 'Guard', onDuty: true }),
-      User.countDocuments({ role: 'Caretaker' }),
-      User.countDocuments({ role: 'Warden' }),
-      SOSAlert.countDocuments({ status: 'Active' }),
-      OutingRequest.countDocuments({ status: 'Pending' }),
-      OutingRequest.countDocuments({ status: 'Out' })
+      User.count({ where: { role: 'Guard' } }),
+      User.count({ where: { role: 'Guard', onDuty: true } }),
+      User.count({ where: { role: 'Caretaker' } }),
+      User.count({ where: { role: 'Warden' } }),
+      SOSAlert.count({ where: { status: 'Active' } }),
+      OutingRequest.count({ where: { status: 'Pending' } }),
+      OutingRequest.count({ where: { status: 'Out' } })
     ]);
 
     // Overdue students are still stored 'Outside' — subtract so the tiles are disjoint.
@@ -64,52 +63,64 @@ const getOverview = async (req, res) => {
   }
 };
 
+// Guards may only browse students, and only non-confidential fields.
+const GUARD_FIELDS = ['id', 'name', 'studentId', 'campusStatus', 'lastSeenAt'];
+const ALL_FIELDS = [
+  'id', 'name', 'email', 'role', 'studentId', 'department', 'year', 'roomNumber', 'hostelName',
+  'phoneNumber', 'gender', 'managedGender', 'managedHostel', 'campusStatus', 'lastSeenAt',
+  'onDuty', 'lastActiveAt', 'webAuthnRegistered', 'createdAt',
+];
+
 // GET /api/admin/users?role= — private (Admin/Guard)
 //
-// `photo` is deliberately NOT selected here. Face photos are base64 data URLs of a few
-// hundred KB each, so including them turned a roster of 400 students into a multi-hundred-
-// megabyte JSON document — built in memory, serialised, and held until the socket drained,
-// on an endpoint the security dashboard polls. `hasPhoto` tells the client which rows have
-// one; the bytes come from GET /api/admin/users/:id/photo when a row is actually opened.
+// Face photos are NOT in this response. Under Mongo that was a promise the projection
+// string had to keep: a data URL of a few hundred KB per row turned a roster of 400
+// students into a multi-hundred-megabyte JSON document, built in memory and held until the
+// socket drained, on an endpoint the security dashboard polls every 15 seconds. Adding one
+// word to a projection was all it took to reintroduce.
+//
+// It is now structural. The bytes are in user_photos, so this query cannot return them at
+// any projection; `hasPhoto` comes from a keyed lookup of ids alone, and the bytes come
+// from GET /api/admin/users/:id/photo when a row is actually opened.
 const getUsers = async (req, res) => {
   try {
-    const filter = {};
-    if (req.query.role) filter.role = req.query.role;
-    // Guards may only browse students, and only non-confidential fields.
-    if (req.user.role === 'Guard') filter.role = 'Student';
-
-    const guardFields = 'name studentId campusStatus lastSeenAt';
-    const allFields   = 'name email role studentId department year roomNumber hostelName phoneNumber gender managedGender managedHostel campusStatus lastSeenAt onDuty lastActiveAt webAuthnRegistered createdAt';
+    const where = {};
+    if (req.query.role) where.role = req.query.role;
+    if (req.user.role === 'Guard') where.role = 'Student';
 
     const { limit, skip } = readPageParams(req);
-    const users = await User.find(filter)
-      .select(req.user.role === 'Guard' ? guardFields : allFields)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    const users = await User.findAll({
+      where,
+      attributes: req.user.role === 'Guard' ? GUARD_FIELDS : ALL_FIELDS,
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+      raw: true,
+    });
 
-    // Which of these rows has a photo, without transferring any. The filter examines the
-    // field server-side but the projection is _id only, so nothing but ObjectIds crosses
-    // the wire. Scoped to the page's ids, so this second query stays as bounded as the first.
-    const ids = users.map((u) => u._id);
-    const withPhoto = await User.find({ _id: { $in: ids }, photo: { $nin: [null, ''] } })
-      .select('_id')
-      .lean();
-    const photoIds = new Set(withPhoto.map((u) => String(u._id)));
+    // Which of these rows has a photo, without transferring any. Scoped to the page's ids,
+    // so this second query stays as bounded as the first, and it reads user_photos.user_id
+    // — a primary key — so it never touches a blob page.
+    const ids = users.map((u) => u.id);
+    const withPhoto = ids.length
+      ? await UserPhoto.findAll({ where: { userId: { [Op.in]: ids } }, attributes: ['userId'], raw: true })
+      : [];
+    const photoIds = new Set(withPhoto.map((p) => String(p.userId)));
 
     // Overlay derived (never persisted) 'Overdue' onto late students.
     const overdueIds = await getOverdueStudentIds();
     for (const u of users) {
-      if (overdueIds.has(String(u._id))) u.campusStatus = 'Overdue';
-      u.hasPhoto = photoIds.has(String(u._id));
+      if (overdueIds.has(String(u.id))) u.campusStatus = 'Overdue';
+      u.hasPhoto = photoIds.has(String(u.id));
+      // raw:true skips the model's toJSON, so the `_id` contract is applied by hand here.
+      u._id = u.id;
     }
 
     return sendPage(res, users, {
       limit,
       skip,
       label: 'admin/users',
-      count: () => User.countDocuments(filter),
+      count: () => User.count({ where }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -125,7 +136,10 @@ const getUsers = async (req, res) => {
 // second role logged in elsewhere would authorise the request as the wrong user.
 const getUserPhoto = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('role photo').lean();
+    const user = await User.findByPk(req.params.id, {
+      attributes: ['id', 'role'],
+      include: ['photoRow'],
+    });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -139,6 +153,7 @@ const getUserPhoto = async (req, res) => {
     // Immutable per upload and only ever read by staff, so let the browser keep it for
     // the session — this endpoint exists to be called once per row that gets opened.
     res.set('Cache-Control', 'private, max-age=300');
+    // The virtual rebuilds the exact data URL from the bytea + mime pair.
     res.json({ photo: user.photo || null });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -155,9 +170,9 @@ const getUserPhoto = async (req, res) => {
 const getStudentCounts = async (req, res) => {
   try {
     const [total, inside, outside, overdueIds] = await Promise.all([
-      User.countDocuments({ role: 'Student' }),
-      User.countDocuments({ role: 'Student', campusStatus: 'Inside' }),
-      User.countDocuments({ role: 'Student', campusStatus: { $in: OUTSIDE_STATUSES } }),
+      User.count({ where: { role: 'Student' } }),
+      User.count({ where: { role: 'Student', campusStatus: 'Inside' } }),
+      User.count({ where: { role: 'Student', campusStatus: { [Op.in]: OUTSIDE_STATUSES } } }),
       getOverdueStudentIds(),
     ]);
 
@@ -179,18 +194,22 @@ const getStudentCounts = async (req, res) => {
 // Trim, lowercase, strip whitespace — must match the login pages' helper.
 const buildStaffLoginId = (id) => (id || '').trim().toLowerCase().replace(/\s+/g, '');
 
-// One caretaker account per hostel; exceptId lets a caretaker re-save its own hostel without a duplicate conflict.
-const findCaretakerForHostel = (managedHostel, exceptId) => {
-  const filter = { role: 'Caretaker', managedHostel };
-  if (exceptId) filter._id = { $ne: exceptId };
-  return User.findOne(filter);
-};
+// One caretaker account per hostel; exceptId lets a caretaker re-save its own hostel
+// without a duplicate conflict.
+const findStaffForHostel = (role, managedHostel, exceptId) =>
+  User.findOne({
+    where: {
+      role,
+      managedHostel,
+      ...(exceptId ? { id: { [Op.ne]: exceptId } } : {}),
+    },
+  });
 
-const findWardenForHostel = (managedHostel, exceptId) => {
-  const filter = { role: 'Warden', managedHostel };
-  if (exceptId) filter._id = { $ne: exceptId };
-  return User.findOne(filter);
-};
+const findCaretakerForHostel = (managedHostel, exceptId) =>
+  findStaffForHostel('Caretaker', managedHostel, exceptId);
+
+const findWardenForHostel = (managedHostel, exceptId) =>
+  findStaffForHostel('Warden', managedHostel, exceptId);
 
 const wardenHostelClashMessage = async (hostel, exceptId) => {
   const existing = await findWardenForHostel(hostel, exceptId);
@@ -237,7 +256,7 @@ const createStaff = async (req, res) => {
     // The Chief Warden is campus-wide, so there is no hostel scope and only one
     // account is needed. Admin can reset/replace that account from People.
     if (role === 'ChiefWarden') {
-      const existing = await User.findOne({ role: 'ChiefWarden' });
+      const existing = await User.findOne({ where: { role: 'ChiefWarden' } });
       if (existing) {
         return res.status(409).json({
           message: `A Chief Warden account already exists (${existing.loginId}). Reset its PIN or remove it before creating another.`,
@@ -246,26 +265,28 @@ const createStaff = async (req, res) => {
     }
 
     const loginId = buildStaffLoginId(staffId);
-    const exists = await User.findOne({ $or: [{ loginId }, { email: loginId }] });
+    const exists = await User.findOne({ where: { [Op.or]: [{ loginId }, { email: loginId }] } });
     if (exists) {
       return res.status(400).json({ message: 'An account with this ID already exists.' });
     }
 
+    const scoped = role === 'Caretaker' || role === 'Warden';
     const user = await User.create({
       name: name.trim(),
       loginId,
-      password: String(pin).trim(), // hashed by the User model's pre-save hook
+      password: String(pin).trim(), // hashed by the User model's beforeSave hook
       role,
       studentId: staffId.trim(),
       phoneNumber,
       // Caretakers AND wardens carry a specific hostel; managedGender is derived for the
-      // auto-approval rules and the gender-wide SOS scope.
-      managedHostel: role === 'Caretaker' || role === 'Warden' ? canonicalHostelName(managedHostel) : undefined,
-      managedGender: role === 'Caretaker' || role === 'Warden' ? genderForHostel(managedHostel) : undefined,
+      // auto-approval rules and the gender-wide SOS scope. The canonical spelling is
+      // required, not merely tidy: managed_hostel is a foreign key to hostels(name).
+      managedHostel: scoped ? canonicalHostelName(managedHostel) : null,
+      managedGender: scoped ? genderForHostel(managedHostel) : null,
     });
 
     res.status(201).json({
-      _id: user._id,
+      _id: user.id,
       name: user.name,
       loginId: user.loginId,
       role: user.role,
@@ -280,7 +301,8 @@ const createStaff = async (req, res) => {
   }
 };
 
-// PATCH /api/admin/staff/:id/pin — private (Admin); also revokes passkeys so a lost device can't keep signing in.
+// PATCH /api/admin/staff/:id/pin — private (Admin); also revokes passkeys so a lost device
+// can't keep signing in.
 const resetStaffPin = async (req, res) => {
   try {
     const { pin } = req.body;
@@ -288,17 +310,24 @@ const resetStaffPin = async (req, res) => {
       return res.status(400).json({ message: 'A new PIN of at least 4 characters is required.' });
     }
 
-    const user = await User.findById(req.params.id);
+    const user = await User.findByPk(req.params.id);
     // Staff only — never resets a student's or another admin's credentials.
     if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 
-    user.password = String(pin).trim(); // re-hashed by the pre-save hook
-    user.webAuthnCredentials = [];
-    user.webAuthnRegistered = false;
-    user.currentChallenge = undefined;
-    await user.save();
+    // The new PIN and the passkey revocation must land together. This endpoint exists for
+    // a lost or compromised device: committing the PIN change while the credential rows
+    // survived would report a successful reset while the lost device could still sign in.
+    // Under Mongo both lived on one document so a single save() covered it; the
+    // credentials are their own table now, so the transaction is what restores that.
+    await sequelize.transaction(async (tx) => {
+      user.password = String(pin).trim(); // re-hashed by the beforeSave hook
+      user.webAuthnRegistered = false;
+      user.currentChallenge = null;
+      await user.save({ transaction: tx });
+      await WebauthnCredential.destroy({ where: { userId: user.id }, transaction: tx });
+    });
 
     res.json({ message: 'PIN reset. Existing passkeys were revoked; the staff member must set one up again.' });
   } catch (error) {
@@ -310,7 +339,7 @@ const resetStaffPin = async (req, res) => {
 const updateStaffScope = async (req, res) => {
   try {
     const { managedHostel } = req.body;
-    const user = await User.findById(req.params.id);
+    const user = await User.findByPk(req.params.id);
     if (!user || !['Caretaker', 'Warden'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
@@ -322,14 +351,14 @@ const updateStaffScope = async (req, res) => {
 
     // Preserve the one-per-hostel invariant for whichever staff slot is being scoped.
     if (user.role === 'Warden') {
-      const clashMsg = await wardenHostelClashMessage(hostel, user._id);
+      const clashMsg = await wardenHostelClashMessage(hostel, user.id);
       if (clashMsg) {
         return res.status(409).json({
           message: `${hostel} hostel already has a warden account. Remove or reassign that one first.`,
         });
       }
     } else {
-      const clash = await findCaretakerForHostel(hostel, user._id);
+      const clash = await findCaretakerForHostel(hostel, user.id);
       if (clash) {
         return res.status(409).json({
           message: `${hostel} hostel already has a caretaker account (${clash.loginId}). Remove or reassign that one first.`,
@@ -343,7 +372,7 @@ const updateStaffScope = async (req, res) => {
     await user.save();
 
     res.json({
-      _id: user._id,
+      _id: user.id,
       name: user.name,
       loginId: user.loginId,
       role: user.role,
@@ -358,12 +387,17 @@ const updateStaffScope = async (req, res) => {
 // DELETE /api/admin/staff/:id — private (Admin)
 const removeStaff = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findByPk(req.params.id);
     if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
     }
 
-    await user.deleteOne();
+    // The schema decides what happens to what this staff member touched, and it is worth
+    // knowing which: the passes they approved, forwarded or were routed keep their history
+    // with the reference set to NULL (ON DELETE SET NULL), their scan logs keep the
+    // movement and lose the guard attribution, and their push subscriptions and passkeys
+    // are removed with them (ON DELETE CASCADE). Nothing they decided disappears.
+    await user.destroy();
     res.json({ message: 'Staff member removed.' });
   } catch (error) {
     res.status(500).json({ message: error.message });
