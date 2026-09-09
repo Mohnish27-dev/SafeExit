@@ -1,9 +1,30 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const jwt = require('jsonwebtoken');
+const { Client } = require('pg');
 
 require('dotenv').config();
+
+const { splitStatements, DDL_DIR, STEPS } = require('../scripts/applySchema');
+
+// THIS FILE WRITES A ROW, SO IT GETS ITS OWN SCHEMA.
+//
+// It needs a real user carrying a legacy_id, which no amount of stubbing can fake — the
+// grace period is a database lookup or it is nothing. But `node --test` runs test FILES as
+// parallel processes against one database, and controllerIntegration.test.js ends by
+// asserting that the GLOBAL row counts are exactly what it found. A user created here and
+// deleted a moment later is invisible to this file and fatal to that one, roughly one run
+// in three, depending on how the two processes interleave.
+//
+// So this file never touches `public`. PG_SCHEMA sets the connection's search_path (see
+// src/config/postgres.js and src/config/sequelize.js), and it MUST be set before the first
+// require of the models, which is what binds the Sequelize instance. Nothing above this
+// line may require ../src/models, directly or through a middleware.
+const SCHEMA = process.env.GRACE_TEST_SCHEMA || 'safeexit_grace_test';
+process.env.PG_SCHEMA = SCHEMA;
 
 const { maintenanceMode } = require('../src/middlewares/maintenanceMode');
 const { protect } = require('../src/middlewares/authMiddleware');
@@ -120,6 +141,14 @@ let skipReason = null;
 if (!process.env.DATABASE_URL) skipReason = 'DATABASE_URL is not set';
 if (!process.env.JWT_SECRET) skipReason = 'JWT_SECRET is not set';
 
+// Creating and dropping a schema is not something to do to a server that is not yours.
+const dbHost = (() => {
+  try { return new URL(process.env.DATABASE_URL || '').hostname; } catch { return ''; }
+})();
+if (!skipReason && !/^(127\.0\.0\.1|localhost|::1|172\.\d+\.\d+\.\d+)$/.test(dbHost)) {
+  skipReason = `DATABASE_URL host "${dbHost}" is not local, and this file creates a schema`;
+}
+
 const created = [];
 let subject = null;
 // A syntactically valid ObjectId, standing in for a pre-cutover token subject.
@@ -127,13 +156,26 @@ const legacyObjectId = crypto.randomBytes(12).toString('hex');
 
 test('setup: a user carrying a legacy_id, as every migrated row does', async (t) => {
   if (skipReason) { t.skip(skipReason); return; }
+
+  // Built with a plain client, because the pooled one is already pointed at a schema that
+  // does not exist yet. A search_path naming a missing schema is legal; it simply resolves
+  // nothing, which is fine for CREATE SCHEMA itself.
   try {
-    await sequelize.authenticate();
+    const admin = new Client({ connectionString: process.env.DATABASE_URL });
+    await admin.connect();
+    await admin.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${SCHEMA}`);
+    await admin.end();
   } catch (error) {
     skipReason = `no database: ${error.message}`;
     t.skip(skipReason);
     return;
   }
+
+  // The real DDL, not a model-derived guess — the same file that ships to the server.
+  const ddl = fs.readFileSync(path.join(DDL_DIR, STEPS.schema), 'utf8');
+  for (const stmt of splitStatements(ddl)) await sequelize.query(stmt);
+
   subject = await User.create({
     name: 'CUTOVER grace user',
     role: 'Student',
@@ -205,10 +247,16 @@ test('a malformed subject is a 401, not a 500 from invalid uuid syntax', async (
   }
 });
 
-test('cleanup', async (t) => {
+test('cleanup: the throwaway schema is dropped', async (t) => {
   if (skipReason) { t.skip(skipReason); return; }
-  if (created.length) await User.destroy({ where: { id: created } });
-  const left = await User.count({ where: { legacyId: legacyObjectId } });
-  assert.equal(left, 0);
   await sequelize.close();
+
+  const admin = new Client({ connectionString: process.env.DATABASE_URL });
+  await admin.connect();
+  await admin.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+  const { rows } = await admin.query(
+    'SELECT 1 FROM information_schema.schemata WHERE schema_name = $1', [SCHEMA]
+  );
+  await admin.end();
+  assert.equal(rows.length, 0, 'the throwaway schema outlived the test');
 });

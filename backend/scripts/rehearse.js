@@ -152,10 +152,8 @@ const main = async () => {
   heading('Phase B — the switch (runbook steps 7-8)');
 
   // R3 — the ETL, exactly as step 7 runs it.
-  let etlOut = '';
   {
     const { code, out } = runScript('etl.js');
-    etlOut = out;
     const committed = /Committed\./.test(out);
     const totals = (out.match(/totals: read (\d+), written (\d+)/) || []);
     if (code === 0 && committed) {
