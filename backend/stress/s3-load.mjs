@@ -1,9 +1,8 @@
-import { api, tok, record, results, mongoose, server, mongod, istAt, nowIstMinutes, BASE,
+import { api, tok, record, results, teardown, istAt, nowIstMinutes, BASE,
   User, OutingRequest, LeaveApplication, ScanLog, SOSAlert, DelayNotice,
   males, females, T, ctF, ctM, wdF, SIG } from './harness.mjs';
 import http from 'node:http';
 
-if (!/127\.0\.0\.1|localhost/.test(mongoose.connection.host || '')) { console.error('ABORT: not local'); process.exit(1); }
 
 const NOW = nowIstMinutes();
 const dep = () => istAt(Math.min(19, Math.floor(NOW / 60) + 2), 0);
@@ -35,7 +34,7 @@ const okWindow = NOW >= 6 * 60 && NOW <= 19 * 60 + 59;
 if (okWindow) {
   const cohort = males.slice(20, 60);
   // give each one a live approved pass
-  await OutingRequest.updateMany({ student: { $in: cohort.map(s => s._id) } }, { $set: { status: 'Approved', outTime: dep() } });
+  await OutingRequest.update({ status: 'Approved', outTime: dep() }, { where: { studentId: cohort.map(s => s.id) } });
   const lat = [];
   const t0 = Date.now();
   const res = await Promise.all(cohort.map(async (s) => {
@@ -55,7 +54,7 @@ if (okWindow) {
 // ---------- C3. single-scan latency (what the guard actually feels) ----------
 if (okWindow) {
   const s = males[21];
-  await User.findByIdAndUpdate(s._id, { campusStatus: 'Outside' });
+  await User.update({ campusStatus: 'Outside' }, { where: { id: s.id } });
   const lat = [];
   for (let i = 0; i < 30; i++) {
     const a = Date.now();
@@ -100,7 +99,7 @@ if (okWindow) {
 
 // ---------- C6. SSE: many concurrent staff streams + broadcast under load ----------
 {
-  const port = server.address().port;
+  const port = new URL(BASE).port;
   const open = [];
   const received = [];
   const N = 40;
@@ -163,8 +162,11 @@ if (okWindow) {
 // ---------- C11. overdue sweep on a big cohort ----------
 {
   const { runOverdueSweep } = await import('../src/utils/overdueSweep.js');
-  await OutingRequest.updateMany({ status: 'Out' }, { $set: { inTime: new Date(Date.now() - 3600e3), overdueNotifiedAt: null, studentOverdueNotifiedAt: null } });
-  const n = await OutingRequest.countDocuments({ status: 'Out' });
+  await OutingRequest.update(
+    { inTime: new Date(Date.now() - 3600e3), overdueNotifiedAt: null, studentOverdueNotifiedAt: null },
+    { where: { status: 'Out' } }
+  );
+  const n = await OutingRequest.count({ where: { status: 'Out' } });
   const t0 = Date.now();
   await runOverdueSweep();
   record('C11', 'Overdue sweep over ' + n + ' live passes', 'PASS', 'took=' + (Date.now() - t0) + 'ms');
@@ -172,12 +174,16 @@ if (okWindow) {
 
 // ---------- C12. delay notice flow ----------
 {
-  const out = await OutingRequest.findOne({ status: 'Out' }).populate('student');
+  const out = await OutingRequest.findOne({
+    where: { status: 'Out' },
+    include: [{ association: 'student' }],
+  });
   if (out) {
     const t = tok(out.student);
     const a = await api('/api/delay', { method: 'POST', token: t, body: { reason: 'Traffic', note: 'bus late' } });
     const b = await api('/api/delay', { method: 'POST', token: t, body: { reason: 'Transport', note: 'revised' } });
-    const count = await DelayNotice.countDocuments({ trip: out._id });
+    // `trip` was an untyped ObjectId; it is a real outing_id foreign key now.
+    const count = await DelayNotice.count({ where: { outingId: out.id } });
     record('C12', 'Delay notice: second filing revises in place (no duplicate rows)',
       a.status === 201 && count === 1 ? 'PASS' : 'FAIL', 'first=' + a.status + ' second=' + b.status + ' rows=' + count);
   } else record('C12', 'Delay notice flow', 'SKIP', 'no live Out pass');
@@ -201,4 +207,4 @@ if (okWindow) {
 
 console.log('\n--- s3 summary ---');
 for (const r of results) console.log(r.status.padEnd(4), r.id, '-', r.title, '::', r.detail);
-await mongoose.disconnect(); server.close(); await mongod.stop(); process.exit(0);
+await teardown(); process.exit(0);

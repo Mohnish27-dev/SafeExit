@@ -1,12 +1,14 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const EmailOtp = require('../models/EmailOtp');
-const User = require('../models/User');
+const { Op } = require('sequelize');
+const { EmailOtp, User } = require('../models');
 const generateToken = require('../utils/generateToken');
 const { sendMailWithin, isMailConfigured } = require('../utils/mailer');
 const { isValidStudentEmail, normalizeEmail } = require('../config/emailPolicy');
 
-// Student password recovery. Shares the EmailOtp collection with registration, keyed on (email, purpose) so the two flows' codes never clobber each other.
+// Student password recovery. Shares the email_otps table with registration, keyed on
+// (email, purpose) so the two flows' codes never clobber each other — that pairing is a
+// real UNIQUE constraint now, so the isolation is enforced rather than conventional.
 
 const OTP_TTL_MS = 10 * 60 * 1000; // code valid 10 minutes
 const RESEND_COOLDOWN_MS = 60 * 1000; // 60s between sends
@@ -33,7 +35,7 @@ const isResetTokenValid = (token, email) => {
 
 // Students only — staff have no mailbox on file and recover through an admin.
 const findStudentByEmail = (email) =>
-  User.findOne({ role: 'Student', $or: [{ email }, { loginId: email }] });
+  User.findOne({ where: { role: 'Student', [Op.or]: [{ email }, { loginId: email }] } });
 
 // POST /api/auth/password/forgot — public
 const requestPasswordReset = async (req, res) => {
@@ -54,7 +56,7 @@ const requestPasswordReset = async (req, res) => {
     }
 
     // Per-email resend cooldown to prevent inbox spam.
-    const prior = await EmailOtp.findOne({ email, purpose: PURPOSE });
+    const prior = await EmailOtp.findOne({ where: { email, purpose: PURPOSE } });
     if (prior && Date.now() - prior.lastSentAt.getTime() < RESEND_COOLDOWN_MS) {
       const waitMs = RESEND_COOLDOWN_MS - (Date.now() - prior.lastSentAt.getTime());
       return res.status(429).json({
@@ -64,10 +66,12 @@ const requestPasswordReset = async (req, res) => {
 
     const otp = generateOtp();
     const otpHash = await EmailOtp.hashOtp(otp);
-    await EmailOtp.findOneAndUpdate(
-      { email, purpose: PURPOSE },
+    // One atomic INSERT ... ON CONFLICT (email, purpose) DO UPDATE, so two simultaneous
+    // resends cannot interleave into a row whose hash and cooldown came from different
+    // requests. See the same change in otpController.
+    await EmailOtp.upsert(
       { email, purpose: PURPOSE, otpHash, attempts: 0, lastSentAt: new Date(), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
-      { upsert: true, setDefaultsOnInsert: true }
+      { conflictFields: ['email', 'purpose'] }
     );
 
     // Bounded wait — same reasoning as otpController.sendOtp; see utils/mailer.js.
@@ -83,7 +87,7 @@ const requestPasswordReset = async (req, res) => {
     if (error) {
       console.error(`[password-reset] send to ${email} failed: ${error.message}`);
       try {
-        await EmailOtp.deleteOne({ email, purpose: PURPOSE });
+        await EmailOtp.destroy({ where: { email, purpose: PURPOSE } });
       } catch {
         // Best-effort; the student can still retry once the cooldown lapses.
       }
@@ -116,7 +120,7 @@ const verifyResetOtp = async (req, res) => {
       return res.status(400).json({ message: 'Please enter the 6-digit code.' });
     }
 
-    const record = await EmailOtp.findOne({ email, purpose: PURPOSE });
+    const record = await EmailOtp.findOne({ where: { email, purpose: PURPOSE } });
     if (!record || record.expiresAt.getTime() < Date.now()) {
       return res.status(400).json({ message: 'This code has expired. Please request a new one.' });
     }
@@ -126,14 +130,16 @@ const verifyResetOtp = async (req, res) => {
 
     const ok = await record.matchOtp(otp);
     if (!ok) {
-      record.attempts += 1;
-      await record.save();
+      // UPDATE ... SET attempts = attempts + 1, not read-modify-write: this is the
+      // brute-force cap on a PASSWORD RESET code, so two simultaneous wrong guesses must
+      // cost two attempts rather than one.
+      await record.increment('attempts');
       const remaining = Math.max(0, MAX_OTP_ATTEMPTS - record.attempts);
       return res.status(400).json({ message: `Incorrect code. ${remaining} attempt(s) remaining.` });
     }
 
     // Burn the single-use code, hand back the signed proof.
-    await EmailOtp.deleteOne({ _id: record._id });
+    await EmailOtp.destroy({ where: { id: record.id } });
     const resetToken = issueResetToken(email);
     return res.status(200).json({ verified: true, resetToken });
   } catch (error) {
@@ -159,14 +165,14 @@ const resetPassword = async (req, res) => {
       return res.status(404).json({ message: 'Account not found.' });
     }
 
-    // Pre-save hook salts + bcrypt-hashes it.
+    // The beforeSave hook salts + bcrypt-hashes it.
     user.password = newPassword;
     await user.save();
 
     // Real session so the frontend can re-enrol Quick Login against the new password.
-    const token = generateToken(res, user._id);
+    const token = generateToken(res, user.id);
     return res.status(200).json({
-      _id: user._id,
+      _id: user.id,
       name: user.name,
       loginId: user.loginId,
       email: user.email,

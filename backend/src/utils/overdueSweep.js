@@ -1,5 +1,5 @@
-const OutingRequest = require('../models/OutingRequest');
-const DelayNotice = require('../models/DelayNotice');
+const { Op } = require('sequelize');
+const { OutingRequest, DelayNotice, EmailOtp } = require('../models');
 const { isReturnLate } = require('./outingRules');
 const { notifyCaretakers, notifyStudent } = require('./pushService');
 
@@ -7,25 +7,32 @@ const SWEEP_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
 const runOverdueSweep = async () => {
   try {
-    const outings = await OutingRequest.find({
-      status: 'Out',
-      $or: [
-        { overdueNotifiedAt: null },
-        { overdueNotifiedAt: { $exists: false } },
-        { studentOverdueNotifiedAt: null },
-        { studentOverdueNotifiedAt: { $exists: false } },
+    const outings = await OutingRequest.findAll({
+      where: {
+        status: 'Out',
+        // Mongo needed four clauses here because a field could be null OR absent. A
+        // column is only ever NULL, so two say the same thing.
+        [Op.or]: [{ overdueNotifiedAt: null }, { studentOverdueNotifiedAt: null }],
+      },
+      attributes: [
+        'id',
+        'studentId',
+        'inTime',
+        'targetCaretaker',
+        'overdueNotifiedAt',
+        'studentOverdueNotifiedAt',
+        'status',
       ],
-    })
-      .populate('student', 'name hostelName gender')
-      .select('student inTime targetCaretaker overdueNotifiedAt studentOverdueNotifiedAt status');
+      include: [{ association: 'student', attributes: ['id', 'name', 'hostelName', 'gender'] }],
+    });
 
     for (const o of outings) {
       if (!o.student || !isReturnLate(o.inTime)) continue;
 
       // The student already told staff they're running late — don't follow it with a
       // near-identical "Student Overdue" push. Still stamp overdueNotifiedAt below so
-      // the doc drops out of the sweep instead of being re-checked forever.
-      const explained = await DelayNotice.exists({ trip: o._id });
+      // the row drops out of the sweep instead of being re-checked forever.
+      const explained = (await DelayNotice.count({ where: { outingId: o.id } })) > 0;
 
       if (!explained && !o.overdueNotifiedAt) {
         const scope = o.targetCaretaker
@@ -45,9 +52,9 @@ const runOverdueSweep = async () => {
       // that audience handled so this outing does not remain in every sweep.
       if (!o.overdueNotifiedAt) o.overdueNotifiedAt = new Date();
 
-      // Best-effort per doc — a lost-race save just means the next tick retries.
+      // Best-effort per row — a lost-race save just means the next tick retries.
       if (!o.studentOverdueNotifiedAt) {
-        await notifyStudent(o.student._id, {
+        await notifyStudent(o.student.id, {
           title: 'Your outing is overdue',
           body: 'Your expected return time has passed. Open your dashboard to report a delay.',
           url: '/dashboard/student',
@@ -64,6 +71,19 @@ const runOverdueSweep = async () => {
   } catch (err) {
     // Never let a bad tick crash the process.
     console.error('Overdue sweep failed:', err.message);
+  }
+
+  // The replacement for the MongoDB TTL index on email_otps. Postgres has no TTL, and
+  // pg_cron was deliberately not adopted for one DELETE — this tick already runs every
+  // five minutes, so it carries it. Kept out of the try above so a failing overdue sweep
+  // does not also stop the cleanup, and vice versa.
+  //
+  // Not a security boundary: otpController checks expiresAt on every read regardless of
+  // when this last ran, so an unswept row is never accepted. This is housekeeping.
+  try {
+    await EmailOtp.purgeExpired();
+  } catch (err) {
+    console.error('Expired OTP purge failed:', err.message);
   }
 };
 

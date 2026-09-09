@@ -1,12 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const mongoose = require('mongoose');
+const crypto = require('node:crypto');
 
-const User = require('../src/models/User');
-const OutingRequest = require('../src/models/OutingRequest');
-const LeaveApplication = require('../src/models/LeaveApplication');
+const { User, OutingRequest, LeaveApplication } = require('../src/models');
 const { createOutingRequest } = require('../src/controllers/outingController');
 const { createLeaveApplication } = require('../src/controllers/leaveController');
+
+// The KNOWN GAP, pinned deliberately.
+//
+// one_active_outing_per_student and one_active_leave_per_student are separate partial
+// unique indexes on separate tables, so neither can stop a student holding one active
+// outing AND one active leave at the same time. That rule lives in application code, and
+// these two tests are what keeps it there — they were the only thing guarding it under
+// MongoDB and they still are.
+//
+// Postgres CAN close it properly (a shared active_pass_locks table keyed on student_id,
+// written inside the same transaction as the pass), which is noted in
+// db/postgres/001_schema.sql as a deliberate post-cutover decision rather than something
+// to bundle into the port. Until then, if these tests are ever deleted the cross-pass rule
+// is unguarded.
 
 const responseRecorder = () => {
   const result = { statusCode: null, body: null };
@@ -23,18 +35,26 @@ const responseRecorder = () => {
 
 const mockSignature = 'data:image/png;base64,' + 'A'.repeat(50);
 
-test('createOutingRequest rejects with 409 when student already has an active LeaveApplication', async () => {
-  const originalUserFindById = User.findById;
-  const originalOutingFind = OutingRequest.find;
-  const originalLeaveFind = LeaveApplication.find;
+// fetchOwnSignature reads the user's signature from its own table now, so this is the
+// seam rather than a projected field on the user document.
+const stubSignature = () => {
+  const original = User.getSignature;
+  User.getSignature = async () => mockSignature;
+  return () => { User.getSignature = original; };
+};
 
-  const studentId = new mongoose.Types.ObjectId();
+test('createOutingRequest rejects with 409 when student already has an active LeaveApplication', async () => {
+  const restoreSignature = stubSignature();
+  const originalOutingFindAll = OutingRequest.findAll;
+  const originalLeaveFindAll = LeaveApplication.findAll;
+
+  const studentId = crypto.randomUUID();
   const req = {
     user: {
       _id: studentId,
       campusStatus: 'Inside',
       gender: 'Male',
-      hostelName: 'Bhabha',
+      hostelName: 'Kautilya',
     },
     body: {
       destination: 'Market',
@@ -46,25 +66,15 @@ test('createOutingRequest rejects with 409 when student already has an active Le
   const res = responseRecorder();
 
   try {
-    User.findById = () => ({
-      select: () => ({
-        lean: () => Promise.resolve({ signature: mockSignature }),
-      }),
-    });
-    OutingRequest.find = () => ({
-      then: (resolve) => resolve([]),
-    });
-    LeaveApplication.find = () => ({
-      then: (resolve) =>
-        resolve([
-          {
-            _id: new mongoose.Types.ObjectId(),
-            student: studentId,
-            status: 'Approved',
-            leaveDate: new Date(Date.now() + 86400_000),
-          },
-        ]),
-    });
+    OutingRequest.findAll = async () => [];
+    LeaveApplication.findAll = async () => [
+      {
+        id: crypto.randomUUID(),
+        studentId,
+        status: 'Approved',
+        leaveDate: new Date(Date.now() + 86400_000),
+      },
+    ];
 
     await createOutingRequest(req, res);
 
@@ -72,18 +82,18 @@ test('createOutingRequest rejects with 409 when student already has an active Le
     assert.match(res.body.message, /active leave/i, 'must inform user of active leave');
     assert.equal(res.body.status, 'Approved');
   } finally {
-    User.findById = originalUserFindById;
-    OutingRequest.find = originalOutingFind;
-    LeaveApplication.find = originalLeaveFind;
+    restoreSignature();
+    OutingRequest.findAll = originalOutingFindAll;
+    LeaveApplication.findAll = originalLeaveFindAll;
   }
 });
 
 test('createLeaveApplication rejects with 409 when student already has an active OutingRequest', async () => {
-  const originalUserFindById = User.findById;
-  const originalLeaveFind = LeaveApplication.find;
-  const originalOutingFind = OutingRequest.find;
+  const restoreSignature = stubSignature();
+  const originalLeaveFindAll = LeaveApplication.findAll;
+  const originalOutingFindAll = OutingRequest.findAll;
 
-  const studentId = new mongoose.Types.ObjectId();
+  const studentId = crypto.randomUUID();
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(10, 0, 0, 0);
@@ -96,7 +106,7 @@ test('createLeaveApplication rejects with 409 when student already has an active
       _id: studentId,
       campusStatus: 'Inside',
       gender: 'Male',
-      hostelName: 'Bhabha',
+      hostelName: 'Kautilya',
     },
     body: {
       destination: 'Home',
@@ -109,25 +119,15 @@ test('createLeaveApplication rejects with 409 when student already has an active
   const res = responseRecorder();
 
   try {
-    User.findById = () => ({
-      select: () => ({
-        lean: () => Promise.resolve({ signature: mockSignature }),
-      }),
-    });
-    LeaveApplication.find = () => ({
-      then: (resolve) => resolve([]),
-    });
-    OutingRequest.find = () => ({
-      then: (resolve) =>
-        resolve([
-          {
-            _id: new mongoose.Types.ObjectId(),
-            student: studentId,
-            status: 'Approved',
-            outTime: new Date(Date.now() + 3600_000),
-          },
-        ]),
-    });
+    LeaveApplication.findAll = async () => [];
+    OutingRequest.findAll = async () => [
+      {
+        id: crypto.randomUUID(),
+        studentId,
+        status: 'Approved',
+        outTime: new Date(Date.now() + 3600_000),
+      },
+    ];
 
     await createLeaveApplication(req, res);
 
@@ -135,8 +135,8 @@ test('createLeaveApplication rejects with 409 when student already has an active
     assert.match(res.body.message, /active outing/i, 'must inform user of active outing');
     assert.equal(res.body.status, 'Approved');
   } finally {
-    User.findById = originalUserFindById;
-    LeaveApplication.find = originalLeaveFind;
-    OutingRequest.find = originalOutingFind;
+    restoreSignature();
+    LeaveApplication.findAll = originalLeaveFindAll;
+    OutingRequest.findAll = originalOutingFindAll;
   }
 });

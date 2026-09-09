@@ -1,22 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const User = require('../src/models/User');
-const OutingRequest = require('../src/models/OutingRequest');
-const LeaveApplication = require('../src/models/LeaveApplication');
+const { User, UserPhoto, OutingRequest, LeaveApplication } = require('../src/models');
 const { getUsers, getUserPhoto, getStudentCounts } = require('../src/controllers/adminController');
 
-// A roster row is a few hundred bytes; a stored face photo is a base64 data URL of a few
-// hundred KILObytes. Selecting `photo` on a list endpoint therefore multiplies the response
-// by ~1000x — and the security dashboard used to poll exactly that endpoint every 15
-// seconds. These tests pin the three properties that keep it cheap:
+// A roster row is a few hundred bytes; a stored face photo is a few hundred KILObytes.
+// Returning `photo` on a list endpoint therefore multiplies the response by ~1000x — and
+// the security dashboard polls exactly that endpoint every 15 seconds.
 //
-//   1. no list projection may name `photo`, for any role
-//   2. the presence probe transfers ids only, scoped to the page
-//   3. the bytes come from a per-row endpoint that re-checks authorisation
+// WHAT CHANGED IN THE MIGRATION, and why these tests changed shape:
 //
-// Property 1 is the one worth a test rather than a comment: it is a single word in a long
-// projection string, and adding it back would look like a harmless field addition.
+// Under MongoDB the photo was a field on the user document, so keeping it out of the
+// roster was a CONVENTION — a projection string that had to remember not to say "photo",
+// and this file existed to assert that one word never got added back.
+//
+// It is in its own table now (user_photos). The roster query cannot return photo bytes at
+// any projection, because they are not in the table it reads. So the first test below no
+// longer greps a projection string; it asserts the structural fact that replaced it — the
+// roster names only real user columns and pulls in no photo association. The remaining
+// properties (guard fencing, an ids-only presence probe scoped to the page, the derived
+// Overdue overlay, and the per-row endpoint's authorisation) are unchanged and still
+// worth pinning.
 
 const recorder = () => {
   const res = { statusCode: null, body: null, headers: {} };
@@ -30,115 +34,126 @@ const recorder = () => {
   return res;
 };
 
-// Stubs the two collections getOverdueStudentIds reads. adminController destructures that
+// Stubs the two tables getOverdueStudentIds reads. adminController destructures that
 // helper at require time, so patching utils/overdue would not be seen — the honest seam is
 // the queries it actually makes.
 const stubOverdue = (t, outStudentIds = []) => {
-  const originalOuting = OutingRequest.find;
-  const originalLeave = LeaveApplication.find;
+  const originalOuting = OutingRequest.findAll;
+  const originalLeave = LeaveApplication.findAll;
   const past = new Date(Date.now() - 60 * 60 * 1000);
 
-  OutingRequest.find = () => ({
-    select: () => ({ lean: async () => outStudentIds.map((id) => ({ student: id, inTime: past })) }),
-  });
-  LeaveApplication.find = () => ({ select: () => ({ lean: async () => [] }) });
+  OutingRequest.findAll = async () => outStudentIds.map((id) => ({ studentId: id, inTime: past }));
+  LeaveApplication.findAll = async () => [];
 
   t.after(() => {
-    OutingRequest.find = originalOuting;
-    LeaveApplication.find = originalLeave;
+    OutingRequest.findAll = originalOuting;
+    LeaveApplication.findAll = originalLeave;
   });
 };
 
-// getUsers calls User.find twice: the page query, and the ids-only photo probe. They are
-// told apart by the probe's `_id` filter.
-const stubUserFind = (t, rows, photoOwnerIds = []) => {
-  const original = User.find;
-  const seen = { pageFilter: null, pageProjection: null, probeFilter: null, probeProjection: null };
+// getUsers makes two reads: the page of users, and the ids-only photo presence probe.
+// They are different MODELS now rather than the same collection told apart by its filter,
+// which is itself the point of the split.
+const stubRoster = (t, rows, photoOwnerIds = []) => {
+  const originalFindAll = User.findAll;
+  const originalPhoto = UserPhoto.findAll;
+  const originalCount = User.count;
+  const seen = { page: null, probe: null };
 
-  User.find = (filter) => {
-    if (filter && filter._id) {
-      seen.probeFilter = filter;
-      return {
-        select: (projection) => {
-          seen.probeProjection = projection;
-          return { lean: async () => photoOwnerIds.map((id) => ({ _id: id })) };
-        },
-      };
-    }
-    seen.pageFilter = filter;
-    const chain = {
-      select: (projection) => { seen.pageProjection = projection; return chain; },
-      sort: () => chain,
-      skip: () => chain,
-      limit: () => chain,
-      lean: async () => rows.map((r) => ({ ...r })),
-    };
-    return chain;
+  User.findAll = async (options) => {
+    seen.page = options;
+    return rows.map((r) => ({ ...r }));
   };
+  UserPhoto.findAll = async (options) => {
+    seen.probe = options;
+    return photoOwnerIds.map((id) => ({ userId: id }));
+  };
+  User.count = async () => rows.length;
 
-  t.after(() => { User.find = original; });
+  t.after(() => {
+    User.findAll = originalFindAll;
+    UserPhoto.findAll = originalPhoto;
+    User.count = originalCount;
+  });
   return seen;
 };
 
-test('the roster projection never carries photo bytes, for either role', async (t) => {
+test('the roster reads no photo bytes, for either role', async (t) => {
   stubOverdue(t);
-  const rows = [{ _id: 'stu-1', name: 'Asha Kumari' }];
+  const rows = [{ id: 'stu-1', name: 'Asha Kumari' }];
 
   for (const role of ['Guard', 'Admin']) {
-    const seen = stubUserFind(t, rows);
+    const seen = stubRoster(t, rows);
     const res = recorder();
     await getUsers({ user: { role }, query: {} }, res);
 
     assert.equal(res.statusCode, null, `${role} request failed`);
-    assert.ok(seen.pageProjection, `${role} made no page query`);
-    // The whole point. A projection is a space-separated field list, so a substring check
-    // is exact enough and catches it wherever in the string it is added.
-    assert.ok(
-      !seen.pageProjection.includes('photo'),
-      `${role} projection selects photo bytes: ${seen.pageProjection}`
-    );
+    assert.ok(Array.isArray(seen.page.attributes), `${role} made no page query`);
+
+    // Never named in the attribute list...
+    for (const blob of ['photo', 'signature', 'password']) {
+      assert.ok(
+        !seen.page.attributes.includes(blob),
+        `${role} roster selects ${blob}: ${seen.page.attributes.join(' ')}`
+      );
+    }
+    // ...and, the part that is structural rather than conventional: no association that
+    // could carry the bytes is joined in. Naming `photo` in `attributes` would not even
+    // work — it is a virtual over a table this query does not touch.
+    assert.equal(seen.page.include, undefined, `${role} roster joins a photo/signature table`);
+
     // And nothing leaks through the response either.
     assert.equal(res.body[0].photo, undefined);
   }
 });
 
+test('photo bytes are not a column on users at all', () => {
+  // The guarantee behind the test above, asserted directly: there is no users.photo to
+  // select. `photo` exists only as a VIRTUAL that reads the joined user_photos row, so a
+  // careless SELECT * on the roster physically cannot pull a face photo.
+  assert.equal(User.rawAttributes.photo.type.key, 'VIRTUAL');
+  assert.equal(User.rawAttributes.signature.type.key, 'VIRTUAL');
+  assert.equal(UserPhoto.getTableName(), 'user_photos');
+});
+
 test('a guard is pinned to students and to non-confidential fields', async (t) => {
   stubOverdue(t);
-  const seen = stubUserFind(t, [{ _id: 'stu-1', name: 'Asha Kumari' }]);
+  const seen = stubRoster(t, [{ id: 'stu-1', name: 'Asha Kumari' }]);
   const res = recorder();
 
   // Asking for staff explicitly must not widen the guard's view.
   await getUsers({ user: { role: 'Guard' }, query: { role: 'Warden' } }, res);
 
-  assert.equal(seen.pageFilter.role, 'Student');
-  for (const confidential of ['email', 'phoneNumber', 'photo']) {
-    assert.ok(!seen.pageProjection.includes(confidential), `guard can read ${confidential}`);
+  assert.equal(seen.page.where.role, 'Student');
+  for (const confidential of ['email', 'phoneNumber', 'guardianPhoneNumber', 'photo']) {
+    assert.ok(!seen.page.attributes.includes(confidential), `guard can read ${confidential}`);
   }
 });
 
 test('hasPhoto is derived from an ids-only probe scoped to the page', async (t) => {
   stubOverdue(t);
-  const rows = [{ _id: 'stu-1', name: 'A' }, { _id: 'stu-2', name: 'B' }, { _id: 'stu-3', name: 'C' }];
-  const seen = stubUserFind(t, rows, ['stu-1', 'stu-3']);
+  const rows = [{ id: 'stu-1', name: 'A' }, { id: 'stu-2', name: 'B' }, { id: 'stu-3', name: 'C' }];
+  const seen = stubRoster(t, rows, ['stu-1', 'stu-3']);
   const res = recorder();
 
   await getUsers({ user: { role: 'Admin' }, query: {} }, res);
 
   assert.deepEqual(res.body.map((u) => u.hasPhoto), [true, false, true]);
-  // The filter examines `photo` server-side, but the projection must return only ObjectIds:
-  // that is what keeps this second query from re-introducing the payload it exists to avoid.
-  assert.equal(seen.probeProjection, '_id');
+  // The probe returns only the primary key of user_photos — never the blob column. That
+  // is what keeps this second query from re-introducing the payload it exists to avoid.
+  assert.deepEqual(seen.probe.attributes, ['userId']);
   // Bounded to the page, so the probe never scans wider than the response it annotates.
-  assert.deepEqual(seen.probeFilter._id, { $in: ['stu-1', 'stu-2', 'stu-3'] });
+  const ids = seen.probe.where.userId[Object.getOwnPropertySymbols(seen.probe.where.userId)[0]];
+  assert.deepEqual(ids, ['stu-1', 'stu-2', 'stu-3']);
 });
 
 test('the roster overlays derived Overdue and reports its window', async (t) => {
   stubOverdue(t, ['stu-2']);
   const rows = [
-    { _id: 'stu-1', name: 'A', campusStatus: 'Inside' },
-    { _id: 'stu-2', name: 'B', campusStatus: 'Outside' },
+    { id: 'stu-1', name: 'A', campusStatus: 'Inside' },
+    { id: 'stu-2', name: 'B', campusStatus: 'Outside' },
   ];
-  stubUserFind(t, rows);
+  stubRoster(t, rows);
   const res = recorder();
 
   await getUsers({ user: { role: 'Admin' }, query: {} }, res);
@@ -148,17 +163,21 @@ test('the roster overlays derived Overdue and reports its window', async (t) => 
   assert.equal(res.body[1].campusStatus, 'Overdue');
   assert.ok(Array.isArray(res.body));
   assert.equal(res.headers['X-Total-Count'], '2');
+  // raw:true rows skip the model's toJSON, so the controller has to apply the `_id`
+  // contract by hand. Every other reader in the app depends on it being there.
+  assert.equal(res.body[0]._id, 'stu-1');
 });
 
 test('getUserPhoto serves one photo and refuses a guard reading a non-student', async (t) => {
-  const original = User.findById;
+  const original = User.findByPk;
   const people = {
-    'stu-1': { role: 'Student', photo: 'data:image/jpeg;base64,AAAA' },
-    'war-1': { role: 'Warden', photo: 'data:image/jpeg;base64,BBBB' },
-    'stu-2': { role: 'Student', photo: '' },
+    'stu-1': { id: 'stu-1', role: 'Student', photo: 'data:image/jpeg;base64,AAAA' },
+    'war-1': { id: 'war-1', role: 'Warden', photo: 'data:image/jpeg;base64,BBBB' },
+    // No user_photos row: the virtual reads undefined, exactly as an absent Mongo field did.
+    'stu-2': { id: 'stu-2', role: 'Student', photo: undefined },
   };
-  User.findById = (id) => ({ select: () => ({ lean: async () => people[id] || null }) });
-  t.after(() => { User.findById = original; });
+  User.findByPk = async (id) => people[id] || null;
+  t.after(() => { User.findByPk = original; });
 
   const guard = { user: { role: 'Guard' } };
 
@@ -195,13 +214,13 @@ test('getUserPhoto serves one photo and refuses a guard reading a non-student', 
 
 test('student counts are disjoint and sum to the total', async (t) => {
   stubOverdue(t, ['stu-9', 'stu-8']);
-  const original = User.countDocuments;
-  User.countDocuments = async (filter) => {
-    if (filter.campusStatus === 'Inside') return 30;
-    if (filter.campusStatus && filter.campusStatus.$in) return 12;
+  const original = User.count;
+  User.count = async ({ where }) => {
+    if (where.campusStatus === 'Inside') return 30;
+    if (where.campusStatus && typeof where.campusStatus === 'object') return 12;
     return 42;
   };
-  t.after(() => { User.countDocuments = original; });
+  t.after(() => { User.count = original; });
 
   const res = recorder();
   await getStudentCounts({ user: { role: 'Guard' } }, res);
@@ -217,17 +236,22 @@ test('student counts are disjoint and sum to the total', async (t) => {
 
 test('the outside count includes rows legacy-stored as Overdue', async (t) => {
   stubOverdue(t);
-  const original = User.countDocuments;
-  const filters = [];
-  User.countDocuments = async (filter) => { filters.push(filter); return 0; };
-  t.after(() => { User.countDocuments = original; });
+  const original = User.count;
+  const wheres = [];
+  User.count = async ({ where }) => { wheres.push(where); return 0; };
+  t.after(() => { User.count = original; });
 
   await getStudentCounts({ user: { role: 'Admin' } }, recorder());
 
-  // The gate scan only ever writes 'Inside'/'Outside', but the User enum permits 'Overdue'
-  // and older rows may carry it. Counting bare 'Outside' would leave such a row in `total`
-  // and in none of the three tiles.
-  const outsideFilter = filters.find((f) => f.campusStatus && f.campusStatus.$in);
-  assert.ok(outsideFilter, 'outside bucket is not a union — a stored Overdue row vanishes');
-  assert.deepEqual(outsideFilter.campusStatus.$in, ['Outside', 'Overdue']);
+  // The gate scan only ever writes 'Inside'/'Outside', but the campus_status CHECK permits
+  // 'Overdue' and older rows may carry it. Counting bare 'Outside' would leave such a row
+  // in `total` and in none of the three tiles.
+  const outsideWhere = wheres.find(
+    (w) => w.campusStatus && typeof w.campusStatus === 'object'
+  );
+  assert.ok(outsideWhere, 'outside bucket is not a union — a stored Overdue row vanishes');
+  const values = outsideWhere.campusStatus[
+    Object.getOwnPropertySymbols(outsideWhere.campusStatus)[0]
+  ];
+  assert.deepEqual(values, ['Outside', 'Overdue']);
 });

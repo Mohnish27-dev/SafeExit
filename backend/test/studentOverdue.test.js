@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const OutingRequest = require('../src/models/OutingRequest');
+const { OutingRequest } = require('../src/models');
 const { getMyOutingRequests } = require('../src/controllers/outingController');
 
 const responseRecorder = () => {
@@ -22,32 +22,38 @@ const responseRecorder = () => {
   return result;
 };
 
-// find() has two shapes in this handler: the list query, chained
-// .select().sort().skip().limit(), and signaturePresence's id-only probe,
-// find(filter, projection).lean(). These fixtures carry no signatures, so the probe
-// returns nothing. Kept in one place so a change to the chain is a one-line fix.
-const stubFind = (rows) => (filter, projection) => {
-  if (projection) return { lean: async () => [] };
-  const chain = {
-    select: () => chain,
-    sort: () => chain,
-    skip: () => chain,
-    limit: async () => rows,
-  };
-  return chain;
+// findAll() is called twice by this handler: the list query, and signaturePresence's
+// probe, which asks for `id` plus computed IS NOT NULL expressions. The probe is told
+// apart by its `attributes`. These fixtures carry no signatures, so it returns nothing.
+//
+// Simpler to stub than the Mongoose chain it replaces — one call shape instead of a
+// four-link builder — which is the same reason the controller reads more plainly now.
+const stubFindAll = (rows) => async (options = {}) => {
+  const isPresenceProbe = Array.isArray(options.attributes);
+  return isPresenceProbe ? [] : rows;
+};
+
+const stubbed = (t, rows) => {
+  const originalFindAll = OutingRequest.findAll;
+  const originalCount = OutingRequest.count;
+  OutingRequest.findAll = stubFindAll(rows);
+  OutingRequest.count = async () => rows.length;
+  t.after(() => {
+    OutingRequest.findAll = originalFindAll;
+    OutingRequest.count = originalCount;
+  });
 };
 
 test('student outing history derives overdue while preserving the stored Out status', async (t) => {
-  const originalFind = OutingRequest.find;
   const dueAt = new Date(Date.now() - 60_000);
   const request = {
+    id: 'outing-1',
     status: 'Out',
     inTime: dueAt,
-    toObject: () => ({ _id: 'outing-1', status: 'Out', inTime: dueAt }),
+    toJSON: () => ({ _id: 'outing-1', id: 'outing-1', status: 'Out', inTime: dueAt }),
   };
 
-  OutingRequest.find = stubFind([request]);
-  t.after(() => { OutingRequest.find = originalFind; });
+  stubbed(t, [request]);
 
   const req = { user: { _id: 'student-1' } };
   const res = responseRecorder();
@@ -57,6 +63,8 @@ test('student outing history derives overdue while preserving the stored Out sta
   assert.equal(res.statusCode, null);
   assert.equal(res.body[0].status, 'Out');
   assert.equal(res.body[0].isOverdue, true);
+  // Display state only: the STORED status must still be 'Out' so the gate keeps the
+  // movement lifecycle and the audit trail stays honest about what happened.
   assert.equal(request.status, 'Out');
   // The response is still a plain array, and the window is reported alongside it. A short
   // window proves there is nothing past it, so no count query should have been needed.
@@ -66,16 +74,15 @@ test('student outing history derives overdue while preserving the stored Out sta
 });
 
 test('student outing history does not mark a future return time overdue', async (t) => {
-  const originalFind = OutingRequest.find;
   const dueAt = new Date(Date.now() + 60_000);
   const request = {
+    id: 'outing-2',
     status: 'Out',
     inTime: dueAt,
-    toObject: () => ({ _id: 'outing-2', status: 'Out', inTime: dueAt }),
+    toJSON: () => ({ _id: 'outing-2', id: 'outing-2', status: 'Out', inTime: dueAt }),
   };
 
-  OutingRequest.find = stubFind([request]);
-  t.after(() => { OutingRequest.find = originalFind; });
+  stubbed(t, [request]);
 
   const res = responseRecorder();
   await getMyOutingRequests({ user: { _id: 'student-1' } }, res);

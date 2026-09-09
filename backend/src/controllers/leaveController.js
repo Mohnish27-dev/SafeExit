@@ -1,16 +1,18 @@
-const LeaveApplication = require('../models/LeaveApplication');
-const OutingRequest = require('../models/OutingRequest');
+const { Op } = require('sequelize');
+const { LeaveApplication, OutingRequest } = require('../models');
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { expireStaleRequests, expireStaleApplications } = require('../utils/passExpiry');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
+const { estimatedRowCount } = require('../utils/rowCount');
 const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
 const {
   getLeaveSubmissionTimingViolation,
   isBeforeEveningCurfew,
 } = require('../utils/outingRules');
 const {
-  scopedStudentFilter,
+  passScope,
+  mergeWhere,
   forwardedToFilter,
   requestInScope,
   canReadSignatures,
@@ -20,20 +22,42 @@ const {
 const {
   fetchOwnSignature,
   sendSignatureRequired,
-  LIST_PROJECTION,
   signaturePresence,
   withSignatureFlags,
 } = require('../utils/signature');
 
+const QUEUE_STUDENT_FIELDS = ['id', 'name', 'studentId', 'roomNumber', 'hostelName'];
+const WIDE_STUDENT_FIELDS = [...QUEUE_STUDENT_FIELDS, 'department', 'year'];
+const SIGNATURE_ATTRIBUTES = [
+  'studentSignature', 'studentSignatureMime',
+  'caretakerSignature', 'caretakerSignatureMime',
+  'wardenSignature', 'wardenSignatureMime',
+];
+
+// See the note in outingController: MongoDB sorted a null decidedAt as the lowest value
+// and Postgres sorts it as the highest, so without NULLS LAST every undecided row would
+// jump to the top of the history.
+const NEWEST_DECISION_FIRST = [
+  ['decidedAt', 'DESC NULLS LAST'],
+  ['updatedAt', 'DESC NULLS LAST'],
+];
+
 // 'Forwarded' counts as live too — an application sitting with the warden must block a
 // second one just like a Pending one does, or a student could stack approvals.
-// Sourced from config/passStatuses.js because the unique partial index in
-// models/LeaveApplication.js filters on the same list; if the two drift, the index enforces
-// a different rule than this check and the double-submit race reopens.
+// Sourced from config/passStatuses.js because the partial unique index
+// one_active_leave_per_student filters on the same list; if the two drift, the index
+// enforces a different rule than this check and the double-submit race reopens.
 const ACTIVE_LEAVE_STATUSES = ACTIVE_PASS_STATUSES;
 
-// Shared by the pre-check below and the E11000 branch in the catch, so a student who loses
-// the insert race sees exactly the message they'd have seen by arriving a moment later.
+const ONE_ACTIVE_LEAVE_CONSTRAINT = 'one_active_leave_per_student';
+
+const isOneActivePassViolation = (error, constraint) =>
+  error?.name === 'SequelizeUniqueConstraintError' &&
+  (error.parent?.constraint === constraint || error.parent?.constraint === undefined);
+
+// Shared by the pre-check below and the unique-violation branch in the catch, so a student
+// who loses the insert race sees exactly the message they'd have seen by arriving a moment
+// later.
 const blockingLeaveMessage = (status) =>
   status === 'Out'
     ? 'You are currently on leave. Return to campus and get scanned back in at the gate before applying for new leave.'
@@ -47,9 +71,9 @@ const blockingLeaveMessage = (status) =>
 // `decision` existed — if its status still happens to be the verdict. The second clause is
 // what keeps pre-existing history visible without a migration.
 const DECIDED_FILTER = {
-  $or: [
-    { decision: { $in: ['Approved', 'Rejected'] } },
-    { decision: { $exists: false }, status: { $in: ['Approved', 'Rejected'] } },
+  [Op.or]: [
+    { decision: { [Op.in]: ['Approved', 'Rejected'] } },
+    { decision: null, status: { [Op.in]: ['Approved', 'Rejected'] } },
   ],
 };
 
@@ -57,10 +81,10 @@ const DECIDED_FILTER = {
 // date came and went). History still shows the verdict; this is the footnote explaining it.
 const LAPSED_STATUSES = ['Cancelled', 'Expired'];
 
-// Normalises a history row: legacy docs get `decision` derived from status, and every row
+// Normalises a history row: legacy rows get `decision` derived from status, and every row
 // gets `lapsed` so the dashboards don't each have to re-derive it.
 const withDecisionMeta = (doc) => {
-  const obj = doc.toObject();
+  const obj = doc.toJSON();
   obj.decision = obj.decision || (['Approved', 'Rejected'].includes(obj.status) ? obj.status : null);
   obj.lapsed = LAPSED_STATUSES.includes(obj.status) ? obj.status : null;
   return obj;
@@ -87,7 +111,7 @@ const createLeaveApplication = async (req, res) => {
     //
     // KEEP THIS AHEAD of the active-leave query below: the frontend re-submits automatically
     // once the student captures a signature in response to this 428, which is only safe
-    // while the rejection happens before any document is created or state is touched.
+    // while the rejection happens before any row is created or state is touched.
     const studentSignature = await fetchOwnSignature(req.user);
     if (!studentSignature) {
       return sendSignatureRequired(
@@ -136,9 +160,8 @@ const createLeaveApplication = async (req, res) => {
 
     // One live leave at a time. Expire any stale Pending/Approved passes first so a
     // missed leave date doesn't wrongly block a fresh application.
-    const existingActive = await LeaveApplication.find({
-      student: req.user._id,
-      status: { $in: ACTIVE_LEAVE_STATUSES },
+    const existingActive = await LeaveApplication.findAll({
+      where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_LEAVE_STATUSES } },
     });
     await expireStaleApplications(existingActive);
     const blockingLeave = existingActive.find((doc) => ACTIVE_LEAVE_STATUSES.includes(doc.status));
@@ -147,13 +170,12 @@ const createLeaveApplication = async (req, res) => {
       return res.status(409).json({
         message: blockingLeaveMessage(blockingLeave.status),
         status: blockingLeave.status,
-        activeLeaveId: blockingLeave._id,
+        activeLeaveId: blockingLeave.id,
       });
     }
 
-    const existingOutings = await OutingRequest.find({
-      student: req.user._id,
-      status: { $in: ACTIVE_LEAVE_STATUSES },
+    const existingOutings = await OutingRequest.findAll({
+      where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_LEAVE_STATUSES } },
     });
     await expireStaleRequests(existingOutings);
     const blockingOuting = existingOutings.find((doc) => ACTIVE_LEAVE_STATUSES.includes(doc.status));
@@ -161,7 +183,7 @@ const createLeaveApplication = async (req, res) => {
       return res.status(409).json({
         message: blockingOutingForLeaveMessage(blockingOuting.status),
         status: blockingOuting.status,
-        activeRequestId: blockingOuting._id,
+        activeRequestId: blockingOuting.id,
       });
     }
 
@@ -175,7 +197,7 @@ const createLeaveApplication = async (req, res) => {
     }
 
     const application = await LeaveApplication.create({
-      student: req.user._id,
+      studentId: req.user._id,
       destination,
       reason,
       leaveDate: leaveDateObj,
@@ -183,17 +205,17 @@ const createLeaveApplication = async (req, res) => {
       acknowledgement: true,
       status: 'Pending',
       studentSignature,
-      targetCaretaker: targetCaretaker ? targetCaretaker._id : undefined,
+      targetCaretaker: targetCaretaker ? targetCaretaker.id : null,
     });
 
     sseHub.broadcast('leave:changed', {
       reason: 'created',
-      id: application._id,
+      id: application.id,
       status: application.status,
     });
 
     const scope = targetCaretaker
-      ? { caretakerId: targetCaretaker._id }
+      ? { caretakerId: targetCaretaker.id }
       : { hostelName: req.user.hostelName, gender: req.user.gender };
     notifyCaretakers(scope, {
       title: '📋 New Leave Application',
@@ -204,20 +226,21 @@ const createLeaveApplication = async (req, res) => {
     res.status(201).json(application);
   } catch (error) {
     // Lost the insert race — a concurrent POST from the same student committed first and
-    // the unique partial index on {student} filtered to ACTIVE_LEAVE_STATUSES rejected
-    // this one. Answer with the same 409 the pre-check would have produced.
-    if (error && error.code === 11000) {
+    // one_active_leave_per_student rejected this one. Answer with the same 409 the
+    // pre-check would have produced. See outingController for why the constraint name is
+    // asserted rather than treating every duplicate key as this case.
+    if (isOneActivePassViolation(error, ONE_ACTIVE_LEAVE_CONSTRAINT)) {
       const blocking = await LeaveApplication.findOne({
-        student: req.user._id,
-        status: { $in: ACTIVE_LEAVE_STATUSES },
-      }).select('_id status');
+        where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_LEAVE_STATUSES } },
+        attributes: ['id', 'status'],
+      });
 
       return res.status(409).json({
         message: blocking
           ? blockingLeaveMessage(blocking.status)
           : 'You already have a live leave application. Wait for a decision or cancel it before applying again.',
         status: blocking ? blocking.status : undefined,
-        activeLeaveId: blocking ? blocking._id : undefined,
+        activeLeaveId: blocking ? blocking.id : undefined,
       });
     }
     res.status(500).json({ message: error.message });
@@ -228,25 +251,26 @@ const createLeaveApplication = async (req, res) => {
 const getMyLeaveApplications = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { student: req.user._id };
-    const applications = await LeaveApplication.find(filter)
-      .select(LIST_PROJECTION)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const where = { studentId: req.user._id };
+    const applications = await LeaveApplication.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+    });
     await expireStaleApplications(applications);
 
     const presence = await signaturePresence(
       LeaveApplication,
-      applications.map((a) => a._id),
+      applications.map((a) => a.id),
       ['caretakerSignature', 'wardenSignature']
     );
 
-    return sendPage(res, applications.map((a) => withSignatureFlags(a.toObject(), presence)), {
+    return sendPage(res, applications.map((a) => withSignatureFlags(a.toJSON(), presence)), {
       limit,
       skip,
       label: 'leave/myrequests',
-      count: () => LeaveApplication.countDocuments(filter),
+      count: () => LeaveApplication.count({ where }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -256,9 +280,12 @@ const getMyLeaveApplications = async (req, res) => {
 // GET /api/leave/:id/signatures — private (owner student / routed staff)
 const getLeaveSignatures = async (req, res) => {
   try {
-    const application = await LeaveApplication.findById(req.params.id)
-      .select('student targetCaretaker forwardedTo studentSignature caretakerSignature wardenSignature')
-      .populate('student', 'gender hostelName');
+    // Naming the signature attributes explicitly overrides the model's defaultScope
+    // exclusion for this one query — the single endpoint that serves the bytes.
+    const application = await LeaveApplication.findByPk(req.params.id, {
+      attributes: ['id', 'studentId', 'targetCaretaker', 'forwardedTo', ...SIGNATURE_ATTRIBUTES],
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+    });
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
@@ -283,23 +310,27 @@ const getLeaveSignatures = async (req, res) => {
 const getAllLeaveApplications = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const applications = await LeaveApplication.find({})
-      .select('-studentSignature -caretakerSignature -wardenSignature')
-      .populate('student', 'name studentId roomNumber hostelName department year')
-      .populate('targetCaretaker', 'name')
-      .populate('forwardedTo', 'name')
-      .populate('forwardedBy', 'name')
-      .populate('approvedBy', 'name role')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const applications = await LeaveApplication.findAll({
+      include: [
+        { association: 'student', attributes: WIDE_STUDENT_FIELDS },
+        { association: 'targetCaretakerUser', attributes: ['id', 'name'] },
+        { association: 'forwardedToUser', attributes: ['id', 'name'] },
+        { association: 'forwardedByUser', attributes: ['id', 'name'] },
+        { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
+      ],
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     await expireStaleApplications(applications);
     return sendPage(res, applications, {
       limit,
       skip,
       label: 'leave/all',
-      count: () => LeaveApplication.estimatedDocumentCount(),
+      // The analogue of estimatedDocumentCount — see utils/rowCount.js.
+      count: () => estimatedRowCount(LeaveApplication),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -310,13 +341,17 @@ const getAllLeaveApplications = async (req, res) => {
 const getPendingLeaveApplications = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { status: 'Pending', ...(await scopedStudentFilter(req.user)) };
-    const applications = await LeaveApplication.find(filter)
-      .select(LIST_PROJECTION)
-      .populate('student', 'name studentId roomNumber hostelName')
-      .sort({ leaveDate: 1 })
-      .skip(skip)
-      .limit(limit);
+    const scope = passScope(LeaveApplication, req.user, QUEUE_STUDENT_FIELDS);
+    const where = mergeWhere(scope.where, { status: 'Pending' });
+
+    const applications = await LeaveApplication.findAll({
+      where,
+      include: scope.include,
+      order: [['leaveDate', 'ASC']],
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     await expireStaleApplications(applications);
     const stillPending = applications.filter((a) => a.status === 'Pending');
@@ -325,18 +360,18 @@ const getPendingLeaveApplications = async (req, res) => {
     // caretaker's or warden's.
     const presence = await signaturePresence(
       LeaveApplication,
-      stillPending.map((a) => a._id),
+      stillPending.map((a) => a.id),
       ['studentSignature', 'caretakerSignature', 'wardenSignature']
     );
 
     // `fetched` is the window, not stillPending.length — expiry above can drop rows, and a
     // short *result* from a full window must not read as "nothing more to fetch".
-    return sendPage(res, stillPending.map((a) => withSignatureFlags(a.toObject(), presence)), {
+    return sendPage(res, stillPending.map((a) => withSignatureFlags(a.toJSON(), presence)), {
       limit,
       skip,
       fetched: applications.length,
       label: 'leave/pending',
-      count: () => LeaveApplication.countDocuments(filter),
+      count: () => LeaveApplication.count({ where, include: scope.include, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -351,25 +386,28 @@ const getPendingLeaveApplications = async (req, res) => {
 const getLeaveHistory = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = {
-      $and: [
-        { $or: [DECIDED_FILTER, { status: 'Forwarded' }] },
-        await scopedStudentFilter(req.user),
+    const scope = passScope(LeaveApplication, req.user, QUEUE_STUDENT_FIELDS);
+    const where = mergeWhere(scope.where, {
+      [Op.or]: [DECIDED_FILTER, { status: 'Forwarded' }],
+    });
+
+    const applications = await LeaveApplication.findAll({
+      where,
+      include: [
+        ...scope.include,
+        { association: 'forwardedToUser', attributes: ['id', 'name'] },
+        { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
       ],
-    };
-    const applications = await LeaveApplication.find(filter)
-      .select(LIST_PROJECTION)
-      .populate('student', 'name studentId roomNumber hostelName')
-      .populate('forwardedTo', 'name')
-      .populate('approvedBy', 'name role')
-      .sort({ decidedAt: -1, updatedAt: -1 })
-      .skip(skip)
-      .limit(limit);
+      order: NEWEST_DECISION_FIRST,
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     // Same viewer as /leave/pending — mapLeaveHistory spreads mapLeavePending.
     const presence = await signaturePresence(
       LeaveApplication,
-      applications.map((a) => a._id),
+      applications.map((a) => a.id),
       ['studentSignature', 'caretakerSignature', 'wardenSignature']
     );
 
@@ -380,7 +418,7 @@ const getLeaveHistory = async (req, res) => {
         limit,
         skip,
         label: 'leave/history',
-        count: () => LeaveApplication.countDocuments(filter),
+        count: () => LeaveApplication.count({ where, include: scope.include, distinct: true }),
       }
     );
   } catch (error) {
@@ -412,7 +450,9 @@ const updateLeaveStatus = async (req, res) => {
       );
     }
 
-    const application = await LeaveApplication.findById(req.params.id).populate('student', 'gender hostelName');
+    const application = await LeaveApplication.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+    });
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
@@ -445,7 +485,7 @@ const updateLeaveStatus = async (req, res) => {
 
       sseHub.broadcast('leave:changed', {
         reason: 'expired',
-        id: application._id,
+        id: application.id,
         status: 'Expired',
       });
 
@@ -471,29 +511,29 @@ const updateLeaveStatus = async (req, res) => {
       application.caretakerSignature = caretakerSignature;
     }
 
-    const updatedApplication = await application.save();
+    await application.save();
 
     sseHub.broadcast('leave:changed', {
       reason: 'status',
-      id: updatedApplication._id,
-      status: updatedApplication.status,
+      id: application.id,
+      status: application.status,
     });
 
-    res.json(updatedApplication);
+    res.json(application);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
 
+// PATCH /api/leave/:id/forward — private (Caretaker)
 const forwardLeaveApplication = async (req, res) => {
   const { note } = req.body;
 
   try {
-    const application = await LeaveApplication.findById(req.params.id).populate(
-      'student',
-      'gender hostelName name'
-    );
+    const application = await LeaveApplication.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName', 'name'] }],
+    });
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
@@ -515,7 +555,7 @@ const forwardLeaveApplication = async (req, res) => {
     if (Date.now() > new Date(application.leaveDate).getTime()) {
       application.status = 'Expired';
       await application.save();
-      sseHub.broadcast('leave:changed', { reason: 'expired', id: application._id, status: 'Expired' });
+      sseHub.broadcast('leave:changed', { reason: 'expired', id: application.id, status: 'Expired' });
       return res.status(409).json({
         message: 'This application has expired — the leave date has already passed. It can no longer be forwarded.',
         status: 'Expired',
@@ -532,22 +572,22 @@ const forwardLeaveApplication = async (req, res) => {
     }
 
     application.status = 'Forwarded';
-    application.forwardedTo = warden._id;
+    application.forwardedTo = warden.id;
     application.forwardedBy = req.user._id;
-    application.forwardedNote = note || undefined;
+    application.forwardedNote = note || null;
     application.forwardedAt = new Date();
 
-    const updated = await application.save();
+    await application.save();
 
-    sseHub.broadcast('leave:changed', { reason: 'forwarded', id: updated._id, status: 'Forwarded' });
+    sseHub.broadcast('leave:changed', { reason: 'forwarded', id: application.id, status: 'Forwarded' });
 
-    notifyWarden(warden._id, {
+    notifyWarden(warden.id, {
       title: '⬆️ Leave Forwarded to You',
       body: `${req.user.name} forwarded ${application.student.name}'s leave application for your decision.`,
       url: '/dashboard/warden?view=leave',
     });
 
-    res.json(updated);
+    res.json(application);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -557,14 +597,18 @@ const forwardLeaveApplication = async (req, res) => {
 const getForwardedLeaveApplications = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = forwardedToFilter(req.user);
-    const applications = await LeaveApplication.find(filter)
-      .select(LIST_PROJECTION)
-      .populate('student', 'name studentId roomNumber hostelName')
-      .populate('forwardedBy', 'name')
-      .sort({ forwardedAt: 1 })
-      .skip(skip)
-      .limit(limit);
+    const where = forwardedToFilter(req.user);
+    const applications = await LeaveApplication.findAll({
+      where,
+      include: [
+        { association: 'student', attributes: QUEUE_STUDENT_FIELDS },
+        { association: 'forwardedByUser', attributes: ['id', 'name'] },
+      ],
+      order: [['forwardedAt', 'ASC']],
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     // A forwarded pass can still go stale while it waits on the warden.
     await expireStaleApplications(applications);
@@ -573,16 +617,16 @@ const getForwardedLeaveApplications = async (req, res) => {
     // ForwardedLeaveView renders the student's signature in the letter.
     const presence = await signaturePresence(
       LeaveApplication,
-      stillForwarded.map((a) => a._id),
+      stillForwarded.map((a) => a.id),
       ['studentSignature']
     );
 
-    return sendPage(res, stillForwarded.map((a) => withSignatureFlags(a.toObject(), presence)), {
+    return sendPage(res, stillForwarded.map((a) => withSignatureFlags(a.toJSON(), presence)), {
       limit,
       skip,
       fetched: applications.length,
       label: 'leave/forwarded',
-      count: () => LeaveApplication.countDocuments(filter),
+      count: () => LeaveApplication.count({ where }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -591,26 +635,32 @@ const getForwardedLeaveApplications = async (req, res) => {
 
 // GET /api/leave/warden-history — private (Warden); every decided application in their
 // hostel, not just the escalations they personally ruled on, so the warden and the caretaker
-// see the same record. scopedStudentFilter's Warden branch resolves managedHostel -> student
-// ids, and returns an empty set for an unassigned warden.
+// see the same record. passScope's Warden branch joins on managedHostel, and matches
+// nothing for an unassigned warden.
 const getWardenLeaveHistory = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const filter = { $and: [DECIDED_FILTER, await scopedStudentFilter(req.user)] };
-    const applications = await LeaveApplication.find(filter)
-      .select(LIST_PROJECTION)
-      .populate('student', 'name studentId roomNumber hostelName')
-      .populate('forwardedBy', 'name')
-      .populate('approvedBy', 'name role')
-      .sort({ decidedAt: -1, updatedAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const scope = passScope(LeaveApplication, req.user, QUEUE_STUDENT_FIELDS);
+    const where = mergeWhere(scope.where, DECIDED_FILTER);
+
+    const applications = await LeaveApplication.findAll({
+      where,
+      include: [
+        ...scope.include,
+        { association: 'forwardedByUser', attributes: ['id', 'name'] },
+        { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
+      ],
+      order: NEWEST_DECISION_FIRST,
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
 
     return sendPage(res, applications.map(withDecisionMeta), {
       limit,
       skip,
       label: 'leave/warden-history',
-      count: () => LeaveApplication.countDocuments(filter),
+      count: () => LeaveApplication.count({ where, include: scope.include, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -644,10 +694,9 @@ const updateWardenLeaveStatus = async (req, res) => {
       );
     }
 
-    const application = await LeaveApplication.findById(req.params.id).populate(
-      'student',
-      'gender hostelName'
-    );
+    const application = await LeaveApplication.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+    });
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
@@ -669,7 +718,7 @@ const updateWardenLeaveStatus = async (req, res) => {
     if (status === 'Approved' && Date.now() > new Date(application.leaveDate).getTime()) {
       application.status = 'Expired';
       await application.save();
-      sseHub.broadcast('leave:changed', { reason: 'expired', id: application._id, status: 'Expired' });
+      sseHub.broadcast('leave:changed', { reason: 'expired', id: application.id, status: 'Expired' });
       return res.status(409).json({
         message: 'This application has expired — the leave date has already passed. It can no longer be approved.',
         status: 'Expired',
@@ -691,9 +740,9 @@ const updateWardenLeaveStatus = async (req, res) => {
       application.caretakerSignature = wardenSignature;
     }
 
-    const updated = await application.save();
+    await application.save();
 
-    sseHub.broadcast('leave:changed', { reason: 'warden-status', id: updated._id, status: updated.status });
+    sseHub.broadcast('leave:changed', { reason: 'warden-status', id: application.id, status: application.status });
 
     // Let the caretaker who forwarded it know the outcome (their view is read-only now).
     if (application.forwardedBy) {
@@ -707,7 +756,7 @@ const updateWardenLeaveStatus = async (req, res) => {
       );
     }
 
-    res.json(updated);
+    res.json(application);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -716,13 +765,13 @@ const updateWardenLeaveStatus = async (req, res) => {
 // PATCH /api/leave/:id/cancel — private (Student)
 const cancelLeaveApplication = async (req, res) => {
   try {
-    const application = await LeaveApplication.findById(req.params.id);
+    const application = await LeaveApplication.findByPk(req.params.id);
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
     }
 
-    if (application.student.toString() !== req.user._id.toString()) {
+    if (String(application.studentId) !== String(req.user._id)) {
       return res.status(403).json({ message: 'You can only cancel your own leave applications.' });
     }
 
@@ -738,15 +787,15 @@ const cancelLeaveApplication = async (req, res) => {
     }
 
     application.status = 'Cancelled';
-    const updatedApplication = await application.save();
+    await application.save();
 
     sseHub.broadcast('leave:changed', {
       reason: 'cancelled',
-      id: updatedApplication._id,
+      id: application.id,
       status: 'Cancelled',
     });
 
-    res.json(updatedApplication);
+    res.json(application);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

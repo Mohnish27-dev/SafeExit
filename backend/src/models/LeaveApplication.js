@@ -1,131 +1,68 @@
-const mongoose = require('mongoose');
-const { ACTIVE_PASS_STATUSES, ONE_ACTIVE_LEAVE_INDEX } = require('../config/passStatuses');
+const { DataTypes } = require('sequelize');
+const { getSequelize } = require('../config/sequelize');
+const { uuidPk, legacyId, timestampFields, blobAttribute, blobColumns } = require('./_shared');
 
-const leaveApplicationSchema = new mongoose.Schema({
-  student: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  destination: {
-    type: String,
-    required: true
-  },
-  reason: {
-    type: String,
-    required: true
-  },
-  leaveDate: {
-    type: Date,
-    required: true
-  },
-  returnDate: {
-    type: Date,
-    required: true
-  },
-  // Audit trail of what the student agreed to — not a security boundary.
-  acknowledgement: {
-    type: Boolean,
-    default: false
-  },
-  status: {
-    // Pending/Approved -> Expired happens lazily at read time; Out/Returned only via gate scans.
-    type: String,
-    enum: ['Pending', 'Approved', 'Rejected', 'Cancelled', 'Expired', 'Out', 'Returned', 'Forwarded'],
-    default: 'Pending'
-  },
+// Mirrors models/OutingRequest.js — including the one_active_leave_per_student partial
+// unique index and the signature-excluding defaultScope. See the notes there.
+//
+// KNOWN GAP, carried over unchanged from MongoDB: the two per-table indexes cannot stop a
+// student holding one active outing AND one active leave at once. That rule lives in
+// application code (test/crossCollectionPassBlocking.test.js pins it) and stays there for
+// now. Postgres can close it properly with a shared active_pass_locks table written in
+// the same transaction as the pass — a deliberate post-cutover decision, not something to
+// bundle into the port.
 
-  decision: {
-    type: String,
-    enum: ['Approved', 'Rejected'],
-    default: undefined
-  },
-  decidedAt: {
-    type: Date,
-    default: null
-  },
-  decidedByRole: {
-    type: String,
-    enum: ['Caretaker', 'Warden'],
-    default: undefined
-  },
-  remarks: {
-    type: String
-  },
-  // Drawn signatures (base64 image data URLs), same storage style as User.photo.
+const SIGNATURE_ATTRIBUTES = ['studentSignature', 'caretakerSignature', 'wardenSignature'];
 
-  studentSignature: {
-    type: String
-  },
-  caretakerSignature: {
-    type: String
-  },
-  // The warden's own signature, stamped when a forwarded application is warden-approved.
-  wardenSignature: {
-    type: String
-  },
-  approvedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  targetCaretaker: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-
-  forwardedTo: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  forwardedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  forwardedNote: {
-    type: String
-  },
-  forwardedAt: {
-    type: Date,
-    default: null
-  }
-}, {
-  timestamps: true
-});
-
-// Indexes — mirrors models/OutingRequest.js; see the notes there.
-
-// createLeaveApplication's active-application block, plus the gate scan's
-// resolveApprovedPass/resolveOutPass. {student:1} prefix serves getMyLeaveApplications.
-leaveApplicationSchema.index({ student: 1, status: 1, createdAt: -1 });
-
-// getPendingLeaveApplications — the caretaker queue, oldest first.
-leaveApplicationSchema.index({ status: 1, createdAt: 1 });
-
-// getForwardedLeaveApplications — the warden's action queue.
-leaveApplicationSchema.index({ forwardedTo: 1, status: 1, forwardedAt: 1 });
-
-// The targetCaretaker branch of the caretaker scope filter (utils/hostelScope.js).
-leaveApplicationSchema.index({ targetCaretaker: 1 });
-
-// getAllLeaveApplications — unfiltered campus-wide list.
-leaveApplicationSchema.index({ createdAt: -1 });
-
-// getLeaveHistory / getWardenLeaveHistory sort.
-leaveApplicationSchema.index({ decidedAt: -1 });
-
-// Correctness guard, not a performance one — the mirror of the index in
-// models/OutingRequest.js. See the long note there for why the check-then-create in
-// createLeaveApplication cannot close this race in application code, why $in inside
-// partialFilterExpression needs MongoDB 6.0+, and why utils/verifyIndexes.js asserts the
-// build by name at startup instead of trusting autoIndex.
-leaveApplicationSchema.index(
-  { student: 1 },
+const LeaveApplication = getSequelize().define(
+  'LeaveApplication',
   {
-    unique: true,
-    partialFilterExpression: { status: { $in: ACTIVE_PASS_STATUSES } },
-    name: ONE_ACTIVE_LEAVE_INDEX,
+    id: uuidPk(),
+    legacyId: legacyId(),
+
+    studentId: { type: DataTypes.UUID, allowNull: false, field: 'student_id' },
+
+    destination: { type: DataTypes.TEXT, allowNull: false },
+    reason: { type: DataTypes.TEXT, allowNull: false },
+    leaveDate: { type: DataTypes.DATE, allowNull: false, field: 'leave_date' },
+    returnDate: { type: DataTypes.DATE, allowNull: false, field: 'return_date' },
+
+    // Audit trail of what the student agreed to — not a security boundary.
+    acknowledgement: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+
+    // Pending/Approved -> Expired happens lazily at read time; Out/Returned only via
+    // gate scans.
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'Pending' },
+
+    decision: { type: DataTypes.TEXT },
+    decidedAt: { type: DataTypes.DATE, field: 'decided_at' },
+    decidedByRole: { type: DataTypes.TEXT, field: 'decided_by_role' },
+    remarks: { type: DataTypes.TEXT },
+
+    ...blobAttribute('studentSignature', 'student_signature', 'image/png'),
+    ...blobAttribute('caretakerSignature', 'caretaker_signature', 'image/png'),
+    ...blobAttribute('wardenSignature', 'warden_signature', 'image/png'),
+
+    approvedBy: { type: DataTypes.UUID, field: 'approved_by' },
+    targetCaretaker: { type: DataTypes.UUID, field: 'target_caretaker' },
+    forwardedTo: { type: DataTypes.UUID, field: 'forwarded_to' },
+    forwardedBy: { type: DataTypes.UUID, field: 'forwarded_by' },
+    forwardedNote: { type: DataTypes.TEXT, field: 'forwarded_note' },
+    forwardedAt: { type: DataTypes.DATE, field: 'forwarded_at' },
+
+    ...timestampFields,
+  },
+  {
+    tableName: 'leave_applications',
+    defaultScope: {
+      attributes: { exclude: SIGNATURE_ATTRIBUTES.flatMap(blobColumns) },
+    },
+    scopes: {
+      withSignatures: {},
+    },
   }
 );
 
-const LeaveApplication = mongoose.model('LeaveApplication', leaveApplicationSchema);
+LeaveApplication.SIGNATURE_ATTRIBUTES = SIGNATURE_ATTRIBUTES;
+
 module.exports = LeaveApplication;

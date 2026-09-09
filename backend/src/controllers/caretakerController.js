@@ -1,7 +1,7 @@
-const User = require('../models/User');
+const { Op } = require('sequelize');
+const { User } = require('../models');
 const { genderForHostel } = require('../config/hostels');
-
-const HOSTEL_COLLATION = { locale: 'en', strength: 2 };
+const { ciEquals } = require('../utils/ciCompare');
 
 // GET /api/caretaker/selectable — private (Student)
 // Lists the caretakers a student may route a request to: every assigned caretaker whose
@@ -15,14 +15,18 @@ const getSelectableCaretakers = async (req, res) => {
       return res.json([]);
     }
 
-    const caretakers = await User.find({ role: 'Caretaker', managedGender: gender })
-      .select('_id name managedHostel')
-      .sort({ managedHostel: 1 })
-      .lean();
+    const caretakers = await User.findAll({
+      where: { role: 'Caretaker', managedGender: gender },
+      attributes: ['id', 'name', 'managedHostel'],
+      order: [['managedHostel', 'ASC']],
+      raw: true,
+    });
 
     const ownHostel = String(req.user.hostelName || '').trim().toLowerCase();
     const list = caretakers.map((w) => ({
-      _id: w._id,
+      // The response key stays `_id`: the student's caretaker picker sends this value
+      // straight back as targetCaretaker.
+      _id: w.id,
       name: w.name,
       hostel: w.managedHostel,
       isDefault: String(w.managedHostel || '').trim().toLowerCase() === ownHostel,
@@ -45,11 +49,15 @@ const getCaretakerStats = async (req, res) => {
 
     // Gate scans maintain campusStatus atomically, making it the live occupancy source.
     // Include Overdue for older records even though overdue is normally derived at read time.
-    const outNow = await User.countDocuments({
-      role: 'Student',
-      hostelName: managedHostel,
-      campusStatus: { $in: ['Outside', 'Overdue'] },
-    }).collation(HOSTEL_COLLATION);
+    // ciEquals replaces .collation({locale:'en',strength:2}) and matches the shape of the
+    // users_role_hostel_ci functional index.
+    const outNow = await User.count({
+      where: {
+        role: 'Student',
+        campusStatus: { [Op.in]: ['Outside', 'Overdue'] },
+        [Op.and]: [ciEquals('hostel_name', managedHostel)],
+      },
+    });
 
     res.json({ outNow });
   } catch (error) {

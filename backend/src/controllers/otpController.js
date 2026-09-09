@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const EmailOtp = require('../models/EmailOtp');
-const User = require('../models/User');
+const { Op } = require('sequelize');
+const { EmailOtp, User } = require('../models');
 const { sendMailWithin, isMailConfigured } = require('../utils/mailer');
 const { isValidStudentEmail, normalizeEmail } = require('../config/emailPolicy');
 
@@ -39,13 +39,13 @@ const sendOtp = async (req, res) => {
       return res.status(400).json({ message: 'Please use your college email ending in @nitp.ac.in.' });
     }
 
-    const existing = await User.findOne({ $or: [{ email }, { loginId: email }] });
+    const existing = await User.findOne({ where: { [Op.or]: [{ email }, { loginId: email }] } });
     if (existing) {
       return res.status(409).json({ message: 'An account with this email already exists. Please log in instead.' });
     }
 
     // Resend cooldown to prevent inbox spam.
-    const prior = await EmailOtp.findOne({ email, purpose: PURPOSE });
+    const prior = await EmailOtp.findOne({ where: { email, purpose: PURPOSE } });
     if (prior && Date.now() - prior.lastSentAt.getTime() < RESEND_COOLDOWN_MS) {
       const waitMs = RESEND_COOLDOWN_MS - (Date.now() - prior.lastSentAt.getTime());
       return res.status(429).json({
@@ -55,10 +55,12 @@ const sendOtp = async (req, res) => {
 
     const otp = generateOtp();
     const otpHash = await EmailOtp.hashOtp(otp);
-    await EmailOtp.findOneAndUpdate(
-      { email, purpose: PURPOSE },
+    // One live code per email+purpose: a resend overwrites, which the UNIQUE
+    // (email, purpose) constraint now makes a single atomic statement rather than a
+    // find-then-write that two simultaneous resends could interleave.
+    await EmailOtp.upsert(
       { email, purpose: PURPOSE, otpHash, attempts: 0, lastSentAt: new Date(), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
-      { upsert: true, setDefaultsOnInsert: true }
+      { conflictFields: ['email', 'purpose'] }
     );
 
     // Bounded wait: a provider that refuses us fails fast and the student is told so; a
@@ -80,7 +82,7 @@ const sendOtp = async (req, res) => {
       // is lost: the upsert above already overwrote any previous otpHash, so the earlier
       // code was dead the moment this request ran.
       try {
-        await EmailOtp.deleteOne({ email, purpose: PURPOSE });
+        await EmailOtp.destroy({ where: { email, purpose: PURPOSE } });
       } catch {
         // Best-effort; the student can still retry once the cooldown lapses.
       }
@@ -113,7 +115,7 @@ const verifyOtp = async (req, res) => {
       return res.status(400).json({ message: 'Please enter the 6-digit code.' });
     }
 
-    const record = await EmailOtp.findOne({ email, purpose: PURPOSE });
+    const record = await EmailOtp.findOne({ where: { email, purpose: PURPOSE } });
     if (!record || record.expiresAt.getTime() < Date.now()) {
       return res.status(400).json({ message: 'This code has expired. Please request a new one.' });
     }
@@ -123,14 +125,16 @@ const verifyOtp = async (req, res) => {
 
     const ok = await record.matchOtp(otp);
     if (!ok) {
-      record.attempts += 1;
-      await record.save();
+      // UPDATE ... SET attempts = attempts + 1 RETURNING, not read-modify-write. This is
+      // a brute-force cap, so two simultaneous wrong guesses must cost two attempts —
+      // under the old save() the second read a stale count and gave one back for free.
+      await record.increment('attempts');
       const remaining = Math.max(0, MAX_OTP_ATTEMPTS - record.attempts);
       return res.status(400).json({ message: `Incorrect code. ${remaining} attempt(s) remaining.` });
     }
 
     // Burn the single-use code, hand back the signed proof.
-    await EmailOtp.deleteOne({ _id: record._id });
+    await EmailOtp.destroy({ where: { id: record.id } });
     const emailVerificationToken = issueVerificationToken(email);
     return res.status(200).json({ verified: true, emailVerificationToken });
   } catch (error) {

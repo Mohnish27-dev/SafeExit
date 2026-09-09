@@ -1,8 +1,7 @@
-import { api, tok, record, results, mongoose, server, mongod, istAt, nowIstMinutes,
+import { api, tok, record, results, teardown, istAt, nowIstMinutes,
   User, OutingRequest, LeaveApplication, ScanLog, males, females, T,
   ctF, ctM, wdF, SIG } from './harness.mjs';
 
-if (!/127\.0\.0\.1|localhost/.test(mongoose.connection.host || '')) { console.error('ABORT: not local'); process.exit(1); }
 
 const NOW = nowIstMinutes();
 const dep = () => istAt(Math.min(19, Math.floor(NOW / 60) + 2), 0);
@@ -18,7 +17,9 @@ const okWindow = NOW >= 6 * 60 && NOW <= 19 * 60 + 59;
   const pend = await api('/api/outing/pending', { token: T.ctF });
   const inQueue = Array.isArray(pend.body) && pend.body.some(r => String(r._id) === String(id));
   const appr = await api('/api/outing/' + id + '/status', { method: 'PATCH', token: T.ctF, body: { status: 'Approved' } });
-  const doc = await OutingRequest.findById(id);
+  // withSignatures, because signature bytes are excluded by the model's defaultScope now —
+  // a plain read gets the row without them, which is the whole point of the change.
+  const doc = await OutingRequest.scope('withSignatures').findByPk(id);
   const sigs = await api('/api/outing/' + id + '/signatures', { token: t });
   record('D1', 'Female Market outing: submit -> caretaker queue -> approve -> signed',
     c.status === 201 && doc.autoApproved === false && inQueue && appr.status === 200 &&
@@ -56,7 +57,7 @@ const okWindow = NOW >= 6 * 60 && NOW <= 19 * 60 + 59;
   const second = await api('/api/outing', { method: 'POST', token: t, body: {
     destination: 'Other', purpose: 'p', outTime: istAt(11, 0, 1), outingType: 'Market' } });
   const dec = await api('/api/outing/' + id + '/warden-status', { method: 'PATCH', token: T.wdF, body: { status: 'Approved' } });
-  const doc = await OutingRequest.findById(id);
+  const doc = await OutingRequest.scope('withSignatures').findByPk(id);
   record('D3', 'Caretaker forwards -> warden queue -> warden approves (and Forwarded blocks a 2nd request)',
     fwd.status === 200 && inWardenQueue && second.status === 409 && dec.status === 200 &&
     doc.status === 'Approved' && !!doc.wardenSignature && doc.decidedByRole === 'Warden' ? 'PASS' : 'FAIL',
@@ -75,7 +76,7 @@ const okWindow = NOW >= 6 * 60 && NOW <= 19 * 60 + 59;
   const q = await api('/api/leave/pending', { token: T.ctM });
   const inQueue = Array.isArray(q.body) && q.body.some(r => String(r._id) === String(id));
   const appr = await api('/api/leave/' + id + '/status', { method: 'PATCH', token: T.ctM, body: { status: 'Approved' } });
-  const doc = await LeaveApplication.findById(id);
+  const doc = await LeaveApplication.findByPk(id);
   // Departure is tomorrow -> the gate must refuse it today
   const early = await api('/api/scan', { method: 'POST', token: T.guard, body: { student: s._id.toString(), direction: 'OUT' } });
   record('D4', 'Leave: submit -> caretaker approve -> gate refuses exit before the leave date',
@@ -88,14 +89,18 @@ const okWindow = NOW >= 6 * 60 && NOW <= 19 * 60 + 59;
 // ---------- D5. Leave curfew: 5:30 PM on the departure day ----------
 {
   const s = males[32];
-  const lv = await LeaveApplication.create({ student: s._id, destination: 'Home', reason: 'r',
+  const lv = await LeaveApplication.create({ studentId: s.id, destination: 'Home', reason: 'r',
     leaveDate: istAt(9, 0), returnDate: istAt(9, 0, 3), status: 'Approved', studentSignature: SIG });
   const r = await api('/api/scan', { method: 'POST', token: T.guard, body: { student: s._id.toString(), direction: 'OUT' } });
-  const after = await LeaveApplication.findById(lv._id);
+  const after = await LeaveApplication.findByPk(lv.id);
   const pastCurfew = NOW > 17 * 60 + 30;
+  // Before 9:00 IST the pass is not valid YET, which is a different (also correct) refusal
+  // — asserting either branch then would be asserting the clock, not the rule.
+  const beforeDeparture = NOW < 9 * 60;
   record('D5', 'Leave pass past the 5:30 PM curfew is refused AND persisted as Expired',
-    pastCurfew ? (r.status === 403 && after.status === 'Expired' ? 'PASS' : 'FAIL')
-               : (r.status === 201 ? 'PASS' : 'FAIL'),
+    beforeDeparture ? 'SKIP'
+      : pastCurfew ? (r.status === 403 && after.status === 'Expired' ? 'PASS' : 'FAIL')
+                   : (r.status === 201 ? 'PASS' : 'FAIL'),
     'nowIST=' + Math.floor(NOW / 60) + ':' + String(NOW % 60).padStart(2, '0') +
     ' pastCurfew=' + pastCurfew + ' gate=' + r.status + ' stored=' + after.status);
 }
@@ -130,11 +135,12 @@ const okWindow = NOW >= 6 * 60 && NOW <= 19 * 60 + 59;
 // ---------- D8. Signature gate (428) ----------
 {
   const s = males[34];
-  await User.findByIdAndUpdate(s._id, { $unset: { signature: 1 } });
+  // $unset on a field became "delete the user_signatures row"; passing null does that.
+  await User.setSignature(s.id, null);
   const t = tok(s);
   const r = await api('/api/outing', { method: 'POST', token: t, body: {
     destination: 'M', purpose: 'p', outTime: dep(), outingType: 'General' } });
-  const created = await OutingRequest.countDocuments({ student: s._id });
+  const created = await OutingRequest.count({ where: { studentId: s.id } });
   const l = await api('/api/leave', { method: 'POST', token: t, body: {
     destination: 'H', reason: 'r', leaveDate: istAt(10, 0, 1), returnDate: istAt(10, 0, 3), acknowledgement: true } });
   record('D8', 'No profile signature -> 428 SIGNATURE_REQUIRED and nothing is written',
@@ -147,10 +153,10 @@ const okWindow = NOW >= 6 * 60 && NOW <= 19 * 60 + 59;
   const s = females[24], t = tok(s);
   const c = await api('/api/outing', { method: 'POST', token: t, body: {
     destination: 'M', purpose: 'p', outTime: istAt(11, 0, 1), outingType: 'Market' } });
-  await User.findByIdAndUpdate(ctF._id, { $unset: { signature: 1 } });
+  await User.setSignature(ctF.id, null);
   const appr = await api('/api/outing/' + c.body._id + '/status', { method: 'PATCH', token: T.ctF, body: { status: 'Approved' } });
   const rej = await api('/api/outing/' + c.body._id + '/status', { method: 'PATCH', token: T.ctF, body: { status: 'Rejected' } });
-  await User.findByIdAndUpdate(ctF._id, { signature: SIG });
+  await User.setSignature(ctF.id, SIG);
   record('D9', 'Caretaker with no signature is blocked from approving but may still reject',
     appr.status === 428 && rej.status === 200 ? 'PASS' : 'FAIL', 'approve=' + appr.status + ' reject=' + rej.status);
 }
@@ -158,11 +164,11 @@ const okWindow = NOW >= 6 * 60 && NOW <= 19 * 60 + 59;
 // ---------- D10. Approving after the departure window closed ----------
 {
   const s = females[25];
-  const r0 = await OutingRequest.create({ student: s._id, destination: 'M', purpose: 'p',
+  const r0 = await OutingRequest.create({ studentId: s.id, destination: 'M', purpose: 'p',
     outingType: 'Market', outTime: istAt(6, 30), inTime: istAt(17, 30), status: 'Pending',
     studentSignature: SIG, targetCaretaker: ctF._id });
   const appr = await api('/api/outing/' + r0._id + '/status', { method: 'PATCH', token: T.ctF, body: { status: 'Approved' } });
-  const after = await OutingRequest.findById(r0._id);
+  const after = await OutingRequest.findByPk(r0.id);
   record('D10', 'Caretaker cannot approve a request whose departure time already passed',
     appr.status === 409 && after.status === 'Expired' ? 'PASS' : 'FAIL',
     'approve=' + appr.status + ' stored=' + after.status);
@@ -174,13 +180,13 @@ if (okWindow) {
   await api('/api/outing', { method: 'POST', token: t, body: {
     destination: 'M', purpose: 'p', outTime: dep(), outingType: 'General' } });
   await api('/api/scan', { method: 'POST', token: T.guard, body: { student: s._id.toString(), direction: 'OUT' } });
-  await OutingRequest.updateMany({ student: s._id, status: 'Out' }, { $set: { inTime: new Date(Date.now() - 7200e3) } });
+  await OutingRequest.update({ inTime: new Date(Date.now() - 7200e3) }, { where: { studentId: s.id, status: 'Out' } });
   const mine = await api('/api/outing/myrequests', { token: t });
   const row = Array.isArray(mine.body) ? mine.body.find(r => r.status === 'Out') : null;
   const staffOverdue = await api('/api/outing/overdue', { token: T.ctM });
   const seen = Array.isArray(staffOverdue.body) && staffOverdue.body.some(o => String(o.student?._id) === String(s._id));
   const back = await api('/api/scan', { method: 'POST', token: T.guard, body: { student: s._id.toString(), direction: 'IN' } });
-  const doc = await OutingRequest.findOne({ student: s._id }).sort({ createdAt: -1 });
+  const doc = await OutingRequest.findOne({ where: { studentId: s.id }, order: [['createdAt', 'DESC']] });
   record('D11', 'Overdue is a derived flag; stored status stays Out; return stamps Overdue punctuality',
     row?.isOverdue === true && row?.status === 'Out' && seen && back.status === 201 &&
     doc.returnPunctuality === 'Overdue' && doc.status === 'Returned' ? 'PASS' : 'FAIL',
@@ -205,7 +211,7 @@ if (okWindow) {
 {
   const s = males[37], t = tok(s);
   // approved pass whose departure passed and which was never used
-  await OutingRequest.create({ student: s._id, destination: 'M', purpose: 'p', outingType: 'General',
+  await OutingRequest.create({ studentId: s.id, destination: 'M', purpose: 'p', outingType: 'General',
     outTime: istAt(6, 0), inTime: istAt(20, 0), status: 'Approved', studentSignature: SIG });
   const again = await api('/api/outing', { method: 'POST', token: t, body: {
     destination: 'M2', purpose: 'p', outTime: dep(), outingType: 'General' } });
@@ -216,7 +222,7 @@ if (okWindow) {
 // ---------- D14. student stuck Outside cannot request, and recovery path ----------
 {
   const s = males[38], t = tok(s);
-  await User.findByIdAndUpdate(s._id, { campusStatus: 'Outside' });
+  await User.update({ campusStatus: 'Outside' }, { where: { id: s.id } });
   const r = await api('/api/outing', { method: 'POST', token: t, body: {
     destination: 'M', purpose: 'p', outTime: dep(), outingType: 'General' } });
   await api('/api/scan', { method: 'POST', token: T.guard, body: { student: s._id.toString(), direction: 'IN' } });
@@ -228,4 +234,4 @@ if (okWindow) {
 
 console.log('\n--- s4 summary ---');
 for (const r of results) console.log(r.status.padEnd(4), r.id, '-', r.title, '::', r.detail);
-await mongoose.disconnect(); server.close(); await mongod.stop(); process.exit(0);
+await teardown(); process.exit(0);

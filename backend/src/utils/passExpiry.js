@@ -1,58 +1,45 @@
-const OutingRequest = require('../models/OutingRequest');
-const LeaveApplication = require('../models/LeaveApplication');
+const { Op } = require('sequelize');
+const { OutingRequest, LeaveApplication } = require('../models');
 const { isDeparturePassed } = require('./outingRules');
 
 const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
 
-const expireStaleRequests = async (requests) => {
-  const list = Array.isArray(requests) ? requests : [requests];
-  const stale = list.filter(
-    (doc) => doc && EXPIRABLE_STATUSES.includes(doc.status) && isDeparturePassed(doc.outTime)
-  );
-  if (!stale.length) return requests;
+// Lazy expiry: a pass whose departure window has passed unused becomes Expired the next
+// time anyone reads it, rather than needing a background job.
+//
+// The status guard in the WHERE clause is not decoration — between the read that produced
+// these rows and this write, a gate scan may have moved one of them to 'Out'. Re-asserting
+// the expirable statuses means the UPDATE simply skips that row instead of expiring a pass
+// the student is currently using.
+const expireStale = async (Model, label, rows, isStale) => {
+  const list = Array.isArray(rows) ? rows : [rows];
+  const stale = list.filter((doc) => doc && EXPIRABLE_STATUSES.includes(doc.status) && isStale(doc));
+  if (!stale.length) return rows;
 
   try {
-    await OutingRequest.updateMany(
-      { _id: { $in: stale.map((doc) => doc._id) }, status: { $in: EXPIRABLE_STATUSES } },
-      { $set: { status: 'Expired' } }
+    await Model.update(
+      { status: 'Expired' },
+      { where: { id: { [Op.in]: stale.map((doc) => doc.id) }, status: { [Op.in]: EXPIRABLE_STATUSES } } }
     );
   } catch (err) {
-    console.warn(`[outing] lazy expiry write failed: ${err.message}`);
+    console.warn(`[${label}] lazy expiry write failed: ${err.message}`);
   }
 
   for (const doc of stale) {
-    doc.status = 'Expired';
-    if (typeof doc.unmarkModified === 'function') doc.unmarkModified('status');
+    // setDataValue, not assignment: the caller is about to serialise these rows and must
+    // see 'Expired', but they must not come back as a pending change on a later save().
+    // This is the Sequelize equivalent of the unmarkModified() the Mongoose version did.
+    if (typeof doc.setDataValue === 'function') doc.setDataValue('status', 'Expired');
+    else doc.status = 'Expired';
   }
-  return requests;
+  return rows;
 };
 
-const expireStaleApplications = async (applications) => {
-  const list = Array.isArray(applications) ? applications : [applications];
-  const now = Date.now();
-  const stale = list.filter(
-    (doc) =>
-      doc &&
-      EXPIRABLE_STATUSES.includes(doc.status) &&
-      now > new Date(doc.leaveDate).getTime()
-  );
-  if (!stale.length) return applications;
+const expireStaleRequests = (requests) =>
+  expireStale(OutingRequest, 'outing', requests, (doc) => isDeparturePassed(doc.outTime));
 
-  try {
-    await LeaveApplication.updateMany(
-      { _id: { $in: stale.map((doc) => doc._id) }, status: { $in: EXPIRABLE_STATUSES } },
-      { $set: { status: 'Expired' } }
-    );
-  } catch (err) {
-    console.warn(`[leave] lazy expiry write failed: ${err.message}`);
-  }
-
-  for (const doc of stale) {
-    doc.status = 'Expired';
-    if (typeof doc.unmarkModified === 'function') doc.unmarkModified('status');
-  }
-  return applications;
-};
+const expireStaleApplications = (applications) =>
+  expireStale(LeaveApplication, 'leave', applications, (doc) => Date.now() > new Date(doc.leaveDate).getTime());
 
 module.exports = {
   EXPIRABLE_STATUSES,

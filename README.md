@@ -84,11 +84,14 @@ cd SafeExit
 3. Create a `.env` file in the `backend` directory with the following variables:
    ```env
    PORT=5000
-   MONGO_URI=your_mongodb_connection_string
+   DATABASE_URL=postgres://safeexit:password@127.0.0.1:5432/safeexit
    JWT_SECRET=your_jwt_secret_key
    NODE_ENV=development
    FRONTEND_URL=http://localhost:3000
    ```
+   *The backend runs on PostgreSQL. If you do not have a database yet, follow
+   `backend/db/postgres/README.md` — it covers Docker, WSL2 and a native Windows install —
+   then apply the schema with `npm run pg:schema`.*
 4. Start the backend server:
    ```bash
    npm run dev

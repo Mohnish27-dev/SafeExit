@@ -1,10 +1,12 @@
-const User = require('../models/User');
+const { Op } = require('sequelize');
+const { sequelize, User, WebauthnCredential } = require('../models');
 const generateToken = require('../utils/generateToken');
 const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
 const { isValidStudentEmail } = require('../config/emailPolicy');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
 const { isEmailVerificationValid } = require('./otpController');
 const { isSignatureDataUrl } = require('../utils/signature');
+const { ciEquals } = require('../utils/ciCompare');
 const {
   normalizeCloseContacts,
   normalizeGuardianPhoneNumber,
@@ -14,21 +16,23 @@ const {
 const resolveLoginId = (body = {}) =>
   (body.loginId || body.email || '').trim().toLowerCase();
 
-const findByLoginId = (key) =>
-  User.findOne({ $or: [{ loginId: key }, { email: key }] });
-
-const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const findByLoginId = (key, options = {}) =>
+  User.findOne({ where: { [Op.or]: [{ loginId: key }, { email: key }] }, ...options });
 
 const normalizePersonName = (value) =>
   String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
 // Password login only: also accepts the roll number (case-insensitive studentId match).
+//
+// The roll-number branch was a RegExp built from user input and anchored by hand. It is a
+// parameterised lower() comparison now — nothing to escape, and it matches the shape of
+// the users_student_id index rather than forcing a scan.
 const findByIdentifier = async (rawKey) => {
   const key = String(rawKey || '').trim().toLowerCase();
   if (!key) return null;
   return (
-    (await User.findOne({ $or: [{ loginId: key }, { email: key }] })) ||
-    (await User.findOne({ studentId: new RegExp(`^${escapeRegex(String(rawKey).trim())}$`, 'i') }))
+    (await findByLoginId(key)) ||
+    (await User.findOne({ where: { [Op.and]: [ciEquals('student_id', String(rawKey).trim())] } }))
   );
 };
 const {
@@ -38,10 +42,43 @@ const {
   verifyAuthenticationResponse,
 } = require('@simplewebauthn/server');
 
+// The credentials array used to be embedded on the user document, so it came along with
+// every read. It is a table now, and only the four WebAuthn handlers need it.
+const WITH_CREDENTIALS = { include: [{ association: 'webAuthnCredentials' }] };
+
 // In production set RP_ID / RP_ORIGIN to the real frontend domain.
 const rpName = process.env.RP_NAME || 'NITP-SafeExit';
 const rpID = process.env.RP_ID || 'localhost';
 const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
+
+// The profile payload, in one place, so /profile, PATCH /profile and /refresh cannot
+// drift apart in what they expose.
+const profilePayload = (user, extra = {}) => ({
+  _id: user.id,
+  name: user.name,
+  loginId: user.loginId,
+  email: user.email,
+  role: user.role,
+  studentId: user.studentId,
+  roomNumber: user.roomNumber,
+  department: user.department,
+  year: user.year,
+  phoneNumber: user.phoneNumber,
+  guardianPhoneNumber: user.guardianPhoneNumber,
+  // Sorted in JS, not by the query: there are at most two (the slot CHECK guarantees it),
+  // and ordering an include costs either a separate query or an order clause repeated at
+  // every call site. The profile form fills its two rows positionally, so the order has to
+  // be stable — Postgres gives no guarantee without an ORDER BY.
+  closeContacts: [...(user.closeContacts || [])]
+    .sort((a, b) => a.slot - b.slot)
+    .map((c) => c.toJSON()),
+  gender: user.gender,
+  hostelName: user.hostelName,
+  managedGender: user.managedGender,
+  managedHostel: user.managedHostel,
+  webAuthnRegistered: user.webAuthnRegistered,
+  ...extra,
+});
 
 // POST /api/auth/register — public
 const registerUser = async (req, res) => {
@@ -90,6 +127,9 @@ const registerUser = async (req, res) => {
     if (!isValidHostel(hostelName)) {
       return res.status(400).json({ message: 'Please select your hostel.' });
     }
+    // Canonical spelling matters more than it used to: users.hostel_name is a real foreign
+    // key to hostels(name), so "kautilya" would now be rejected by the database rather than
+    // quietly stored as a second spelling.
     const resolvedHostel = canonicalHostelName(hostelName);
     const resolvedGender = genderForHostel(hostelName);
 
@@ -117,20 +157,32 @@ const registerUser = async (req, res) => {
     }
 
     // Only students carry a real email; staff email stays unset (no synthetic addresses).
-    const realEmail = resolvedRole === 'Student' ? (email || '').trim().toLowerCase() : undefined;
+    const realEmail = resolvedRole === 'Student' ? (email || '').trim().toLowerCase() : null;
 
-    const user = await User.create({
-      name, loginId, email: realEmail, password, role: resolvedRole,
-      studentId, roomNumber, department, year, phoneNumber,
-      gender: resolvedGender, hostelName: resolvedHostel,
-      guardianPhoneNumber: guardianPhoneResult.phoneNumber,
-      closeContacts: closeContactResult.contacts,
-    });
+    // One transaction, because the close contacts are their own table now. Registration
+    // requires at least one, so a user row committed without them would be an account the
+    // form could never have produced — created by a failure, not by a person.
+    //
+    // `slot` is what makes the two-contact cap structural: it is CHECKed to 1..2 and
+    // UNIQUE per user, so a third has nowhere to go even on a write path that skips the
+    // old Mongoose validator.
+    const user = await sequelize.transaction(async (tx) =>
+      User.create(
+        {
+          name, loginId, email: realEmail, password, role: resolvedRole,
+          studentId, roomNumber, department, year, phoneNumber,
+          gender: resolvedGender, hostelName: resolvedHostel,
+          guardianPhoneNumber: guardianPhoneResult.phoneNumber,
+          closeContacts: closeContactResult.contacts.map((c, i) => ({ ...c, slot: i + 1 })),
+        },
+        { include: [{ association: 'closeContacts' }], transaction: tx }
+      )
+    );
 
     if (user) {
-      const token = generateToken(res, user._id);
+      const token = generateToken(res, user.id);
       res.status(201).json({
-        _id: user._id,
+        _id: user.id,
         name: user.name,
         loginId: user.loginId,
         email: user.email,
@@ -167,7 +219,7 @@ const authUser = async (req, res) => {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      const token = generateToken(res, user._id);
+      const token = generateToken(res, user.id);
 
       if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
         user.lastActiveAt = new Date();
@@ -176,7 +228,7 @@ const authUser = async (req, res) => {
       }
 
       res.json({
-        _id: user._id,
+        _id: user.id,
         name: user.name,
         loginId: user.loginId,
         email: user.email,
@@ -186,7 +238,9 @@ const authUser = async (req, res) => {
         managedHostel: user.managedHostel,
         // Flag only, never the bytes: this response is cached into sessionStorage per tab,
         // and only the capture screens need the actual image (they read /auth/profile).
-        hasSignature: Boolean(user.signature),
+        // Boolean(user.signature) was free when the base64 sat on the user document; it is
+        // a keyed existence check now, so the login path still never touches a blob.
+        hasSignature: await User.hasSignature(user.id),
         webAuthnRegistered: user.webAuthnRegistered,
         token
       });
@@ -199,33 +253,21 @@ const authUser = async (req, res) => {
 };
 
 // GET /api/auth/profile — private
+//
+// The one read that deliberately DOES pull the owner's own photo and signature bytes:
+// every capture UI reads them from here. Nothing else includes those associations.
 const getUserProfile = async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const user = await User.findByPk(req.user._id, {
+    include: ['closeContacts', 'photoRow', 'signatureRow'],
+  });
 
   if (user) {
-    res.json({
-      _id: user._id,
-      name: user.name,
-      loginId: user.loginId,
-      email: user.email,
-      role: user.role,
-      studentId: user.studentId,
-      roomNumber: user.roomNumber,
-      department: user.department,
-      year: user.year,
-      phoneNumber: user.phoneNumber,
-      guardianPhoneNumber: user.guardianPhoneNumber,
-      closeContacts: user.closeContacts,
-      gender: user.gender,
-      hostelName: user.hostelName,
-      managedGender: user.managedGender,
-      managedHostel: user.managedHostel,
+    res.json(profilePayload(user, {
       photo: user.photo,
       // The owner's own signature bytes; every capture UI reads them from here.
       signature: user.signature,
       hasSignature: Boolean(user.signature),
-      webAuthnRegistered: user.webAuthnRegistered
-    });
+    }));
   } else {
     res.status(404).json({ message: 'User not found' });
   }
@@ -266,7 +308,7 @@ const updateUserProfile = async (req, res) => {
   }
 
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findByPk(req.user._id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -301,40 +343,35 @@ const updateUserProfile = async (req, res) => {
       user.gender = gender;
     }
 
-    // Scoped to the authenticated caller — no rollNo from the body, so no cross-account writes.
-    if (photo !== undefined) {
-      user.photo = photo || undefined;
-    }
-
-    // Freely re-writable, like photo (unlike gender's one-time write above): a signature
-    // drawn badly on a phone should be fixable. Already-submitted requests keep the
-    // snapshot they were signed with, so history is unaffected.
-    if (signature !== undefined) {
-      user.signature = signature || undefined;
-    }
-
-    await user.save();
-
-    res.json({
-      _id: user._id,
-      name: user.name,
-      loginId: user.loginId,
-      email: user.email,
-      role: user.role,
-      studentId: user.studentId,
-      roomNumber: user.roomNumber,
-      department: user.department,
-      year: user.year,
-      phoneNumber: user.phoneNumber,
-      guardianPhoneNumber: user.guardianPhoneNumber,
-      closeContacts: user.closeContacts,
-      gender: user.gender,
-      hostelName: user.hostelName,
-      photo: user.photo,
-      signature: user.signature,
-      hasSignature: Boolean(user.signature),
-      webAuthnRegistered: user.webAuthnRegistered,
+    // The blob writes and the user row move together: a photo saved against a hostel
+    // change that then failed would leave the profile in a state the form never asked for.
+    //
+    // Both are scoped to the authenticated caller — no id from the body, so no
+    // cross-account writes.
+    await sequelize.transaction(async (tx) => {
+      await user.save({ transaction: tx });
+      if (photo !== undefined) {
+        await User.setPhoto(user.id, photo || null, { transaction: tx });
+      }
+      // Freely re-writable, like photo (unlike gender's one-time write above): a signature
+      // drawn badly on a phone should be fixable. Already-submitted requests keep the
+      // snapshot they were signed with, so history is unaffected.
+      if (signature !== undefined) {
+        await User.setSignature(user.id, signature || null, { transaction: tx });
+      }
     });
+
+    // Re-read so the response reflects what was actually stored, including the blobs
+    // written above — they live in other tables, so `user` cannot know about them.
+    const fresh = await User.findByPk(user.id, {
+      include: ['closeContacts', 'photoRow', 'signatureRow'],
+    });
+
+    res.json(profilePayload(fresh, {
+      photo: fresh.photo,
+      signature: fresh.signature,
+      hasSignature: Boolean(fresh.signature),
+    }));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -352,12 +389,12 @@ const logoutUser = (req, res) => {
 // POST /api/auth/refresh — private; re-mints Bearer token from the 30-day cookie after mobile OS wipes sessionStorage.
 const refreshSession = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findByPk(req.user._id, { include: ['closeContacts'] });
     if (!user) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
-    const token = generateToken(res, user._id);
+    const token = generateToken(res, user.id);
 
     if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
       user.lastActiveAt = new Date();
@@ -365,39 +402,21 @@ const refreshSession = async (req, res) => {
       await user.save();
     }
 
-    res.json({
-      _id: user._id,
-      name: user.name,
-      loginId: user.loginId,
-      email: user.email,
-      role: user.role,
-      studentId: user.studentId,
-      roomNumber: user.roomNumber,
-      department: user.department,
-      year: user.year,
-      phoneNumber: user.phoneNumber,
-      guardianPhoneNumber: user.guardianPhoneNumber,
-      closeContacts: user.closeContacts,
-      gender: user.gender,
-      hostelName: user.hostelName,
-      managedGender: user.managedGender,
-      managedHostel: user.managedHostel,
-      hasSignature: Boolean(user.signature),
-      webAuthnRegistered: user.webAuthnRegistered,
+    res.json(profilePayload(user, {
+      hasSignature: await User.hasSignature(user.id),
       token,
-    });
+    }));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// WebAuthn: challenge is stashed on the user doc between /options and /verify, cleared after use.
+// WebAuthn: challenge is stashed on the user row between /options and /verify, cleared after use.
 
 // POST /api/auth/webauthn/register/options — private
 const getRegistrationOptions = async (req, res) => {
   try {
-    console.log('WebAuthn register called, user ID:', req.user?._id);
-    const user = await User.findById(req.user._id);
+    const user = await User.findByPk(req.user._id, WITH_CREDENTIALS);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const options = await generateRegistrationOptions({
@@ -406,7 +425,13 @@ const getRegistrationOptions = async (req, res) => {
       userName: user.loginId || user.email || user.studentId,
       userDisplayName: user.name,
       // Stable per-user handle so re-registration maps to the same account.
-      userID: new TextEncoder().encode(user._id.toString()),
+      //
+      // NOTE FOR CUTOVER: this is the uuid now, where it used to be the ObjectId. An
+      // authenticator that enrolled before the migration carries the old handle, so its
+      // credential still authenticates (that path matches on credentialID, not this) but a
+      // re-registration mints a second credential rather than replacing the first. Both
+      // work; the account simply lists two passkeys.
+      userID: new TextEncoder().encode(String(user.id)),
       attestationType: 'none',
       excludeCredentials: user.webAuthnCredentials.map((c) => ({
         id: c.credentialID,
@@ -429,7 +454,7 @@ const getRegistrationOptions = async (req, res) => {
 // POST /api/auth/webauthn/register/verify — private
 const verifyRegistration = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findByPk(req.user._id, WITH_CREDENTIALS);
     if (!user) return res.status(404).json({ message: 'User not found' });
     if (!user.currentChallenge) {
       return res.status(400).json({ message: 'No registration in progress' });
@@ -455,17 +480,26 @@ const verifyRegistration = async (req, res) => {
 
     const { credential } = registrationInfo;
     const exists = user.webAuthnCredentials.some((c) => c.credentialID === credential.id);
-    if (!exists) {
-      user.webAuthnCredentials.push({
-        credentialID: credential.id,
-        publicKey: Buffer.from(credential.publicKey),
-        counter: credential.counter,
-        transports: credential.transports || [],
-      });
-    }
-    user.webAuthnRegistered = true;
-    user.currentChallenge = undefined;
-    await user.save();
+
+    // The credential row and the flag that advertises it move together. Half of this
+    // committing would either claim a passkey that does not exist or hide one that does.
+    await sequelize.transaction(async (tx) => {
+      if (!exists) {
+        await WebauthnCredential.create(
+          {
+            userId: user.id,
+            credentialID: credential.id,
+            publicKey: Buffer.from(credential.publicKey),
+            counter: credential.counter,
+            transports: credential.transports || [],
+          },
+          { transaction: tx }
+        );
+      }
+      user.webAuthnRegistered = true;
+      user.currentChallenge = null;
+      await user.save({ transaction: tx });
+    });
 
     res.json({ verified: true, webAuthnRegistered: true });
   } catch (error) {
@@ -478,7 +512,7 @@ const verifyRegistration = async (req, res) => {
 const getAuthenticationOptions = async (req, res) => {
   const loginId = resolveLoginId(req.body);
   try {
-    const user = await findByLoginId(loginId);
+    const user = await findByLoginId(loginId, WITH_CREDENTIALS);
     if (!user || !user.webAuthnRegistered || user.webAuthnCredentials.length === 0) {
       return res.status(404).json({ message: 'No passkey registered for this account' });
     }
@@ -508,7 +542,7 @@ const verifyAuthentication = async (req, res) => {
   const { response } = req.body;
   const loginId = resolveLoginId(req.body);
   try {
-    const user = await findByLoginId(loginId);
+    const user = await findByLoginId(loginId, WITH_CREDENTIALS);
     if (!user || !user.currentChallenge) {
       return res.status(400).json({ message: 'No login in progress for this account' });
     }
@@ -531,6 +565,7 @@ const verifyAuthentication = async (req, res) => {
         requireUserVerification: false,
         credential: {
           id: cred.credentialID,
+          // bytea comes back as a Buffer, which is what this always was.
           publicKey: new Uint8Array(cred.publicKey),
           counter: cred.counter,
           transports: cred.transports,
@@ -545,24 +580,30 @@ const verifyAuthentication = async (req, res) => {
       return res.status(401).json({ message: 'Biometric verification failed' });
     }
 
-    // Replay protection: persist the authenticator's monotonic counter.
-    cred.counter = authenticationInfo.newCounter;
-    user.currentChallenge = undefined;
-    if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
-      user.lastActiveAt = new Date();
-      if (user.role === 'Guard') user.onDuty = true;
-    }
-    await user.save();
+    // Replay protection: persist the authenticator's monotonic counter. It lives on its
+    // own row now, so it saves separately from the user — in the same transaction, because
+    // a committed login that lost the counter bump would leave the replay window open.
+    await sequelize.transaction(async (tx) => {
+      cred.counter = authenticationInfo.newCounter;
+      await cred.save({ transaction: tx });
 
-    const token = generateToken(res, user._id);
+      user.currentChallenge = null;
+      if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
+        user.lastActiveAt = new Date();
+        if (user.role === 'Guard') user.onDuty = true;
+      }
+      await user.save({ transaction: tx });
+    });
+
+    const token = generateToken(res, user.id);
     res.json({
-      _id: user._id,
+      _id: user.id,
       name: user.name,
       loginId: user.loginId,
       email: user.email,
       role: user.role,
       studentId: user.studentId,
-      hasSignature: Boolean(user.signature),
+      hasSignature: await User.hasSignature(user.id),
       webAuthnRegistered: user.webAuthnRegistered,
       token,
     });

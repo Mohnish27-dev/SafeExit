@@ -1,6 +1,9 @@
 // Fail fast on missing env vars instead of opaque runtime 500s.
 
-const REQUIRED = ['JWT_SECRET', 'MONGO_URI'];
+// DATABASE_URL replaces MONGO_URI. config/sequelize.js checks it again at connect time
+// with a message pointing at the runbook, but failing here is earlier and cheaper: the
+// app has no read path at all without it.
+const REQUIRED = ['JWT_SECRET', 'DATABASE_URL'];
 
 const validateEnv = () => {
   const missing = REQUIRED.filter(
