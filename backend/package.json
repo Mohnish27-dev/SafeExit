@@ -21,7 +21,8 @@
     "pg:inventory": "node scripts/mongoInventory.js",
     "pg:etl": "node scripts/etl.js",
     "pg:etl:dry": "node scripts/etl.js --dry-run",
-    "pg:verify": "node scripts/cutoverVerify.js"
+    "pg:verify": "node scripts/cutoverVerify.js",
+    "cutover:rehearse": "node scripts/rehearse.js"
   },
   "keywords": [],
   "author": "",

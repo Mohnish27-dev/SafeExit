@@ -35,13 +35,20 @@ const { Client } = require('pg');
 
 const { migrationPoolConfig } = require('../src/config/postgres');
 const { canonicalHostelName } = require('../src/config/hostels');
-const User = require('../src/models/User');
+const { USER_ROLES } = require('../src/config/passStatuses');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const MONGO_DB = 'test'; // what mongoInventory.js resolved MONGO_URI's default to
 
-// Read off the Mongoose schema rather than retyped here, so this cannot drift from the
-// app's own definition — and it is the same list 001_schema.sql's role CHECK asserts.
+// Read from config/passStatuses.js rather than retyped here, so this cannot drift from the
+// app's own definition — and test/schemaDdl.test.js pins that list against
+// 001_schema.sql's role CHECK, so all three stay in step.
+//
+// This used to read `User.schema.path('role').enumValues` off the Mongoose model. Phase 3
+// replaced that model with a Sequelize one, which has no `.schema`, and the ETL has been
+// dead on require ever since — it would have thrown on step 7 of the cutover, with the
+// writes already frozen. USER_ROLES exists because Sequelize has no enum for a plain text
+// column; this script simply never got repointed at it.
 //
 // Five accounts in the source data carry role 'Department' (Electrical/Plumbing/Cleaning/
 // WIFI/Furniture DEPT, all created 2026-07-30). That value is in NEITHER enum: Mongo
@@ -50,7 +57,7 @@ const MONGO_DB = 'test'; // what mongoInventory.js resolved MONGO_URI's default 
 // middleware implements the role, and authorizeRoles would 403 them from everything. They
 // are skipped, along with the single push subscription that references them. The mongodump
 // keeps them if the feature is ever revived.
-const VALID_ROLES = User.schema.path('role').enumValues;
+const VALID_ROLES = USER_ROLES;
 
 // --- reporting --------------------------------------------------------------
 

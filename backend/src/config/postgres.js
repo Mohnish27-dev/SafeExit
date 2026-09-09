@@ -29,9 +29,22 @@ const sslConfig = () => {
   return { rejectUnauthorized: mode === 'verify-full' };
 };
 
+// PG_SCHEMA moves every unqualified table reference into a named schema by setting the
+// connection's search_path. Unset — the normal case, and always the case in production —
+// means `public` and changes nothing.
+//
+// src/config/sequelize.js sets this for the app's own connection. It has to be set here
+// too, because the migration scripts (applySchema, etl, cutoverVerify) open raw `pg`
+// clients that never touch Sequelize. Without it a rehearsal in a throwaway schema would
+// silently load the real ETL into `public` — the working data — which is the one outcome
+// a rehearsal must not be able to produce.
+const schemaOptions = () =>
+  (process.env.PG_SCHEMA ? { options: `-c search_path=${process.env.PG_SCHEMA}` } : {});
+
 const poolConfig = () => ({
   connectionString: connectionString(),
   ssl: sslConfig(),
+  ...schemaOptions(),
 
   // Cap on concurrent server connections from this process. Postgres' own max_connections
   // is a hard global limit (default 100) shared with every other app on the college box,

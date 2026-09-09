@@ -31,9 +31,35 @@ which is not a uuid, so every session breaks at once. `LEGACY_ID_GRACE` handles 
 
 ## Before the day
 
-1. **Rehearse the whole thing** against a copy. `npm run pg:verify` is read-only on both
-   databases and safe to run as often as you like, including against live Atlas during
-   working hours.
+1. **Rehearse the whole thing.**
+
+   ```bash
+   cd backend
+   npm run cutover:rehearse
+   ```
+
+   This runs every step below that does not need the college server, in this order, using
+   the same commands and the same code. It builds a throwaway PostgreSQL schema, applies the
+   DDL, runs the real ETL into it, applies and validates the constraints, runs the verifier,
+   boots the real Express app against the result, and drops the schema at the end. It refuses
+   to run unless `DATABASE_URL` is local, and it only ever reads MongoDB.
+
+   Twelve checks. The ones worth knowing about:
+
+   - **R6 proves the verifier actually blocks.** It hides a row from the reconciliation and
+     requires a non-zero exit. A verifier that only ever says "ok" is indistinguishable from
+     a broken one, and you would find out on the night.
+   - **R7 mints a token whose subject is a MongoDB ObjectId** and requires it to authenticate,
+     which is the whole of the grace period in one assertion.
+   - **R10 walks a migrated student out through the gate and back in**, through the real
+     endpoint and the real five-write transaction.
+   - **R11 freezes and unfreezes** over real HTTP on the real router stack.
+
+   What it cannot cover, and what therefore stays manual: the USB scanner itself, secret
+   rotation, and the college server's own version, permissions and firewall.
+
+   `npm run pg:verify` on its own is read-only on both databases and safe to run as often as
+   you like, including against live Atlas during working hours.
 
 2. **Take a `mongodump`.** It is the rollback, and it is the only one.
 
