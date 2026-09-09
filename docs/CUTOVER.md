@@ -63,9 +63,29 @@ which is not a uuid, so every session breaks at once. `LEGACY_ID_GRACE` handles 
 
 2. **Take a `mongodump`.** It is the rollback, and it is the only one.
 
-   ```bash
-   mongodump --uri "$MONGO_URI" --db test --out ./dump-precutover
+   `mongodump` ships in the MongoDB Database Tools, which are a separate download from the
+   server and are not installed by default:
+
+   ```powershell
+   winget install MongoDB.DatabaseTools
    ```
+
+   Open a new terminal afterwards so the updated `PATH` is picked up.
+
+   Then, from `backend/`. **Do not write `$MONGO_URI`** — that is shell syntax, the variable
+   lives in `backend/.env` rather than in the environment, and PowerShell would pass the
+   literal string. Let Node read it and append the database name, which also handles the
+   trailing slash and any query string correctly:
+
+   ```powershell
+   $uri = node -e "require('dotenv').config({quiet:true});const u=new URL(process.env.MONGO_URI);u.pathname='/test';process.stdout.write(u.toString())"
+   mongodump --uri "$uri" --out .\dump-precutover
+   ```
+
+   The database name goes in the URI rather than in a separate `--db`, because the Database
+   Tools reject `--db` alongside `--uri` on some versions and silently prefer one on others.
+
+   Copy the dump somewhere that is not the EC2 box you are about to redeploy.
 
 3. **Confirm the college's Postgres** with `npm run pg:check`. It reads catalog tables and
    row counts and writes nothing, so it is a safe first connection.
