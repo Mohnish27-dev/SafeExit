@@ -1,15 +1,14 @@
-import { api, tok, record, results, mongoose, server, mongod, istAt, nowIstMinutes,
-  User, OutingRequest, LeaveApplication, SOSAlert, males, females, T,
+import { api, tok, record, results, teardown, istAt, nowIstMinutes, BASE,
+  User, CloseContact, OutingRequest, LeaveApplication, SOSAlert, males, females, T,
   guard, admin, chief, ctF, ctM, wdF, SIG } from './harness.mjs';
 
-if (!/127\.0\.0\.1|localhost/.test(mongoose.connection.host || '')) { console.error('ABORT: not local'); process.exit(1); }
 
 const NOW = nowIstMinutes();
 const dep = () => istAt(Math.min(19, Math.floor(NOW / 60) + 2), 0);
 
 // A pending, caretaker-gated request from a FEMALE student (Market requires caretaker).
 const makeFemaleMarketPending = async (s) => OutingRequest.create({
-  student: s._id, destination: 'Market', purpose: 'p', outingType: 'Market',
+  studentId: s.id, destination: 'Market', purpose: 'p', outingType: 'Market',
   outTime: istAt(14, 0, 1), inTime: istAt(17, 30, 1), status: 'Pending',
   studentSignature: SIG, targetCaretaker: ctF._id,
 });
@@ -19,7 +18,7 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
   const s = females[0];
   const r0 = await makeFemaleMarketPending(s);
   const r = await api('/api/outing/' + r0._id + '/status', { method: 'PATCH', token: T.guard, body: { status: 'Approved' } });
-  const after = await OutingRequest.findById(r0._id);
+  const after = await OutingRequest.findByPk(r0.id);
   record('B1', 'A GATE GUARD can approve/mint an outing pass for any student',
     r.status === 201 || r.status === 200 ? 'FAIL' : 'PASS',
     'PATCH /outing/:id/status as Guard -> ' + r.status + ' storedStatus=' + after.status + ' approvedBy=' + (after.approvedBy ? 'guard' : 'none'));
@@ -37,7 +36,7 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
   const s = females[1];
   const r0 = await makeFemaleMarketPending(s);
   const r = await api('/api/outing/' + r0._id + '/status', { method: 'PATCH', token: T.ctM, body: { status: 'Approved' } });
-  const after = await OutingRequest.findById(r0._id);
+  const after = await OutingRequest.findByPk(r0.id);
   record('B3', 'Caretaker of another hostel cannot decide this request',
     r.status === 403 && after.status === 'Pending' ? 'PASS' : 'FAIL', 'status=' + r.status + ' stored=' + after.status);
 }
@@ -47,7 +46,7 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
   const s = females[2];
   const r0 = await makeFemaleMarketPending(s);
   const r = await api('/api/outing/' + r0._id + '/warden-status', { method: 'PATCH', token: T.wdF, body: { status: 'Approved' } });
-  const after = await OutingRequest.findById(r0._id);
+  const after = await OutingRequest.findByPk(r0.id);
   record('B4', 'Warden cannot decide a request not forwarded to them',
     r.status !== 200 && after.status === 'Pending' ? 'PASS' : 'FAIL', 'status=' + r.status + ' stored=' + after.status);
 }
@@ -86,7 +85,7 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
 {
   const ghost = await User.create({ name: 'Ghost', role: 'Student', gender: 'Male', hostelName: 'Kautilya', studentId: '299999', loginId: 'ghost' });
   const gt = tok(ghost);
-  await User.findByIdAndDelete(ghost._id);
+  await User.destroy({ where: { id: ghost.id } });
   const prof = await api('/api/auth/profile', { token: gt });
   const outing = await api('/api/outing/myrequests', { token: gt });
   const patch = await api('/api/auth/profile', { method: 'PATCH', token: gt, body: { signature: SIG } });
@@ -114,7 +113,7 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
 // ---------- B10. SOS cross-gender scope ----------
 {
   const s = females[4];
-  const a = await SOSAlert.create({ student: s._id, type: 'medical' });
+  const a = await SOSAlert.create({ studentId: s.id, type: 'medical' });
   const r = await api('/api/sos/' + a._id + '/status', { method: 'PATCH', token: T.ctM, body: { status: 'Resolved' } });
   record('B10', 'Male-scope caretaker cannot resolve a female student SOS',
     r.status === 403 ? 'PASS' : 'FAIL', 'status=' + r.status);
@@ -123,8 +122,11 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
 // ---------- B11. SOS PII exposure to a Guard ----------
 {
   const s = females[5];
-  await User.findByIdAndUpdate(s._id, { closeContacts: [{ name: 'Mom', mobileNumber: '9876543210', roomNumber: 'X' }] });
-  await SOSAlert.create({ student: s._id, type: 'unsafe' });
+  // closeContacts was an embedded array; it is its own table with a slot 1..2 CHECK now,
+  // so it is inserted rather than assigned onto the user.
+  await CloseContact.destroy({ where: { userId: s.id } });
+  await CloseContact.create({ userId: s.id, slot: 1, name: 'Mom', mobileNumber: '9876543210', roomNumber: 'X' });
+  await SOSAlert.create({ studentId: s.id, type: 'unsafe' });
   const g = await api('/api/sos?status=Active', { token: T.guard });
   const c = await api('/api/sos?status=Active', { token: T.ctF });
   const guardLeak = JSON.stringify(g.body).includes('guardianPhoneNumber') || JSON.stringify(g.body).includes('9876543210');
@@ -137,7 +139,7 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
 {
   const s = males[13], t = tok(s);
   const r = await api('/api/auth/profile', { method: 'PATCH', token: t, body: { role: 'Admin', campusStatus: 'Inside', managedHostel: 'Kautilya', signature: SIG } });
-  const after = await User.findById(s._id);
+  const after = await User.findByPk(s.id);
   record('B12', 'Mass-assignment: role/managedHostel are not writable from profile PATCH',
     after.role === 'Student' && !after.managedHostel ? 'PASS' : 'FAIL', 'status=' + r.status + ' role=' + after.role + ' managedHostel=' + after.managedHostel);
 }
@@ -155,7 +157,7 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
   const victim = females[6];
   const r0 = await makeFemaleMarketPending(victim);
   const r = await api('/api/outing/' + r0._id + '/cancel', { method: 'PATCH', token: tok(males[14]) });
-  const after = await OutingRequest.findById(r0._id);
+  const after = await OutingRequest.findByPk(r0.id);
   record('B14', 'Student cannot cancel another student outing',
     after.status === 'Pending' ? 'PASS' : 'FAIL', 'status=' + r.status + ' stored=' + after.status);
 }
@@ -165,23 +167,26 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
   const t = tok(males[15]);
   const cases = [
     ['bad json', '/api/outing', 'POST', '{"broken":'],
-    ['nosql operator in id', '/api/outing/' + encodeURIComponent('{"$ne":null}') + '/signatures', 'GET', undefined],
+    ['operator object in id', '/api/outing/' + encodeURIComponent('{"$ne":null}') + '/signatures', 'GET', undefined],
   ];
   const bad = [];
-  const r1 = await fetch('http://127.0.0.1:' + server.address().port + '/api/outing', {
+  const r1 = await fetch(BASE + '/api/outing', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t }, body: '{"broken":' });
   if (r1.status !== 400) bad.push('badjson=' + r1.status);
   const ct = (r1.headers.get('content-type') || '');
   if (!ct.includes('json')) bad.push('badjson-not-json');
   const r2 = await api('/api/outing/%7B%22%24ne%22%3Anull%7D/signatures', { token: t });
   if (r2.status !== 400 && r2.status !== 404) bad.push('nosqlid=' + r2.status);
-  // NoSQL operator injection through the scan body
+  // Operator-shaped objects, still worth sending after the migration. They are no longer
+  // Mongo operators that could reach a query — but a client can still POST them, and what
+  // is being asserted has not changed: the API must reject them as bad input rather than
+  // 500ing on an unknown key or, worse, authenticating.
   const r3 = await api('/api/scan', { method: 'POST', token: T.guard, body: { studentId: { $ne: null }, direction: 'OUT' } });
   if (r3.status >= 500) bad.push('scan-nosql=' + r3.status);
   // Login with an operator object as the identifier
   const r4 = await api('/api/auth/login', { method: 'POST', body: { loginId: { $ne: null }, password: { $ne: null } } });
   if (r4.status === 200) bad.push('LOGIN-BYPASS');
-  record('B15', 'Malformed JSON / NoSQL-operator injection handled as 4xx JSON',
+  record('B15', 'Malformed JSON / operator-object injection handled as 4xx JSON',
     bad.length === 0 ? 'PASS' : 'FAIL', bad.join(' ') || 'badjson=400 nosqlid ok scan ok login=' + r4.status);
 }
 
@@ -232,4 +237,4 @@ const makeFemaleMarketPending = async (s) => OutingRequest.create({
 
 console.log('\n--- s2 summary ---');
 for (const r of results) console.log(r.status.padEnd(4), r.id, '-', r.title, '::', r.detail);
-await mongoose.disconnect(); server.close(); await mongod.stop(); process.exit(0);
+await teardown(); process.exit(0);

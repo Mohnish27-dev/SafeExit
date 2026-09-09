@@ -57,6 +57,17 @@ const buildOptions = () => {
       // for this; it passes dialectOptions straight to the pg Client.
       statement_timeout: cfg.statement_timeout,
       application_name: cfg.application_name,
+
+      // PG_SCHEMA moves every unqualified table reference into a named schema, by setting
+      // the connection's search_path. Unset (the normal case) means `public` and changes
+      // nothing.
+      //
+      // It exists because backend/stress/ boots the REAL app and seeds a hundred students
+      // — it must never be able to touch the working data. The dev role cannot CREATEDB,
+      // so a throwaway schema is the isolation that is actually available, and it is the
+      // same constraint the college's server will impose. It is also the hook if they ever
+      // want the app in a named schema rather than public.
+      ...(process.env.PG_SCHEMA ? { options: `-c search_path=${process.env.PG_SCHEMA}` } : {}),
     },
 
     // A campus LAN can drop a connection without either side noticing. Retry the

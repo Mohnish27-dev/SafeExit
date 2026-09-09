@@ -1,9 +1,12 @@
 # NITP-SafeExit — app containers on a private network.
 # nginx + certbot live on the HOST and reverse-proxy into these published ports.
 #
-# The database is moving from MongoDB Atlas to PostgreSQL on the campus network. During
-# the migration both exist: MONGO_URI still points at Atlas (nothing reads Postgres yet),
-# and the postgres service below is the local development target for the new schema.
+# The backend runs on PostgreSQL. DATABASE_URL in backend/.env is the only thing that says
+# which server, and the service below is the local development target for it.
+#
+# MongoDB is still reachable from two scripts — scripts/etl.js and scripts/mongoInventory.js
+# read Atlas so the data can be moved and re-moved until cutover — but nothing the app
+# serves touches it.
 #
 # At cutover, the college's own PostgreSQL replaces this container: drop the service,
 # point DATABASE_URL at their host, and the rest of the file is unchanged. Keeping the

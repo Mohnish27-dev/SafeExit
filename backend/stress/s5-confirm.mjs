@@ -1,7 +1,7 @@
-import { api, tok, record, results, mongoose, server, mongod, istAt, nowIstMinutes,
+import { api, tok, record, results, teardown, istAt, nowIstMinutes,
   User, OutingRequest, LeaveApplication, males, females, T, SIG } from './harness.mjs';
 
-if (!/127\.0\.0\.1|localhost/.test(mongoose.connection.host || '')) { console.error('ABORT'); process.exit(1); }
+// Local-host guard and schema isolation live in harness.mjs.
 const NOW = nowIstMinutes();
 const hh = Math.floor(NOW / 60) + ':' + String(NOW % 60).padStart(2, '0');
 
@@ -10,11 +10,11 @@ const hh = Math.floor(NOW / 60) + ':' + String(NOW % 60).padStart(2, '0');
 // So a pass whose outTime has passed should NOT open the gate.
 {
   const s = males[40];
-  await OutingRequest.create({ student: s._id, destination: 'M', purpose: 'p', outingType: 'General',
+  await OutingRequest.create({ studentId: s.id, destination: 'M', purpose: 'p', outingType: 'General',
     outTime: istAt(7, 0), inTime: istAt(20, 0), status: 'Approved', studentSignature: SIG });
   const prev = await api('/api/scan/preview?studentId=' + s.studentId, { token: T.guard });
   const r = await api('/api/scan', { method: 'POST', token: T.guard, body: { student: s._id.toString(), direction: 'OUT' } });
-  const after = await User.findById(s._id).select('campusStatus');
+  const after = await User.findByPk(s.id);
   record('E1', 'Outing pass stamped for 07:00 still opens the gate at ' + hh + ' (outTime deadline NOT enforced)',
     r.status === 201 ? 'FAIL' : 'PASS',
     'previewAllowed=' + prev.body?.exit?.allowed + ' scan=' + r.status + ' campusNow=' + after.campusStatus +
@@ -24,7 +24,7 @@ const hh = Math.floor(NOW / 60) + ':' + String(NOW % 60).padStart(2, '0');
 // ---------- E2. How wide is that? approve at 07:00, walk out at 19:58 ----------
 {
   const s = males[41];
-  await OutingRequest.create({ student: s._id, destination: 'M', purpose: 'p', outingType: 'General',
+  await OutingRequest.create({ studentId: s.id, destination: 'M', purpose: 'p', outingType: 'General',
     outTime: istAt(6, 0), inTime: istAt(20, 0), status: 'Approved', studentSignature: SIG });
   const r = await api('/api/scan', { method: 'POST', token: T.guard, body: { student: s._id.toString(), direction: 'OUT' } });
   record('E2', 'A 06:00 pass is usable for the whole 14-hour male window',
@@ -34,10 +34,10 @@ const hh = Math.floor(NOW / 60) + ':' + String(NOW % 60).padStart(2, '0');
 // ---------- E3. Female Market pass outside its 14:30 cutoff ----------
 {
   const s = females[30];
-  await OutingRequest.create({ student: s._id, destination: 'M', purpose: 'p', outingType: 'Market',
+  await OutingRequest.create({ studentId: s.id, destination: 'M', purpose: 'p', outingType: 'Market',
     outTime: istAt(11, 0), inTime: istAt(17, 30), status: 'Approved', studentSignature: SIG });
   const r = await api('/api/scan', { method: 'POST', token: T.guard, body: { student: s._id.toString(), direction: 'OUT' } });
-  const doc = await OutingRequest.findOne({ student: s._id }).sort({ createdAt: -1 });
+  const doc = await OutingRequest.findOne({ where: { studentId: s.id }, order: [['createdAt', 'DESC']] });
   const past = NOW > 14 * 60 + 30;
   record('E3', 'Female Market pass IS correctly fenced by its 06:00-14:30 window at ' + hh,
     past ? (r.status === 403 && doc.status === 'Expired' ? 'PASS' : 'FAIL') : (r.status === 201 ? 'PASS' : 'FAIL'),
@@ -48,16 +48,20 @@ const hh = Math.floor(NOW / 60) + ':' + String(NOW % 60).padStart(2, '0');
 {
   // A guard with no signature sets one on themselves, then approves a stranger's request.
   const guardUser = await User.findOne({ role: 'Guard' });
-  await User.findByIdAndUpdate(guardUser._id, { $unset: { signature: 1 } });
+  await User.setSignature(guardUser.id, null);
   const gt = T.guard;
   const s = females[31];
-  const req = await OutingRequest.create({ student: s._id, destination: 'M', purpose: 'p',
+  const req = await OutingRequest.create({ studentId: s.id, destination: 'M', purpose: 'p',
     outingType: 'Market', outTime: istAt(11, 0, 1), inTime: istAt(17, 30, 1), status: 'Pending',
     studentSignature: SIG });
   const blocked = await api('/api/outing/' + req._id + '/status', { method: 'PATCH', token: gt, body: { status: 'Approved' } });
   const setSig = await api('/api/auth/profile', { method: 'PATCH', token: gt, body: { signature: SIG } });
   const approved = await api('/api/outing/' + req._id + '/status', { method: 'PATCH', token: gt, body: { status: 'Approved' } });
-  const doc = await OutingRequest.findById(req._id).populate('approvedBy', 'role name');
+  // `approvedBy` is the foreign key; `approvedByUser` is the association that reads
+  // through it. toJSON collapses the two back into one field, as .populate() produced.
+  const doc = await OutingRequest.findByPk(req.id, {
+    include: [{ association: 'approvedByUser', attributes: ['id', 'role', 'name'] }],
+  });
   record('E4', 'Guard self-serves a signature then approves a stranger request end-to-end',
     approved.status === 200 ? 'FAIL' : 'PASS',
     'withoutSig=' + blocked.status + ' setOwnSignature=' + setSig.status + ' thenApprove=' + approved.status +
@@ -67,20 +71,27 @@ const hh = Math.floor(NOW / 60) + ':' + String(NOW % 60).padStart(2, '0');
 // ---------- E5. Guard can also REJECT any student's request ----------
 {
   const s = females[32];
-  const req = await OutingRequest.create({ student: s._id, destination: 'M', purpose: 'p',
+  const req = await OutingRequest.create({ studentId: s.id, destination: 'M', purpose: 'p',
     outingType: 'Market', outTime: istAt(11, 0, 1), inTime: istAt(17, 30, 1), status: 'Pending', studentSignature: SIG });
   const r = await api('/api/outing/' + req._id + '/status', { method: 'PATCH', token: T.guard, body: { status: 'Rejected', remarks: 'no' } });
-  const doc = await OutingRequest.findById(req._id);
+  const doc = await OutingRequest.findByPk(req.id);
   record('E5', 'Guard can reject any student outing request campus-wide',
     r.status === 200 ? 'FAIL' : 'PASS', 'reject=' + r.status + ' stored=' + doc.status);
 }
 
-// ---------- E6. error.message leakage on a 500 ----------
+// ---------- E6. driver error text leaking to the client ----------
 {
   const t = tok(males[42]);
   const r = await api('/api/outing/%7B%22%24ne%22%3Anull%7D/signatures', { token: t });
-  const leaks = typeof r.body?.message === 'string' && /Cast to ObjectId|ObjectId|Mongo|model/i.test(r.body.message);
-  record('E6', 'Internal Mongoose error text is returned to the client on a 500',
+  // Every controller answers `{ message: error.message }` on a 500, so a driver error that
+  // reaches one is handed straight to the caller. The strings to watch for changed with the
+  // database: it used to be Mongoose CastErrors ("Cast to ObjectId failed"), it is now
+  // Postgres type errors ("invalid input syntax for type uuid") and Sequelize class names.
+  // middlewares/validateParams.js is what stops a malformed :id from reaching a query at all.
+  const leaks = typeof r.body?.message === 'string' &&
+    /Cast to ObjectId|ObjectId|Mongo|invalid input syntax|Sequelize|relation ".*" does not exist|column .* does not exist/i
+      .test(r.body.message);
+  record('E6', 'Internal database driver error text is returned to the client on a 500',
     leaks ? 'FAIL' : 'PASS', 'status=' + r.status + ' body=' + JSON.stringify(r.body).slice(0, 140));
 }
 
@@ -101,4 +112,4 @@ const hh = Math.floor(NOW / 60) + ':' + String(NOW % 60).padStart(2, '0');
 
 console.log('\n--- s5 summary (nowIST=' + hh + ') ---');
 for (const r of results) console.log(r.status.padEnd(4), r.id, '-', r.title, '::', r.detail);
-await mongoose.disconnect(); server.close(); await mongod.stop(); process.exit(0);
+await teardown(); process.exit(0);

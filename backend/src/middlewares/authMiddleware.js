@@ -24,6 +24,16 @@ const protect = async (req, res, next) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       req.user = await User.findByPk(decoded.id, { attributes: { exclude: REQ_USER_EXCLUDE } });
+
+      // The token verified, but the account it names is gone — deleted staff, or a
+      // student removed between issuing and use. Without this the request continued with
+      // req.user === null and the first handler to read req.user._id threw a TypeError,
+      // which every controller turns into a 500. A 401 is both the honest answer and the
+      // one the client already knows how to handle: it clears the session and re-logs in.
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authorized, account no longer exists' });
+      }
+
       next();
     } catch (error) {
       console.error(error);

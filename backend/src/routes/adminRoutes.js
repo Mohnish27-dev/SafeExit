@@ -1,5 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const { uuidParam } = require('../middlewares/validateParams');
+
+// Rejects a malformed :id before any handler runs, so a non-uuid cannot reach a query
+// and turn into a 500. See middlewares/validateParams.js.
+router.param('id', uuidParam);
 const {
   getOverview,
   getUsers,
