@@ -12,6 +12,14 @@ services:
       PORT: 5000
     ports:
       - "127.0.0.1:5000:5000"
+    # PostgreSQL is not a service here: the college runs its own server and hands over a
+    # restricted role. That makes reaching it the one thing a Docker deployment gets wrong
+    # by default — 127.0.0.1 inside this container is the CONTAINER, not the machine, so a
+    # DATABASE_URL pointing at localhost fails to connect while psql on the host works fine.
+    # This maps host.docker.internal to the host gateway (Docker Engine 20.10+ on Linux),
+    # so backend/.env can name it and reach a database installed on the box itself.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - safeexit
 

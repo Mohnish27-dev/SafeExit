@@ -16,6 +16,11 @@ COPY --chown=node:node --from=deps /app/node_modules ./node_modules
 COPY --chown=node:node package.json package-lock.json ./
 COPY --chown=node:node src ./src
 COPY --chown=node:node scripts ./scripts
+# The DDL travels with the image, not just with the repo. Two reasons: a locked-down campus
+# server can then apply the schema with `docker compose run --rm backend npm run pg:schema`
+# and never needs Node installed on the host; and the schema can no longer be applied from a
+# different commit than the code that will query it, because they ship as one artifact.
+COPY --chown=node:node db ./db
 
 USER node
 EXPOSE 5000

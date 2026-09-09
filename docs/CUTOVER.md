@@ -1,5 +1,17 @@
 # Cutover — MongoDB to PostgreSQL
 
+> **SUPERSEDED. Read `docs/DEPLOY-COLLEGE.md` instead.**
+>
+> The decision was made to start the college server with an empty database rather than
+> migrate the Atlas data, which was only ever a trial. With no data moving there is nothing
+> to freeze, nothing to reconcile and no old sessions to keep alive, so none of the sequence
+> below applies to that deployment.
+>
+> This file is kept because the machinery it describes is real and still in the code —
+> `MAINTENANCE_MODE`, `LEGACY_ID_GRACE`, `npm run pg:verify` and `npm run cutover:rehearse`
+> all work. If a MongoDB deployment ever does need migrating, this is how. Otherwise treat
+> it as history.
+
 Phase 4, the last one. Phases 0 to 3 are done: the schema is applied, the ETL runs, and the
 backend on `mohnish_new_branch` reads and writes PostgreSQL only. `main` is still the live
 MongoDB system.
