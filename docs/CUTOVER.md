@@ -70,10 +70,26 @@ Reads keep working throughout — the roster, the overdue list, the SSE stream. 
 PUT, PATCH and DELETE answers `503` with a `Retry-After`. That includes logging in, which is
 the reason to keep this window short.
 
+**The freeze has to live in the backend, not in nginx.** Requests reach the API by two
+paths — `/api/backend/*` proxied straight through nginx, and `/api/*` rewritten by Next.js
+— so an nginx rule would have to cover `location /` as well, which is the entire frontend.
+The middleware catches both paths however the request arrives.
+
 **`src/middlewares/maintenanceMode.js` has no database coupling of any kind**, precisely so
 it can be applied to whichever backend is live at the time. Right now that is the MongoDB
-one on `main`, so cherry-pick the middleware and its one line in `src/app.js` onto `main`
-first. Nothing else in the file needs to change.
+one on `main`, so put the middleware and its one line in `src/app.js` onto `main` first and
+push — the deploy workflow fires on a push to `main`, and what it deploys is the existing
+Mongo app with the freeze on.
+
+That freeze commit costs exactly one merge conflict later, in `backend/src/app.js`, when the
+Postgres branch merges in step 7. It has been tested: resolving it with
+
+```bash
+git checkout --theirs backend/src/app.js
+```
+
+leaves the merged tree byte-identical to `mohnish_new_branch`, because that branch already
+contains the same middleware. No other file conflicts. Expect it, do not debug it.
 
 Confirm the freeze took hold with a read, not a write:
 
@@ -167,8 +183,29 @@ two. There is a note to this effect in `authController`.
 
 ### 7. Deploy, then unfreeze
 
-Merge to `main` and let the workflow run, or pull the images on the box directly. Then remove
-`MAINTENANCE_MODE` from `backend/.env` (or set it to `false`) and restart the backend.
+`main` is a strict ancestor of `mohnish_new_branch` — 39 commits behind, with nothing of its
+own — so apart from the freeze commit from step 1 this merge carries no surprises.
+
+```bash
+git checkout main
+git merge mohnish_new_branch
+git checkout --theirs backend/src/app.js   # the one expected conflict; see step 1
+git add backend/src/app.js && git commit
+git push origin main                        # this is what triggers the deploy
+```
+
+Watch the workflow finish and the containers come up. Then remove `MAINTENANCE_MODE` from
+`backend/.env` (or set it to `false`) and restart the backend:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d backend
+curl -si http://localhost:5000/health | grep -i x-maintenance-mode   # expect no output
+```
+
+Note that this deploy carries far more than the database change — `main` predates helmet,
+compression, the rate limiters, `validateParams` and the central error handler. All of it
+ships at once. That is an argument for doing the six-role walk in step 8 properly, not a
+reason to split the deploy.
 
 ### 8. Smoke-test the gate for real
 
