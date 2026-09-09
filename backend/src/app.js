@@ -25,6 +25,7 @@ const diagRoutes = require('./routes/diagRoutes');
 const { PAGE_HEADERS } = require('./utils/pagination');
 const { sseSafeFilter } = require('./middlewares/compressionConfig');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
+const { maintenanceMode } = require('./middlewares/maintenanceMode');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -62,6 +63,12 @@ app.use(cors({
   // complete list from a truncated one.
   exposedHeaders: PAGE_HEADERS,
 }));
+
+// The cutover write freeze. Position matters twice over: after cors(), because a 503
+// without the CORS headers reaches the browser as an opaque network error rather than as
+// the message it carries; and before express.json(), so a refused 2mb photo upload is not
+// parsed into memory on its way to being turned down. Off unless MAINTENANCE_MODE=true.
+app.use(maintenanceMode);
 
 // 2mb covers a base64 face photo on PATCH /auth/profile; controllers cap the photo field itself.
 app.use(express.json({ limit: '2mb' }));

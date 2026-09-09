@@ -3,6 +3,8 @@ const { sequelize, ScanLog, User, OutingRequest, LeaveApplication } = require('.
 const sseHub = require('../utils/sseHub');
 const { ciEquals } = require('../utils/ciCompare');
 const { passScope, mergeWhere } = require('../utils/hostelScope');
+const { isLegacyId } = require('../utils/legacyIdGrace');
+const { UUID_RE } = require('../middlewares/validateParams');
 const {
   isDeparturePassed,
   isBeforeDeparture,
@@ -31,12 +33,6 @@ class ScanConflict extends Error {
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// A 24-character hex string is a MongoDB ObjectId. Every row keeps its legacy_id until
-// 004_drop_legacy_ids.sql runs after cutover, so a QR minted before the migration still
-// resolves during the grace period instead of 404ing at the barrier.
-const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
-
 // A student's campusStatus admits exactly one legal move, which is what lets a gate
 // station run a single scanner with no exit/entry mode switch: 'Inside' can only
 // leave, 'Outside'/'Overdue' can only return. Anything else is treated as inside, to
@@ -53,7 +49,12 @@ const resolveStudent = async ({ student, studentId }, options = {}) => {
   if (student) {
     const key = String(student).trim();
     if (UUID_RE.test(key)) studentDoc = await User.findByPk(key, options);
-    else if (OBJECT_ID_RE.test(key)) studentDoc = await User.findOne({ where: { legacyId: key }, ...options });
+    // A 24-character hex string is a MongoDB ObjectId, so a QR minted before the migration
+    // still resolves at the barrier instead of 404ing. isLegacyId also has to go false once
+    // 004_drop_legacy_ids.sql runs, or this stops being a miss and becomes a hard error on
+    // a missing column — mid-scan. utils/legacyIdGrace.js owns that switch for both here
+    // and the auth middleware.
+    else if (isLegacyId(key)) studentDoc = await User.findOne({ where: { legacyId: key }, ...options });
   }
   if (!studentDoc && studentId) {
     const roll = String(studentId).trim();

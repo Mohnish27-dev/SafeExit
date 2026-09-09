@@ -11,8 +11,15 @@
 --   1. The Atlas cluster has been read-only for at least two weeks and nothing has needed it.
 --   2. Every JWT issued before cutover has expired, so no request can still present an
 --      ObjectId subject.
---   3. The legacy_id fallback has been removed from the auth middleware.
---   4. A fresh pg_dump has been taken.
+--   3. The legacy_id fallback has been removed from the CODE, not merely switched off.
+--      That is backend/src/utils/legacyIdGrace.js and its two call sites, in
+--      src/middlewares/authMiddleware.js and src/controllers/scanController.js.
+--   4. `legacyId` has been removed from src/models/_shared.js and the eight models that
+--      spread it. This one is easy to miss and fails hard: Sequelize names every attribute
+--      in its SELECT list, so an attribute left behind after the column is gone turns every
+--      read of that table into `column users.legacy_id does not exist` — not a degraded
+--      lookup, a broken app.
+--   5. A fresh pg_dump has been taken.
 --
 -- Dropping a column is instant and does not rewrite the table, but it is not reversible
 -- without that dump.

@@ -3,8 +3,13 @@
 The MongoDB → PostgreSQL migration. This directory holds the hand-written DDL; the scripts
 that apply and verify it live in `backend/scripts/`.
 
-Nothing in the running application reads PostgreSQL yet. `MONGO_URI` is still the live
-database, and the app is unchanged. This is Phase 1 groundwork.
+**The backend on this branch reads and writes PostgreSQL only.** Phases 0 to 3 are done:
+schema, ETL, and the whole data layer. Mongoose survives as a dependency solely because
+`scripts/etl.js`, `scripts/mongoInventory.js` and `scripts/cutoverVerify.js` read Atlas;
+nothing in `src/` imports it.
+
+`main` is still the live MongoDB system. Only Phase 4, the cutover, is left — the runbook
+for it is `docs/CUTOVER.md`.
 
 ## Files, and the order they run in
 
@@ -14,6 +19,11 @@ database, and the app is unchanged. This is Phase 1 groundwork.
 | `002_post_etl_constraints.sql` | after the ETL | Rules legacy rows may violate, added `NOT VALID` so they bind future writes without failing on old data. |
 | `003_validate_constraints.sql` | after cleaning data | Turns those checks on for the migrated rows too. |
 | `004_drop_legacy_ids.sql` | weeks after cutover | Removes the `legacy_id` columns. Read the preconditions at the top first. |
+
+`scripts/cutoverVerify.js` (`npm run pg:verify`) sits between the ETL and the switch. It
+reconciles both databases by `legacy_id` and refuses the cutover if anything was written to
+Atlas after the ETL read it. Read-only on both sides; `docs/CUTOVER.md` explains what it
+does and does not check.
 
 ```
 001  →  ETL  →  002  →  clean the data  →  003        …then, much later, 004

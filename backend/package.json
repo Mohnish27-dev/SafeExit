@@ -20,7 +20,8 @@
     "pg:check": "node scripts/applySchema.js check",
     "pg:inventory": "node scripts/mongoInventory.js",
     "pg:etl": "node scripts/etl.js",
-    "pg:etl:dry": "node scripts/etl.js --dry-run"
+    "pg:etl:dry": "node scripts/etl.js --dry-run",
+    "pg:verify": "node scripts/cutoverVerify.js"
   },
   "keywords": [],
   "author": "",
