@@ -20,7 +20,6 @@ COPY --chown=node:node scripts ./scripts
 # server can then apply the schema with `docker compose run --rm backend npm run pg:schema`
 # and never needs Node installed on the host; and the schema can no longer be applied from a
 # different commit than the code that will query it, because they ship as one artifact.
-COPY --chown=node:node db ./db
 
 USER node
 EXPOSE 5000

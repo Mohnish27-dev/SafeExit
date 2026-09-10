@@ -7,7 +7,7 @@ import { apiFetch } from "@/app/lib/api";
 import { markSignatureSaved } from "@/app/lib/userProfile";
 
 // Overlay that captures a signature and persists it to the caller's own profile.
-//
+// 
 // Owns persistence because four surfaces need identical behaviour: both student request
 // forms and both staff approval modals. Errors are surfaced inline rather than swallowed
 // into console.error — unlike the photo save, an unsaved signature blocks real work.
