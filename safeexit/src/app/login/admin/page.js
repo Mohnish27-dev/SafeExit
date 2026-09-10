@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/app/lib/api";
 import { useRouter } from "next/navigation";
 import {
 	AlertCircle,
@@ -54,7 +55,7 @@ export default function AdminLoginPage() {
 		setErrorMsg("");
 
 		try {
-			const response = await apiFetch("/auth/login", {
+			const data = await apiFetch("/auth/login", {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
@@ -64,19 +65,6 @@ export default function AdminLoginPage() {
 					password: pin,
 				}),
 			});
-			const data = await response.json().catch(() => ({}));
-
-			if (!response.ok) {
-				if (response.status === 401) {
-					throw new Error("Incorrect name, Admin ID, or PIN.");
-				}
-				if (response.status === 429) {
-					throw new Error(
-						"Too many attempts. Please wait a few minutes and try again.",
-					);
-				}
-				throw new Error(data.message || "Could not sign in.");
-			}
 
 			if (data.role !== "Admin") {
 				throw new Error(
@@ -93,9 +81,17 @@ export default function AdminLoginPage() {
 			});
 			router.push("/dashboard/admin");
 		} catch (error) {
-			setErrorMsg(
-				error?.message || "Could not sign in. Please try again.",
-			);
+			if (error?.status === 401) {
+				setErrorMsg("Incorrect name, Admin ID, or PIN.");
+			} else if (error?.status === 429) {
+				setErrorMsg(
+					"Too many attempts. Please wait a few minutes and try again.",
+				);
+			} else {
+				setErrorMsg(
+					error?.message || "Could not sign in. Please try again.",
+				);
+			}
 		} finally {
 			setIsProcessing(false);
 		}

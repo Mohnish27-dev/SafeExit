@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { apiFetch } from "@/app/lib/api";
 import { useRouter } from "next/navigation";
 import {
 	Shield,
@@ -92,18 +93,19 @@ export default function WardenLoginPage() {
 
 	// Wardens are admin-provisioned, not self-registered
 	const loginWardenAccount = async (loginId, pin) => {
-		const res = await apiFetch("/auth/login", {
-			method: "POST",
-			credentials: "include",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ loginId, password: pin }),
-		});
-		const data = await res.json().catch(() => ({}));
-		if (!res.ok) {
+		let data;
+		try {
+			data = await apiFetch("/auth/login", {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ loginId, password: pin }),
+			});
+		} catch (err) {
 			throw new Error(
-				res.status === 401
+				err?.status === 401
 					? "Account not found or PIN incorrect. Ask your administrator to provision or reset your warden account."
-					: data.message || "Login failed.",
+					: err?.message || "Login failed.",
 			);
 		}
 		// Defence in depth: keep non-warden accounts off the warden dashboard
@@ -130,24 +132,26 @@ export default function WardenLoginPage() {
 			"Content-Type": "application/json",
 			Authorization: `Bearer ${token}`,
 		};
-		const optionsRes = await apiFetch("/auth/webauthn/register/options", {
-			method: "POST",
-			credentials: "include",
-			headers: authHeaders,
-		});
-		if (!optionsRes.ok) throw new Error("Could not start passkey setup");
-		const optionsJSON = await optionsRes.json();
+		let optionsJSON;
+		try {
+			optionsJSON = await apiFetch("/auth/webauthn/register/options", {
+				method: "POST",
+				credentials: "include",
+				headers: authHeaders,
+			});
+		} catch {
+			throw new Error("Could not start passkey setup");
+		}
 
 		const attResp = await startRegistration({ optionsJSON });
 
-		const verifyRes = await apiFetch("/auth/webauthn/register/verify", {
+		const verifyData = await apiFetch("/auth/webauthn/register/verify", {
 			method: "POST",
 			credentials: "include",
 			headers: authHeaders,
 			body: JSON.stringify(attResp),
 		});
-		const verifyData = await verifyRes.json();
-		if (!verifyRes.ok || !verifyData.verified) {
+		if (!verifyData.verified) {
 			throw new Error(
 				verifyData.message || "Passkey verification failed",
 			);
@@ -268,33 +272,28 @@ export default function WardenLoginPage() {
 		try {
 			const loginId = buildWardenLoginId(storedProfile.wardenId);
 
-			const optionsRes = await apiFetch("/auth/webauthn/login/options", {
-				method: "POST",
-				credentials: "include",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ loginId }),
-			});
-			if (!optionsRes.ok) {
+			let optionsJSON;
+			try {
+				optionsJSON = await apiFetch("/auth/webauthn/login/options", {
+					method: "POST",
+					credentials: "include",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ loginId }),
+				});
+			} catch {
 				throw new Error(
 					"No passkey found for this account on the server.",
 				);
 			}
-			const optionsJSON = await optionsRes.json();
 
 			const asseResp = await startAuthentication({ optionsJSON });
 
-			const verifyRes = await apiFetch("/auth/webauthn/login/verify", {
+			const data = await apiFetch("/auth/webauthn/login/verify", {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ loginId, response: asseResp }),
 			});
-			const data = await verifyRes.json();
-			if (!verifyRes.ok) {
-				throw new Error(
-					data.message || "Biometric login failed on server.",
-				);
-			}
 			sessionStorage.setItem("safeexit_token", data.token);
 
 			persistWardenSession(storedProfile);
