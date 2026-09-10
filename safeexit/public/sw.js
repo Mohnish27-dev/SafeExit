@@ -1,7 +1,13 @@
 // Service Worker: push + offline app-shell (iOS requires offline caching for push).
 
-const CACHE_NAME = 'safeexit-v1';
-const OFFLINE_URL = '/offline';
+const CACHE_NAME = 'safeexit-v2';
+// The SW is served from `${basePath}/sw.js`, so its own location yields the app's
+// base path without hardcoding it here. Every app URL below is resolved against it.
+const BASE_PATH = self.location.pathname.replace(/\/sw\.js$/, '');
+const withBase = (url) =>
+  url.startsWith(BASE_PATH + '/') ? url : BASE_PATH + url;
+
+const OFFLINE_URL = withBase('/offline');
 const PRECACHE_URLS = [OFFLINE_URL];
 
 async function precache() {
@@ -74,15 +80,15 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body || '',
-    icon: '/images/nit-patna-icon-192.png',
-    badge: '/images/nit-patna-icon-192.png',
+    icon: withBase('/images/nit-patna-icon-192.png'),
+    badge: withBase('/images/nit-patna-icon-192.png'),
     vibrate: [100, 200, 100],
     // Same tag replaces the older notification instead of stacking
     tag: data.tag || 'safeexit-notification',
     renotify: true,
     requireInteraction: data.urgency === 'high',
     data: {
-      url: data.url || '/dashboard/caretaker',
+      url: withBase(data.url || '/dashboard/caretaker'),
     },
   };
 
@@ -95,7 +101,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || '/dashboard/caretaker';
+  const targetUrl = withBase(event.notification.data?.url || '/dashboard/caretaker');
 
   event.waitUntil(
     clients

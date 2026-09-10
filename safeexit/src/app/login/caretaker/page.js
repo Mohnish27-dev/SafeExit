@@ -23,6 +23,7 @@ import {
 } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 import { makeQuickLogin } from "@/app/lib/quickLogin";
+import { BASE_PATH } from "@/app/lib/basePath";
 
 // Caretakers have no email — the normalized Caretaker ID IS the backend loginId
 const buildCaretakerLoginId = (caretakerId) =>
@@ -321,7 +322,7 @@ export default function CaretakerLoginPage() {
 		<div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f4f1ff] via-[#efe8ff] to-[#e9e2ff] relative overflow-hidden">
 			<div className="absolute inset-0 z-0">
 				<Image
-					src="/images/login/hostel-bg.png"
+					src={`${BASE_PATH}/images/login/hostel-bg.png`}
 					alt=""
 					fill
 					sizes="100vw"

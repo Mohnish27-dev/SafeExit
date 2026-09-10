@@ -53,6 +53,7 @@ import {
 	cropCoverScale,
 	getCropSourceRect,
 } from "@/app/lib/profilePhotoCrop.mjs";
+import { BASE_PATH } from "@/app/lib/basePath";
 
 const LOGIN_CROP_FRAME = 240;
 const CROP_OUTPUT_SIZE = 512;
@@ -1428,7 +1429,7 @@ export default function StudentLoginPage() {
 		<div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f4f1ff] via-[#efe8ff] to-[#e9e2ff] relative overflow-hidden">
 			<div className="absolute inset-0 z-0">
 				<Image
-					src="/images/login/hostel-bg.png"
+					src={`${BASE_PATH}/images/login/hostel-bg.png`}
 					alt=""
 					fill
 					className="object-cover opacity-[0.18] pointer-events-none select-none"

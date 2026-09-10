@@ -3,6 +3,7 @@ import Script from "next/script";
 import "./globals.css";
 import { LanguageProvider } from "./lib/i18n";
 import InstallPrompt from "./components/InstallPrompt";
+import { BASE_PATH } from "./lib/basePath";
 
 const displayFont = Outfit({
   variable: "--font-space-grotesk",
@@ -31,11 +32,11 @@ export const metadata = {
   description: "NITP-SafeExit replaces unsafe physical hostel registers with a secure digital outing system that protects student privacy and tracks audit trails.",
   icons: {
     icon: [
-      { url: "/images/nit-patna-icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/images/nit-patna-icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: `${BASE_PATH}/images/nit-patna-icon-192.png`, sizes: "192x192", type: "image/png" },
+      { url: `${BASE_PATH}/images/nit-patna-icon-512.png`, sizes: "512x512", type: "image/png" },
     ],
-    apple: { url: "/images/nit-patna-apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    shortcut: "/images/nit-patna-icon-192.png",
+    apple: { url: `${BASE_PATH}/images/nit-patna-apple-touch-icon.png`, sizes: "180x180", type: "image/png" },
+    shortcut: `${BASE_PATH}/images/nit-patna-icon-192.png`,
   },
 };
 
@@ -47,7 +48,7 @@ export default function RootLayout({ children }) {
       suppressHydrationWarning
     >
       <head>
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" href={`${BASE_PATH}/manifest.json`} />
         <meta name="theme-color" content="#6366f1" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -78,7 +79,7 @@ export default function RootLayout({ children }) {
         <Script id="sw-register" strategy="afterInteractive">
           {`
             if ('serviceWorker' in navigator) {
-              navigator.serviceWorker.register('/sw.js').catch(function(err) {
+              navigator.serviceWorker.register('${BASE_PATH}/sw.js', { scope: '${BASE_PATH}/' }).catch(function(err) {
                 console.log('SW registration failed:', err);
               });
             }

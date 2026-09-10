@@ -10,6 +10,7 @@ import { getToken } from "@/app/lib/auth";
 import { getStoredUser } from "@/app/lib/userProfile";
 import { CHIEF_WARDEN_PIN_KEY } from "@/app/lib/chiefWardenQuickLogin";
 import TeamCreditLink from "@/app/components/TeamCreditLink";
+import { BASE_PATH } from "@/app/lib/basePath";
 
 // Per-role Quick Login PIN keys — presence tells which roles this device is set up for
 const ROLE_PIN_KEYS = {
@@ -38,7 +39,7 @@ const ROLE_DASHBOARD = {
 };
 
 // The versioned filename prevents Next/Image from serving the previously cached single-student artwork.
-const STUDENT_ILLUSTRATION = "/images/login/student-team.png";
+const STUDENT_ILLUSTRATION = `${BASE_PATH}/images/login/student-team.png`;
 const STAFF_ILLUSTRATION = caretakerIllustration;
 
 const allRoles = [
@@ -46,7 +47,7 @@ const allRoles = [
     id: "security",
     title: "Security Guard",
     icon: ShieldCheck,
-    image: "/images/login/security-guard.png",
+    image: `${BASE_PATH}/images/login/security-guard.png`,
     description: "Scan passes and verify student entry and exit.",
     href: "/login/security",
     eyebrow: "Gate operations",
@@ -292,7 +293,7 @@ export default function LoginRoleSelect() {
       <div className="min-h-screen flex flex-col bg-[#f0f0ff] relative overflow-hidden">
         <div className="absolute inset-0 z-0">
           <Image
-            src="/images/login/hostel-bg.png"
+            src={`${BASE_PATH}/images/login/hostel-bg.png`}
             alt=""
             fill
             className="object-cover opacity-[0.18] pointer-events-none select-none"
@@ -341,7 +342,7 @@ export default function LoginRoleSelect() {
     <div className="min-h-screen flex flex-col bg-[#f0f0ff] relative overflow-hidden">
       <div className="absolute inset-0 z-0">
         <Image
-          src="/images/login/hostel-bg.png"
+          src={`${BASE_PATH}/images/login/hostel-bg.png`}
           alt=""
           fill
           className="object-cover opacity-[0.18] pointer-events-none select-none"
