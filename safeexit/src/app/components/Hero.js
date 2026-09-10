@@ -2,6 +2,7 @@
 
 import { useRef, useCallback } from "react";
 import { Shield, ArrowRight, EyeOff, CheckCircle2, FileText, Bell, QrCode } from "lucide-react";
+import Link from "next/link";
 
 export default function Hero() {
   const sceneRef = useRef(null);
@@ -68,13 +69,13 @@ export default function Hero() {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-              <a
+              <Link
                 href="/login"
                 className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl text-base font-bold bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow-xl shadow-indigo-600/40 ring-1 ring-indigo-400/30 hover:brightness-110 hover:shadow-indigo-500/60 hover:scale-[1.02] active:scale-98 transition-all duration-200"
               >
                 Login to Portal
                 <ArrowRight className="h-5 w-5" />
-              </a>
+              </Link>
               <a
                 href="#how-it-works"
                 className="inline-flex items-center justify-center px-8 py-4 rounded-xl text-base font-bold bg-white/90 text-slate-800 border border-slate-300/70 hover:bg-white dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-750 shadow-sm active:scale-98 transition-all duration-200"

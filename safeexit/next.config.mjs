@@ -6,6 +6,9 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	basePath: "/safeexit",
+	// The ERP host redirects `/safeexit` -> `/safeexit/`; Next's own normalization
+	// redirects the slash back off. Serve both spellings instead of ping-ponging.
+	skipTrailingSlashRedirect: true,
 	reactCompiler: true,
 	// Emit a self-contained server bundle (server.js + minimal node_modules) for Docker.
 	output: "standalone",
