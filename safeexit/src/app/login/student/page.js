@@ -254,24 +254,26 @@ export default function StudentLoginPage() {
 			"Content-Type": "application/json",
 			Authorization: `Bearer ${token}`,
 		};
-		const optionsRes = await apiFetch("/auth/webauthn/register/options", {
-			method: "POST",
-			credentials: "include",
-			headers: authHeaders,
-		});
-		if (!optionsRes.ok) throw new Error("Could not start passkey setup");
-		const optionsJSON = await optionsRes.json();
+		let optionsJSON;
+		try {
+			optionsJSON = await apiFetch("/auth/webauthn/register/options", {
+				method: "POST",
+				credentials: "include",
+				headers: authHeaders,
+			});
+		} catch {
+			throw new Error("Could not start passkey setup");
+		}
 
 		const attResp = await startRegistration({ optionsJSON });
 
-		const verifyRes = await apiFetch("/auth/webauthn/register/verify", {
+		const verifyData = await apiFetch("/auth/webauthn/register/verify", {
 			method: "POST",
 			credentials: "include",
 			headers: authHeaders,
 			body: JSON.stringify(attResp),
 		});
-		const verifyData = await verifyRes.json();
-		if (!verifyRes.ok || !verifyData.verified) {
+		if (!verifyData.verified) {
 			throw new Error(
 				verifyData.message || "Passkey verification failed",
 			);
@@ -283,7 +285,7 @@ export default function StudentLoginPage() {
 		const profile = JSON.parse(
 			localStorage.getItem("safeexit_user_profile"),
 		);
-		const registerRes = await apiFetch("/auth/register", {
+		const registerData = await apiFetch("/auth/register", {
 			method: "POST",
 			credentials: "include",
 			headers: { "Content-Type": "application/json" },
@@ -304,11 +306,6 @@ export default function StudentLoginPage() {
 				emailVerificationToken: emailToken, // proves the college email was verified
 			}),
 		});
-		if (!registerRes.ok) {
-			const errBody = await registerRes.json().catch(() => ({}));
-			throw new Error(errBody.message || "Registration failed");
-		}
-		const registerData = await registerRes.json();
 		sessionStorage.setItem("safeexit_token", registerData.token);
 		return registerData.token;
 	};
@@ -317,16 +314,11 @@ export default function StudentLoginPage() {
 		setIsProcessing(true);
 		setErrorMsg("");
 		try {
-			const res = await apiFetch("/auth/otp/send", {
+			const data = await apiFetch("/auth/otp/send", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ email: formData.email.trim() }),
 			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok)
-				throw new Error(
-					data.message || "Couldn't send the code. Please try again.",
-				);
 			setResendIn(60);
 			// devOtp only returned when SMTP is off; never present in production
 			setDevOtp(data.devOtp || null);
@@ -347,7 +339,7 @@ export default function StudentLoginPage() {
 		setIsProcessing(true);
 		setErrorMsg("");
 		try {
-			const res = await apiFetch("/auth/otp/verify", {
+			const data = await apiFetch("/auth/otp/verify", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -355,8 +347,7 @@ export default function StudentLoginPage() {
 					otp: otp.trim(),
 				}),
 			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok || !data.verified)
+			if (!data.verified)
 				throw new Error(data.message || "Verification failed.");
 			setEmailToken(data.emailVerificationToken);
 			setDevOtp(null);
@@ -946,19 +937,12 @@ export default function StudentLoginPage() {
 			if (!password) throw new Error("Incorrect PIN. Please try again.");
 
 			const email = (storedProfile?.email || "").trim();
-			const res = await apiFetch("/auth/login", {
+			const data = await apiFetch("/auth/login", {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ loginId: email, password }),
 			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok) {
-				throw new Error(
-					data.message ||
-						"Login failed. Try signing in with your password.",
-				);
-			}
 			if (data.role !== "Student") {
 				throw new Error(
 					"This account is not authorized for student access.",
@@ -979,34 +963,28 @@ export default function StudentLoginPage() {
 		try {
 			const email = storedProfile.email;
 
-			const optionsRes = await apiFetch("/auth/webauthn/login/options", {
-				method: "POST",
-				credentials: "include",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ email }),
-			});
-			if (!optionsRes.ok) {
+			let optionsJSON;
+			try {
+				optionsJSON = await apiFetch("/auth/webauthn/login/options", {
+					method: "POST",
+					credentials: "include",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ email }),
+				});
+			} catch {
 				throw new Error(
 					"No passkey found for this account on the server.",
 				);
 			}
-			const optionsJSON = await optionsRes.json();
 
 			const asseResp = await startAuthentication({ optionsJSON });
 
-			const verifyRes = await apiFetch("/auth/webauthn/login/verify", {
+			const data = await apiFetch("/auth/webauthn/login/verify", {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ email, response: asseResp }),
 			});
-
-			const data = await verifyRes.json();
-			if (!verifyRes.ok) {
-				throw new Error(
-					data.message || "Biometric login failed on server.",
-				);
-			}
 			sessionStorage.setItem("safeexit_token", data.token);
 			hydrateAndGo(storedProfile);
 		} catch (err) {
@@ -1032,12 +1010,11 @@ export default function StudentLoginPage() {
 
 		let profileData = {};
 		try {
-			const profRes = await apiFetch("/auth/profile", {
+			profileData = await apiFetch("/auth/profile", {
 				method: "GET",
 				credentials: "include",
 				headers: { Authorization: `Bearer ${token}` },
 			});
-			if (profRes.ok) profileData = await profRes.json();
 		} catch {
 			// Non-fatal: fall back to whatever we already know.
 		}
@@ -1105,20 +1082,12 @@ export default function StudentLoginPage() {
 		setIsProcessing(true);
 		setErrorMsg("");
 		try {
-			const res = await apiFetch("/auth/login", {
+			const data = await apiFetch("/auth/login", {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ loginId: email, password }),
 			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok) {
-				throw new Error(
-					res.status === 401
-						? "Email or password is incorrect. If you're new, create an account below."
-						: data.message || "Login failed.",
-				);
-			}
 			// Keep non-students off the student dashboard even with valid staff creds
 			if (data.role !== "Student") {
 				throw new Error(
@@ -1127,7 +1096,11 @@ export default function StudentLoginPage() {
 			}
 			await enterQuickSetupWithSession(data.token, password, email);
 		} catch (err) {
-			setErrorMsg(err?.message || "Login failed.");
+			setErrorMsg(
+				err?.status === 401
+					? "Email or password is incorrect. If you're new, create an account below."
+					: err?.message || "Login failed.",
+			);
 		} finally {
 			setIsProcessing(false);
 		}
@@ -1145,17 +1118,11 @@ export default function StudentLoginPage() {
 		setIsProcessing(true);
 		setErrorMsg("");
 		try {
-			const res = await apiFetch("/auth/password/forgot", {
+			const data = await apiFetch("/auth/password/forgot", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ email }),
 			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok)
-				throw new Error(
-					data.message ||
-						"Couldn't send the reset code. Please try again.",
-				);
 			setForgotOtp("");
 			setResendIn(60);
 			setDevOtp(data.devOtp || null); // dev-only, when SMTP is off
@@ -1176,7 +1143,7 @@ export default function StudentLoginPage() {
 		setIsProcessing(true);
 		setErrorMsg("");
 		try {
-			const res = await apiFetch("/auth/password/verify-otp", {
+			const data = await apiFetch("/auth/password/verify-otp", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -1184,8 +1151,7 @@ export default function StudentLoginPage() {
 					otp: forgotOtp.trim(),
 				}),
 			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok || !data.verified)
+			if (!data.verified)
 				throw new Error(data.message || "Verification failed.");
 			setResetToken(data.resetToken);
 			setDevOtp(null);
@@ -1213,18 +1179,12 @@ export default function StudentLoginPage() {
 		setErrorMsg("");
 		try {
 			const email = forgotEmail.trim();
-			const res = await apiFetch("/auth/password/reset", {
+			const data = await apiFetch("/auth/password/reset", {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ email, resetToken, newPassword }),
 			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok)
-				throw new Error(
-					data.message ||
-						"Couldn't reset your password. Please try again.",
-				);
 			if (data.role !== "Student") {
 				throw new Error(
 					"This account is not authorized for student access.",
