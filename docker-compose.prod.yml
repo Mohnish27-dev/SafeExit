@@ -2,41 +2,29 @@
 # This prevents EC2 from freezing during high-memory Next.js builds.
 
 services:
-  backend:
-    image: ${DOCKER_USERNAME}/safeexit-backend:latest
-    restart: unless-stopped
-    env_file:
-      - ./backend/.env
-    environment:
-      NODE_ENV: production
-      PORT: 5000
-    ports:
-      - "127.0.0.1:5000:5000"
-    # PostgreSQL is not a service here: the college runs its own server and hands over a
-    # restricted role. That makes reaching it the one thing a Docker deployment gets wrong
-    # by default — 127.0.0.1 inside this container is the CONTAINER, not the machine, so a
-    # DATABASE_URL pointing at localhost fails to connect while psql on the host works fine.
-    # This maps host.docker.internal to the host gateway (Docker Engine 20.10+ on Linux),
-    # so backend/.env can name it and reach a database installed on the box itself.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - safeexit
+    backend:
+        restart: unless-stopped
+        build:
+            context: ./backend
+            dockerfile: Dockerfile
+        env_file:
+            - ./backend/.env
+        environment:
+            NODE_ENV: production
+            PORT: 5000
+        ports:
+            - "5000:5000"
 
-  frontend:
-    image: ${DOCKER_USERNAME}/safeexit-frontend:latest
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      BACKEND_ORIGIN: "http://backend:5000"
-      SCANNER_TOOLS: ${SCANNER_TOOLS:-0}
-    ports:
-      - "127.0.0.1:3000:3000"
-    depends_on:
-      - backend
-    networks:
-      - safeexit
-
-networks:
-  safeexit:
-    driver: bridge
+    frontend:
+        restart: unless-stopped
+        build:
+            context: ./safeexit
+            dockerfile: Dockerfile
+        environment:
+            NODE_ENV: production
+            BACKEND_ORIGIN: "http://backend:5000"
+            SCANNER_TOOLS: ${SCANNER_TOOLS:-0}
+        ports:
+            - "4001:4001"
+        depends_on:
+            - backend
