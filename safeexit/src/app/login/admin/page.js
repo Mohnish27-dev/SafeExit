@@ -14,6 +14,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { setStoredUser } from "@/app/lib/userProfile";
+import { BASE_PATH } from "@/app/lib/basePath";
 
 // Admins have no email; the normalized Admin ID is their backend login ID.
 const buildAdminLoginId = (adminId) =>
@@ -101,7 +102,7 @@ export default function AdminLoginPage() {
 		<div className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#eef2ff] via-[#e8ecff] to-[#e2e8ff]">
 			<div className="absolute inset-0 z-0">
 				<Image
-					src="/images/login/hostel-bg.png"
+					src={`${BASE_PATH}/images/login/hostel-bg.png`}
 					alt=""
 					fill
 					sizes="100vw"

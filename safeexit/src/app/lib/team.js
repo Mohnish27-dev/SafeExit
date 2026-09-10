@@ -6,6 +6,8 @@
 // Every field except `name` is optional: a blank string or null is simply not
 // rendered, so a half-filled entry still looks intentional rather than broken.
 
+import { BASE_PATH } from "@/app/lib/basePath";
+
 export const TEAM = {
   // Shown as the big heading on /team and in the login footer line.
   name: "Team SafeExit",
@@ -39,7 +41,7 @@ export const TEAM_MEMBERS = [
     rollNo: "2406084",
     branch: "",
     yearOfStudy: "",
-    photo: "/images/team/Gungun.png",
+    photo: `${BASE_PATH}/images/team/Gungun.png`,
     linkedin: "https://www.linkedin.com/in/gungun-wadhwani-0aa273325/",
     github: "https://github.com/GungunW-0903",
     email: "wadhwagungun09@gmail.com",
@@ -53,7 +55,7 @@ export const TEAM_MEMBERS = [
     rollNo: "2406058",
     branch: "",
     yearOfStudy: "",
-    photo: "/images/team/MOHNISH.png",
+    photo: `${BASE_PATH}/images/team/MOHNISH.png`,
     // Portrait source (376x642) in a square avatar: a centred crop would cut the
     // top of the head off, so bias the crop upward toward the face.
     photoPosition: "center 8%",

@@ -24,6 +24,7 @@ import {
 } from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 import { makeQuickLogin } from "@/app/lib/quickLogin";
+import { BASE_PATH } from "@/app/lib/basePath";
 
 // Guards have no email — the normalized Guard ID IS the backend loginId
 const buildGuardLoginId = (guardId) =>
@@ -322,7 +323,7 @@ export default function SecurityLoginPage() {
 			{/* ── Full-page background image ── */}
 			<div className="absolute inset-0 z-0">
 				<Image
-					src="/images/login/hostel-bg.png"
+					src={`${BASE_PATH}/images/login/hostel-bg.png`}
 					alt=""
 					fill
 					sizes="100vw"
@@ -364,7 +365,7 @@ export default function SecurityLoginPage() {
 				<div className="relative w-[200px] h-[200px] sm:w-[220px] sm:h-[220px] mb-[-44px] z-20 animate-float">
 					<div className="absolute inset-0 rounded-full bg-white/60 shadow-[0_30px_60px_-35px_rgba(59,7,100,0.6)]" />
 					<Image
-						src="/images/login/security-guard.png"
+						src={`${BASE_PATH}/images/login/security-guard.png`}
 						alt="Security Guard"
 						fill
 						sizes="(min-width: 640px) 220px, 200px"

@@ -18,6 +18,7 @@ import {
   memberHasLinks,
 } from "@/app/lib/team";
 import { getInitials } from "@/app/lib/userProfile";
+import { BASE_PATH } from "@/app/lib/basePath";
 
 export const metadata = {
   title: `Built by ${TEAM.name} | NITP-SafeExit`,
@@ -27,7 +28,7 @@ export const metadata = {
   openGraph: {
     title: `Built by ${TEAM.name} — NITP-SafeExit`,
     description: `The student team behind NITP-SafeExit at ${TEAM.institute}.`,
-    images: ["/images/screenshot-wide.png"],
+    images: [`${BASE_PATH}/images/screenshot-wide.png`],
   },
 };
 
@@ -227,7 +228,7 @@ export default function TeamPage() {
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f0f0ff]">
       <div className="absolute inset-0 z-0">
         <Image
-          src="/images/login/hostel-bg.png"
+          src={`${BASE_PATH}/images/login/hostel-bg.png`}
           alt=""
           fill
           className="pointer-events-none select-none object-cover opacity-[0.18]"
