@@ -1,16 +1,20 @@
 import { genderForHostel } from "./hostels";
+import {
+  STUDENT_PLACEHOLDERS,
+  stripStudentPlaceholders,
+  studentProfileFromServer,
+} from "./studentProfileState.mjs";
 
 const USER_PROFILE_KEY = "safeexit:user";
 
+// Fired on every store write, so pages that read the profile on mount pick up a
+// session restored after they rendered.
+export const USER_UPDATED_EVENT = "safeexit:user-updated";
+
 export const defaultStudentProfile = {
-  name: "Student",
+  ...STUDENT_PLACEHOLDERS,
   role: "student",
   roleLabel: "Student",
-  subtitle: "Year, Program",
-  id: "—",
-  rollNo: "—",
-  email: "student@nitp.ac.in",
-  hostel: "—",
   hostelName: "",
   gender: "",
   room: "",
@@ -38,7 +42,27 @@ export const getStoredUser = () => {
 export const setStoredUser = (profile) => {
   if (typeof window === "undefined") return;
 
-  sessionStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+  // A student profile never persists display placeholders or signature bytes.
+  const toStore = profile?.role === "student" ? stripStudentPlaceholders(profile) : profile;
+  sessionStorage.setItem(USER_PROFILE_KEY, JSON.stringify(toStore));
+  window.dispatchEvent(new Event(USER_UPDATED_EVENT));
+};
+
+// Server profile wins over the tab cache; device-only fields (the photo) fall back
+// to what the tab already holds. Returns the normalized profile it stored.
+export const syncStoredStudentProfile = (me) => {
+  const cached = getStoredUser();
+  // Only reuse the tab cache when it belongs to this same student.
+  const sameStudent =
+    cached?.role === "student" && (!cached.rollNo || !me?.studentId || cached.rollNo === me.studentId);
+  const stored = sameStudent ? cached : {};
+  const merged = normalizeStudentProfile({
+    ...stripStudentPlaceholders(stored),
+    ...studentProfileFromServer(me),
+    photo: me?.photo || stored.photo || null,
+  });
+  setStoredUser(merged);
+  return merged;
 };
 
 // Flip the cached flag after a signature is saved, so the request forms stop
@@ -77,7 +101,9 @@ export const formatDisplayMobile = (profile) => {
   return profile.mobile;
 };
 
-export const normalizeStudentProfile = (stored) => {
+export const normalizeStudentProfile = (raw) => {
+  // A placeholder "Student" name (written by an older build) is not a login.
+  const stored = stripStudentPlaceholders(raw);
   if (!stored?.name) {
     return { ...defaultStudentProfile };
   }

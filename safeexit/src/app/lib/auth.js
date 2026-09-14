@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { getApiBase } from "./api";
-import { getStoredUser, setStoredUser } from "./userProfile";
+import { getStoredUser, setStoredUser, syncStoredStudentProfile } from "./userProfile";
 import { autoSubscribeIfGranted } from "./pushManager";
 
 // Logout deliberately keeps each role's device-local Quick Login (PIN/passkey)
@@ -52,29 +52,21 @@ const tryRestoreSession = async () => {
     if (!data.token || !slug) return null;
 
     sessionStorage.setItem("safeexit_token", data.token);
-    // Staff are identified by loginId, students by roll number + email
-    setStoredUser({
-      name: data.name,
-      role: slug,
-      roleLabel: ROLE_LABELS[slug],
-      id: slug === "student" ? (data.studentId || data.email) : data.loginId,
-      ...(slug === "student"
-        ? {
-            rollNo: data.studentId,
-            email: data.email,
-            room: data.roomNumber,
-            mobile: data.phoneNumber,
-            gender: data.gender,
-            hostelName: data.hostelName,
-            hostel: data.hostelName
-              ? `Block ${data.hostelName}${data.roomNumber ? `, Room ${data.roomNumber}` : ""}`
-              : undefined,
-          }
-        : {}),
-      hasSignature: Boolean(data.hasSignature),
-      ...(data.managedGender ? { managedGender: data.managedGender } : {}),
-      ...(data.managedHostel ? { managedHostel: data.managedHostel } : {}),
-    });
+    if (slug === "student") {
+      // Same shape the dashboard's /auth/profile sync writes, subtitle included.
+      syncStoredStudentProfile(data);
+    } else {
+      // Staff are identified by loginId
+      setStoredUser({
+        name: data.name,
+        role: slug,
+        roleLabel: ROLE_LABELS[slug],
+        id: data.loginId,
+        hasSignature: Boolean(data.hasSignature),
+        ...(data.managedGender ? { managedGender: data.managedGender } : {}),
+        ...(data.managedHostel ? { managedHostel: data.managedHostel } : {}),
+      });
+    }
 
     // Chief Warden is an oversight-only dashboard and intentionally has no Web
     // Push feature. Other roles keep the existing best-effort re-subscription.
