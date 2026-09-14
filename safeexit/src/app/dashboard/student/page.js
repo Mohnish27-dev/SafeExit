@@ -45,6 +45,7 @@ import {
   getStoredUser,
   normalizeStudentProfile,
   setStoredUser,
+  syncStoredStudentProfile,
 } from "@/app/lib/userProfile";
 import { getTimeGreeting } from "@/app/lib/greeting";
 import { apiFetch } from "@/app/lib/api";
@@ -378,26 +379,30 @@ export default function StudentDashboardPage() {
   const cropDragRef = useRef(null);
 
   useEffect(() => {
-    const storedProfile = getStoredUser();
-    if (storedProfile?.name) {
-      const normalized = normalizeStudentProfile(storedProfile);
-      if (normalized.subtitle !== storedProfile.subtitle) {
-        setStoredUser(normalized);
-      }
-      // Hydrate the browser-backed profile once the client mounts.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setProfile(normalized);
-
-      // Republish photo to the authenticated backend so the gate scanner can show it.
-      if (normalized.photo) {
-        apiFetch("/auth/profile", {
-          method: "PATCH",
-          body: JSON.stringify({ photo: normalized.photo }),
-        }).catch((err) => console.error("Failed to publish profile photo", err));
-      }
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
+
+  // Wait for useRequireAuth: after the mobile OS wipes sessionStorage, the cookie
+  // restore writes the profile only once it resolves, so reading on mount would
+  // render the placeholder profile.
+  useEffect(() => {
+    if (!authorized) return;
+    const storedProfile = getStoredUser();
+    const normalized = normalizeStudentProfile(storedProfile);
+    if (normalized.name === defaultStudentProfile.name) return; // the server sync below fills it
+    // Hydrate the browser-backed profile before the server sync lands.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setProfile((prev) => ({ ...normalized, signature: prev.signature }));
+
+    // Republish photo to the authenticated backend so the gate scanner can show it.
+    if (normalized.photo) {
+      apiFetch("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ photo: normalized.photo }),
+      }).catch((err) => console.error("Failed to publish profile photo", err));
+    }
+  }, [authorized]);
 
   useEffect(() => {
     if (!isPushSupported()) {
@@ -453,36 +458,20 @@ export default function StudentDashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Sync rollNo + Mongo _id from the backend (localStorage can be stale; scanner resolves by _id first).
+  // The server profile is the source of truth for every field (the tab cache can be
+  // stale or missing; the scanner resolves the QR by sid first). Waits for auth so the
+  // request carries this tab's Bearer token.
   useEffect(() => {
+    if (!authorized) return;
     let cancelled = false;
     (async () => {
       try {
         const me = await apiFetch("/auth/profile");
-        if (cancelled || !me) return;
-        // Restore both server-backed media fields after every login path; sessionStorage
-        // carries only the signature flag and may not contain the photo.
-        setProfile((prev) => {
-          const next = {
-            ...prev,
-            ...(me.studentId ? { rollNo: me.studentId, sid: me._id } : null),
-            gender: me.gender || prev.gender || "",
-            hostelName: me.hostelName || prev.hostelName || "",
-            photo: me.photo || prev.photo || null,
-            signature: me.signature || null,
-          };
-          const stored = getStoredUser();
-          if (stored) {
-            setStoredUser({
-              ...stored,
-              ...next,
-              hostel: next.hostelName
-                ? `Block ${next.hostelName}${stored.room ? `, Room ${stored.room}` : ""}`
-                : stored.hostel,
-            });
-          }
-          return next;
-        });
+        if (cancelled || me?.role !== "Student") return;
+        const synced = syncStoredStudentProfile(me);
+        // Signature bytes stay in page state only; the store keeps just the flag.
+        setProfile({ ...synced, signature: me.signature || null });
+        setHostelSynced(true);
       } catch {
         /* not authenticated — keep local profile */
       }
@@ -490,9 +479,10 @@ export default function StudentDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authorized]);
 
   useEffect(() => {
+    if (!authorized) return;
     let cancelled = false;
 
     // background=true skips the loading state so polls update silently.
@@ -541,7 +531,7 @@ export default function StudentDashboardPage() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, []);
+  }, [authorized]);
 
   const greetingName = useMemo(() => {
     const firstName = getFirstName(profile.name);
@@ -771,9 +761,9 @@ export default function StudentDashboardPage() {
     try {
       const compressed = await compressImage(photoDraft, 800, 0.7);
       const nextPhoto = compressed || photoDraft;
-      const updatedProfile = { ...profile, photo: nextPhoto };
-      setProfile(updatedProfile);
-      setStoredUser(updatedProfile);
+      setProfile((prev) => ({ ...prev, photo: nextPhoto }));
+      // Merge onto the store, not page state: state may hold signature bytes or placeholders.
+      setStoredUser({ ...getStoredUser(), photo: nextPhoto });
 
       // Sync the on-device onboarding blob so quick-login keeps the latest photo.
       try {
@@ -810,17 +800,9 @@ export default function StudentDashboardPage() {
         method: "PATCH",
         body: JSON.stringify({ hostelName: hostelDraft }),
       });
-      const merged = {
-        ...getStoredUser(),
-        hostelName: updated.hostelName,
-        gender: updated.gender,
-      };
-      setStoredUser(merged);
-      setProfile((prev) => ({
-        ...prev,
-        hostelName: updated.hostelName,
-        gender: updated.gender,
-      }));
+      // PATCH returns the full profile payload, so the "Block, Room" label updates too.
+      const synced = syncStoredStudentProfile(updated);
+      setProfile((prev) => ({ ...synced, signature: prev.signature }));
     } catch (err) {
       setHostelError(err?.message || "Couldn't save your hostel. Please try again.");
     } finally {
