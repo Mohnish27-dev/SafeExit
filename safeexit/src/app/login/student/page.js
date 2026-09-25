@@ -54,6 +54,7 @@ import {
 	getCropSourceRect,
 } from "@/app/lib/profilePhotoCrop.mjs";
 import { BASE_PATH } from "@/app/lib/basePath";
+import { buildStudentSubtitle } from "@/app/lib/studentProfileState.mjs";
 
 const LOGIN_CROP_FRAME = 240;
 const CROP_OUTPUT_SIZE = 512;
@@ -230,7 +231,7 @@ export default function StudentLoginPage() {
 			name: p.fullName,
 			role: "student",
 			roleLabel: "Student",
-			subtitle: `${p.yearLevel} Year, ${p.branch}`,
+			subtitle: buildStudentSubtitle(p.yearLevel, p.branch),
 			id: p.rollNumber,
 			rollNo: p.rollNumber,
 			email: p.email,
@@ -2158,13 +2159,13 @@ export default function StudentLoginPage() {
 													<option value="4th">
 														4th Year
 													</option>
-													<option value="4th">
+													<option value="M.Tech">
 														M.Tech
 													</option>
-													<option value="4th">
+													<option value="MCA">
 														MCA
 													</option>
-													<option value="4th">
+													<option value="PhD">
 														PhD
 													</option>
 												</select>

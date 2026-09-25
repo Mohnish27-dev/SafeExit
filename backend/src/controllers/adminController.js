@@ -3,6 +3,7 @@ const { sequelize, User, UserPhoto, WebauthnCredential, OutingRequest, SOSAlert 
 const { getOverdueStudentIds } = require('../utils/overdue');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
+const { ciEquals } = require('../utils/ciCompare');
 
 // 'Overdue' is a derived overlay that the gate scan never writes — it only ever stores
 // 'Inside' or 'Outside'. But the campus_status CHECK permits it and legacy rows may carry
@@ -67,8 +68,8 @@ const getOverview = async (req, res) => {
 const GUARD_FIELDS = ['id', 'name', 'studentId', 'campusStatus', 'lastSeenAt'];
 const ALL_FIELDS = [
   'id', 'name', 'email', 'role', 'studentId', 'department', 'year', 'roomNumber', 'hostelName',
-  'phoneNumber', 'gender', 'managedGender', 'managedHostel', 'campusStatus', 'lastSeenAt',
-  'onDuty', 'lastActiveAt', 'webAuthnRegistered', 'createdAt',
+  'phoneNumber', 'guardianPhoneNumber', 'gender', 'managedGender', 'managedHostel', 'campusStatus', 'lastSeenAt',
+  'onDuty', 'lastActiveAt', 'webAuthnRegistered', 'profileUnlocked', 'createdAt',
 ];
 
 // GET /api/admin/users?role= — private (Admin/Guard)
@@ -87,6 +88,50 @@ const getUsers = async (req, res) => {
     const where = {};
     if (req.query.role) where.role = req.query.role;
     if (req.user.role === 'Guard') where.role = 'Student';
+
+    // Search filter across text columns (name, roll number / studentId, email, phone, room)
+    if (req.query.search && String(req.query.search).trim()) {
+      const term = `%${String(req.query.search).trim()}%`;
+      const searchConditions = [
+        { name: { [Op.iLike]: term } },
+        { studentId: { [Op.iLike]: term } },
+      ];
+      // Guards only see GUARD_FIELDS; matching on columns they can't see would let them
+      // probe who owns a phone number or email.
+      if (req.user.role !== 'Guard') {
+        searchConditions.push(
+          { email: { [Op.iLike]: term } },
+          { phoneNumber: { [Op.iLike]: term } },
+          { roomNumber: { [Op.iLike]: term } },
+        );
+      }
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push({ [Op.or]: searchConditions });
+    }
+
+    if (req.query.hostelName && String(req.query.hostelName).trim() && req.query.hostelName !== 'ALL') {
+      where.hostelName = { [Op.iLike]: String(req.query.hostelName).trim() };
+    }
+
+    if (req.query.year && String(req.query.year).trim() && req.query.year !== 'ALL') {
+      where.year = { [Op.iLike]: String(req.query.year).trim() };
+    }
+
+    if (req.query.department && String(req.query.department).trim() && req.query.department !== 'ALL') {
+      where.department = { [Op.iLike]: String(req.query.department).trim() };
+    }
+
+    if (req.query.campusStatus && String(req.query.campusStatus).trim() && req.query.campusStatus !== 'ALL') {
+      if (req.query.campusStatus === 'Outside') {
+        where.campusStatus = { [Op.in]: OUTSIDE_STATUSES };
+      } else {
+        where.campusStatus = String(req.query.campusStatus).trim();
+      }
+    }
+
+    if (req.query.profileUnlocked !== undefined && req.query.profileUnlocked !== 'ALL') {
+      where.profileUnlocked = req.query.profileUnlocked === 'true';
+    }
 
     const { limit, skip } = readPageParams(req);
     const users = await User.findAll({
@@ -404,6 +449,221 @@ const removeStaff = async (req, res) => {
   }
 };
 
+// PATCH /api/admin/students/:id — private (Admin)
+const updateStudent = async (req, res) => {
+  try {
+    const student = await User.findByPk(req.params.id);
+    if (!student || student.role !== 'Student') {
+      return res.status(404).json({ message: 'Student not found.' });
+    }
+
+    const {
+      name,
+      studentId,
+      department,
+      year,
+      roomNumber,
+      hostelName,
+      phoneNumber,
+      guardianPhoneNumber,
+      email,
+      profileUnlocked,
+    } = req.body;
+
+    if (name !== undefined) {
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ message: 'Name cannot be empty.' });
+      }
+      student.name = String(name).trim();
+    }
+
+    if (studentId !== undefined) {
+      const roll = String(studentId || '').trim();
+      if (!roll) {
+        return res.status(400).json({ message: 'Roll number cannot be empty.' });
+      }
+      const collision = await User.findOne({
+        where: {
+          id: { [Op.ne]: student.id },
+          [Op.or]: [
+            ciEquals('student_id', roll),
+            ciEquals('login_id', roll),
+          ],
+        },
+      });
+      if (collision) {
+        return res.status(409).json({ message: `Roll number "${roll}" is already in use by another account.` });
+      }
+      if (student.loginId && student.studentId && student.loginId.toLowerCase() === student.studentId.toLowerCase()) {
+        student.loginId = roll.toLowerCase();
+      }
+      student.studentId = roll;
+    }
+
+    if (department !== undefined) {
+      student.department = department ? String(department).trim() : null;
+    }
+
+    if (year !== undefined) {
+      student.year = year ? String(year).trim() : null;
+    }
+
+    if (roomNumber !== undefined) {
+      student.roomNumber = roomNumber ? String(roomNumber).trim() : null;
+    }
+
+    if (phoneNumber !== undefined) {
+      const phone = String(phoneNumber || '').trim();
+      if (phone && !/^\d{10,15}$/.test(phone)) {
+        return res.status(400).json({ message: 'Phone number must be 10 to 15 digits.' });
+      }
+      student.phoneNumber = phone || null;
+    }
+
+    if (guardianPhoneNumber !== undefined) {
+      const gPhone = String(guardianPhoneNumber || '').trim();
+      if (gPhone && !/^\d{10,15}$/.test(gPhone)) {
+        return res.status(400).json({ message: 'Guardian phone number must be 10 to 15 digits.' });
+      }
+      if (gPhone && student.phoneNumber && gPhone === student.phoneNumber) {
+        return res.status(400).json({ message: 'Guardian phone number must be different from student phone number.' });
+      }
+      student.guardianPhoneNumber = gPhone || null;
+    }
+
+    if (hostelName !== undefined) {
+      const hName = String(hostelName || '').trim();
+      if (hName && !isValidHostel(hName)) {
+        return res.status(400).json({ message: 'Please select a valid campus hostel.' });
+      }
+      if (hName) {
+        student.hostelName = canonicalHostelName(hName);
+        student.gender = genderForHostel(hName);
+      }
+    }
+
+    if (email !== undefined) {
+      const mail = String(email || '').trim().toLowerCase();
+      if (mail) {
+        const mailCollision = await User.findOne({
+          where: {
+            id: { [Op.ne]: student.id },
+            [Op.or]: [
+              ciEquals('email', mail),
+              ciEquals('login_id', mail),
+            ],
+          },
+        });
+        if (mailCollision) {
+          return res.status(409).json({ message: `Email "${mail}" is already in use by another account.` });
+        }
+        student.email = mail;
+      }
+    }
+
+    if (profileUnlocked !== undefined) {
+      student.profileUnlocked = Boolean(profileUnlocked);
+    }
+
+    await student.save();
+
+    res.json({
+      message: 'Student details updated successfully.',
+      student: {
+        _id: student.id,
+        id: student.id,
+        name: student.name,
+        loginId: student.loginId,
+        studentId: student.studentId,
+        department: student.department,
+        year: student.year,
+        roomNumber: student.roomNumber,
+        hostelName: student.hostelName,
+        gender: student.gender,
+        phoneNumber: student.phoneNumber,
+        guardianPhoneNumber: student.guardianPhoneNumber,
+        email: student.email,
+        profileUnlocked: student.profileUnlocked,
+        campusStatus: student.campusStatus,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// PATCH /api/admin/students/:id/unlock — private (Admin)
+const toggleStudentProfileUnlock = async (req, res) => {
+  try {
+    const student = await User.findByPk(req.params.id);
+    if (!student || student.role !== 'Student') {
+      return res.status(404).json({ message: 'Student not found.' });
+    }
+
+    const nextState = req.body.unlocked !== undefined ? Boolean(req.body.unlocked) : !student.profileUnlocked;
+    student.profileUnlocked = nextState;
+    await student.save();
+
+    res.json({
+      message: nextState
+        ? `Profile unlocked for ${student.name}. The student can now edit their details.`
+        : `Profile locked for ${student.name}.`,
+      profileUnlocked: student.profileUnlocked,
+      studentId: student.id,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// POST /api/admin/students/batch-promote — private (Admin)
+const batchPromoteStudents = async (req, res) => {
+  try {
+    const { fromYear, toYear, hostelName, department } = req.body;
+    if (!fromYear || !String(fromYear).trim()) {
+      return res.status(400).json({ message: 'Source year (fromYear) is required.' });
+    }
+    if (!toYear || !String(toYear).trim()) {
+      return res.status(400).json({ message: 'Target year (toYear) is required.' });
+    }
+    if (String(fromYear).trim().toLowerCase() === String(toYear).trim().toLowerCase()) {
+      return res.status(400).json({ message: 'Source year and target year cannot be identical.' });
+    }
+
+    const where = {
+      role: 'Student',
+      year: { [Op.iLike]: String(fromYear).trim() },
+    };
+
+    if (hostelName && String(hostelName).trim() && String(hostelName).trim() !== 'ALL') {
+      // canonicalHostelName returns null for an unknown hostel, which Sequelize turns into
+      // "hostel_name IS NULL" — promoting every hostel-less student instead of none.
+      if (!isValidHostel(hostelName)) {
+        return res.status(400).json({ message: 'Please select a valid campus hostel.' });
+      }
+      where.hostelName = canonicalHostelName(hostelName);
+    }
+
+    if (department && String(department).trim() && String(department).trim() !== 'ALL') {
+      where.department = { [Op.iLike]: String(department).trim() };
+    }
+
+    const [count] = await User.update(
+      { year: String(toYear).trim() },
+      { where }
+    );
+
+    res.json({
+      message: `Successfully promoted ${count} student(s) from "${fromYear}" to "${toYear}".`,
+      count,
+      fromYear: String(fromYear).trim(),
+      toYear: String(toYear).trim(),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getOverview,
   getUsers,
@@ -412,5 +672,8 @@ module.exports = {
   createStaff,
   resetStaffPin,
   updateStaffScope,
-  removeStaff
+  removeStaff,
+  updateStudent,
+  toggleStudentProfileUnlock,
+  batchPromoteStudents,
 };

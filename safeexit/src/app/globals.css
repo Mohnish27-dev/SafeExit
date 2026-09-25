@@ -3784,7 +3784,7 @@ body {
 
 .grd-drain {
   transform-origin: left center;
-  animation: grd-drain var(--grd-dur, 2500ms) linear forwards;
+  animation: grd-drain var(--grd-dur, 5000ms) linear forwards;
 }
 
 @keyframes grd-drain {

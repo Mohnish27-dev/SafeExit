@@ -38,8 +38,20 @@ test("a restored session builds the same profile shape the login writes", () => 
     gender: "Male",
     hostelName: "Kautilya",
     hostel: "Block Kautilya, Room 214",
+    year: "2nd",
+    department: "CSE",
     hasSignature: true,
   });
+});
+
+test("profileUnlocked and guardianPhoneNumber are included when present", () => {
+  const profile = studentProfileFromServer({
+    ...serverPayload,
+    profileUnlocked: true,
+    guardianPhoneNumber: "9876543211",
+  });
+  assert.equal(profile.profileUnlocked, true);
+  assert.equal(profile.guardianPhoneNumber, "9876543211");
 });
 
 test("empty server fields are omitted so a merge never blanks cached values", () => {
@@ -51,6 +63,9 @@ test("empty server fields are omitted so a merge never blanks cached values", ()
 test("the subtitle degrades gracefully when year or department is missing", () => {
   assert.equal(buildStudentSubtitle("3rd", ""), "3rd Year");
   assert.equal(buildStudentSubtitle("", "ECE"), "ECE");
+  assert.equal(buildStudentSubtitle("M.Tech", "CSE"), "M.Tech, CSE");
+  assert.equal(buildStudentSubtitle("MCA", "CSE"), "MCA, CSE");
+  assert.equal(buildStudentSubtitle("PhD", "ECE"), "PhD, ECE");
   assert.equal(buildStudentSubtitle(undefined, undefined), "");
 });
 

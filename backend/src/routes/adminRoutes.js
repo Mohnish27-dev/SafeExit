@@ -14,6 +14,9 @@ const {
   resetStaffPin,
   updateStaffScope,
   removeStaff,
+  updateStudent,
+  toggleStudentProfileUnlock,
+  batchPromoteStudents,
 } = require('../controllers/adminController');
 const { getAnalytics } = require('../controllers/adminAnalyticsController');
 const { protect } = require('../middlewares/authMiddleware');
@@ -29,6 +32,11 @@ router.get('/users/:id/photo', protect, authorizeRoles('Admin', 'Guard'), getUse
 // Index-served tallies for the security dashboard, so its 15s refresh does not have to
 // page through the roster to add up three numbers.
 router.get('/students/counts', protect, authorizeRoles('Admin', 'Guard'), getStudentCounts);
+
+// Student management
+router.post('/students/batch-promote', protect, authorizeRoles('Admin'), batchPromoteStudents);
+router.patch('/students/:id/unlock', protect, authorizeRoles('Admin'), toggleStudentProfileUnlock);
+router.patch('/students/:id', protect, authorizeRoles('Admin'), updateStudent);
 
 router.post('/staff', protect, authorizeRoles('Admin'), createStaff);
 router.patch('/staff/:id/pin', protect, authorizeRoles('Admin'), resetStaffPin);

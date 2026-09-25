@@ -12,9 +12,22 @@ export const STUDENT_PLACEHOLDERS = {
   hostel: "—",
 };
 
-// Same format the registration/Quick Login path writes ("2nd Year, CSE").
+// Same format the registration/Quick Login path writes ("2nd Year, CSE" or "M.Tech, CSE").
 export const buildStudentSubtitle = (year, department) => {
-  const parts = [year ? `${year} Year` : "", department || ""].filter(Boolean);
+  if (!year && !department) return "";
+  let yearStr = "";
+  if (year) {
+    const trimmed = String(year).trim();
+    if (
+      trimmed.toLowerCase().endsWith("year") ||
+      ["m.tech", "mca", "phd", "mtech"].includes(trimmed.toLowerCase())
+    ) {
+      yearStr = trimmed;
+    } else {
+      yearStr = `${trimmed} Year`;
+    }
+  }
+  const parts = [yearStr, department || ""].filter(Boolean);
   return parts.join(", ");
 };
 
@@ -54,10 +67,14 @@ export const studentProfileFromServer = (me) => {
     gender: me?.gender,
     hostelName,
     hostel: hostelName ? `Block ${hostelName}${room ? `, Room ${room}` : ""}` : room ? `Room ${room}` : "",
+    year: me?.year,
+    department: me?.department,
+    guardianPhoneNumber: me?.guardianPhoneNumber,
   };
   const result = Object.fromEntries(
     Object.entries(profile).filter(([, value]) => value !== undefined && value !== null && value !== ""),
   );
   if (me && "hasSignature" in me) result.hasSignature = Boolean(me.hasSignature);
+  if (me && "profileUnlocked" in me) result.profileUnlocked = Boolean(me.profileUnlocked);
   return result;
 };

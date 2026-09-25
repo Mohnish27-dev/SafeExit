@@ -115,7 +115,10 @@ test.after(async () => {
   await sequelize.close().catch(() => {});
 });
 
-const maybe = (name, fn) => test(name, { skip: skipReason || false }, fn);
+const maybe = (name, fn) => test(name, async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  return fn(t);
+});
 
 // Writes campusStatus straight to the row, then refreshes the instance.
 //
@@ -155,8 +158,10 @@ const outsideWindowReason = departureWindowOpen
 // ---------------------------------------------------------------------------
 
 test('a full gate cycle moves the student out and back, and logs both movements', {
-  skip: skipReason || outsideWindowReason,
-}, async () => {
+  skip: outsideWindowReason,
+}, async (t) => {
+  // skipReason is only known after test.before runs, so it is checked here, not in options.
+  if (skipReason) return t.skip(skipReason);
   const { kautilyaStudent: student, guard } = fixtures;
   await releaseActivePasses(student.id);
   await setCampusStatus(student, 'Inside');
