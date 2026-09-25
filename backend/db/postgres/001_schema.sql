@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS users (
   -- webauthn_registered is a convenience flag; webauthn_credentials is the source of truth.
   webauthn_registered    boolean NOT NULL DEFAULT false,
   current_challenge      text,
+  profile_unlocked       boolean NOT NULL DEFAULT false,
 
   created_at             timestamptz NOT NULL DEFAULT now(),
   updated_at             timestamptz NOT NULL DEFAULT now(),
@@ -98,6 +99,7 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_lowercase_login CHECK (login_id IS NULL OR login_id = lower(login_id)),
   CONSTRAINT users_lowercase_email CHECK (email    IS NULL OR email    = lower(email))
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_unlocked boolean NOT NULL DEFAULT false;
 
 -- Replaces userSchema.index({role, hostelName}) + the collation. Queries must use
 -- WHERE role = $1 AND lower(hostel_name) = lower($2) to hit this.

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NITP-SafeExit - Student Setup Guide</title>
+<style>
+  @page { size: A4; margin: 11mm; }
+
+  :root {
+    --ink: #172033;
+    --body: #3b465a;
+    --muted: #68758b;
+    --line: #dce3ee;
+    --brand: #4338ca;
+    --brand-soft: #eef2ff;
+    --accent: #0e7490;
+    --accent-soft: #ecfeff;
+    --warn: #92400e;
+    --warn-soft: #fffbeb;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0;
+    background: #eef2f7;
+    color: var(--body);
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 9.35pt;
+    line-height: 1.32;
+  }
+  .sheet {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    padding: 11mm;
+    background: #fff;
+  }
+  .printbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 7mm;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--ink);
+    color: #fff;
+  }
+  .printbar button {
+    margin-left: auto;
+    border: 0;
+    border-radius: 999px;
+    padding: 7px 14px;
+    background: #818cf8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8mm;
+    align-items: center;
+    padding-bottom: 4mm;
+    border-bottom: 3px solid var(--brand);
+  }
+  .eyebrow {
+    margin: 0 0 1mm;
+    color: var(--brand);
+    font-size: 7.4pt;
+    font-weight: 800;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 20pt;
+    line-height: 1.06;
+    letter-spacing: -.35px;
+  }
+  .subtitle { margin: 1.5mm 0 0; color: var(--muted); font-size: 10pt; }
+  .logo {
+    display: grid;
+    width: 18mm;
+    height: 18mm;
+    place-items: center;
+    border-radius: 5mm;
+    background: linear-gradient(145deg, #172033, #4338ca 60%, #0891b2);
+    color: #fff;
+    font-size: 17pt;
+    font-weight: 900;
+  }
+  .address {
+    margin: 4mm 0;
+    padding: 3mm 4mm;
+    border-radius: 8px;
+    background: var(--brand-soft);
+    color: var(--ink);
+    text-align: center;
+  }
+  .address strong { color: var(--brand); }
+  .address code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10.2pt;
+    font-weight: 700;
+  }
+  .columns {
+    display: grid;
+    grid-template-columns: .9fr 1.35fr;
+    gap: 5mm;
+    align-items: start;
+  }
+  section {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    break-inside: avoid;
+  }
+  section + section { margin-top: 4mm; }
+  h2 {
+    margin: 0;
+    padding: 2.8mm 3.5mm;
+    background: var(--ink);
+    color: #fff;
+    font-size: 11.3pt;
+    line-height: 1.2;
+  }
+  h3 {
+    margin: 0 0 1.5mm;
+    color: var(--ink);
+    font-size: 9.7pt;
+  }
+  .inside { padding: 3.2mm 3.6mm; }
+  .device + .device {
+    margin-top: 3mm;
+    padding-top: 3mm;
+    border-top: 1px solid var(--line);
+  }
+  ol, ul { margin: 0; padding-left: 5mm; }
+  li { margin-bottom: 1.2mm; }
+  li:last-child { margin-bottom: 0; }
+  strong { color: var(--ink); }
+  .note {
+    margin-top: 3mm;
+    padding: 2.5mm 3mm;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 7px 7px 0;
+    background: var(--accent-soft);
+    color: #285366;
+    font-size: 8.8pt;
+  }
+  .warning {
+    border-left-color: #d97706;
+    background: var(--warn-soft);
+    color: var(--warn);
+  }
+  .ready {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.6mm 4mm;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ready li {
+    position: relative;
+    padding-left: 4mm;
+    font-size: 8.7pt;
+  }
+  .ready li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 1.1mm;
+    width: 2.4mm;
+    height: 2.4mm;
+    border: 1.2px solid var(--brand);
+    border-radius: 2px;
+  }
+  .steps { counter-reset: setup; }
+  .step {
+    position: relative;
+    margin-bottom: 2.5mm;
+    padding: 0 0 2.5mm 8mm;
+    border-bottom: 1px solid var(--line);
+  }
+  .step:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+  .step::before {
+    counter-increment: setup;
+    content: counter(setup);
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: grid;
+    width: 5.5mm;
+    height: 5.5mm;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--brand);
+    color: #fff;
+    font-size: 8pt;
+    font-weight: 800;
+  }
+  .step p { margin: 0; font-size: 8.85pt; }
+  footer {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 5mm;
+    align-items: center;
+    margin-top: 4mm;
+    padding-top: 3mm;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 8pt;
+  }
+  footer strong { color: var(--ink); }
+  .pill {
+    padding: 1.6mm 3mm;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  @media print {
+    body { background: #fff; }
+    .sheet { width: auto; min-height: 0; margin: 0; padding: 0; }
+    .printbar { display: none !important; }
+  }
+
+  @media screen and (max-width: 760px) {
+    .sheet { width: 100%; min-height: 0; padding: 18px; }
+    .columns { grid-template-columns: 1fr; }
+    .ready { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <div class="printbar">
+    Press Ctrl + P and choose "Save as PDF". Keep A4 paper, default scale, and background graphics.
+    <button type="button" onclick="window.print()">Save as PDF</button>
+  </div>
+
+  <header>
+    <div>
+      <p class="eyebrow">NIT Patna Hostel Administration</p>
+      <h1>NITP-SafeExit Student Setup Guide</h1>
+      <p class="subtitle">Download, install, and register in a few minutes.</p>
+    </div>
+    <div class="logo" aria-hidden="true">SE</div>
+  </header>
+
+  <div class="address">
+    <strong>Official app address:</strong> <code>erp.nitp.ac.in/safeexit</code><br />
+    The app is a PWA. Do not download an APK or search for it in an app store.
+  </div>
+
+  <div class="columns">
+    <div>
+      <section>
+        <h2>1. Download and install</h2>
+        <div class="inside">
+          <div class="device">
+            <h3>Android - use Google Chrome</h3>
+            <ol>
+              <li>Open the official address in <strong>Chrome</strong>, not inside WhatsApp, Instagram, or another in-app browser.</li>
+              <li>Tap the on-screen <strong>Install</strong> button.</li>
+              <li>If it does not appear, tap Chrome's <strong>three-dot menu</strong>, then <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+              <li>Confirm <strong>Install</strong>, then open NITP-SafeExit from the new home-screen icon.</li>
+            </ol>
+          </div>
+
+          <div class="device">
+            <h3>iPhone / iPad - use Safari</h3>
+            <ol>
+              <li>Open the official address in <strong>Safari</strong>.</li>
+              <li>Tap <strong>Share</strong> (the square with an upward arrow).</li>
+              <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+              <li>Keep the name NITP-SafeExit, tap <strong>Add</strong>, and open it from the home-screen icon.</li>
+            </ol>
+          </div>
+
+          <div class="note warning">
+            <strong>Security:</strong> Install only from the official hostel link. Never install an APK or use an unofficial forwarded link.
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Keep these ready</h2>
+        <div class="inside">
+          <ul class="ready">
+            <li>NITP email and inbox access</li>
+            <li>Roll number, branch, and year</li>
+            <li>Hostel and room number</li>
+            <li>Your and guardian's phone numbers</li>
+            <li>Clear recent face photo</li>
+            <li>One or two trusted contacts</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <section>
+      <h2>3. Register your student account</h2>
+      <div class="inside steps">
+        <div class="step">
+          <h3>Open registration</h3>
+          <p>Open the installed app, choose <strong>Student Login</strong>, and tap <strong>Create an account</strong>.</p>
+        </div>
+
+        <div class="step">
+          <h3>Enter your details</h3>
+          <p>Enter your full name, <strong>@nitp.ac.in</strong> email, roll number, branch, year, hostel, room number, mobile number, guardian number, and a password of at least 6 characters. Your mobile and guardian numbers must be different.</p>
+        </div>
+
+        <div class="step">
+          <h3>Verify your college email</h3>
+          <p>Open your NITP mailbox, find the <strong>6-digit verification code</strong>, and enter it in the app. Check Spam or Promotions if it is missing; use <strong>Resend</strong> after the timer ends.</p>
+        </div>
+
+        <div class="step">
+          <h3>Add your photo and signature</h3>
+          <p>Upload a clear, front-facing photo of yourself. Crop it so your face is easy to identify. Then draw your signature on screen or upload a clear signature image.</p>
+        </div>
+
+        <div class="step">
+          <h3>Add trusted contacts</h3>
+          <p>Add one or two roommates or close friends. Enter each person's name, mobile number, and room number. Their phone number must be different from yours.</p>
+        </div>
+
+        <div class="step">
+          <h3>Set up quick login and finish</h3>
+          <p>Create and confirm a <strong>4-digit PIN</strong>. Enable fingerprint or Face ID if available, then finish setup. The Student Dashboard confirms that registration is complete.</p>
+        </div>
+
+        <div class="note">
+          <strong>Important:</strong> Use your real institute details. Your photo identifies you at the gate, and your saved signature is attached to outing and leave requests. Never share your password, PIN, or QR code.
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <div><strong>NITP-SafeExit</strong> - Student setup only. For account or installation problems, contact the hostel office or caretaker.</div>
+    <div class="pill">Install - Register - Sign in</div>
+  </footer>
+</main>
+</body>
+</html>

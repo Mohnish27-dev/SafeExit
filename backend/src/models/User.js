@@ -90,6 +90,13 @@ const User = sequelize.define(
     // Transient challenge issued during a WebAuthn ceremony, verified on the next request.
     currentChallenge: { type: DataTypes.TEXT, field: 'current_challenge' },
 
+    profileUnlocked: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'profile_unlocked',
+    },
+
     // ---- Virtuals that preserve the Mongo document shape ----
     //
     // `photo` and `signature` were string fields on the user document and are still

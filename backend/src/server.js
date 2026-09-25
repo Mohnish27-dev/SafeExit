@@ -1,5 +1,5 @@
 const app = require('./app');
-const { connectPostgres, closePostgres } = require('./config/sequelize');
+const { connectPostgres, closePostgres, getSequelize } = require('./config/sequelize');
 const { ensureAdmins } = require('./utils/ensureAdmins');
 const { startOverdueSweep } = require('./utils/overdueSweep');
 const sseHub = require('./utils/sseHub');
@@ -81,6 +81,14 @@ process.on('uncaughtException', (err) => {
 });
 
 connectPostgres().then(async () => {
+  try {
+    const s = getSequelize();
+    await s.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_unlocked boolean NOT NULL DEFAULT false;');
+  } catch (err) {
+    // Not fatal to boot, but loud: the User model selects profile_unlocked, so without the
+    // column every user query (login included) fails.
+    console.error('Could not ensure users.profile_unlocked — apply db/postgres/001_schema.sql:', err.message);
+  }
   // Idempotent; unchanged .env = no writes.
   try {
     const { created, updated } = await ensureAdmins();

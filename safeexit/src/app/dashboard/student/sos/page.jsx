@@ -23,6 +23,7 @@ import StudentProfileBanner from "@/app/components/student/StudentProfileBanner"
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { apiFetch } from "@/app/lib/api";
+import { isSecureOrigin } from "@/app/lib/locationManager";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 
@@ -87,7 +88,7 @@ export default function SOSAlert() {
 
   const captureLocation = () => {
     if (locPromiseRef.current) return; // already locating / done
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
+    if (typeof navigator === "undefined" || !navigator.geolocation || !isSecureOrigin()) {
       setLocStatus("unavailable");
       locPromiseRef.current = Promise.resolve(null);
       return;

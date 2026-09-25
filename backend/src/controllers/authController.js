@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { sequelize, User, WebauthnCredential } = require('../models');
+const { sequelize, User, WebauthnCredential, CloseContact } = require('../models');
 const generateToken = require('../utils/generateToken');
 const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
 const { isValidStudentEmail } = require('../config/emailPolicy');
@@ -65,6 +65,7 @@ const profilePayload = (user, extra = {}) => ({
   year: user.year,
   phoneNumber: user.phoneNumber,
   guardianPhoneNumber: user.guardianPhoneNumber,
+  profileUnlocked: Boolean(user.profileUnlocked),
   // Sorted in JS, not by the query: there are at most two (the slot CHECK guarantees it),
   // and ordering an include costs either a separate query or an order clause repeated at
   // every call site. The profile form fills its two rows positionally, so the order has to
@@ -273,9 +274,20 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// PATCH /api/auth/profile — private (gender backfill + own photo + own signature)
+// PATCH /api/auth/profile — private (photo/signature always; student details when profileUnlocked)
 const updateUserProfile = async (req, res) => {
-  const { gender, hostelName, photo, signature } = req.body;
+  const {
+    gender,
+    hostelName,
+    photo,
+    signature,
+    department,
+    year,
+    roomNumber,
+    phoneNumber,
+    guardianPhoneNumber,
+    closeContacts,
+  } = req.body;
 
   // Reject oversized payloads early; a data-URL face photo should be well under this.
   if (photo !== undefined) {
@@ -294,8 +306,22 @@ const updateUserProfile = async (req, res) => {
     });
   }
 
+  const isProtectedFieldAttempt =
+    department !== undefined ||
+    year !== undefined ||
+    roomNumber !== undefined ||
+    phoneNumber !== undefined ||
+    guardianPhoneNumber !== undefined ||
+    closeContacts !== undefined ||
+    hostelName !== undefined;
+
   // At least one supported field must be present.
-  if (gender === undefined && photo === undefined && signature === undefined && hostelName === undefined) {
+  if (
+    gender === undefined &&
+    photo === undefined &&
+    signature === undefined &&
+    !isProtectedFieldAttempt
+  ) {
     return res.status(400).json({ message: 'Nothing to update.' });
   }
 
@@ -313,28 +339,83 @@ const updateUserProfile = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (hostelName !== undefined) {
-      if (user.role !== 'Student') {
-        return res.status(403).json({ message: 'Only students can set a hostel.' });
-      }
-      if (user.hostelName) {
+    let normalizedCloseContacts = null;
+
+    if (isProtectedFieldAttempt) {
+      // Legacy backfill: student setting hostel for the very first time without unlocking
+      const isInitialHostelBackfill =
+        hostelName !== undefined &&
+        !user.hostelName &&
+        department === undefined &&
+        year === undefined &&
+        roomNumber === undefined &&
+        phoneNumber === undefined &&
+        guardianPhoneNumber === undefined &&
+        closeContacts === undefined;
+
+      if (!isInitialHostelBackfill && !user.profileUnlocked) {
         return res.status(403).json({
-          message: 'Hostel is already set and can only be changed by an administrator.',
+          message: 'Profile editing is locked. Please contact an administrator or warden to update your details.',
         });
       }
-      // Hostel is the source of truth for gender — same derivation registration uses.
-      // A boy picking a girls' hostel is rejected rather than silently rewriting gender.
-      const impliedGender = genderForHostel(hostelName);
-      if (user.gender && user.gender !== impliedGender) {
-        return res.status(400).json({
-          message: 'That hostel does not match the gender on your account. Contact your caretaker.',
-        });
+
+      if (department !== undefined) {
+        user.department = department ? String(department).trim() : null;
       }
-      user.hostelName = canonicalHostelName(hostelName);
-      user.gender = impliedGender;
+
+      if (year !== undefined) {
+        user.year = year ? String(year).trim() : null;
+      }
+
+      if (roomNumber !== undefined) {
+        user.roomNumber = roomNumber ? String(roomNumber).trim() : null;
+      }
+
+      if (phoneNumber !== undefined) {
+        const phone = String(phoneNumber || '').trim();
+        if (!/^\d{10,15}$/.test(phone)) {
+          return res.status(400).json({ message: 'Please enter a valid 10 to 15 digit mobile number.' });
+        }
+        user.phoneNumber = phone;
+      }
+
+      if (guardianPhoneNumber !== undefined) {
+        const gPhoneRes = normalizeGuardianPhoneNumber(guardianPhoneNumber, user.phoneNumber);
+        if (gPhoneRes.error) {
+          return res.status(400).json({ message: gPhoneRes.error });
+        }
+        user.guardianPhoneNumber = gPhoneRes.phoneNumber;
+      }
+
+      if (hostelName !== undefined) {
+        if (user.role !== 'Student') {
+          return res.status(403).json({ message: 'Only students can set a hostel.' });
+        }
+        // Hostel is the source of truth for gender — same derivation registration uses.
+        // A boy picking a girls' hostel is rejected rather than silently rewriting gender;
+        // only an administrator can move a student across that line.
+        const impliedGender = genderForHostel(hostelName);
+        if (user.gender && user.gender !== impliedGender) {
+          return res.status(400).json({
+            message: 'That hostel does not match the gender on your account. Contact your caretaker.',
+          });
+        }
+        user.hostelName = canonicalHostelName(hostelName);
+        user.gender = impliedGender;
+      }
+
+      if (closeContacts !== undefined) {
+        const cResult = normalizeCloseContacts(closeContacts, user.phoneNumber);
+        if (cResult.error) {
+          return res.status(400).json({ message: cResult.error });
+        }
+        normalizedCloseContacts = cResult.contacts;
+      }
     }
 
     if (gender !== undefined && hostelName === undefined) {
+      // One-time backfill only, even while unlocked: gender decides caretaker routing, and
+      // the unlock window is for year/room/contact details, not for this.
       if (user.gender) {
         return res.status(403).json({
           message: 'Gender is already set and can only be changed by an administrator.',
@@ -343,26 +424,29 @@ const updateUserProfile = async (req, res) => {
       user.gender = gender;
     }
 
-    // The blob writes and the user row move together: a photo saved against a hostel
-    // change that then failed would leave the profile in a state the form never asked for.
-    //
-    // Both are scoped to the authenticated caller — no id from the body, so no
-    // cross-account writes.
+    // Atomically persist profile changes and blobs
     await sequelize.transaction(async (tx) => {
+      if (user.profileUnlocked && isProtectedFieldAttempt) {
+        user.profileUnlocked = false; // Auto-lock once submitted
+      }
       await user.save({ transaction: tx });
+
+      if (normalizedCloseContacts) {
+        await CloseContact.destroy({ where: { userId: user.id }, transaction: tx });
+        await CloseContact.bulkCreate(
+          normalizedCloseContacts.map((c, i) => ({ ...c, userId: user.id, slot: i + 1 })),
+          { transaction: tx }
+        );
+      }
+
       if (photo !== undefined) {
         await User.setPhoto(user.id, photo || null, { transaction: tx });
       }
-      // Freely re-writable, like photo (unlike gender's one-time write above): a signature
-      // drawn badly on a phone should be fixable. Already-submitted requests keep the
-      // snapshot they were signed with, so history is unaffected.
       if (signature !== undefined) {
         await User.setSignature(user.id, signature || null, { transaction: tx });
       }
     });
 
-    // Re-read so the response reflects what was actually stored, including the blobs
-    // written above — they live in other tables, so `user` cannot know about them.
     const fresh = await User.findByPk(user.id, {
       include: ['closeContacts', 'photoRow', 'signatureRow'],
     });

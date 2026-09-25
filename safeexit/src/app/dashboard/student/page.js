@@ -14,8 +14,10 @@ import {
   Clock3,
   Fingerprint,
   Home,
+  IdCard,
   ImageIcon,
   Loader2,
+  Lock,
   MapPin,
   MapPinOff,
   MoonStar,
@@ -31,6 +33,7 @@ import {
   Sunset,
   Ticket,
   TrendingUp,
+  Unlock,
   X,
   ZoomIn,
   ZoomOut,
@@ -364,6 +367,20 @@ export default function StudentDashboardPage() {
   const [savingHostel, setSavingHostel] = useState(false);
   const [hostelError, setHostelError] = useState("");
 
+  // Profile details editing (one-time window when unlocked by Admin/Warden)
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    department: "",
+    year: "",
+    roomNumber: "",
+    phoneNumber: "",
+    guardianPhoneNumber: "",
+    hostelName: "",
+  });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSaveError, setProfileSaveError] = useState("");
+  const [profileSaveSuccess, setProfileSaveSuccess] = useState("");
+
   // Location permission banner — primed on first dashboard visit so the SOS
   // page never has to surface the browser's location prompt mid-emergency.
   // null until the permission state is read; then 'granted'|'denied'|'prompt'|'unsupported'.
@@ -470,7 +487,16 @@ export default function StudentDashboardPage() {
         if (cancelled || me?.role !== "Student") return;
         const synced = syncStoredStudentProfile(me);
         // Signature bytes stay in page state only; the store keeps just the flag.
-        setProfile({ ...synced, signature: me.signature || null });
+        setProfile({
+          ...synced,
+          signature: me.signature || null,
+          profileUnlocked: Boolean(me.profileUnlocked),
+          guardianPhoneNumber: me.guardianPhoneNumber || "",
+          department: me.department || "",
+          year: me.year || "",
+          roomNumber: me.roomNumber || "",
+          closeContacts: me.closeContacts || [],
+        });
         setHostelSynced(true);
       } catch {
         /* not authenticated — keep local profile */
@@ -810,6 +836,97 @@ export default function StudentDashboardPage() {
     }
   };
 
+  const openEditProfileModal = () => {
+    setEditForm({
+      department: profile.department || "",
+      year: profile.year || "",
+      roomNumber: profile.roomNumber || profile.room || "",
+      phoneNumber: profile.mobile || profile.phoneNumber || "",
+      guardianPhoneNumber: profile.guardianPhoneNumber || "",
+      hostelName: profile.hostelName || "",
+    });
+    setProfileSaveError("");
+    setProfileSaveSuccess("");
+    setShowEditProfileModal(true);
+  };
+
+  const closeEditProfileModal = () => {
+    if (savingProfile) return;
+    setShowEditProfileModal(false);
+    setProfileSaveError("");
+    setProfileSaveSuccess("");
+  };
+
+  const handleSaveProfile = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (savingProfile) return;
+
+    setSavingProfile(true);
+    setProfileSaveError("");
+    setProfileSaveSuccess("");
+
+    if (!editForm.year) {
+      setProfileSaveError("Academic Year is required");
+      setSavingProfile(false);
+      return;
+    }
+    const cleanPhone = String(editForm.phoneNumber || "").replace(/\D/g, "");
+    if (!cleanPhone || cleanPhone.length < 10 || cleanPhone.length > 15) {
+      setProfileSaveError("Please enter a valid student mobile number (10-15 digits)");
+      setSavingProfile(false);
+      return;
+    }
+    // Required, as at registration: the backend rejects an empty guardian number.
+    const cleanGuardian = String(editForm.guardianPhoneNumber || "").replace(/\D/g, "");
+    if (!cleanGuardian || cleanGuardian.length < 10 || cleanGuardian.length > 15) {
+      setProfileSaveError("Please enter a valid guardian mobile number (10-15 digits)");
+      setSavingProfile(false);
+      return;
+    }
+    if (cleanGuardian && cleanPhone === cleanGuardian) {
+      setProfileSaveError("Student phone and guardian phone numbers cannot be identical");
+      setSavingProfile(false);
+      return;
+    }
+
+    try {
+      const updated = await apiFetch("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          department: editForm.department ? editForm.department.trim() : "",
+          year: editForm.year ? editForm.year.trim() : "",
+          roomNumber: editForm.roomNumber ? editForm.roomNumber.trim() : "",
+          phoneNumber: cleanPhone,
+          guardianPhoneNumber: cleanGuardian,
+          // Omitted when blank: "" is not a valid hostel and would fail the whole save.
+          ...(editForm.hostelName ? { hostelName: editForm.hostelName.trim() } : {}),
+        }),
+      });
+
+      const synced = syncStoredStudentProfile(updated);
+      setProfile((prev) => ({
+        ...prev,
+        ...synced,
+        profileUnlocked: Boolean(updated.profileUnlocked),
+        guardianPhoneNumber: updated.guardianPhoneNumber || "",
+        department: updated.department || "",
+        year: updated.year || "",
+        roomNumber: updated.roomNumber || "",
+        closeContacts: updated.closeContacts || prev.closeContacts || [],
+      }));
+
+      setProfileSaveSuccess("Profile details updated successfully! Your profile is now locked.");
+      setTimeout(() => {
+        setShowEditProfileModal(false);
+        setProfileSaveSuccess("");
+      }, 1500);
+    } catch (err) {
+      setProfileSaveError(err.message || "Failed to update profile details");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   // Gate render on the session check; hook redirects to /login/student otherwise.
   if (!checked || !authorized) return <AuthLoading />;
 
@@ -884,6 +1001,19 @@ export default function StudentDashboardPage() {
               </button>
               <button
                 type="button"
+                onClick={openEditProfileModal}
+                title={profile.profileUnlocked ? "Your profile is unlocked! Click to edit details" : "View your profile details"}
+                className={`flex h-11 w-11 items-center justify-center rounded-2xl border shadow-sm transition cursor-pointer ${
+                  profile.profileUnlocked
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 ring-2 ring-emerald-400/50 animate-pulse"
+                    : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {profile.profileUnlocked ? <Unlock className="h-5 w-5" /> : <IdCard className="h-5 w-5" />}
+                <span className="sr-only">{profile.profileUnlocked ? "Edit Profile" : "View Profile"}</span>
+              </button>
+              <button
+                type="button"
                 onClick={handleLogout}
                 title="Log out"
                 className="flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50"
@@ -893,6 +1023,39 @@ export default function StudentDashboardPage() {
               </button>
             </div>
           </header>
+
+          {/* Unlocked Profile Edit Notification Banner */}
+          {mounted && profile.profileUnlocked && (
+            <section className="sd-luxe-panel sd-luxe-rise mt-4 rounded-4xl p-4 sm:p-5 shadow-xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 via-teal-50 to-white sm:mt-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-200">
+                    <Unlock className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-900">
+                        One-Time Edit Window
+                      </span>
+                      <span className="text-xs font-semibold text-emerald-700">Admin Approved</span>
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900 mt-0.5">Your profile is unlocked for editing</h3>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      You can update your academic year, department, room, and contact numbers. Once saved, your profile will be locked automatically.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={openEditProfileModal}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-sm px-5 py-2.5 shadow-md shadow-emerald-200 transition cursor-pointer"
+                >
+                  <PenLine className="h-4 w-4" />
+                  Edit My Details
+                </button>
+              </div>
+            </section>
+          )}
 
           {/* Not dismissable: until a hostel is on record the caretaker's roster and Out Now
               board can't see this student, so skipping it would silently break gate oversight. */}
@@ -1111,6 +1274,39 @@ export default function StudentDashboardPage() {
             </div>
           )}
 
+          {locPermission === "insecure" && !locBannerDismissed && (
+            <div className="mt-4 flex flex-col gap-3 rounded-3xl border border-amber-200 bg-amber-50/80 px-5 py-4 text-amber-800 shadow-sm backdrop-blur-sm sd-enter sm:flex-row sm:items-center" style={{ animationDelay: "0.15s" }}>
+              <MapPinOff className="mt-0.5 h-5 w-5 shrink-0 text-amber-500 sm:mt-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">Location requires HTTPS</p>
+                <p className="text-sm text-amber-700">
+                  SOS alerts cannot attach your live GPS location over an insecure connection (HTTP). Please access this portal over HTTPS to enable location sharing.
+                </p>
+              </div>
+              {typeof window !== "undefined" && window.location.protocol === "http:" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = new URL(window.location.href);
+                    url.protocol = "https:";
+                    window.location.href = url.toString();
+                  }}
+                  className="shrink-0 rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-amber-700 active:scale-95"
+                >
+                  Switch to HTTPS
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setLocBannerDismissed(true)}
+                className="shrink-0 self-end rounded-xl p-2 text-amber-400 transition hover:bg-amber-100 sm:self-auto"
+                title="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {locPermission === "denied" && !locBannerDismissed && (
             <div className="mt-4 flex items-center gap-3 rounded-3xl border border-amber-200 bg-amber-50/80 px-5 py-4 text-amber-800 shadow-sm backdrop-blur-sm sd-enter" style={{ animationDelay: "0.15s" }}>
               <MapPinOff className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
@@ -1119,6 +1315,7 @@ export default function StudentDashboardPage() {
                 <p className="text-sm text-amber-700">SOS alerts will be sent without your location. To share it in an emergency, allow location for this site in your browser settings.</p>
               </div>
               <button
+                type="button"
                 onClick={() => setLocBannerDismissed(true)}
                 className="shrink-0 rounded-xl p-2 text-amber-400 transition hover:bg-amber-100"
                 title="Dismiss"
@@ -1608,7 +1805,256 @@ export default function StudentDashboardPage() {
           </div>
         </div>
       )}
-      
+
+      {showEditProfileModal && (
+        <div
+          onPointerDown={handleBackdropPointerDown}
+          onClick={backdropCloseHandler(closeEditProfileModal)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in text-slate-800"
+        >
+          <div className="relative w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 animate-scale-in">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                    profile.profileUnlocked ? "bg-emerald-100 text-emerald-600" : "bg-indigo-100 text-indigo-600"
+                  }`}
+                >
+                  {profile.profileUnlocked ? <Unlock className="w-5 h-5" /> : <IdCard className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h2 className="font-sora text-lg font-bold text-slate-900 leading-snug">
+                    {profile.profileUnlocked ? "Edit Student Details" : "Student Profile"}
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    {profile.profileUnlocked
+                      ? "One-time edit window active (Admin approved)"
+                      : "Official profile details registered on campus"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditProfileModal}
+                disabled={savingProfile}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="overflow-y-auto p-5 space-y-4">
+              {/* Institutional Identity (Always Read-Only) */}
+              <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Institutional Identity</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                    <Lock size={10} /> Verified / Tamper-Proof
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Student Name</span>
+                    <span className="font-bold text-slate-800 text-sm truncate block">{profile.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Roll Number / ID</span>
+                    <span className="font-mono font-bold text-slate-800 text-sm truncate block">{profile.rollNo}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-400 block text-[11px]">Institute Email</span>
+                    <span className="font-mono text-slate-700 truncate block">{profile.email}</span>
+                  </div>
+                </div>
+              </div>
+
+              {profileSaveSuccess && (
+                <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs font-semibold text-emerald-800 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  {profileSaveSuccess}
+                </div>
+              )}
+
+              {profileSaveError && (
+                <div className="rounded-xl border border-rose-300 bg-rose-50 p-3.5 text-xs font-semibold text-rose-800">
+                  {profileSaveError}
+                </div>
+              )}
+
+              {profile.profileUnlocked ? (
+                <form onSubmit={handleSaveProfile} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Academic Year <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={editForm.year}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="">Select Year</option>
+                        <option value="1st">1st Year</option>
+                        <option value="2nd">2nd Year</option>
+                        <option value="3rd">3rd Year</option>
+                        <option value="4th">4th Year</option>
+                        <option value="M.Tech">M.Tech</option>
+                        <option value="MCA">MCA</option>
+                        <option value="PhD">PhD</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Department / Branch
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. CSE, ECE, ME"
+                        value={editForm.department}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Hostel Block
+                      </label>
+                      <select
+                        value={editForm.hostelName}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, hostelName: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="">Select Hostel</option>
+                        {HOSTELS.filter((h) => !profile.gender || h.gender === profile.gender).map((h) => (
+                          <option key={h.name} value={h.name}>
+                            {h.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Room Number
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 214"
+                        value={editForm.roomNumber}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, roomNumber: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Student Mobile <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="10-digit mobile"
+                        value={editForm.phoneNumber}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, phoneNumber: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Parent / Guardian Mobile <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="10-digit mobile"
+                        value={editForm.guardianPhoneNumber}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, guardianPhoneNumber: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-amber-50 border border-amber-200/80 p-3 text-[11px] text-amber-800 leading-relaxed">
+                    <strong>Notice:</strong> Submitting this form will automatically lock your profile again. Make sure your year, room, and contact details are accurate.
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={closeEditProfileModal}
+                      disabled={savingProfile}
+                      className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingProfile}
+                      className="flex-[2] py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-200 flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {savingProfile ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" /> Saving & Locking...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" /> Save & Lock Profile
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                      <span className="text-slate-400 block text-[11px]">Academic Year</span>
+                      <span className="font-bold text-slate-800 text-sm">{profile.year || profile.subtitle || "—"}</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                      <span className="text-slate-400 block text-[11px]">Department / Branch</span>
+                      <span className="font-bold text-slate-800 text-sm">{profile.department || "—"}</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                      <span className="text-slate-400 block text-[11px]">Hostel & Room</span>
+                      <span className="font-bold text-slate-800 text-sm">{profile.hostel || "—"}</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                      <span className="text-slate-400 block text-[11px]">Student Mobile</span>
+                      <span className="font-bold text-slate-800 text-sm">{profile.mobile || "—"}</span>
+                    </div>
+                    <div className="col-span-1 sm:col-span-2 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                      <span className="text-slate-400 block text-[11px]">Parent / Guardian Mobile</span>
+                      <span className="font-bold text-slate-800 text-sm">{profile.guardianPhoneNumber || "Not on file"}</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 text-xs text-indigo-900 leading-relaxed flex items-start gap-3">
+                    <Lock className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-bold">Profile Details are Locked</strong>
+                      To protect outing, gate access, and emergency verification records, student details can only be edited when unlocked by College Administration or Warden.
+                      If you were promoted to the next academic year or moved to a different room, request an admin unlock.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={closeEditProfileModal}
+                    className="w-full py-3 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <SignatureSetupModal
         open={showSignatureModal}
         currentSignature={profile?.signature || null}

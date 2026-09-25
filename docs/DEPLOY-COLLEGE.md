@@ -145,11 +145,15 @@ works perfectly, which is a confusing hour if you have not seen it before.
 `docker-compose.prod.yml` maps that name to the host gateway for exactly this reason. A
 database on a *different* machine takes its real hostname instead.
 
-**`COOKIE_SECURE=false` and `ENABLE_HSTS=0` until TLS actually works.** Secure cookies over
-plain HTTP are dropped silently, which kills the live event stream, because `EventSource`
-cannot send an Authorization header. HSTS is worse: once a browser caches it, that host is
-HTTPS-only there for a year, and one accidental HTTPS hit would leave the gate station
-unable to load the app at all.
+**`COOKIE_SECURE=true` and `ENABLE_HSTS=1` once TLS is terminated.**
+> [!IMPORTANT]
+> **Why TLS (HTTPS) is mandatory in production:**
+> Modern mobile browsers (Chrome on Android, iOS Safari) strictly require a **Secure Context (HTTPS)** for:
+> 1. **Geolocation API** (`navigator.geolocation`) — Student live location during SOS alerts. On plain HTTP, the browser automatically reports location as denied and shows "Location requires HTTPS" / "Location is blocked".
+> 2. **Web Push API** (`navigator.serviceWorker` & `PushManager`) — Overdue return alerts and push notifications.
+> 3. **WebAuthn / Passkeys** (`@simplewebauthn`) — Biometric login.
+>
+> If initially testing over plain HTTP, keep `COOKIE_SECURE=false` and `ENABLE_HSTS=0`. As soon as the domain is live, terminate TLS using Certbot (`sudo certbot --nginx -d safeexit.nitp.ac.in`) and switch `FRONTEND_URL=https://...`, `COOKIE_SECURE=true`, and `ENABLE_HSTS=1`.
 
 **`LEGACY_ID_GRACE=false`.** It accepts MongoDB ObjectIds as token subjects and exists only
 for the weeks after a migration. This database was never migrated.
