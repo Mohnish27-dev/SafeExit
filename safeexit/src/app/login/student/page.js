@@ -28,6 +28,7 @@ import {
 	Plus,
 	Trash2,
 	Users,
+	Info,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -772,7 +773,7 @@ export default function StudentLoginPage() {
 	const continueFromCloseContacts = () => {
 		if (closeContacts.length < 1 || closeContacts.length > 2) {
 			setErrorMsg(
-				"Please add at least one roommate or close friend (maximum two).",
+				"Please add at least one trusted contact (maximum two).",
 			);
 			return;
 		}
@@ -791,7 +792,7 @@ export default function StudentLoginPage() {
 			)
 		) {
 			setErrorMsg(
-				"Please complete the name, mobile number, and room number for each person.",
+				"Please complete the name, mobile number, and room/cabin number for each person.",
 			);
 			return;
 		}
@@ -2159,6 +2160,9 @@ export default function StudentLoginPage() {
 													<option value="4th">
 														4th Year
 													</option>
+													<option value="5th">
+														5th Year
+													</option>
 													<option value="M.Tech">
 														M.Tech
 													</option>
@@ -2824,6 +2828,19 @@ export default function StudentLoginPage() {
 											your return time.
 										</p>
 									</div>
+
+									<div className="flex items-start gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-left text-xs text-indigo-900 leading-relaxed">
+										<Info className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
+										<div>
+											<span className="font-semibold text-indigo-950">
+												For Ph.D. students:
+											</span>{" "}
+											You can also provide your faculty
+											details, and for the room number you
+											can give their faculty cabin number.
+										</div>
+									</div>
+
 									<div className="space-y-4">
 										{closeContacts.map((contact, index) => (
 											<div
@@ -2878,7 +2895,7 @@ export default function StudentLoginPage() {
 																			.value,
 																	)
 																}
-																placeholder="Roommate or close friend's name"
+																placeholder="Roommate, close friend, or faculty name"
 																autoComplete="name"
 																className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
 															/>
@@ -2923,7 +2940,7 @@ export default function StudentLoginPage() {
 																htmlFor={`close-contact-room-${index}`}
 																className="mb-1 block text-xs font-semibold text-slate-700"
 															>
-																Room number
+																Room / Cabin number
 															</label>
 															<div className="relative">
 																<MapPin className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -2947,7 +2964,7 @@ export default function StudentLoginPage() {
 																				.value,
 																		)
 																	}
-																	placeholder="e.g. B-214"
+																	placeholder="e.g. B-214 or Cabin No."
 																	className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
 																/>
 															</div>
