@@ -1900,6 +1900,7 @@ export default function StudentDashboardPage() {
                         <option value="2nd">2nd Year</option>
                         <option value="3rd">3rd Year</option>
                         <option value="4th">4th Year</option>
+                        <option value="5th">5th Year</option>
                         <option value="M.Tech">M.Tech</option>
                         <option value="MCA">MCA</option>
                         <option value="PhD">PhD</option>

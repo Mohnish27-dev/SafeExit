@@ -36,7 +36,9 @@ function ContactCard({ label, name, phoneNumber, roomNumber, tone = "indigo" }) 
           {roomNumber && (
             <p className="mt-1 flex min-w-0 items-start gap-1.5 text-xs font-medium text-slate-500">
               <DoorOpen className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 break-words">Room {roomNumber}</span>
+              <span className="min-w-0 break-words">
+                {/^(cabin|room)\b/i.test(roomNumber.trim()) ? roomNumber : `Room ${roomNumber}`}
+              </span>
             </p>
           )}
         </div>

@@ -30,7 +30,7 @@ export default function Offline() {
           the app will reconnect automatically once you&apos;re back online.
         </p>
         <a
-          href="/"
+          href="/safeexit"
           className="mt-6 inline-flex items-center justify-center rounded-lg bg-slate-900 dark:bg-slate-100 px-5 py-2.5 text-sm font-medium text-white dark:text-slate-900 transition hover:opacity-90"
         >
           Try again

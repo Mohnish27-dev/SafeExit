@@ -79,6 +79,7 @@ const ACADEMIC_YEARS = [
   { value: "2nd", label: "2nd Year" },
   { value: "3rd", label: "3rd Year" },
   { value: "4th", label: "4th Year" },
+  { value: "5th", label: "5th Year" },
   { value: "M.Tech", label: "M.Tech" },
   { value: "MCA", label: "MCA" },
   { value: "PhD", label: "PhD" },
