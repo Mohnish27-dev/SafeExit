@@ -32,14 +32,19 @@ test('ChiefWarden has oversight but no direct request decision scope', () => {
   assert.equal(requestInScope(chief, baseRequest, student), false);
 });
 
-test('Warden can decide ONLY requests forwarded directly to them', () => {
+test('Every warden of the student hostel may decide; wardens of other hostels may not', () => {
+  // A hostel has a warden plus assistant wardens; a forwarded request is theirs jointly.
   const warden1 = { _id: 'w-1', role: 'Warden', managedHostel: 'Aryabhatta' };
-  const warden2 = { _id: 'w-2', role: 'Warden', managedHostel: 'Aryabhatta' };
+  const assistant = { _id: 'w-2', role: 'Warden', managedHostel: 'Aryabhatta' };
+  const otherHostel = { _id: 'w-3', role: 'Warden', managedHostel: 'Kautilya' };
+  const unassigned = { _id: 'w-4', role: 'Warden' };
 
-  const forwardedReq = { ...baseRequest, forwardedTo: 'w-1' };
+  const forwardedReq = { ...baseRequest, status: 'Forwarded', forwardedTo: null };
   assert.equal(requestInScope(warden1, forwardedReq, student), true);
-  assert.equal(requestInScope(warden2, forwardedReq, student), false);
-  assert.equal(requestInScope(warden1, baseRequest, student), false);
+  assert.equal(requestInScope(assistant, forwardedReq, student), true);
+  assert.equal(requestInScope(otherHostel, forwardedReq, student), false);
+  assert.equal(requestInScope(unassigned, forwardedReq, student), false);
+  assert.equal(requestInScope(warden1, null, student), false);
 });
 
 test('Caretaker targeted explicitly can decide the request', () => {

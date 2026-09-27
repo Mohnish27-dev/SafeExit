@@ -4,6 +4,15 @@ const { getOverdueStudentIds } = require('../utils/overdue');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
 const { ciEquals } = require('../utils/ciCompare');
+const { isCollegeEmail, normalizeEmail } = require('../config/emailPolicy');
+const { GOOGLE_SIGNIN_ROLES } = require('../utils/googleIdToken');
+const {
+  annualWindowStart,
+  getProfileWindowStart,
+  getReopenedAt,
+  canEditProfile,
+  reopenProfileWindow: reopenWindow,
+} = require('../utils/profileWindow');
 
 // 'Overdue' is a derived overlay that the gate scan never writes — it only ever stores
 // 'Inside' or 'Outside'. But the campus_status CHECK permits it and legacy rows may carry
@@ -69,7 +78,7 @@ const GUARD_FIELDS = ['id', 'name', 'studentId', 'campusStatus', 'lastSeenAt'];
 const ALL_FIELDS = [
   'id', 'name', 'email', 'role', 'studentId', 'department', 'year', 'roomNumber', 'hostelName',
   'phoneNumber', 'guardianPhoneNumber', 'gender', 'managedGender', 'managedHostel', 'campusStatus', 'lastSeenAt',
-  'onDuty', 'lastActiveAt', 'webAuthnRegistered', 'profileUnlocked', 'createdAt',
+  'onDuty', 'lastActiveAt', 'webAuthnRegistered', 'profileConfirmedAt', 'createdAt',
 ];
 
 // GET /api/admin/users?role= — private (Admin/Guard)
@@ -129,8 +138,21 @@ const getUsers = async (req, res) => {
       }
     }
 
-    if (req.query.profileUnlocked !== undefined && req.query.profileUnlocked !== 'ALL') {
-      where.profileUnlocked = req.query.profileUnlocked === 'true';
+    // Guards never see profile state, so never pay for the window lookup either.
+    const windowStart = req.user.role === 'Guard' ? null : await getProfileWindowStart();
+
+    // "Unlocked" is derived — confirmed before the current window opened, or never.
+    // Staff rows have no window, so the filter pins itself to students.
+    if (windowStart && req.query.profileUnlocked !== undefined && req.query.profileUnlocked !== 'ALL') {
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push(
+        req.query.profileUnlocked === 'true'
+          ? {
+            role: 'Student',
+            [Op.or]: [{ profileConfirmedAt: null }, { profileConfirmedAt: { [Op.lt]: windowStart } }],
+          }
+          : { profileConfirmedAt: { [Op.gte]: windowStart } }
+      );
     }
 
     const { limit, skip } = readPageParams(req);
@@ -157,6 +179,7 @@ const getUsers = async (req, res) => {
     for (const u of users) {
       if (overdueIds.has(String(u.id))) u.campusStatus = 'Overdue';
       u.hasPhoto = photoIds.has(String(u.id));
+      if (windowStart) u.profileUnlocked = canEditProfile(u, windowStart);
       // raw:true skips the model's toJSON, so the `_id` contract is applied by hand here.
       u._id = u.id;
     }
@@ -253,32 +276,35 @@ const findStaffForHostel = (role, managedHostel, exceptId) =>
 const findCaretakerForHostel = (managedHostel, exceptId) =>
   findStaffForHostel('Caretaker', managedHostel, exceptId);
 
-const findWardenForHostel = (managedHostel, exceptId) =>
-  findStaffForHostel('Warden', managedHostel, exceptId);
-
-const wardenHostelClashMessage = async (hostel, exceptId) => {
-  const existing = await findWardenForHostel(hostel, exceptId);
-  if (!existing) return null;
-  return `${hostel} hostel already has a warden account (${existing.loginId}). Share that ID with the new warden, or reset its PIN — don't create a second one.`;
-};
-
 // POST /api/admin/staff — private (Admin)
+//
+// Two kinds of staff account. Guards and caretakers get an ID + PIN, as before. Wardens
+// and the Chief Warden are professors with a college mailbox: they are provisioned by
+// that email alone, carry no password at all, and sign in with Google (authController
+// googleLogin). A hostel may have several wardens (warden + assistant wardens).
 const createStaff = async (req, res) => {
   try {
-    const { name, staffId, role, pin, phoneNumber, managedHostel } = req.body;
+    const { name, staffId, role, pin, phoneNumber, managedHostel, email } = req.body;
+    const googleRole = GOOGLE_SIGNIN_ROLES.includes(role);
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Name is required.' });
-    }
-    if (!staffId || !staffId.trim()) {
-      return res.status(400).json({ message: 'A staff ID is required.' });
     }
     // Admins come only from the .env allowlist — this endpoint can't mint one.
     if (!['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(role)) {
       return res.status(400).json({ message: 'Role must be Caretaker, Warden, Chief Warden, or Guard.' });
     }
-    if (!pin || String(pin).trim().length < 4) {
-      return res.status(400).json({ message: 'An initial PIN of at least 4 characters is required.' });
+    if (googleRole) {
+      if (!isCollegeEmail(email)) {
+        return res.status(400).json({ message: 'Enter the college email (ending in @nitp.ac.in) they sign in to Google with.' });
+      }
+    } else {
+      if (!staffId || !staffId.trim()) {
+        return res.status(400).json({ message: 'A staff ID is required.' });
+      }
+      if (!pin || String(pin).trim().length < 4) {
+        return res.status(400).json({ message: 'An initial PIN of at least 4 characters is required.' });
+      }
     }
     // A caretaker/warden must be tied to exactly one hostel for request routing and privacy.
     if ((role === 'Caretaker' || role === 'Warden') && !isValidHostel(managedHostel)) {
@@ -293,35 +319,38 @@ const createStaff = async (req, res) => {
         });
       }
     }
-    if (role === 'Warden') {
-      const hostel = canonicalHostelName(managedHostel);
-      const clash = await wardenHostelClashMessage(hostel);
-      if (clash) return res.status(409).json({ message: clash });
-    }
     // The Chief Warden is campus-wide, so there is no hostel scope and only one
-    // account is needed. Admin can reset/replace that account from People.
+    // account is needed. Admin can remove and re-add that account from People.
     if (role === 'ChiefWarden') {
       const existing = await User.findOne({ where: { role: 'ChiefWarden' } });
       if (existing) {
         return res.status(409).json({
-          message: `A Chief Warden account already exists (${existing.loginId}). Reset its PIN or remove it before creating another.`,
+          message: `A Chief Warden account already exists (${existing.email || existing.loginId}). Remove it before adding another.`,
         });
       }
     }
 
-    const loginId = buildStaffLoginId(staffId);
+    // A Google account's identity is its email, so it is also its loginId.
+    const loginId = googleRole ? normalizeEmail(email) : buildStaffLoginId(staffId);
     const exists = await User.findOne({ where: { [Op.or]: [{ loginId }, { email: loginId }] } });
     if (exists) {
-      return res.status(400).json({ message: 'An account with this ID already exists.' });
+      return res.status(400).json({
+        message: googleRole
+          ? `${loginId} already has an account (${exists.role}).`
+          : 'An account with this ID already exists.',
+      });
     }
 
     const scoped = role === 'Caretaker' || role === 'Warden';
     const user = await User.create({
       name: name.trim(),
       loginId,
-      password: String(pin).trim(), // hashed by the User model's beforeSave hook
+      email: googleRole ? loginId : null,
+      // No password for Google accounts: there is nothing to leak. Otherwise hashed by
+      // the User model's beforeSave hook.
+      password: googleRole ? null : String(pin).trim(),
       role,
-      studentId: staffId.trim(),
+      studentId: googleRole ? null : staffId.trim(),
       phoneNumber,
       // Caretakers AND wardens carry a specific hostel; managedGender is derived for the
       // auto-approval rules and the gender-wide SOS scope. The canonical spelling is
@@ -334,6 +363,7 @@ const createStaff = async (req, res) => {
       _id: user.id,
       name: user.name,
       loginId: user.loginId,
+      email: user.email,
       role: user.role,
       studentId: user.studentId,
       phoneNumber: user.phoneNumber,
@@ -359,6 +389,12 @@ const resetStaffPin = async (req, res) => {
     // Staff only — never resets a student's or another admin's credentials.
     if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(user.role)) {
       return res.status(404).json({ message: 'Staff member not found.' });
+    }
+    // Setting a PIN on a warden would re-open exactly the door Google sign-in closed.
+    if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
+      return res.status(400).json({
+        message: 'Wardens sign in with their college Google account and have no PIN. To revoke access, remove the account.',
+      });
     }
 
     // The new PIN and the passkey revocation must land together. This endpoint exists for
@@ -394,15 +430,9 @@ const updateStaffScope = async (req, res) => {
     }
     const hostel = canonicalHostelName(managedHostel);
 
-    // Preserve the one-per-hostel invariant for whichever staff slot is being scoped.
-    if (user.role === 'Warden') {
-      const clashMsg = await wardenHostelClashMessage(hostel, user.id);
-      if (clashMsg) {
-        return res.status(409).json({
-          message: `${hostel} hostel already has a warden account. Remove or reassign that one first.`,
-        });
-      }
-    } else {
+    // One caretaker per hostel. Wardens have no such limit: a hostel has a warden and
+    // assistant wardens, all of whom share its forwarded queue.
+    if (user.role === 'Caretaker') {
       const clash = await findCaretakerForHostel(hostel, user.id);
       if (clash) {
         return res.status(409).json({
@@ -467,7 +497,6 @@ const updateStudent = async (req, res) => {
       phoneNumber,
       guardianPhoneNumber,
       email,
-      profileUnlocked,
     } = req.body;
 
     if (name !== undefined) {
@@ -561,10 +590,6 @@ const updateStudent = async (req, res) => {
       }
     }
 
-    if (profileUnlocked !== undefined) {
-      student.profileUnlocked = Boolean(profileUnlocked);
-    }
-
     await student.save();
 
     res.json({
@@ -583,7 +608,7 @@ const updateStudent = async (req, res) => {
         phoneNumber: student.phoneNumber,
         guardianPhoneNumber: student.guardianPhoneNumber,
         email: student.email,
-        profileUnlocked: student.profileUnlocked,
+        profileUnlocked: canEditProfile(student, await getProfileWindowStart()),
         campusStatus: student.campusStatus,
       },
     });
@@ -592,72 +617,54 @@ const updateStudent = async (req, res) => {
   }
 };
 
-// PATCH /api/admin/students/:id/unlock — private (Admin)
-const toggleStudentProfileUnlock = async (req, res) => {
+// GET /api/admin/profile-window — private (Admin)
+//
+// The annual profile-update window, for the People screen: when it opened, whether that was
+// 1 July or an admin's reopen, and how many students have still not confirmed.
+const getProfileWindow = async (req, res) => {
   try {
-    const student = await User.findByPk(req.params.id);
-    if (!student || student.role !== 'Student') {
-      return res.status(404).json({ message: 'Student not found.' });
-    }
+    const now = new Date();
+    const windowStart = await getProfileWindowStart(now);
+    const annualStart = annualWindowStart(now);
+    const nextAnnual = new Date(annualStart);
+    nextAnnual.setUTCFullYear(nextAnnual.getUTCFullYear() + 1);
 
-    const nextState = req.body.unlocked !== undefined ? Boolean(req.body.unlocked) : !student.profileUnlocked;
-    student.profileUnlocked = nextState;
-    await student.save();
+    const [totalStudents, pendingStudents] = await Promise.all([
+      User.count({ where: { role: 'Student' } }),
+      User.count({
+        where: {
+          role: 'Student',
+          [Op.or]: [{ profileConfirmedAt: null }, { profileConfirmedAt: { [Op.lt]: windowStart } }],
+        },
+      }),
+    ]);
 
     res.json({
-      message: nextState
-        ? `Profile unlocked for ${student.name}. The student can now edit their details.`
-        : `Profile locked for ${student.name}.`,
-      profileUnlocked: student.profileUnlocked,
-      studentId: student.id,
+      windowStart,
+      openedBy: windowStart.getTime() === annualStart.getTime() ? 'annual' : 'admin',
+      reopenedAt: await getReopenedAt(),
+      nextAnnualOpen: nextAnnual,
+      totalStudents,
+      pendingStudents,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// POST /api/admin/students/batch-promote — private (Admin)
-const batchPromoteStudents = async (req, res) => {
+// POST /api/admin/profile-window/reopen — private (Admin)
+//
+// Opens profile editing for every student at once, outside the 1 July cycle. One write:
+// everyone who confirmed before this moment becomes editable, and each locks again on
+// their own submit. There is deliberately no per-student unlock.
+const reopenProfileWindow = async (req, res) => {
   try {
-    const { fromYear, toYear, hostelName, department } = req.body;
-    if (!fromYear || !String(fromYear).trim()) {
-      return res.status(400).json({ message: 'Source year (fromYear) is required.' });
-    }
-    if (!toYear || !String(toYear).trim()) {
-      return res.status(400).json({ message: 'Target year (toYear) is required.' });
-    }
-    if (String(fromYear).trim().toLowerCase() === String(toYear).trim().toLowerCase()) {
-      return res.status(400).json({ message: 'Source year and target year cannot be identical.' });
-    }
-
-    const where = {
-      role: 'Student',
-      year: { [Op.iLike]: String(fromYear).trim() },
-    };
-
-    if (hostelName && String(hostelName).trim() && String(hostelName).trim() !== 'ALL') {
-      // canonicalHostelName returns null for an unknown hostel, which Sequelize turns into
-      // "hostel_name IS NULL" — promoting every hostel-less student instead of none.
-      if (!isValidHostel(hostelName)) {
-        return res.status(400).json({ message: 'Please select a valid campus hostel.' });
-      }
-      where.hostelName = canonicalHostelName(hostelName);
-    }
-
-    if (department && String(department).trim() && String(department).trim() !== 'ALL') {
-      where.department = { [Op.iLike]: String(department).trim() };
-    }
-
-    const [count] = await User.update(
-      { year: String(toYear).trim() },
-      { where }
-    );
-
+    const reopenedAt = await reopenWindow();
+    const pendingStudents = await User.count({ where: { role: 'Student' } });
     res.json({
-      message: `Successfully promoted ${count} student(s) from "${fromYear}" to "${toYear}".`,
-      count,
-      fromYear: String(fromYear).trim(),
-      toYear: String(toYear).trim(),
+      message: `Profile editing is now open for all ${pendingStudents} student(s). Each profile locks again once that student saves.`,
+      windowStart: reopenedAt,
+      pendingStudents,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -674,6 +681,6 @@ module.exports = {
   updateStaffScope,
   removeStaff,
   updateStudent,
-  toggleStudentProfileUnlock,
-  batchPromoteStudents,
+  getProfileWindow,
+  reopenProfileWindow,
 };

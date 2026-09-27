@@ -3,6 +3,8 @@ const router = express.Router();
 const {
   registerUser,
   authUser,
+  googleLogin,
+  getGoogleConfig,
   getUserProfile,
   updateUserProfile,
   logoutUser,
@@ -42,6 +44,9 @@ router.post('/password/reset', authLimiter, resetPassword);
 
 router.post('/register', registerIpBackstop, registerLimiter, registerUser);
 router.post('/login', authLimiter, authUser);
+// Wardens and the Chief Warden: college Google account only (see utils/googleIdToken.js).
+router.get('/google/config', getGoogleConfig);
+router.post('/google', authLimiter, googleLogin);
 router.post('/logout', logoutUser);
 router.post('/refresh', protect, refreshSession);
 router.get('/profile', protect, getUserProfile);

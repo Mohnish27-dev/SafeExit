@@ -80,7 +80,7 @@ function HostelCard({ hostel }) {
       </div>
 
       <div className="mt-4 border-t border-slate-100 pt-3 text-xs font-semibold text-slate-500">
-        <p>Warden: <span className="font-bold text-slate-700">{hostel.warden?.name || "Not assigned"}</span></p>
+        <p>{hostel.wardens?.length > 1 ? "Wardens" : "Warden"}: <span className="font-bold text-slate-700">{hostel.wardens?.length ? hostel.wardens.map((w) => w.name).join(", ") : "Not assigned"}</span></p>
         <p className="mt-1">Caretaker: <span className="font-bold text-slate-700">{hostel.caretaker?.name || "Not assigned"}</span></p>
       </div>
     </article>

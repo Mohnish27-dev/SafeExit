@@ -11,7 +11,8 @@ const makeHostelSummary = (hostel) => ({
   outings: { pending: 0, forwarded: 0 },
   leaves: { pending: 0, forwarded: 0 },
   caretaker: null,
-  warden: null,
+  // A hostel has a warden and one or two assistant wardens, all equal in the app.
+  wardens: [],
 });
 
 // GET /api/chief-warden/overview — private (ChiefWarden)
@@ -70,7 +71,7 @@ const getOverview = async (req, res) => {
       // `_id` is the response contract; the hostel cards link to the staff member by it.
       const summary = { _id: staff.id, name: staff.name };
       if (staff.role === 'Caretaker') hostel.caretaker = summary;
-      if (staff.role === 'Warden') hostel.warden = summary;
+      if (staff.role === 'Warden') hostel.wardens.push(summary);
     }
 
     const addRowsToHostel = (rows, apply) => {

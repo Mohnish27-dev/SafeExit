@@ -171,6 +171,7 @@ test('legacy_id exists on every table the ETL resolves foreign keys through', ()
   // The join tables and 1:1 side tables key off the parent, so they need no legacy_id.
   const noLegacyId = new Set([
     'hostels', 'close_contacts', 'webauthn_credentials', 'user_photos', 'user_signatures',
+    'app_settings',
   ]);
   for (const table of EXPECTED_TABLES) {
     const body = schemaSql.slice(schemaSql.indexOf(`CREATE TABLE IF NOT EXISTS ${table}`));

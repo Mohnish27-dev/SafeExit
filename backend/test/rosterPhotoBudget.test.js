@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { User, UserPhoto, OutingRequest, LeaveApplication } = require('../src/models');
+const { User, UserPhoto, OutingRequest, LeaveApplication, AppSetting } = require('../src/models');
 const { getUsers, getUserPhoto, getStudentCounts } = require('../src/controllers/adminController');
 
 // A roster row is a few hundred bytes; a stored face photo is a few hundred KILObytes.
@@ -53,12 +53,15 @@ const stubOverdue = (t, outStudentIds = []) => {
 
 // getUsers makes two reads: the page of users, and the ids-only photo presence probe.
 // They are different MODELS now rather than the same collection told apart by its filter,
-// which is itself the point of the split.
+// which is itself the point of the split. (An admin roster also reads the profile-window
+// setting once per page; stubbed to "no admin reopen".)
 const stubRoster = (t, rows, photoOwnerIds = []) => {
   const originalFindAll = User.findAll;
   const originalPhoto = UserPhoto.findAll;
   const originalCount = User.count;
+  const originalSetting = AppSetting.findByPk;
   const seen = { page: null, probe: null };
+  AppSetting.findByPk = async () => null;
 
   User.findAll = async (options) => {
     seen.page = options;
@@ -74,6 +77,7 @@ const stubRoster = (t, rows, photoOwnerIds = []) => {
     User.findAll = originalFindAll;
     UserPhoto.findAll = originalPhoto;
     User.count = originalCount;
+    AppSetting.findByPk = originalSetting;
   });
   return seen;
 };

@@ -1,6 +1,7 @@
 const app = require('./app');
 const { connectPostgres, closePostgres, getSequelize } = require('./config/sequelize');
 const { ensureAdmins } = require('./utils/ensureAdmins');
+const { ensureProfileWindowSchema } = require('./utils/profileWindow');
 const { startOverdueSweep } = require('./utils/overdueSweep');
 const sseHub = require('./utils/sseHub');
 const { closeMailer } = require('./utils/mailer');
@@ -82,12 +83,14 @@ process.on('uncaughtException', (err) => {
 
 connectPostgres().then(async () => {
   try {
-    const s = getSequelize();
-    await s.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_unlocked boolean NOT NULL DEFAULT false;');
+    const backfilled = await ensureProfileWindowSchema(getSequelize());
+    if (backfilled) {
+      console.log(`Profile window: kept ${backfilled} locked student profile(s) locked until the next 1 July.`);
+    }
   } catch (err) {
-    // Not fatal to boot, but loud: the User model selects profile_unlocked, so without the
-    // column every user query (login included) fails.
-    console.error('Could not ensure users.profile_unlocked — apply db/postgres/001_schema.sql:', err.message);
+    // Not fatal to boot, but loud: the User model selects profile_confirmed_at, so without
+    // the column every user query (login included) fails.
+    console.error('Could not ensure the profile window schema — apply db/postgres/001_schema.sql:', err.message);
   }
   // Idempotent; unchanged .env = no writes.
   try {

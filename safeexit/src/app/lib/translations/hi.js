@@ -185,7 +185,7 @@ const hi = {
     expiredUnused: "बिना इस्तेमाल के समाप्त",
     decidedBy: "{name} ने फ़ैसला किया",
     decidedByWarden: "{name} (वार्डन) ने फ़ैसला किया",
-    forwardedToName: "फ़ैसले के लिए {name} के पास",
+    forwardedToWardens: "फ़ैसले के लिए हॉस्टल वार्डन के पास",
     rejectionReason: "कारण:",
     room: "कमरा",
   },

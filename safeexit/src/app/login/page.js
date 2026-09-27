@@ -8,17 +8,19 @@ import Link from "next/link";
 import caretakerIllustration from "../../../public/images/login/caretaker.png";
 import { getToken } from "@/app/lib/auth";
 import { getStoredUser } from "@/app/lib/userProfile";
-import { CHIEF_WARDEN_PIN_KEY } from "@/app/lib/chiefWardenQuickLogin";
+import { GOOGLE_LOGIN_KEYS } from "@/app/lib/wardenGoogleLogin";
 import TeamCreditLink from "@/app/components/TeamCreditLink";
 import { BASE_PATH } from "@/app/lib/basePath";
 
-// Per-role Quick Login PIN keys — presence tells which roles this device is set up for
+// Per-role device markers — presence tells which roles this device is set up for. Most
+// roles are marked by their Quick Login PIN; wardens sign in with Google and are marked by
+// the email of their last successful sign-in instead.
 const ROLE_PIN_KEYS = {
   security: "safeexit_quick_pin_guard",
   student: "safeexit_quick_pin",
   caretaker: "safeexit_quick_pin_caretaker",
-  warden: "safeexit_quick_pin_warden",
-  "chief-warden": CHIEF_WARDEN_PIN_KEY,
+  warden: GOOGLE_LOGIN_KEYS.warden,
+  "chief-warden": GOOGLE_LOGIN_KEYS["chief-warden"],
 };
 
 const ROLE_LOGIN_PATH = {

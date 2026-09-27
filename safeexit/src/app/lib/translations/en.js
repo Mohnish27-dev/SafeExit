@@ -185,7 +185,7 @@ const en = {
     expiredUnused: "Expired unused",
     decidedBy: "Decided by {name}",
     decidedByWarden: "Decided by {name} (Warden)",
-    forwardedToName: "With {name} for a decision",
+    forwardedToWardens: "With the hostel wardens for a decision",
     rejectionReason: "Reason:",
     room: "Room",
   },
