@@ -104,7 +104,7 @@ before you try to create tables. It refuses to run against PostgreSQL older than
 Then apply the schema:
 
 ```bash
-npm run pg:schema         # 001 — 13 tables, 60 indexes, both one-active-pass guards
+npm run pg:schema         # 001 — 14 tables, 60 indexes, both one-active-pass guards
 npm run pg:constraints    # 002
 npm run pg:validate       # 003 — instant here; there are no legacy rows to check
 ```
@@ -118,6 +118,13 @@ same commands run inside the backend container, and the DDL ships with the image
 ```bash
 docker compose -f docker-compose.prod.yml run --rm backend npm run pg:schema
 ```
+
+**Upgrading a server that already has students?** You do not need to run anything: the
+backend applies the annual profile-window change itself on start (the `app_settings`
+table, `users.profile_confirmed_at`, and a one-time backfill that keeps every currently
+locked student locked until the next 1 July). Look for
+`Profile window: kept N locked student profile(s) locked…` in the first boot's log. Running
+`pg:schema` as well is harmless, since every step in it is idempotent.
 
 ### What you get for free
 
@@ -152,6 +159,7 @@ database on a *different* machine takes its real hostname instead.
 > 1. **Geolocation API** (`navigator.geolocation`) — Student live location during SOS alerts. On plain HTTP, the browser automatically reports location as denied and shows "Location requires HTTPS" / "Location is blocked".
 > 2. **Web Push API** (`navigator.serviceWorker` & `PushManager`) — Overdue return alerts and push notifications.
 > 3. **WebAuthn / Passkeys** (`@simplewebauthn`) — Biometric login.
+> 4. **Google sign-in for wardens and the Chief Warden.** Google only accepts HTTPS origins on a real domain, so warden login does not work at all over plain HTTP (localhost excepted).
 >
 > If initially testing over plain HTTP, keep `COOKIE_SECURE=false` and `ENABLE_HSTS=0`. As soon as the domain is live, terminate TLS using Certbot (`sudo certbot --nginx -d safeexit.nitp.ac.in`) and switch `FRONTEND_URL=https://...`, `COOKIE_SECURE=true`, and `ENABLE_HSTS=1`.
 
@@ -166,6 +174,22 @@ Adding an admin later is an environment change and a restart, not a database edi
 **All three of `ADMIN_1_NAME`, `ADMIN_1_ID` and `ADMIN_1_PIN` are credentials.** Signing in
 to the admin console requires the name as well as the ID and PIN, so a typo in the name
 locks that admin out just as surely as a wrong PIN would.
+
+**`GOOGLE_CLIENT_ID` for warden sign-in.** Wardens, assistant wardens and the Chief Warden
+have no ID or PIN: they press "Sign in with Google" and use their `@nitp.ac.in` account.
+The backend admits only an email that was provisioned for that role, and a warden's
+hostel comes from their account. To set it up:
+
+1. In Google Cloud Console, go to **APIs & Services → Credentials → Create credentials →
+   OAuth client ID**, type **Web application**. (If asked, configure the consent screen
+   first; "Internal" is right if nitp.ac.in is a Google Workspace domain.)
+2. Under **Authorized JavaScript origins** add the site's origin exactly, with no path:
+   `https://erp.nitp.ac.in` (the app lives at `/safeexit`, but Google wants the origin only).
+   Add `http://localhost:3000` too if you test locally.
+3. Put the client ID in `.env` as `GOOGLE_CLIENT_ID=...`. It is not a secret.
+
+The server needs outbound HTTPS to `www.googleapis.com` (to fetch Google's signing keys),
+and browsers need to reach `accounts.google.com`.
 
 ---
 
@@ -199,8 +223,13 @@ In this order, because each step depends on the one before.
    the PIN, all exactly as set in `.env`. `ADMIN_1_NAME` is a credential here, not a label,
    and a login with the right ID and PIN but no name is refused with `Invalid credentials`.
    If sign-in fails outright, the allowlist did not load and the boot log will say so.
-2. **Create the staff** the college needs: a guard, one caretaker and one warden per hostel,
-   and the chief warden. Hostel and gender scope decide what each of them can see.
+2. **Create the staff** the college needs: a guard and one caretaker per hostel from
+   Admin → People. For the wardens (two or three per hostel) and the chief warden, copy
+   `backend/wardens.example.json` to `backend/wardens.json` (full walkthrough, including a
+   `--dry-run` preview: `docs/WARDEN-GOOGLE-SIGNIN.md`), fill in each person's name,
+   college email and hostel, and run `npm run seed:wardens`; or add them one at a time from
+   People by email. Then have one warden press "Sign in with Google" and confirm they land
+   on their own hostel's dashboard. Hostel and gender scope decide what each of them can see.
 3. **Register one student**, or have one register, and check they land in the right hostel.
 4. **Submit and approve one outing request** end to end, so a pass exists.
 5. **Scan that student out and back in at the real gate station, with the real USB scanner.**

@@ -420,6 +420,55 @@ maybe('a list query cannot pull pass signature bytes, but the byte endpoint can'
 });
 
 // ---------------------------------------------------------------------------
+// Several wardens per hostel (warden + assistant wardens, Google sign-in)
+// ---------------------------------------------------------------------------
+
+const outingController = require('../src/controllers/outingController');
+
+maybe('every warden of the hostel sees a forwarded request, and only one can decide it', async () => {
+  const { kautilyaStudent: student, warden } = fixtures;
+  const assistant = await makeUser({
+    name: 'ITEST Assistant Warden', role: 'Warden', managedHostel: 'Kautilya', managedGender: 'Male',
+    email: `itest-assistant-${crypto.randomUUID()}@nitp.ac.in`,
+  });
+  const otherHostelWarden = await makeUser({
+    name: 'ITEST Kadambini Warden', role: 'Warden', managedHostel: 'Kadambini', managedGender: 'Female',
+  });
+
+  await releaseActivePasses(student.id);
+  const pass = await makeOuting({ studentId: student.id, status: 'Forwarded', forwardedAt: new Date() });
+
+  const queueIds = async (user) => {
+    const res = recorder();
+    await outingController.getForwardedRequests({ user, query: {} }, res);
+    assert.equal(res.statusCode ?? 200, 200, JSON.stringify(res.body));
+    return res.body.map((r) => r.id || r._id);
+  };
+  assert.ok((await queueIds(warden)).includes(pass.id), 'the warden sees it');
+  assert.ok((await queueIds(assistant)).includes(pass.id), 'the assistant warden sees it too');
+  assert.ok(!(await queueIds(otherHostelWarden)).includes(pass.id), 'another hostel does not');
+
+  // Both press Reject at the same moment: exactly one verdict lands.
+  const decide = async (user) => {
+    const res = recorder();
+    await outingController.updateWardenRequestStatus(
+      { user, params: { id: pass.id }, body: { status: 'Rejected', remarks: `by ${user.name}` } },
+      res
+    );
+    return res;
+  };
+  const results = await Promise.all([decide(warden), decide(assistant)]);
+  const codes = results.map((r) => r.statusCode ?? 200).sort();
+  assert.deepEqual(codes, [200, 409], JSON.stringify(results.map((r) => r.body)));
+
+  await pass.reload();
+  assert.equal(pass.status, 'Rejected');
+  const winner = results.find((r) => (r.statusCode ?? 200) === 200);
+  assert.equal(String(pass.forwardedTo), String(winner.body.forwardedTo), 'the deciding warden is recorded');
+});
+
+
+// ---------------------------------------------------------------------------
 
 maybe('the suite leaves the database exactly as it found it', async () => {
   // Runs last. Deletes what the tests made, then proves the tables are back to their

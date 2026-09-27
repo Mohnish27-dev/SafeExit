@@ -64,6 +64,9 @@ const CAMPUS_TONE = {
   Overdue: "bg-rose-100 text-rose-700",
 };
 
+const formatDay = (iso) =>
+  iso ? new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) : "—";
+
 const formatWhen = (iso) =>
   iso ? new Date(iso).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
@@ -73,7 +76,7 @@ const HOSTEL_OPTIONS = HOSTELS.map((h) => ({ value: h.name, label: h.name, gende
 
 // Values must match what registration and the student self-edit form store
 // ("1st".."4th", "M.Tech", ...); the backend matches year exactly (case-insensitive),
-// so a "3rd Year" filter or promotion would find none of the "3rd" rows.
+// so a "3rd Year" filter would find none of the "3rd" rows.
 const ACADEMIC_YEARS = [
   { value: "1st", label: "1st Year" },
   { value: "2nd", label: "2nd Year" },
@@ -85,7 +88,6 @@ const ACADEMIC_YEARS = [
   { value: "PhD", label: "PhD" },
   { value: "Graduated", label: "Graduated" },
 ];
-const yearLabel = (value) => ACADEMIC_YEARS.find((y) => y.value === value)?.label || value;
 
 const DEPARTMENTS = [
   "CSE",
@@ -130,22 +132,15 @@ export default function PeopleView() {
     phoneNumber: "",
     guardianPhoneNumber: "",
     email: "",
-    profileUnlocked: false,
   });
   const [editStudentSaving, setEditStudentSaving] = useState(false);
   const [editStudentError, setEditStudentError] = useState("");
 
-  // --- Batch promote modal ---
-  const [showBatchModal, setShowBatchModal] = useState(false);
-  const [batchForm, setBatchForm] = useState({
-    fromYear: "3rd",
-    toYear: "4th",
-    hostelName: "ALL",
-    department: "ALL",
-  });
-  const [batchSaving, setBatchSaving] = useState(false);
-  const [batchMsg, setBatchMsg] = useState("");
-  const [batchError, setBatchError] = useState("");
+  // --- Annual profile-update window ---
+  // Students edit their own details every 1 July and lock themselves on save; there is no
+  // per-student unlock and no batch promote. The admin can only reopen it for everyone.
+  const [profileWindow, setProfileWindow] = useState(null);
+  const [reopening, setReopening] = useState(false);
 
   // Debounce search input so backend isn't hammered on every keypress
   useEffect(() => {
@@ -187,6 +182,21 @@ export default function PeopleView() {
     load();
   }, [load]);
 
+  const loadProfileWindow = useCallback(async () => {
+    try {
+      setProfileWindow(await apiFetch("/admin/profile-window"));
+    } catch {
+      // Informational panel only; the roster still works without it.
+      setProfileWindow(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (role !== "Student") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadProfileWindow();
+  }, [role, loadProfileWindow]);
+
   const visible = people;
 
   const openEditStudent = (student) => {
@@ -201,7 +211,6 @@ export default function PeopleView() {
       phoneNumber: student.phoneNumber || "",
       guardianPhoneNumber: student.guardianPhoneNumber || "",
       email: student.email || "",
-      profileUnlocked: Boolean(student.profileUnlocked),
     });
     setEditStudentError("");
   };
@@ -227,55 +236,21 @@ export default function PeopleView() {
     }
   };
 
-  const toggleStudentUnlock = async (student) => {
-    setBusy(true);
+  const reopenForAll = async () => {
+    if (!window.confirm(
+      "Open profile editing for ALL students now?\n\nEvery student will be able to update their year, hostel, room and contacts once. Each profile locks again as soon as that student saves."
+    )) return;
+    setReopening(true);
     setError("");
     try {
-      const res = await apiFetch(`/admin/students/${student._id}/unlock`, {
-        method: "PATCH",
-        body: JSON.stringify({ unlocked: !student.profileUnlocked }),
-      });
-      setSuccessMsg(res.message || "Updated student edit status.");
-      await load();
-      setTimeout(() => setSuccessMsg(""), 4000);
+      const res = await apiFetch("/admin/profile-window/reopen", { method: "POST" });
+      setSuccessMsg(res.message || "Profile editing reopened for all students.");
+      await Promise.all([load(), loadProfileWindow()]);
+      setTimeout(() => setSuccessMsg(""), 5000);
     } catch (err) {
-      setError(err.message || "Failed to toggle profile unlock.");
+      setError(err.message || "Could not reopen profile editing.");
     } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleBatchPromote = async (e) => {
-    e.preventDefault();
-    if (!batchForm.fromYear || !batchForm.toYear) {
-      setBatchError("Please select both source and target year.");
-      return;
-    }
-    if (batchForm.fromYear.trim().toLowerCase() === batchForm.toYear.trim().toLowerCase()) {
-      setBatchError("Source and target year cannot be identical.");
-      return;
-    }
-    if (!window.confirm(`Promote all ${yearLabel(batchForm.fromYear)} students to ${yearLabel(batchForm.toYear)}? This will update their academic year in the database.`)) {
-      return;
-    }
-    setBatchSaving(true);
-    setBatchError("");
-    setBatchMsg("");
-    try {
-      const res = await apiFetch("/admin/students/batch-promote", {
-        method: "POST",
-        body: JSON.stringify(batchForm),
-      });
-      setBatchMsg(res.message || `Promoted ${res.count} student(s) successfully!`);
-      await load();
-      setTimeout(() => {
-        setShowBatchModal(false);
-        setBatchMsg("");
-      }, 2500);
-    } catch (err) {
-      setBatchError(err.message || "Batch promotion failed.");
-    } finally {
-      setBatchSaving(false);
+      setReopening(false);
     }
   };
 
@@ -292,19 +267,23 @@ export default function PeopleView() {
   // Only staff are provisioned here; students self-register.
   const isStaffTab = role === "Guard" || role === "Caretaker" || role === "Warden" || role === "ChiefWarden";
   const isHostelRole = HOSTEL_ROLES.includes(role);
+  // Wardens and the Chief Warden sign in with their college Google account: they are
+  // added by email and have no ID or PIN.
+  const isGoogleRole = role === "Warden" || role === "ChiefWarden";
 
-
+  // One caretaker per hostel. Wardens have no such limit (warden + assistant wardens).
+  const isOnePerHostel = role === "Caretaker";
   const takenHostels = useMemo(() => {
-    if (!isHostelRole) return new Set();
+    if (!isOnePerHostel) return new Set();
     return new Set(people.map((p) => p.managedHostel).filter(Boolean));
-  }, [isHostelRole, people]);
-  const allHostelsTaken = isHostelRole && takenHostels.size >= HOSTEL_OPTIONS.length;
+  }, [isOnePerHostel, people]);
+  const allHostelsTaken = isOnePerHostel && takenHostels.size >= HOSTEL_OPTIONS.length;
 
   const chiefWardenExists = role === "ChiefWarden" && people.length > 0;
   const addDisabled = allHostelsTaken || chiefWardenExists;
 
   // --- Add staff modal ---
-  const emptyAddForm = { name: "", staffId: "", pin: "", phoneNumber: "", managedHostel: "" };
+  const emptyAddForm = { name: "", staffId: "", email: "", pin: "", phoneNumber: "", managedHostel: "" };
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(emptyAddForm);
   const [busy, setBusy] = useState(false);
@@ -333,9 +312,10 @@ export default function PeopleView() {
         method: "POST",
         body: JSON.stringify({
           name: addForm.name,
-          staffId: addForm.staffId,
           role, // the currently selected tab: "Guard", "Caretaker", "Warden", or "ChiefWarden"
-          pin: addForm.pin,
+          ...(isGoogleRole
+            ? { email: addForm.email }
+            : { staffId: addForm.staffId, pin: addForm.pin }),
           phoneNumber: addForm.phoneNumber,
 
           ...(isHostelRole ? { managedHostel: addForm.managedHostel } : {}),
@@ -434,18 +414,6 @@ export default function PeopleView() {
                 className="w-full rounded-full border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none sm:w-64"
               />
             </div>
-            {role === "Student" && (
-              <button
-                onClick={() => {
-                  setShowBatchModal(true);
-                  setBatchMsg("");
-                  setBatchError("");
-                }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-bold text-white shadow transition hover:brightness-110 cursor-pointer"
-              >
-                <GraduationCap className="h-4 w-4" /> Batch Promote Year
-              </button>
-            )}
             {isStaffTab && (
               <button
                 onClick={openAdd}
@@ -547,6 +515,31 @@ export default function PeopleView() {
 
       {error && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</p>}
 
+      {role === "Student" && profileWindow && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <Unlock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <div className="min-w-0 text-sm">
+              <p className="font-bold text-slate-900">
+                Profile update window opened {formatDay(profileWindow.windowStart)}
+                {profileWindow.openedBy === "admin" ? " (reopened by admin)" : ""}
+              </p>
+              <p className="text-xs text-slate-600">
+                {profileWindow.pendingStudents} of {profileWindow.totalStudents} students have not updated yet.
+                {" "}Opens again automatically on {formatDay(profileWindow.nextAnnualOpen)}; each profile locks once the student saves.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={reopenForAll}
+            disabled={reopening}
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60 cursor-pointer"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> {reopening ? "Reopening…" : "Reopen for all"}
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin" /> Loading {ROLE_PLURALS[role]}…
@@ -588,7 +581,7 @@ export default function PeopleView() {
                       p.profileUnlocked ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-slate-100 text-slate-500"
                     }`}>
                       {p.profileUnlocked ? <Unlock className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
-                      {p.profileUnlocked ? "Unlocked" : "Locked"}
+                      {p.profileUnlocked ? "Update pending" : "Locked"}
                     </span>
                   </div>
                 )}
@@ -662,19 +655,6 @@ export default function PeopleView() {
                   >
                     <Pencil className="h-3.5 w-3.5" /> Edit
                   </button>
-                  <button
-                    onClick={() => toggleStudentUnlock(p)}
-                    disabled={busy}
-                    title={p.profileUnlocked ? "Lock profile editing" : "Unlock profile to allow student self-edit"}
-                    className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50 cursor-pointer ${
-                      p.profileUnlocked
-                        ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    {p.profileUnlocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-                    {p.profileUnlocked ? "Lock" : "Unlock"}
-                  </button>
                 </div>
               )}
 
@@ -690,13 +670,14 @@ export default function PeopleView() {
 
               {isStaffTab && (
                 <div className="mt-3 flex gap-2">
-                  <button
+                  {/* Google sign-in accounts have no PIN; removing the account revokes access. */}
+                  {!isGoogleRole && <button
                     onClick={() => { setResetTarget(p); setResetPin(""); setActionMsg(""); }}
                     disabled={busy}
                     className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
                   >
                     <KeyRound className="h-3.5 w-3.5" /> Reset PIN
-                  </button>
+                  </button>}
                   <button
                     onClick={() => removePerson(p)}
                     disabled={busy}
@@ -724,7 +705,9 @@ export default function PeopleView() {
               </button>
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              Create a {ROLE_LABELS[role].toLowerCase()} account. They sign in on the {ROLE_LABELS[role].toLowerCase()} page with the ID and PIN you set here.
+              {isGoogleRole
+                ? `Add a ${ROLE_LABELS[role].toLowerCase()} by their college email. They sign in on the ${ROLE_LABELS[role].toLowerCase()} page with "Sign in with Google" using that email. There is no ID or PIN to share.`
+                : `Create a ${ROLE_LABELS[role].toLowerCase()} account. They sign in on the ${ROLE_LABELS[role].toLowerCase()} page with the ID and PIN you set here.`}
             </p>
 
             {actionMsg && (
@@ -741,16 +724,32 @@ export default function PeopleView() {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">{ROLE_LABELS[role]} ID</label>
-                <input
-                  value={addForm.staffId}
-                  onChange={(e) => setAddForm((f) => ({ ...f, staffId: e.target.value }))}
-                  placeholder={role === "Guard" ? "E.g. GRD001" : role === "ChiefWarden" ? "E.g. CWDN001" : role === "Warden" ? "E.g. WDN001" : "E.g. CTK001"}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:outline-none"
-                  required
-                />
-              </div>
+              {isGoogleRole ? (
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">College Email</label>
+                  <input
+                    type="email"
+                    value={addForm.email}
+                    onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
+                    placeholder="E.g. rakeshk.me@nitp.ac.in"
+                    pattern="[^@\s]+@nitp\.ac\.in"
+                    title="A college email ending in @nitp.ac.in"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:outline-none"
+                    required
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">{ROLE_LABELS[role]} ID</label>
+                  <input
+                    value={addForm.staffId}
+                    onChange={(e) => setAddForm((f) => ({ ...f, staffId: e.target.value }))}
+                    placeholder={role === "Guard" ? "E.g. GRD001" : "E.g. CTK001"}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:outline-none"
+                    required
+                  />
+                </div>
+              )}
               {isHostelRole && (
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Hostel</label>
@@ -776,14 +775,14 @@ export default function PeopleView() {
                   </select>
                   <p className="mt-1 text-[11px] text-slate-400">
                     {role === "Warden"
-                      ? "Each hostel has one warden login. The warden ranks above the caretaker: they decide the requests the caretaker forwards up, and their decision is final."
+                      ? "A hostel can have several wardens (warden and assistant wardens). They rank above the caretaker: any of them can decide the requests the caretaker forwards up, and that decision is final."
                       : "Each hostel has one caretaker login. This account will only see and manage students of the selected hostel."}
                   </p>
                 </div>
               )}
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <div>
+                {!isGoogleRole && <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Initial PIN</label>
                   <input
                     value={addForm.pin}
@@ -792,7 +791,7 @@ export default function PeopleView() {
                     className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:outline-none"
                     required
                   />
-                </div>
+                </div>}
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Phone (optional)</label>
                   <input
@@ -1066,22 +1065,6 @@ export default function PeopleView() {
                 />
               </div>
 
-              {/* Profile Unlocked toggle */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <div>
-                    <span className="block text-xs font-bold text-slate-900">Unlock Profile for Self-Edit</span>
-                    <span className="block text-[11px] text-slate-500">Allow this student to update their details once from their own dashboard.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={editStudentForm.profileUnlocked}
-                    onChange={(e) => setEditStudentForm((f) => ({ ...f, profileUnlocked: e.target.checked }))}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                  />
-                </label>
-              </div>
-
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
@@ -1103,133 +1086,6 @@ export default function PeopleView() {
         </div>
       )}
 
-      {/* Batch Promotion Modal */}
-      {showBatchModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                <GraduationCap className="h-5 w-5 text-emerald-600" /> Batch Academic Promotion
-              </h3>
-              <button onClick={() => setShowBatchModal(false)} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">
-              Promote an entire student cohort to the next year level at the start of a semester or academic year.
-            </p>
-
-            {batchError && (
-              <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{batchError}</p>
-            )}
-            {batchMsg && (
-              <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">{batchMsg}</p>
-            )}
-
-            {/* Quick preset buttons */}
-            <div className="mt-3">
-              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Quick Presets:</span>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { from: "1st", to: "2nd" },
-                  { from: "2nd", to: "3rd" },
-                  { from: "3rd", to: "4th" },
-                  { from: "4th", to: "Graduated" },
-                ].map((p) => (
-                  <button
-                    key={p.from}
-                    type="button"
-                    onClick={() => setBatchForm((f) => ({ ...f, fromYear: p.from, toYear: p.to }))}
-                    className={`rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition text-left cursor-pointer ${
-                      batchForm.fromYear === p.from && batchForm.toYear === p.to
-                        ? "border-emerald-500 bg-emerald-50 text-emerald-800 font-bold"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
-                    }`}
-                  >
-                    {yearLabel(p.from)} &rarr; {yearLabel(p.to)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <form onSubmit={handleBatchPromote} className="mt-4 space-y-3.5">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">From Year</label>
-                  <select
-                    value={batchForm.fromYear}
-                    onChange={(e) => setBatchForm((f) => ({ ...f, fromYear: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-emerald-400 focus:bg-white focus:outline-none cursor-pointer"
-                    required
-                  >
-                    {ACADEMIC_YEARS.map((y) => (
-                      <option key={y.value} value={y.value}>{y.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">To Year</label>
-                  <select
-                    value={batchForm.toYear}
-                    onChange={(e) => setBatchForm((f) => ({ ...f, toYear: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-emerald-400 focus:bg-white focus:outline-none cursor-pointer"
-                    required
-                  >
-                    {ACADEMIC_YEARS.map((y) => (
-                      <option key={y.value} value={y.value}>{y.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Scope by Hostel (Optional)</label>
-                <select
-                  value={batchForm.hostelName}
-                  onChange={(e) => setBatchForm((f) => ({ ...f, hostelName: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-emerald-400 focus:bg-white focus:outline-none cursor-pointer"
-                >
-                  <option value="ALL">All Hostels (Campus-wide)</option>
-                  {HOSTELS.map((h) => (
-                    <option key={h.name} value={h.name}>{h.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Scope by Department (Optional)</label>
-                <select
-                  value={batchForm.department}
-                  onChange={(e) => setBatchForm((f) => ({ ...f, department: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-emerald-400 focus:bg-white focus:outline-none cursor-pointer"
-                >
-                  <option value="ALL">All Departments</option>
-                  {DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowBatchModal(false)}
-                  className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={batchSaving}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-bold text-white shadow transition hover:brightness-110 disabled:opacity-60 cursor-pointer"
-                >
-                  {batchSaving ? "Promoting…" : "Promote Batch"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

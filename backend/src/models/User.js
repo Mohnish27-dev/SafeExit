@@ -90,12 +90,12 @@ const User = sequelize.define(
     // Transient challenge issued during a WebAuthn ceremony, verified on the next request.
     currentChallenge: { type: DataTypes.TEXT, field: 'current_challenge' },
 
-    profileUnlocked: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
-      field: 'profile_unlocked',
-    },
+    // When the student last submitted their own details. Whether they may edit NOW is not
+    // stored anywhere: it is "confirmed before the current window opened", and the window
+    // opens every 1 July on its own (utils/profileWindow.js). NULL means never confirmed,
+    // which is editable. The old profile_unlocked column is left in the table only so the
+    // one-time backfill can read it; nothing else does.
+    profileConfirmedAt: { type: DataTypes.DATE, field: 'profile_confirmed_at' },
 
     // ---- Virtuals that preserve the Mongo document shape ----
     //

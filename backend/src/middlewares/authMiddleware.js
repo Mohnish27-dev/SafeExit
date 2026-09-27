@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { User } = require('../models');
 const { UUID_RE } = require('./validateParams');
 const { isLegacyId } = require('../utils/legacyIdGrace');
+const { GOOGLE_SIGNIN_ROLES } = require('../utils/googleIdToken');
 
 // The projection got shorter, and not by relaxing anything.
 //
@@ -53,6 +54,15 @@ const protect = async (req, res, next) => {
       // clears the session and re-logs in.
       if (!req.user) {
         return res.status(401).json({ message: 'Not authorized, account no longer exists' });
+      }
+
+      // Warden sessions must come from a Google sign-in. A token minted by the old ID + PIN
+      // login is still cryptographically valid for up to 30 days, and converting the
+      // account to Google keeps its id, so without this a phone that had picked up a
+      // warden PIN would stay signed in after the switch. Its token lacks the claim and
+      // stops working at once; the real warden simply signs in with Google again.
+      if (GOOGLE_SIGNIN_ROLES.includes(req.user.role) && decoded.auth !== 'google') {
+        return res.status(401).json({ message: 'Please sign in again with your college Google account.' });
       }
 
       next();

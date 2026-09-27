@@ -2,7 +2,8 @@ const { Op } = require('sequelize');
 const { OutingRequest, LeaveApplication, DelayNotice } = require('../models');
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { expireStaleRequests, expireStaleApplications } = require('../utils/passExpiry');
-const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
+const { notifyCaretakers, notifyWardensForScope } = require('../utils/pushService');
+const { saveWardenDecision } = require('../utils/claimForwarded');
 const {
   isDeparturePassed,
   resolveOutingPolicy,
@@ -17,11 +18,11 @@ const { estimatedRowCount } = require('../utils/rowCount');
 const {
   passScope,
   mergeWhere,
-  forwardedToFilter,
+  forwardedQueueScope,
   requestInScope,
   canReadSignatures,
   resolveTargetCaretaker,
-  resolveWardenForHostel,
+  resolveWardensForHostel,
 } = require('../utils/hostelScope');
 const {
   fetchOwnSignature,
@@ -610,8 +611,9 @@ const forwardOutingRequest = async (req, res) => {
       });
     }
 
-    const warden = await resolveWardenForHostel(request.student.hostelName);
-    if (!warden) {
+    // Every warden of the student's hostel; any one of them may decide it.
+    const wardens = await resolveWardensForHostel(request.student.hostelName);
+    if (wardens.length === 0) {
       return res.status(409).json({
         message:
           'No warden is assigned to this hostel yet, so this request can\'t be forwarded. Decide it yourself or ask an admin to assign a warden.',
@@ -619,7 +621,9 @@ const forwardOutingRequest = async (req, res) => {
     }
 
     request.status = 'Forwarded';
-    request.forwardedTo = warden.id;
+    // Left empty on purpose: it goes to the hostel's wardens, not one of them. The
+    // warden who decides it is recorded here at decision time.
+    request.forwardedTo = null;
     request.forwardedBy = req.user._id;
     request.forwardedNote = note || null;
     request.forwardedAt = new Date();
@@ -628,8 +632,8 @@ const forwardOutingRequest = async (req, res) => {
 
     sseHub.broadcast('outing:changed', { reason: 'forwarded', id: request.id, status: 'Forwarded' });
 
-    notifyWarden(warden.id, {
-      title: '⬆️ Outing Forwarded to You',
+    notifyWardensForScope({ hostelName: request.student.hostelName }, {
+      title: '⬆️ Outing Forwarded to Wardens',
       body: `${req.user.name} forwarded ${request.student.name}'s outing request for your decision.`,
       url: '/dashboard/warden?view=requests',
     });
@@ -644,11 +648,11 @@ const forwardOutingRequest = async (req, res) => {
 const getForwardedRequests = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const where = forwardedToFilter(req.user);
+    const { where, include: scopeInclude } = forwardedQueueScope(OutingRequest, req.user, QUEUE_STUDENT_FIELDS);
     const requests = await OutingRequest.findAll({
       where,
       include: [
-        { association: 'student', attributes: QUEUE_STUDENT_FIELDS },
+        ...scopeInclude,
         { association: 'forwardedByUser', attributes: ['id', 'name'] },
       ],
       order: [['forwardedAt', 'ASC']],
@@ -665,7 +669,7 @@ const getForwardedRequests = async (req, res) => {
       skip,
       fetched: requests.length,
       label: 'outing/forwarded',
-      count: () => OutingRequest.count({ where }),
+      count: () => OutingRequest.count({ where, include: scopeInclude, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -770,7 +774,7 @@ const updateWardenRequestStatus = async (req, res) => {
     }
 
     if (!requestInScope(req.user, request, request.student)) {
-      return res.status(403).json({ message: 'This request was not forwarded to you.' });
+      return res.status(403).json({ message: 'This request is not from a student of your hostel.' });
     }
 
     if (request.status !== 'Forwarded') {
@@ -798,6 +802,7 @@ const updateWardenRequestStatus = async (req, res) => {
     request.decision = status;
     request.decidedAt = new Date();
     request.decidedByRole = 'Warden';
+    request.forwardedTo = req.user._id; // the warden who actually decided it
     if (status === 'Approved') {
       request.wardenSignature = wardenSignature;
       // Mirror into caretakerSignature too: the student's my-outings view and the gate
@@ -806,7 +811,11 @@ const updateWardenRequestStatus = async (req, res) => {
       request.caretakerSignature = wardenSignature;
     }
 
-    await request.save();
+    if (!(await saveWardenDecision(OutingRequest, request))) {
+      return res.status(409).json({
+        message: 'Another warden of this hostel has already decided this request.',
+      });
+    }
 
     sseHub.broadcast('outing:changed', { reason: 'warden-status', id: request.id, status: request.status });
 

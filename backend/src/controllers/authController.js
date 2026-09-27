@@ -1,8 +1,13 @@
 const { Op } = require('sequelize');
-const { sequelize, User, WebauthnCredential, CloseContact } = require('../models');
+const {
+  sequelize, User, WebauthnCredential, CloseContact, OutingRequest, LeaveApplication,
+} = require('../models');
+const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
+const { getProfileWindowStart, canEditProfile, isProfileEditable } = require('../utils/profileWindow');
 const generateToken = require('../utils/generateToken');
 const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
 const { isValidStudentEmail } = require('../config/emailPolicy');
+const { GOOGLE_SIGNIN_ROLES, verifyGoogleCredential, googleClientId } = require('../utils/googleIdToken');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
 const { isEmailVerificationValid } = require('./otpController');
 const { isSignatureDataUrl } = require('../utils/signature');
@@ -18,6 +23,9 @@ const resolveLoginId = (body = {}) =>
 
 const findByLoginId = (key, options = {}) =>
   User.findOne({ where: { [Op.or]: [{ loginId: key }, { email: key }] }, ...options });
+
+const GOOGLE_ONLY_MESSAGE =
+  'Wardens and the Chief Warden sign in with their college Google account. Use "Sign in with Google" on the login page.';
 
 const normalizePersonName = (value) =>
   String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -52,7 +60,8 @@ const rpID = process.env.RP_ID || 'localhost';
 const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
 
 // The profile payload, in one place, so /profile, PATCH /profile and /refresh cannot
-// drift apart in what they expose.
+// drift apart in what they expose. `profileUnlocked` is derived, not stored, so every
+// caller passes it in `extra` (see utils/profileWindow.js).
 const profilePayload = (user, extra = {}) => ({
   _id: user.id,
   name: user.name,
@@ -65,7 +74,6 @@ const profilePayload = (user, extra = {}) => ({
   year: user.year,
   phoneNumber: user.phoneNumber,
   guardianPhoneNumber: user.guardianPhoneNumber,
-  profileUnlocked: Boolean(user.profileUnlocked),
   // Sorted in JS, not by the query: there are at most two (the slot CHECK guarantees it),
   // and ordering an include costs either a separate query or an order clause repeated at
   // every call site. The profile form fills its two rows positionally, so the order has to
@@ -173,6 +181,9 @@ const registerUser = async (req, res) => {
           name, loginId, email: realEmail, password, role: resolvedRole,
           studentId, roomNumber, department, year, phoneNumber,
           gender: resolvedGender, hostelName: resolvedHostel,
+          // The registration form IS this year's confirmation: a student who signs up in
+          // August has just entered everything, so they stay locked until next 1 July.
+          profileConfirmedAt: new Date(),
           guardianPhoneNumber: guardianPhoneResult.phoneNumber,
           closeContacts: closeContactResult.contacts.map((c, i) => ({ ...c, slot: i + 1 })),
         },
@@ -207,6 +218,14 @@ const authUser = async (req, res) => {
     const user = await findByIdentifier(req.body.loginId || req.body.email);
 
     if (user && (await user.matchPassword(password))) {
+      // A warden account left over from the ID + PIN era may still carry a password hash.
+      // It must not open the dashboard: the whole point of Google sign-in is that a leaked
+      // PIN is worthless. Checked AFTER the password so this answer never reveals, to
+      // someone without the PIN, that an ID belongs to a warden.
+      if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
+        return res.status(403).json({ message: GOOGLE_ONLY_MESSAGE });
+      }
+
       // Valid credentials are not enough — Admin accounts must be allowlisted.
       if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
         return res.status(403).json({ message: 'This account is not authorized for admin access.' });
@@ -253,6 +272,70 @@ const authUser = async (req, res) => {
   }
 };
 
+// GET /api/auth/google/config — public. The client ID is not a secret (it is embedded in
+// every page that renders the Google button); serving it from here means the on-prem
+// deployment configures it once, in backend/.env, instead of baking it into the Next build.
+const getGoogleConfig = (req, res) => {
+  res.json({ clientId: googleClientId() || null });
+};
+
+// POST /api/auth/google — public. Body: { credential, role: 'Warden' | 'ChiefWarden' }.
+//
+// Google proves which college mailbox is signing in; the users table decides what that
+// mailbox may do. An account exists only if an admin provisioned that exact email as a
+// warden (with its hostel) or as the Chief Warden. Any other @nitp.ac.in address — a
+// student's included — has no such row and is turned away.
+//
+// `role` is the login page the person used. It must match the account, so a hostel
+// warden cannot come in through the Chief Warden page or the reverse.
+const googleLogin = async (req, res) => {
+  const role = String(req.body?.role || '');
+  if (!GOOGLE_SIGNIN_ROLES.includes(role)) {
+    return res.status(400).json({ message: 'Google sign-in is only available for wardens.' });
+  }
+
+  try {
+    const { email, name: googleName } = await verifyGoogleCredential(req.body?.credential);
+    const user = await User.findOne({ where: { email } });
+
+    const roleLabel = role === 'ChiefWarden' ? 'the Chief Warden' : 'a hostel warden';
+    if (!user || user.role !== role) {
+      return res.status(403).json({
+        message: `${email} is not registered as ${roleLabel}. If this is a mistake, contact the administrator.`,
+      });
+    }
+    // An unscoped warden would land on a dashboard that shows nothing; say why instead.
+    if (user.role === 'Warden' && !user.managedHostel) {
+      return res.status(403).json({
+        message: 'Your warden account has no hostel assigned yet. Contact the administrator.',
+      });
+    }
+
+    // Provisioned without a name (seedWardens stores the email as a placeholder): take the
+    // name from the Google profile. A name an admin typed is never overwritten.
+    if (googleName && user.name === user.email) user.name = googleName.trim();
+
+    user.lastActiveAt = new Date();
+    await user.save();
+    const token = generateToken(res, user.id, { auth: 'google' });
+
+    res.json({
+      _id: user.id,
+      name: user.name,
+      loginId: user.loginId,
+      email: user.email,
+      role: user.role,
+      managedGender: user.managedGender,
+      managedHostel: user.managedHostel,
+      hasSignature: await User.hasSignature(user.id),
+      webAuthnRegistered: user.webAuthnRegistered,
+      token,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message });
+  }
+};
+
 // GET /api/auth/profile — private
 //
 // The one read that deliberately DOES pull the owner's own photo and signature bytes:
@@ -264,6 +347,7 @@ const getUserProfile = async (req, res) => {
 
   if (user) {
     res.json(profilePayload(user, {
+      profileUnlocked: await isProfileEditable(user),
       photo: user.photo,
       // The owner's own signature bytes; every capture UI reads them from here.
       signature: user.signature,
@@ -274,7 +358,8 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// PATCH /api/auth/profile — private (photo/signature always; student details when profileUnlocked)
+// PATCH /api/auth/profile — private (photo/signature always; student details inside the
+// annual edit window, see utils/profileWindow.js)
 const updateUserProfile = async (req, res) => {
   const {
     gender,
@@ -340,6 +425,8 @@ const updateUserProfile = async (req, res) => {
     }
 
     let normalizedCloseContacts = null;
+    // Set when this request is the student's once-a-year self-edit, which locks them again.
+    let isWindowEdit = false;
 
     if (isProtectedFieldAttempt) {
       // Legacy backfill: student setting hostel for the very first time without unlocking
@@ -353,10 +440,19 @@ const updateUserProfile = async (req, res) => {
         guardianPhoneNumber === undefined &&
         closeContacts === undefined;
 
-      if (!isInitialHostelBackfill && !user.profileUnlocked) {
-        return res.status(403).json({
-          message: 'Profile editing is locked. Please contact an administrator or warden to update your details.',
-        });
+      if (!isInitialHostelBackfill) {
+        if (!canEditProfile(user, await getProfileWindowStart())) {
+          return res.status(403).json({
+            message: 'Profile editing is locked. It opens again on 1 July; until then, contact an administrator to correct your details.',
+          });
+        }
+        // This submission locks them for a year, so it must at least carry the one field
+        // that changes every year. The form enforces the same; this stops a client that
+        // sends only a room number from spending the whole window on it by accident.
+        if (!year || !String(year).trim()) {
+          return res.status(400).json({ message: 'Please confirm your current academic year before saving.' });
+        }
+        isWindowEdit = true;
       }
 
       if (department !== undefined) {
@@ -400,7 +496,24 @@ const updateUserProfile = async (req, res) => {
             message: 'That hostel does not match the gender on your account. Contact your caretaker.',
           });
         }
-        user.hostelName = canonicalHostelName(hostelName);
+        // Passes carry no hostel of their own: approvals, the caretaker queue and overdue
+        // alerts all follow the student's CURRENT hostel. Moving while a pass is live would
+        // hand a student who is out to a caretaker who never approved them, and drop them
+        // from the one who did. Finish or cancel the pass first; the window stays open.
+        const nextHostel = canonicalHostelName(hostelName);
+        if (user.hostelName && nextHostel !== user.hostelName) {
+          const activeWhere = { studentId: user.id, status: { [Op.in]: ACTIVE_PASS_STATUSES } };
+          const [liveOutings, liveLeaves] = await Promise.all([
+            OutingRequest.count({ where: activeWhere }),
+            LeaveApplication.count({ where: activeWhere }),
+          ]);
+          if (liveOutings || liveLeaves) {
+            return res.status(409).json({
+              message: 'You have an outing or leave in progress. Complete or cancel it before changing your hostel — your profile stays open until you save.',
+            });
+          }
+        }
+        user.hostelName = nextHostel;
         user.gender = impliedGender;
       }
 
@@ -426,8 +539,8 @@ const updateUserProfile = async (req, res) => {
 
     // Atomically persist profile changes and blobs
     await sequelize.transaction(async (tx) => {
-      if (user.profileUnlocked && isProtectedFieldAttempt) {
-        user.profileUnlocked = false; // Auto-lock once submitted
+      if (isWindowEdit) {
+        user.profileConfirmedAt = new Date(); // Locked until the window next opens
       }
       await user.save({ transaction: tx });
 
@@ -452,6 +565,7 @@ const updateUserProfile = async (req, res) => {
     });
 
     res.json(profilePayload(fresh, {
+      profileUnlocked: await isProfileEditable(fresh),
       photo: fresh.photo,
       signature: fresh.signature,
       hasSignature: Boolean(fresh.signature),
@@ -478,7 +592,10 @@ const refreshSession = async (req, res) => {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
-    const token = generateToken(res, user.id);
+    // A warden only reaches here holding a Google-issued token (protect enforces it), so
+    // the renewed one keeps the claim.
+    const claims = GOOGLE_SIGNIN_ROLES.includes(user.role) ? { auth: 'google' } : {};
+    const token = generateToken(res, user.id, claims);
 
     if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
       user.lastActiveAt = new Date();
@@ -487,6 +604,7 @@ const refreshSession = async (req, res) => {
     }
 
     res.json(profilePayload(user, {
+      profileUnlocked: await isProfileEditable(user),
       hasSignature: await User.hasSignature(user.id),
       token,
     }));
@@ -600,6 +718,9 @@ const getAuthenticationOptions = async (req, res) => {
     if (!user || !user.webAuthnRegistered || user.webAuthnCredentials.length === 0) {
       return res.status(404).json({ message: 'No passkey registered for this account' });
     }
+    if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
+      return res.status(403).json({ message: GOOGLE_ONLY_MESSAGE });
+    }
     if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
       return res.status(403).json({ message: 'This account is not authorized for admin access.' });
     }
@@ -629,6 +750,9 @@ const verifyAuthentication = async (req, res) => {
     const user = await findByLoginId(loginId, WITH_CREDENTIALS);
     if (!user || !user.currentChallenge) {
       return res.status(400).json({ message: 'No login in progress for this account' });
+    }
+    if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
+      return res.status(403).json({ message: GOOGLE_ONLY_MESSAGE });
     }
     if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
       return res.status(403).json({ message: 'This account is not authorized for admin access.' });
@@ -700,6 +824,8 @@ const verifyAuthentication = async (req, res) => {
 module.exports = {
   registerUser,
   authUser,
+  googleLogin,
+  getGoogleConfig,
   getUserProfile,
   updateUserProfile,
   logoutUser,

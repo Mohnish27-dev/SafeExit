@@ -1,2 +1,4 @@
 node_modules
-.env    
+.env
+# Real warden list for scripts/seedWardens.js; see wardens.example.json
+wardens.json

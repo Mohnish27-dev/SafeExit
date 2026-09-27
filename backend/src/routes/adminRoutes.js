@@ -15,8 +15,8 @@ const {
   updateStaffScope,
   removeStaff,
   updateStudent,
-  toggleStudentProfileUnlock,
-  batchPromoteStudents,
+  getProfileWindow,
+  reopenProfileWindow,
 } = require('../controllers/adminController');
 const { getAnalytics } = require('../controllers/adminAnalyticsController');
 const { protect } = require('../middlewares/authMiddleware');
@@ -33,10 +33,12 @@ router.get('/users/:id/photo', protect, authorizeRoles('Admin', 'Guard'), getUse
 // page through the roster to add up three numbers.
 router.get('/students/counts', protect, authorizeRoles('Admin', 'Guard'), getStudentCounts);
 
-// Student management
-router.post('/students/batch-promote', protect, authorizeRoles('Admin'), batchPromoteStudents);
-router.patch('/students/:id/unlock', protect, authorizeRoles('Admin'), toggleStudentProfileUnlock);
+// Student management. There is no per-student unlock and no batch promote: every 1 July
+// students update their own details (utils/profileWindow.js); the admin can only reopen
+// that window for everyone at once.
 router.patch('/students/:id', protect, authorizeRoles('Admin'), updateStudent);
+router.get('/profile-window', protect, authorizeRoles('Admin'), getProfileWindow);
+router.post('/profile-window/reopen', protect, authorizeRoles('Admin'), reopenProfileWindow);
 
 router.post('/staff', protect, authorizeRoles('Admin'), createStaff);
 router.patch('/staff/:id/pin', protect, authorizeRoles('Admin'), resetStaffPin);

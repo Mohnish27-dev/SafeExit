@@ -406,9 +406,9 @@ export default function LeaveApplicationsView({
                           {t("rejectionReason")} {req.remarks}
                         </p>
                       )}
-                      {req.status === "Forwarded" && !req.decision && req.forwardedToName && (
+                      {req.status === "Forwarded" && !req.decision && (
                         <p className="mt-2 rounded-xl bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700">
-                          {t("forwardedToName", { name: req.forwardedToName })}
+                          {t("forwardedToWardens")}
                         </p>
                       )}
                       {/* The verdict stands, but the pass never got used as decided. */}

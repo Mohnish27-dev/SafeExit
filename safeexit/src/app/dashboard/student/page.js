@@ -367,7 +367,8 @@ export default function StudentDashboardPage() {
   const [savingHostel, setSavingHostel] = useState(false);
   const [hostelError, setHostelError] = useState("");
 
-  // Profile details editing (one-time window when unlocked by Admin/Warden)
+  // Profile details editing: opens every 1 July (or when an admin reopens it for everyone),
+  // and saving once locks it again. `profileUnlocked` is derived by the backend.
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [editForm, setEditForm] = useState({
     department: "",
@@ -839,7 +840,9 @@ export default function StudentDashboardPage() {
   const openEditProfileModal = () => {
     setEditForm({
       department: profile.department || "",
-      year: profile.year || "",
+      // Deliberately blank: saving locks the profile until next 1 July, so the student
+      // must actively pick this year's value rather than resave last year's by accident.
+      year: "",
       roomNumber: profile.roomNumber || profile.room || "",
       phoneNumber: profile.mobile || profile.phoneNumber || "",
       guardianPhoneNumber: profile.guardianPhoneNumber || "",
@@ -866,7 +869,7 @@ export default function StudentDashboardPage() {
     setProfileSaveSuccess("");
 
     if (!editForm.year) {
-      setProfileSaveError("Academic Year is required");
+      setProfileSaveError("Please select your current academic year");
       setSavingProfile(false);
       return;
     }
@@ -915,7 +918,7 @@ export default function StudentDashboardPage() {
         closeContacts: updated.closeContacts || prev.closeContacts || [],
       }));
 
-      setProfileSaveSuccess("Profile details updated successfully! Your profile is now locked.");
+      setProfileSaveSuccess("Profile updated! It is now locked until the next update window on 1 July.");
       setTimeout(() => {
         setShowEditProfileModal(false);
         setProfileSaveSuccess("");
@@ -1035,13 +1038,13 @@ export default function StudentDashboardPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-900">
-                        One-Time Edit Window
+                        Annual Profile Update
                       </span>
-                      <span className="text-xs font-semibold text-emerald-700">Admin Approved</span>
+                      <span className="text-xs font-semibold text-emerald-700">New academic year</span>
                     </div>
-                    <h3 className="text-base font-bold text-slate-900 mt-0.5">Your profile is unlocked for editing</h3>
+                    <h3 className="text-base font-bold text-slate-900 mt-0.5">Please update your details for this year</h3>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      You can update your academic year, department, room, and contact numbers. Once saved, your profile will be locked automatically.
+                      Confirm your academic year, hostel, room, and contact numbers. You can save once; after that your profile locks until next 1 July.
                     </p>
                   </div>
                 </div>
@@ -1829,7 +1832,7 @@ export default function StudentDashboardPage() {
                   </h2>
                   <p className="text-xs text-slate-500">
                     {profile.profileUnlocked
-                      ? "One-time edit window active (Admin approved)"
+                      ? "Annual update open — you can save once"
                       : "Official profile details registered on campus"}
                   </p>
                 </div>
@@ -1893,9 +1896,10 @@ export default function StudentDashboardPage() {
                       <select
                         value={editForm.year}
                         onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
+                        required
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                       >
-                        <option value="">Select Year</option>
+                        <option value="">Select current year</option>
                         <option value="1st">1st Year</option>
                         <option value="2nd">2nd Year</option>
                         <option value="3rd">3rd Year</option>
@@ -1905,6 +1909,9 @@ export default function StudentDashboardPage() {
                         <option value="MCA">MCA</option>
                         <option value="PhD">PhD</option>
                       </select>
+                      {profile.year && (
+                        <p className="mt-1 text-[11px] text-slate-500">Previously: {profile.year}</p>
+                      )}
                     </div>
 
                     <div>

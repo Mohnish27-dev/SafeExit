@@ -8,4 +8,7 @@ const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
 const isValidStudentEmail = (email) => STUDENT_EMAIL_REGEX.test(normalizeEmail(email));
 
-module.exports = { normalizeEmail, isValidStudentEmail };
+// Same domain rule for staff who sign in with their college Google account (wardens).
+const isCollegeEmail = isValidStudentEmail;
+
+module.exports = { normalizeEmail, isValidStudentEmail, isCollegeEmail };

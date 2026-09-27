@@ -34,6 +34,7 @@ const SOSAlert = require('./SOSAlert');
 const DelayNotice = require('./DelayNotice');
 const PushSubscription = require('./PushSubscription');
 const EmailOtp = require('./EmailOtp');
+const AppSetting = require('./AppSetting');
 
 // ---------------------------------------------------------------------------
 // The user cluster — the four things lifted out of the Mongo user document
@@ -119,6 +120,7 @@ const models = {
   DelayNotice,
   PushSubscription,
   EmailOtp,
+  AppSetting,
 };
 
 for (const model of Object.values(models)) {

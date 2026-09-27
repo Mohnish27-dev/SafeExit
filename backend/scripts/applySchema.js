@@ -32,6 +32,7 @@ const EXPECTED_TABLES = [
   'hostels', 'users', 'close_contacts', 'webauthn_credentials',
   'user_photos', 'user_signatures', 'outing_requests', 'leave_applications',
   'scan_logs', 'sos_alerts', 'delay_notices', 'push_subscriptions', 'email_otps',
+  'app_settings',
 ];
 
 // The two indexes that are correctness guards rather than performance ones. If either is

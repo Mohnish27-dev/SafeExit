@@ -146,10 +146,16 @@ const genderScopedPassScope = (user, studentAttributes) => {
   };
 };
 
-const forwardedToFilter = (user) => ({
-  status: 'Forwarded',
-  forwardedTo: user._id,
-});
+// The warden action queue: every Forwarded row whose student lives in the warden's hostel.
+//
+// It used to be `forwardedTo: me`, which was only correct while a hostel had exactly one
+// warden. A hostel now has two or three (warden + assistant wardens), and a forwarded
+// request belongs to all of them: whichever warden is free decides it. passScope already
+// expresses "students of my hostel" for a Warden, so this is that plus the status.
+const forwardedQueueScope = (Model, user, studentAttributes) => {
+  const scope = passScope(Model, user, studentAttributes);
+  return { where: mergeWhere(scope.where, { status: 'Forwarded' }), include: scope.include };
+};
 
 // ---------------------------------------------------------------------------
 // Per-row authorisation. These read objects already loaded, make no query, and are
@@ -162,8 +168,12 @@ function requestInScope(user, request, student) {
   if (user.role === 'Admin') return true;
   if (!isHostelScoped(user)) return false; // Guard/Student have no decision authority
 
+  // Any warden of the student's hostel may decide; the handlers separately require the
+  // row to be Forwarded. forwardedTo is deliberately not consulted: it is empty until a
+  // warden decides (see the forward handlers), and naming one warden would lock the
+  // other wardens of the same hostel out.
   if (user.role === 'Warden') {
-    return !!request && !!request.forwardedTo && String(request.forwardedTo) === String(user._id);
+    return !!request && studentInScope(user, student);
   }
 
   if (request && request.targetCaretaker) {
@@ -243,9 +253,10 @@ async function resolveTargetCaretaker(student, requestedCaretakerId) {
   return null;
 }
 
-async function resolveWardenForHostel(hostelName) {
-  if (!hostelName) return null;
-  return User.findOne({
+// Every warden (and assistant warden) of a hostel. Empty means nobody to forward to.
+async function resolveWardensForHostel(hostelName) {
+  if (!hostelName) return [];
+  return User.findAll({
     where: { role: 'Warden', [Op.and]: [ciEquals('managed_hostel', hostelName)] },
     attributes: STAFF_ROUTING_ATTRIBUTES,
   });
@@ -257,11 +268,11 @@ module.exports = {
   mergeWhere,
   passScope,
   genderScopedPassScope,
-  forwardedToFilter,
+  forwardedQueueScope,
   studentInScope,
   requestInScope,
   resolveTargetCaretaker,
-  resolveWardenForHostel,
+  resolveWardensForHostel,
   studentInGenderScope,
   canReadSignatures,
   isHostelScoped,

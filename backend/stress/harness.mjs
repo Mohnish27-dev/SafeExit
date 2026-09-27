@@ -104,7 +104,10 @@ const record = (id, title, status, detail) => {
   const icon = status === 'PASS' ? 'PASS' : status === 'FAIL' ? 'FAIL' : 'WARN';
   console.log(`[${icon}] ${id} ${title}${detail ? ' :: ' + detail : ''}`);
 };
-const tok = (u) => jwt.sign({ id: u._id.toString() }, process.env.JWT_SECRET, { expiresIn: '1d' });
+// Wardens need the Google claim, as a real Google sign-in would give them (authMiddleware).
+const tok = (u) => jwt.sign(
+  { id: u._id.toString(), ...(['Warden', 'ChiefWarden'].includes(u.role) ? { auth: 'google' } : {}) },
+  process.env.JWT_SECRET, { expiresIn: '1d' });
 const api = async (path, { method = 'GET', token, body, headers = {} } = {}) => {
   const res = await fetch(BASE + path, {
     method,

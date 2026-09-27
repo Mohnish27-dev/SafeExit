@@ -91,7 +91,12 @@ CREATE TABLE IF NOT EXISTS users (
   -- webauthn_registered is a convenience flag; webauthn_credentials is the source of truth.
   webauthn_registered    boolean NOT NULL DEFAULT false,
   current_challenge      text,
+  -- Superseded by profile_confirmed_at; kept only for the one-time backfill in
+  -- src/utils/profileWindow.js. Nothing reads it after that.
   profile_unlocked       boolean NOT NULL DEFAULT false,
+  -- When the student last submitted their own details. Editable = confirmed before the
+  -- current window opened (every 1 July IST, or an admin's "reopen for all").
+  profile_confirmed_at   timestamptz,
 
   created_at             timestamptz NOT NULL DEFAULT now(),
   updated_at             timestamptz NOT NULL DEFAULT now(),
@@ -100,6 +105,7 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_lowercase_email CHECK (email    IS NULL OR email    = lower(email))
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_unlocked boolean NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_confirmed_at timestamptz;
 
 -- Replaces userSchema.index({role, hostelName}) + the collation. Queries must use
 -- WHERE role = $1 AND lower(hostel_name) = lower($2) to hit this.
@@ -116,6 +122,17 @@ CREATE INDEX IF NOT EXISTS users_role_managed_gender ON users (role, managed_gen
 -- uniqueness here could fail the ETL on legacy duplicates. Promote it in
 -- 002_post_etl_constraints.sql once the data is proven clean.
 CREATE INDEX IF NOT EXISTS users_student_id ON users (student_id);
+
+
+-- ---------------------------------------------------------------------------
+-- app_settings — campus-wide values an admin changes at runtime (today: when the
+-- profile-update window was last reopened). Text values, parsed by the owning module.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app_settings (
+  key         text PRIMARY KEY,
+  value       text NOT NULL,
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
 
 
 -- ---------------------------------------------------------------------------

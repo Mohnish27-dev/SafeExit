@@ -5,7 +5,8 @@ const { expireStaleRequests, expireStaleApplications } = require('../utils/passE
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { estimatedRowCount } = require('../utils/rowCount');
-const { notifyCaretakers, notifyWarden } = require('../utils/pushService');
+const { notifyCaretakers, notifyWardensForScope } = require('../utils/pushService');
+const { saveWardenDecision } = require('../utils/claimForwarded');
 const {
   getLeaveSubmissionTimingViolation,
   isBeforeEveningCurfew,
@@ -13,11 +14,11 @@ const {
 const {
   passScope,
   mergeWhere,
-  forwardedToFilter,
+  forwardedQueueScope,
   requestInScope,
   canReadSignatures,
   resolveTargetCaretaker,
-  resolveWardenForHostel,
+  resolveWardensForHostel,
 } = require('../utils/hostelScope');
 const {
   fetchOwnSignature,
@@ -563,8 +564,9 @@ const forwardLeaveApplication = async (req, res) => {
     }
 
     // Resolve the warden of the student's hostel. No warden assigned -> actionable error.
-    const warden = await resolveWardenForHostel(application.student.hostelName);
-    if (!warden) {
+    // Every warden of the student's hostel; any one of them may decide it.
+    const wardens = await resolveWardensForHostel(application.student.hostelName);
+    if (wardens.length === 0) {
       return res.status(409).json({
         message:
           'No warden is assigned to this hostel yet, so this application can\'t be forwarded. Decide it yourself or ask an admin to assign a warden.',
@@ -572,7 +574,9 @@ const forwardLeaveApplication = async (req, res) => {
     }
 
     application.status = 'Forwarded';
-    application.forwardedTo = warden.id;
+    // Left empty on purpose: it goes to the hostel's wardens, not one of them. The
+    // warden who decides it is recorded here at decision time.
+    application.forwardedTo = null;
     application.forwardedBy = req.user._id;
     application.forwardedNote = note || null;
     application.forwardedAt = new Date();
@@ -581,8 +585,8 @@ const forwardLeaveApplication = async (req, res) => {
 
     sseHub.broadcast('leave:changed', { reason: 'forwarded', id: application.id, status: 'Forwarded' });
 
-    notifyWarden(warden.id, {
-      title: '⬆️ Leave Forwarded to You',
+    notifyWardensForScope({ hostelName: application.student.hostelName }, {
+      title: '⬆️ Leave Forwarded to Wardens',
       body: `${req.user.name} forwarded ${application.student.name}'s leave application for your decision.`,
       url: '/dashboard/warden?view=leave',
     });
@@ -597,11 +601,11 @@ const forwardLeaveApplication = async (req, res) => {
 const getForwardedLeaveApplications = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const where = forwardedToFilter(req.user);
+    const { where, include: scopeInclude } = forwardedQueueScope(LeaveApplication, req.user, QUEUE_STUDENT_FIELDS);
     const applications = await LeaveApplication.findAll({
       where,
       include: [
-        { association: 'student', attributes: QUEUE_STUDENT_FIELDS },
+        ...scopeInclude,
         { association: 'forwardedByUser', attributes: ['id', 'name'] },
       ],
       order: [['forwardedAt', 'ASC']],
@@ -626,7 +630,7 @@ const getForwardedLeaveApplications = async (req, res) => {
       skip,
       fetched: applications.length,
       label: 'leave/forwarded',
-      count: () => LeaveApplication.count({ where }),
+      count: () => LeaveApplication.count({ where, include: scopeInclude, distinct: true }),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -702,9 +706,9 @@ const updateWardenLeaveStatus = async (req, res) => {
       return res.status(404).json({ message: 'Leave application not found' });
     }
 
-    // Warden may act only on an application forwarded to THEM.
+    // Any warden of the student's hostel may decide a forwarded application.
     if (!requestInScope(req.user, application, application.student)) {
-      return res.status(403).json({ message: 'This application was not forwarded to you.' });
+      return res.status(403).json({ message: 'This application is not from a student of your hostel.' });
     }
 
     if (application.status !== 'Forwarded') {
@@ -732,6 +736,7 @@ const updateWardenLeaveStatus = async (req, res) => {
     application.decision = status;
     application.decidedAt = new Date();
     application.decidedByRole = 'Warden';
+    application.forwardedTo = req.user._id; // the warden who actually decided it
     if (status === 'Approved') {
       application.wardenSignature = wardenSignature;
       // Mirror into caretakerSignature too: the student's leave view reads
@@ -740,7 +745,11 @@ const updateWardenLeaveStatus = async (req, res) => {
       application.caretakerSignature = wardenSignature;
     }
 
-    await application.save();
+    if (!(await saveWardenDecision(LeaveApplication, application))) {
+      return res.status(409).json({
+        message: 'Another warden of this hostel has already decided this application.',
+      });
+    }
 
     sseHub.broadcast('leave:changed', { reason: 'warden-status', id: application.id, status: application.status });
 

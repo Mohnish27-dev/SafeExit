@@ -113,7 +113,6 @@ const mapLeaveHistory = (l) => ({
   lapsed: l.lapsed || "",
   decidedByName: l.approvedBy?.name || "",
   decidedByRole: l.decidedByRole || l.approvedBy?.role || "",
-  forwardedToName: l.forwardedTo?.name || "",
   remarks: l.remarks || "",
   decidedAt: l.decidedAt || l.updatedAt,
 });

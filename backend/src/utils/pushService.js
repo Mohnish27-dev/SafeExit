@@ -119,11 +119,6 @@ const notifyStudent = (studentId, payload) => {
   return notifyUsers({ role: 'Student', id: studentId }, payload);
 };
 
-const notifyWarden = (wardenId, payload) => {
-  if (!wardenId) return Promise.resolve();
-  return notifyUsers({ role: 'Warden', id: wardenId }, payload);
-};
-
 const notifyWardensForScope = (scope, payload) =>
   notifyUsers(wardenFilterForScope(scope), payload);
 
@@ -140,7 +135,6 @@ const notifyCaretakersAndAdmins = notifyHostelStaffAndAdmins;
 
 module.exports = {
   notifyCaretakers,
-  notifyWarden,
   notifyWardensForScope,
   notifyChiefWardens,
   notifyStudent,
