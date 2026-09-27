@@ -27,7 +27,7 @@ NITP-SafeExit is a comprehensive student outing and hostel safety management sys
 ### Backend (`/backend`)
 - **Runtime**: Node.js
 - **Framework**: Express.js
-- **Database**: MongoDB with Mongoose
+- **Database**: PostgreSQL Database (Local, Docker, or a hosted instance) — see `backend/db/postgres/README.md`
 - **Authentication**: JSON Web Tokens (JWT), bcryptjs
 - **Passkeys**: `@simplewebauthn/server`
 
@@ -40,7 +40,7 @@ SafeExit/
 │   │   ├── config/           # Database config
 │   │   ├── controllers/      # Route handlers
 │   │   ├── middlewares/      # Auth & Role middlewares
-│   │   ├── models/           # Mongoose schemas (User, OutingRequest, LeaveApplication)
+│   │   ├── models/           # Sequelize models (User, OutingRequest, LeaveApplication)
 │   │   ├── routes/           # API routes (auth, outing, leave)
 │   │   └── utils/            # Utilities (JWT generation)
 │   └── package.json
