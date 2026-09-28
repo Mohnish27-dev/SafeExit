@@ -107,6 +107,7 @@ const registerUser = async (req, res) => {
     guardianPhoneNumber,
     // Temporary compatibility alias for clients deployed before the API field was named.
     emergencyContact,
+    photo,
   } = req.body;
 
   try {
@@ -129,6 +130,15 @@ const registerUser = async (req, res) => {
     // Password must be a real secret, never the public roll number.
     if (!password || String(password).length < 6) {
       return res.status(400).json({ message: 'Please choose a password with at least 6 characters.' });
+    }
+    // The face photo is what the gate guard matches against, so an account without one
+    // cannot be used at the gate. It travels with registration (not a follow-up PATCH) so
+    // the account and its photo are committed together or not at all.
+    if (typeof photo !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(photo)) {
+      return res.status(400).json({ message: 'Please add a profile photo to continue.' });
+    }
+    if (photo.length > 1_500_000) {
+      return res.status(413).json({ message: 'Photo is too large.' });
     }
     // Hostel is the source of truth: it's required, must be a known campus hostel,
     // and the student's gender is DERIVED from it (the form has no separate gender
@@ -175,8 +185,8 @@ const registerUser = async (req, res) => {
     // `slot` is what makes the two-contact cap structural: it is CHECKed to 1..2 and
     // UNIQUE per user, so a third has nowhere to go even on a write path that skips the
     // old Mongoose validator.
-    const user = await sequelize.transaction(async (tx) =>
-      User.create(
+    const user = await sequelize.transaction(async (tx) => {
+      const created = await User.create(
         {
           name, loginId, email: realEmail, password, role: resolvedRole,
           studentId, roomNumber, department, year, phoneNumber,
@@ -188,8 +198,10 @@ const registerUser = async (req, res) => {
           closeContacts: closeContactResult.contacts.map((c, i) => ({ ...c, slot: i + 1 })),
         },
         { include: [{ association: 'closeContacts' }], transaction: tx }
-      )
-    );
+      );
+      await User.setPhoto(created.id, photo, { transaction: tx });
+      return created;
+    });
 
     if (user) {
       const token = generateToken(res, user.id);

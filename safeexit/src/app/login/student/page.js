@@ -98,6 +98,9 @@ export default function StudentLoginPage() {
 	const fileInputRef = useRef(null);
 	const cropDragRef = useRef(null);
 	const photoReadIdRef = useRef(0);
+	// The compressed onboarding photo, kept out of localStorage's reach: a quota failure
+	// there drops the photo from the stored profile, but registration still needs it.
+	const onboardingPhotoRef = useRef(null);
 
 	// Captured with the photo at step 3 and published once the account exists. Required: every outing and
 	// leave request is stamped with it server-side, so onboarding is where we collect it.
@@ -306,6 +309,7 @@ export default function StudentLoginPage() {
 				phoneNumber: profile.phoneNumber,
 				guardianPhoneNumber: profile.emergencyContact,
 				closeContacts: profile.closeContacts,
+				photo: onboardingPhotoRef.current || profile.photo, // required by the server
 				emailVerificationToken: emailToken, // proves the college email was verified
 			}),
 		});
@@ -667,7 +671,9 @@ export default function StudentLoginPage() {
 				photoPreview.startsWith("data:")
 			) {
 				const compressed = await compressImage(photoPreview, 800, 0.7);
-				profileToSave.photo = compressed || null;
+				// The cropped preview is already a JPEG; use it if compression fails.
+				profileToSave.photo = compressed || photoPreview;
+				onboardingPhotoRef.current = profileToSave.photo;
 			} else {
 				profileToSave.photo = null;
 			}
@@ -734,6 +740,11 @@ export default function StudentLoginPage() {
 	const continueFromMedia = async (signature) => {
 		setSignatureData(signature);
 		setSignatureError("");
+		// The guard matches faces against this photo at the gate, so it is required.
+		if (!photoPreview) {
+			setPhotoError("Please add a profile photo before continuing.");
+			return;
+		}
 		setIsSavingMedia(true);
 		await saveMediaAndContinue(signature);
 		setIsSavingMedia(false);
@@ -2714,7 +2725,10 @@ export default function StudentLoginPage() {
 													<>
 														<ImageIcon className="w-10 h-10 text-slate-400 group-hover:text-indigo-500 transition-colors mb-2" />
 														<span className="text-xs font-semibold text-slate-500 group-hover:text-indigo-600">
-															Tap to upload
+															Tap to upload{" "}
+															<span className="text-rose-500">
+																*
+															</span>
 														</span>
 													</>
 												)}
@@ -2759,8 +2773,8 @@ export default function StudentLoginPage() {
 													</span>
 												</h3>
 												<p className="mt-1 mb-4 text-xs text-slate-500">
-													Your photo is optional. A
-													signature is required and
+													Both your photo and signature
+													are required. The signature
 													will be attached
 													automatically to your
 													requests.
@@ -2777,11 +2791,7 @@ export default function StudentLoginPage() {
 													}
 													onSave={continueFromMedia}
 													saving={isSavingMedia}
-													saveLabel={
-														photoPreview
-															? "Save Photo & Signature"
-															: "Save Signature & Continue"
-													}
+													saveLabel="Save Photo & Signature"
 												/>
 												<button
 													type="button"
