@@ -238,6 +238,10 @@ export default function SecurityDashboardPage() {
 
 
   const exitBlocked = !previewLoading && isExitDenied(scanPreview);
+  // Allowed exit/entry get their own full-screen colour so the guard can read the
+  // direction from across the cabin. Neutral while the preview is loading, since
+  // derivedMode falls back to "exit" until the student's campus status arrives.
+  const gateTone = previewLoading || exitBlocked ? null : derivedMode;
 
 
   const disarmAutoCommit = useCallback(() => {
@@ -893,13 +897,38 @@ export default function SecurityDashboardPage() {
         <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 backdrop-blur-md sm:p-4 transition-colors duration-300 ${
           exitBlocked
             ? "bg-rose-950/85 ring-inset ring-8 ring-rose-600/70"
-            : "bg-slate-950/80"
+            : gateTone === "exit"
+              ? "bg-sky-950/85 ring-inset ring-8 ring-sky-500/70"
+              : gateTone === "entry"
+                ? "bg-emerald-950/85 ring-inset ring-8 ring-emerald-500/70"
+                : "bg-slate-950/80"
         }`}>
           <div className={`sd-enter relative max-h-[94dvh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white text-center shadow-2xl transition-all duration-300 ${
             exitBlocked
               ? "ring-4 ring-rose-600 shadow-[0_0_60px_rgba(225,29,72,0.65)] border-2 border-rose-500 overflow-hidden"
-              : ""
+              : gateTone === "exit"
+                ? "ring-4 ring-sky-500 shadow-[0_0_60px_rgba(14,165,233,0.6)] border-2 border-sky-400"
+                : gateTone === "entry"
+                  ? "ring-4 ring-emerald-500 shadow-[0_0_60px_rgba(16,185,129,0.6)] border-2 border-emerald-400"
+                  : ""
           }`}>
+            {gateTone && (
+              <div className={`sticky top-0 z-20 flex items-center gap-2.5 px-4 py-3.5 pr-16 text-white shadow-md bg-gradient-to-r ${
+                gateTone === "exit"
+                  ? "from-sky-500 via-blue-600 to-sky-700"
+                  : "from-emerald-500 via-green-600 to-emerald-700"
+              }`}>
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 text-white">
+                  {gateTone === "exit"
+                    ? <LogOut className="h-5 w-5 stroke-[2.5]" />
+                    : <LogIn className="h-5 w-5 stroke-[2.5]" />}
+                </span>
+                <span className="text-left text-base font-black uppercase tracking-wider drop-shadow-sm">
+                  {gateTone === "exit" ? t("goingOut") : t("comingIn")}
+                </span>
+              </div>
+            )}
+
             {exitBlocked && (
               <div className="sticky top-0 z-20 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 px-4 py-3.5 text-white flex items-center justify-between shadow-md">
                 <div className="flex items-center gap-2.5">
