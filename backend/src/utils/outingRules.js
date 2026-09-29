@@ -23,7 +23,9 @@ const minutesOfDayInTimeZone = (date, timeZone) => {
   return hour * 60 + minute;
 };
 
-// Pass can't be used to exit after its departure time. `at` injectable for tests.
+// Pass can't be used to exit after its exit-by deadline (outTime). For outings that deadline
+// is server-computed — the close of that day's exit window, see computeExitDeadline — so a
+// pass only lapses once the whole window is gone, never mid-window. `at` injectable for tests.
 const isDeparturePassed = (outTime, at = Date.now()) => {
   const departure = new Date(outTime);
   if (Number.isNaN(departure.getTime())) return false;
@@ -83,16 +85,20 @@ const isAfterLeaveCurfew = (leaveDate, at = Date.now()) => {
 };
 
 // Same-day outing policy (gender x outing type), minutes since campus midnight:
-//   Female Nearby: no caretaker; depart 6:00 AM–6:30 PM; return by 8:00 PM.
-//   Female Market: caretaker required; depart 6:00 AM–2:30 PM; return by 5:30 PM.
-//   Male/Other -> 'General': no caretaker; depart 6:00 AM–7:59 PM; return by 8:00 PM.
+//   Female Nearby: no caretaker; exit 6:00 AM–6:30 PM; return by 8:00 PM.
+//   Female Market: caretaker required; exit 6:00 AM–3:00 PM; return by 5:30 PM.
+//   Male/Other -> 'General': no caretaker; exit 6:00 AM–7:59 PM; return by 8:00 PM.
+//
+// The student never chooses a departure time. Their departure is the moment the gate scans
+// them out (actualOutTime); the only exit rule is that the scan falls inside this window on
+// the day the pass was requested. A pass nobody uses lapses when that window closes.
 const NIGHT_RETURN_MINUTES = 20 * 60; // 8:00 PM
 const MARKET_RETURN_MINUTES = 17 * 60 + 30; // 5:30 PM
 
 const GIRL_NEARBY_DEPART_START_MINUTES = 6 * 60;
 const GIRL_NEARBY_DEPART_END_MINUTES = 18 * 60 + 30;
 const GIRL_MARKET_DEPART_START_MINUTES = 6 * 60;
-const GIRL_MARKET_DEPART_END_MINUTES = 14 * 60 + 30;
+const GIRL_MARKET_DEPART_END_MINUTES = 15 * 60;
 const MALE_DEPART_START_MINUTES = 6 * 60;
 const MALE_DEPART_END_MINUTES = 20 * 60 - 1;
 
@@ -142,25 +148,46 @@ const isWithinDepartureWindow = (gender, outingType, departDate) => {
   return mins >= policy.departStartMinutes && mins <= policy.departEndMinutes;
 };
 
-// Policy-fixed return deadline on the departure's campus-local day.
-// Built with a fixed +05:30 offset (no DST in Asia/Kolkata) so the instant
-// is unambiguous regardless of server timezone.
-const computeReturnDeadline = (gender, outingType, departDate) => {
-  const d = new Date(departDate);
+// The instant `minutes` after campus midnight (plus `seconds`/`ms`) on `date`'s campus-local
+// day. Built with a fixed +05:30 offset (no DST in Asia/Kolkata) so the instant is
+// unambiguous regardless of server timezone.
+const campusInstantOnDayOf = (date, minutes, seconds = 0, ms = 0) => {
+  const d = new Date(date);
   if (Number.isNaN(d.getTime())) return null;
+  const [year, month, day] = campusDateKey(d).split('-');
+  const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
+  const mm = String(minutes % 60).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+  const sss = String(ms).padStart(3, '0');
+  return new Date(`${year}-${month}-${day}T${hh}:${mm}:${ss}.${sss}+05:30`);
+};
+
+// Policy-fixed return deadline on the pass's campus-local day.
+const computeReturnDeadline = (gender, outingType, date) => {
   const policy = resolveOutingPolicy(gender, outingType);
+  return campusInstantOnDayOf(date, policy.returnDeadlineMinutes);
+};
 
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: CAMPUS_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(d);
-  const get = (t) => parts.find((p) => p.type === t).value;
-  const hh = String(Math.floor(policy.returnDeadlineMinutes / 60)).padStart(2, '0');
-  const mm = String(policy.returnDeadlineMinutes % 60).padStart(2, '0');
+// Exit-by deadline for a pass requested at `requestedAt`: the last instant of that day's
+// exit window. The window check is minute-granular and inclusive (7:59 PM means the whole
+// of 19:59), so the deadline is the end of that minute; otherwise a scan at 19:59:30 would
+// pass the window check and still be refused as lapsed.
+const computeExitDeadline = (gender, outingType, requestedAt) => {
+  const policy = resolveOutingPolicy(gender, outingType);
+  return campusInstantOnDayOf(requestedAt, policy.departEndMinutes, 59, 999);
+};
 
-  return new Date(`${get('year')}-${get('month')}-${get('day')}T${hh}:${mm}:00+05:30`);
+// Why an outing cannot be requested at `at`, or null. Only a closed window blocks: a request
+// made before the window opens (say 5:30 AM) is for that same day, and the gate simply holds
+// the exit until the window opens.
+const getOutingRequestViolation = (gender, outingType, at = Date.now()) => {
+  const now = new Date(at);
+  if (Number.isNaN(now.getTime())) return 'INVALID_DATE';
+  const policy = resolveOutingPolicy(gender, outingType);
+  if (minutesOfDayInTimeZone(now, CAMPUS_TIMEZONE) > policy.departEndMinutes) {
+    return 'EXIT_WINDOW_CLOSED';
+  }
+  return null;
 };
 
 module.exports = {
@@ -174,4 +201,6 @@ module.exports = {
   normalizeOutingType,
   isWithinDepartureWindow,
   computeReturnDeadline,
+  computeExitDeadline,
+  getOutingRequestViolation,
 };

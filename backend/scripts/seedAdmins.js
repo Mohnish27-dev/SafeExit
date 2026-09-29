@@ -1,6 +1,6 @@
 // npm run seed:admins — standalone admin provisioning; the server runs the same
-// ensureAdmins on every boot. Useful when the app is not running, or to re-apply a PIN
-// change from .env without a restart.
+// ensureAdmins on every boot. Creates the Google sign-in admin account
+// (config/adminAllowlist.js) when the app is not running.
 require('dotenv').config();
 const { connectPostgres, closePostgres } = require('../src/config/sequelize');
 const { ensureAdmins } = require('../src/utils/ensureAdmins');

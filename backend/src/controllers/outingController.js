@@ -8,8 +8,9 @@ const {
   isDeparturePassed,
   resolveOutingPolicy,
   normalizeOutingType,
-  isWithinDepartureWindow,
   computeReturnDeadline,
+  computeExitDeadline,
+  getOutingRequestViolation,
   isReturnLate,
 } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
@@ -38,6 +39,8 @@ const clockLabel = (minutes) => {
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 };
+
+const DESTINATION_MAX_LENGTH = 120;
 
 const QUEUE_STUDENT_FIELDS = ['id', 'name', 'studentId', 'roomNumber', 'hostelName'];
 const WIDE_STUDENT_FIELDS = [...QUEUE_STUDENT_FIELDS, 'department', 'year'];
@@ -119,7 +122,7 @@ const blockingLeaveForOutingMessage = (status) =>
 
 // POST /api/outing — private (Student)
 const createOutingRequest = async (req, res) => {
-  const { destination, purpose, outTime, outingType, targetCaretakerId } = req.body;
+  const { destination, purpose, outingType, targetCaretakerId } = req.body;
 
   try {
     // Stamped from the student's saved profile signature — never accepted from the body,
@@ -135,6 +138,19 @@ const createOutingRequest = async (req, res) => {
         'Add your signature to your profile before submitting a request.'
       );
     }
+
+    // Destination is the one thing the student fills in, so it is the one thing checked
+    // here: a blank one would reach a NOT NULL column as '' and print an empty pass.
+    const cleanDestination = typeof destination === 'string' ? destination.trim() : '';
+    if (!cleanDestination) {
+      return res.status(400).json({ message: 'Destination is required.' });
+    }
+    if (cleanDestination.length > DESTINATION_MAX_LENGTH) {
+      return res.status(400).json({
+        message: `Destination must be at most ${DESTINATION_MAX_LENGTH} characters.`,
+      });
+    }
+    const cleanPurpose = (typeof purpose === 'string' && purpose.trim()) || 'Outing';
 
     // Must be 'Inside' to request — prevents stacking passes while off-campus.
     if (req.user.campusStatus && req.user.campusStatus !== 'Inside') {
@@ -177,17 +193,18 @@ const createOutingRequest = async (req, res) => {
     const resolvedType = normalizeOutingType(gender, outingType);
     const policy = resolveOutingPolicy(gender, resolvedType);
 
-    const departure = new Date(outTime);
-    if (Number.isNaN(departure.getTime())) {
-      return res.status(400).json({ message: 'A valid departure time is required.' });
-    }
-
-    // Authoritative window check — client shows the same window for UX only.
-    if (!isWithinDepartureWindow(gender, resolvedType, departure)) {
+    // The student no longer picks a departure time — their departure is the gate scan
+    // (actualOutTime). A client that still sends outTime is ignored, not trusted. A pass is
+    // for the day it is requested, so once today's exit window has closed there is nothing
+    // left to request.
+    const requestedAt = new Date();
+    if (getOutingRequestViolation(gender, resolvedType, requestedAt) === 'EXIT_WINDOW_CLOSED') {
       return res.status(400).json({
-        message: `Departure for this outing must be between ${clockLabel(
+        message: `Outings can only be taken between ${clockLabel(
           policy.departStartMinutes
-        )} and ${clockLabel(policy.departEndMinutes)} (campus time). Please choose a time in that window.`,
+        )} and ${clockLabel(policy.departEndMinutes)} (campus time). Today's window has closed — request again from ${clockLabel(
+          policy.departStartMinutes
+        )} tomorrow.`,
         window: {
           start: clockLabel(policy.departStartMinutes),
           end: clockLabel(policy.departEndMinutes),
@@ -195,8 +212,11 @@ const createOutingRequest = async (req, res) => {
       });
     }
 
-    // Return time is fixed by college rule (8:00 PM, or 5:30 PM for market), never student-chosen.
-    const inTime = computeReturnDeadline(gender, resolvedType, departure);
+    // Both ends are fixed by college rule, never student-chosen. outTime is the EXIT-BY
+    // deadline (close of today's window): the pass works at the gate any time before it and
+    // lapses unused after it. inTime is the return deadline (8:00 PM, or 5:30 PM for market).
+    const outTime = computeExitDeadline(gender, resolvedType, requestedAt);
+    const inTime = computeReturnDeadline(gender, resolvedType, requestedAt);
 
     // Male general and female nearby outings are auto-approved (no caretaker step).
     const autoApproved = !policy.requiresCaretaker;
@@ -214,10 +234,10 @@ const createOutingRequest = async (req, res) => {
 
     const outingRequest = await OutingRequest.create({
       studentId: req.user._id,
-      destination,
-      purpose,
+      destination: cleanDestination,
+      purpose: cleanPurpose,
       outingType: resolvedType,
-      outTime: departure,
+      outTime,
       inTime,
       status: autoApproved ? 'Approved' : 'Pending',
       autoApproved,
@@ -239,7 +259,7 @@ const createOutingRequest = async (req, res) => {
         : { hostelName: req.user.hostelName, gender };
       notifyCaretakers(scope, {
         title: '🔔 New Outing Request',
-        body: `${req.user.name} has requested a ${resolvedType} outing to ${destination}.`,
+        body: `${req.user.name} has requested a ${resolvedType} outing to ${cleanDestination}.`,
         url: '/dashboard/caretaker?view=requests',
       });
     }
@@ -525,7 +545,7 @@ const updateRequestStatus = async (req, res) => {
         });
       }
 
-      // Approving after the departure window closed would mint an already-expired pass.
+      // Approving after today's exit window closed would mint a pass that can never be used.
       if (status === 'Approved' && isDeparturePassed(request.outTime)) {
         request.status = 'Expired';
         await request.save();
@@ -538,7 +558,7 @@ const updateRequestStatus = async (req, res) => {
 
         return res.status(409).json({
           message:
-            'This request has expired — the departure time has already passed. It can no longer be approved.',
+            "This request lapsed unused — today's exit window for this outing has closed. It can no longer be approved.",
           status: 'Expired',
         });
       }
@@ -600,13 +620,13 @@ const forwardOutingRequest = async (req, res) => {
       });
     }
 
-    // Don't forward a pass whose departure window already closed; expire it instead.
+    // Don't forward a pass whose exit window already closed; lapse it instead.
     if (isDeparturePassed(request.outTime)) {
       request.status = 'Expired';
       await request.save();
       sseHub.broadcast('outing:changed', { reason: 'expired', id: request.id, status: 'Expired' });
       return res.status(409).json({
-        message: 'This request has expired — the departure time has already passed. It can no longer be forwarded.',
+        message: "This request lapsed unused — today's exit window for this outing has closed. It can no longer be forwarded.",
         status: 'Expired',
       });
     }
@@ -784,13 +804,13 @@ const updateWardenRequestStatus = async (req, res) => {
       });
     }
 
-    // Approving after the departure window closed would mint an already-expired pass.
+    // Approving after today's exit window closed would mint a pass that can never be used.
     if (status === 'Approved' && isDeparturePassed(request.outTime)) {
       request.status = 'Expired';
       await request.save();
       sseHub.broadcast('outing:changed', { reason: 'expired', id: request.id, status: 'Expired' });
       return res.status(409).json({
-        message: 'This request has expired — the departure time has already passed. It can no longer be approved.',
+        message: "This request lapsed unused — today's exit window for this outing has closed. It can no longer be approved.",
         status: 'Expired',
       });
     }

@@ -1118,7 +1118,13 @@ export default function SecurityDashboardPage() {
                   <span className="text-sm font-semibold text-slate-800">
                     {derivedMode === 'exit'
                       ? (scanPreview?.exit?.pass
-                          ? `${formatClock(scanPreview.exit.pass.windowStart)} to ${formatClock(scanPreview.exit.pass.windowEnd)}`
+                          // An outing's windowStart is its exit-by deadline, not a start time.
+                          ? scanPreview.exit.passType === 'Outing'
+                            ? t("outingExitWindow", {
+                                exitBy: formatClock(scanPreview.exit.pass.windowStart),
+                                returnBy: formatClock(scanPreview.exit.pass.windowEnd),
+                              })
+                            : `${formatClock(scanPreview.exit.pass.windowStart)} to ${formatClock(scanPreview.exit.pass.windowEnd)}`
                           : t("na"))
                       : formattedTime
                     }

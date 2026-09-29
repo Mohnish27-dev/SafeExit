@@ -4,8 +4,9 @@ const { isCollegeEmail, normalizeEmail } = require('../config/emailPolicy');
 // Wardens and the Chief Warden are professors with their own @nitp.ac.in mailbox, so they
 // sign in with Google instead of an admin-issued ID + PIN. A PIN can be read off a
 // shoulder or a WhatsApp forward and replayed from any phone; a Google sign-in cannot.
+// The admin console follows the same rule, with one fixed mailbox (config/adminAllowlist.js).
 // These roles are Google-ONLY: authController refuses password and passkey login for them.
-const GOOGLE_SIGNIN_ROLES = ['Warden', 'ChiefWarden'];
+const GOOGLE_SIGNIN_ROLES = ['Warden', 'ChiefWarden', 'Admin'];
 
 const clientId = () => (process.env.GOOGLE_CLIENT_ID || '').trim();
 

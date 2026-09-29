@@ -1,12 +1,13 @@
 import { apiFetch } from "./api";
 
-// Device markers for wardens and the Chief Warden, who sign in with Google and so have no
+// Device markers for wardens, the Chief Warden and the admin, who sign in with Google and so have no
 // Quick Login PIN. The role picker (/login) reads them to send a returning device straight
 // to the right login page, and the login page uses the stored email as Google's
 // login_hint. The email is not a secret; nothing here grants access.
 export const GOOGLE_LOGIN_KEYS = {
 	warden: "safeexit_google_login_warden",
 	"chief-warden": "safeexit_google_login_chief_warden",
+	admin: "safeexit_google_login_admin",
 };
 
 // The ID + PIN era stored an encrypted copy of the admin-issued PIN on the device. That
@@ -24,6 +25,8 @@ const LEGACY_KEYS = {
 		"safeexit_chief_warden_profile",
 		"safeexit_webauthn_registered_chief_warden",
 	],
+	// The Name + Admin ID + PIN form saved the whole profile, PIN included.
+	admin: ["safeexit_admin_profile"],
 };
 
 export const clearLegacyQuickLogin = (role) => {

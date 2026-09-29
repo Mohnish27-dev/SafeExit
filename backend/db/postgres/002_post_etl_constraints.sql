@@ -84,7 +84,8 @@ ALTER TABLE leave_applications
 
 
 -- ---------------------------------------------------------------------------
--- An outing's return time is after its departure time.
+-- An outing's return deadline is after its exit-by deadline (8:00 PM > 7:59 PM / 6:30 PM,
+-- 5:30 PM > 3:00 PM for market).
 -- Offenders:  SELECT id, out_time, in_time FROM outing_requests WHERE in_time <= out_time;
 -- ---------------------------------------------------------------------------
 ALTER TABLE outing_requests

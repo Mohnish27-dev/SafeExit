@@ -5,7 +5,7 @@ const {
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { getProfileWindowStart, canEditProfile, isProfileEditable } = require('../utils/profileWindow');
 const generateToken = require('../utils/generateToken');
-const { isAllowedAdminLoginId } = require('../config/adminAllowlist');
+const { isAdminEmail } = require('../config/adminAllowlist');
 const { isValidStudentEmail } = require('../config/emailPolicy');
 const { GOOGLE_SIGNIN_ROLES, verifyGoogleCredential, googleClientId } = require('../utils/googleIdToken');
 const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
@@ -25,10 +25,7 @@ const findByLoginId = (key, options = {}) =>
   User.findOne({ where: { [Op.or]: [{ loginId: key }, { email: key }] }, ...options });
 
 const GOOGLE_ONLY_MESSAGE =
-  'Wardens and the Chief Warden sign in with their college Google account. Use "Sign in with Google" on the login page.';
-
-const normalizePersonName = (value) =>
-  String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  'Wardens, the Chief Warden and the administrator sign in with their college Google account. Use "Sign in with Google" on the login page.';
 
 // Password login only: also accepts the roll number (case-insensitive studentId match).
 //
@@ -107,6 +104,7 @@ const registerUser = async (req, res) => {
     guardianPhoneNumber,
     // Temporary compatibility alias for clients deployed before the API field was named.
     emergencyContact,
+    photo,
   } = req.body;
 
   try {
@@ -129,6 +127,15 @@ const registerUser = async (req, res) => {
     // Password must be a real secret, never the public roll number.
     if (!password || String(password).length < 6) {
       return res.status(400).json({ message: 'Please choose a password with at least 6 characters.' });
+    }
+    // The face photo is what the gate guard matches against, so an account without one
+    // cannot be used at the gate. It travels with registration (not a follow-up PATCH) so
+    // the account and its photo are committed together or not at all.
+    if (typeof photo !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(photo)) {
+      return res.status(400).json({ message: 'Please add a profile photo to continue.' });
+    }
+    if (photo.length > 1_500_000) {
+      return res.status(413).json({ message: 'Photo is too large.' });
     }
     // Hostel is the source of truth: it's required, must be a known campus hostel,
     // and the student's gender is DERIVED from it (the form has no separate gender
@@ -175,8 +182,8 @@ const registerUser = async (req, res) => {
     // `slot` is what makes the two-contact cap structural: it is CHECKed to 1..2 and
     // UNIQUE per user, so a third has nowhere to go even on a write path that skips the
     // old Mongoose validator.
-    const user = await sequelize.transaction(async (tx) =>
-      User.create(
+    const user = await sequelize.transaction(async (tx) => {
+      const created = await User.create(
         {
           name, loginId, email: realEmail, password, role: resolvedRole,
           studentId, roomNumber, department, year, phoneNumber,
@@ -188,8 +195,10 @@ const registerUser = async (req, res) => {
           closeContacts: closeContactResult.contacts.map((c, i) => ({ ...c, slot: i + 1 })),
         },
         { include: [{ association: 'closeContacts' }], transaction: tx }
-      )
-    );
+      );
+      await User.setPhoto(created.id, photo, { transaction: tx });
+      return created;
+    });
 
     if (user) {
       const token = generateToken(res, user.id);
@@ -218,25 +227,12 @@ const authUser = async (req, res) => {
     const user = await findByIdentifier(req.body.loginId || req.body.email);
 
     if (user && (await user.matchPassword(password))) {
-      // A warden account left over from the ID + PIN era may still carry a password hash.
-      // It must not open the dashboard: the whole point of Google sign-in is that a leaked
-      // PIN is worthless. Checked AFTER the password so this answer never reveals, to
-      // someone without the PIN, that an ID belongs to a warden.
+      // A warden or admin account left over from the ID + PIN era may still carry a
+      // password hash. It must not open the dashboard: the whole point of Google sign-in
+      // is that a leaked PIN is worthless. Checked AFTER the password so this answer never
+      // reveals, to someone without the PIN, that an ID belongs to a warden or an admin.
       if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
         return res.status(403).json({ message: GOOGLE_ONLY_MESSAGE });
-      }
-
-      // Valid credentials are not enough — Admin accounts must be allowlisted.
-      if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
-        return res.status(403).json({ message: 'This account is not authorized for admin access.' });
-      }
-
-      // Admin login requires the configured name, Admin ID, and PIN.
-      if (
-        user.role === 'Admin' &&
-        normalizePersonName(req.body.name) !== normalizePersonName(user.name)
-      ) {
-        return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       const token = generateToken(res, user.id);
@@ -279,29 +275,42 @@ const getGoogleConfig = (req, res) => {
   res.json({ clientId: googleClientId() || null });
 };
 
-// POST /api/auth/google — public. Body: { credential, role: 'Warden' | 'ChiefWarden' }.
+// POST /api/auth/google — public. Body: { credential, role: 'Warden' | 'ChiefWarden' | 'Admin' }.
 //
 // Google proves which college mailbox is signing in; the users table decides what that
 // mailbox may do. An account exists only if an admin provisioned that exact email as a
 // warden (with its hostel) or as the Chief Warden. Any other @nitp.ac.in address — a
 // student's included — has no such row and is turned away.
 //
+// The admin console is stricter still: the email must ALSO be on the allowlist in code
+// (config/adminAllowlist.js). An Admin row with any other address — one left over from
+// the ID + PIN era, or one written straight into the database — does not open it.
+//
 // `role` is the login page the person used. It must match the account, so a hostel
 // warden cannot come in through the Chief Warden page or the reverse.
+const ROLE_LABELS = {
+  Warden: 'a hostel warden',
+  ChiefWarden: 'the Chief Warden',
+  Admin: 'the SafeExit administrator',
+};
+
 const googleLogin = async (req, res) => {
   const role = String(req.body?.role || '');
   if (!GOOGLE_SIGNIN_ROLES.includes(role)) {
-    return res.status(400).json({ message: 'Google sign-in is only available for wardens.' });
+    return res.status(400).json({ message: 'Google sign-in is only available for wardens and the administrator.' });
   }
 
   try {
     const { email, name: googleName } = await verifyGoogleCredential(req.body?.credential);
-    const user = await User.findOne({ where: { email } });
 
-    const roleLabel = role === 'ChiefWarden' ? 'the Chief Warden' : 'a hostel warden';
-    if (!user || user.role !== role) {
+    if (role === 'Admin' && !isAdminEmail(email)) {
+      return res.status(403).json({ message: `${email} is not authorized for admin access.` });
+    }
+
+    const user = await User.findOne({ where: { email } });
+    if (!user || user.role !== role || (user.role === 'Admin' && !isAdminEmail(user.email))) {
       return res.status(403).json({
-        message: `${email} is not registered as ${roleLabel}. If this is a mistake, contact the administrator.`,
+        message: `${email} is not registered as ${ROLE_LABELS[role]}. If this is a mistake, contact the administrator.`,
       });
     }
     // An unscoped warden would land on a dashboard that shows nothing; say why instead.
@@ -311,7 +320,7 @@ const googleLogin = async (req, res) => {
       });
     }
 
-    // Provisioned without a name (seedWardens stores the email as a placeholder): take the
+    // Provisioned without a name (seedWardens and ensureAdmins store the email as a placeholder): take the
     // name from the Google profile. A name an admin typed is never overwritten.
     if (googleName && user.name === user.email) user.name = googleName.trim();
 
@@ -325,6 +334,7 @@ const googleLogin = async (req, res) => {
       loginId: user.loginId,
       email: user.email,
       role: user.role,
+      studentId: user.studentId,
       managedGender: user.managedGender,
       managedHostel: user.managedHostel,
       hasSignature: await User.hasSignature(user.id),
@@ -592,8 +602,8 @@ const refreshSession = async (req, res) => {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
-    // A warden only reaches here holding a Google-issued token (protect enforces it), so
-    // the renewed one keeps the claim.
+    // A warden or admin only reaches here holding a Google-issued token (protect enforces
+    // it), so the renewed one keeps the claim.
     const claims = GOOGLE_SIGNIN_ROLES.includes(user.role) ? { auth: 'google' } : {};
     const token = generateToken(res, user.id, claims);
 
@@ -721,9 +731,6 @@ const getAuthenticationOptions = async (req, res) => {
     if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
       return res.status(403).json({ message: GOOGLE_ONLY_MESSAGE });
     }
-    if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
-      return res.status(403).json({ message: 'This account is not authorized for admin access.' });
-    }
 
     const options = await generateAuthenticationOptions({
       rpID,
@@ -753,9 +760,6 @@ const verifyAuthentication = async (req, res) => {
     }
     if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
       return res.status(403).json({ message: GOOGLE_ONLY_MESSAGE });
-    }
-    if (user.role === 'Admin' && !isAllowedAdminLoginId(user.loginId)) {
-      return res.status(403).json({ message: 'This account is not authorized for admin access.' });
     }
 
     const cred = user.webAuthnCredentials.find((c) => c.credentialID === response?.id);

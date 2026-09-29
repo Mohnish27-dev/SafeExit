@@ -77,7 +77,9 @@ const passWindow = (passType, doc) =>
     ? { windowStart: doc.outTime, windowEnd: doc.inTime }
     : { windowStart: doc.leaveDate, windowEnd: doc.returnDate };
 
-// Outing outTime is a deadline only (early exit OK); Leave is valid leaveDate → 5:30 PM same day.
+// Outing outTime is the server-computed exit-by deadline (the close of the requesting day's
+// exit window) — the student never chose it, and the exit scan itself is the departure.
+// Leave is valid leaveDate → 5:30 PM same day.
 const isOutingExitOpen = (doc) => !isDeparturePassed(doc.outTime);
 const isLeaveExitOpen = (doc) =>
   !isBeforeDeparture(doc.leaveDate) && !isAfterLeaveCurfew(doc.leaveDate);
@@ -214,13 +216,13 @@ const createScanLog = async (req, res) => {
           });
         }
       } else {
-        // Outing outTime is a departure deadline (early exit OK until outTime).
-        // Past departure deadline: persist 'Expired'.
+        // outTime is the close of the day's exit window, so this only fires once the whole
+        // window is gone (or for a pass requested on an earlier day). Persist the lapse.
         if (isDeparturePassed(windowStart)) {
           await expirePass();
           return res.status(403).json({
             message:
-              'This outing pass has expired — its approved departure deadline has already passed. Exit denied; the student must file a new request.',
+              "This outing pass lapsed unused — the exit window for the day it was requested has closed. Exit denied; the student must file a new request.",
             outTime: windowStart,
             inTime: windowEnd,
             campusStatus: studentDoc.campusStatus,

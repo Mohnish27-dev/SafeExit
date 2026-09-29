@@ -131,10 +131,10 @@ test('a warden with no hostel assigned is told why instead of seeing an empty da
   assert.match(res.body.message, /no hostel assigned/);
 });
 
-test('an unverifiable Google token is a 401 and roles outside the warden pair are refused', async (t) => {
+test('an unverifiable Google token is a 401 and roles without Google sign-in are refused', async (t) => {
   withUsers(t, {});
   assert.equal((await login('forged', 'Warden')).statusCode, 401);
-  assert.equal((await login('good-token', 'Admin')).statusCode, 400);
+  assert.equal((await login('good-token', 'Caretaker')).statusCode, 400);
   assert.equal((await login('good-token', 'Student')).statusCode, 400);
 });
 
