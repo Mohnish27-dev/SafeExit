@@ -41,7 +41,8 @@ const statusConfig = {
   forwarded: { label: "With warden", color: "text-teal-700", bg: "bg-teal-100", icon: ArrowUpRight },
   returned: { label: "Returned", color: "text-slate-600", bg: "bg-slate-100", icon: RotateCcw },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
-  expired: { label: "Expired", color: "text-rose-700", bg: "bg-rose-100", icon: TimerOff },
+  // Stored as 'Expired': the pass was never scanned out before its day's exit window closed.
+  expired: { label: "Unused", color: "text-slate-600", bg: "bg-slate-100", icon: TimerOff },
   cancelled: { label: "Cancelled", color: "text-slate-500", bg: "bg-slate-100", icon: Ban },
   // UI-derived status for a 'Returned' trip closed late (returnPunctuality 'Overdue').
   "returned-late": { label: "Returned late", color: "text-rose-700", bg: "bg-rose-100", icon: AlertCircle },
@@ -62,7 +63,7 @@ const filters = [
   { key: "forwarded", label: "With warden" },
   { key: "returned", label: "Returned" },
   { key: "rejected", label: "Rejected" },
-  { key: "expired", label: "Expired" },
+  { key: "expired", label: "Unused" },
   { key: "cancelled", label: "Cancelled" },
 ];
 
@@ -101,8 +102,12 @@ export default function MyOutings() {
           _id: o._id,
           id: `SE-${String(o._id).slice(-6).toUpperCase()}`,
           destination: o.destination,
-          dateOut: fmtDate(o.outTime),
-          timeOut: fmtTime(o.outTime),
+          // The departure is the gate scan; outTime is only the exit-by deadline the server
+          // set (close of that day's exit window). Before the scan, show the deadline.
+          dateOut: fmtDate(o.actualOutTime || o.createdAt || o.outTime),
+          timeOut: o.actualOutTime ? fmtTime(o.actualOutTime) : `Exit by ${fmtTime(o.outTime)}`,
+          exitBy: fmtTime(o.outTime),
+          departed: Boolean(o.actualOutTime),
           dateReturn: fmtDate(o.inTime),
           timeReturn: fmtTime(o.inTime),
           status: o.isOverdue ? "overdue" : (o.status || "Pending").toLowerCase(),
@@ -308,8 +313,16 @@ export default function MyOutings() {
                   <div className="px-5 pb-5 sm:px-6 sm:pb-6 pt-0 animate-fade-in">
                     <div className="rounded-2xl p-5 space-y-3.5 bg-linear-to-br from-slate-50 to-sky-50/40 border border-slate-100/80 shadow-inner">
                       {[
-                        { label: "Departure Date & Time", value: `${outing.dateOut} at ${outing.timeOut}` },
-                        { label: "Expected Return Date & Time", value: `${outing.dateReturn} at ${outing.timeReturn}` },
+                        {
+                          label: "Departure",
+                          value: outing.departed
+                            ? `${outing.dateOut} at ${outing.timeOut}`
+                            : ["approved", "pending", "forwarded"].includes(outing.status)
+                              ? "Recorded when you scan out at the gate"
+                              : "Not used",
+                        },
+                        { label: "Exit Window Closes", value: `${outing.dateOut} at ${outing.exitBy}` },
+                        { label: "Return By", value: `${outing.dateReturn} at ${outing.timeReturn}` },
                       ].map(({ label, value }) => (
                         <div key={label} className="flex justify-between items-center py-0.5">
                           <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">{label}</span>
@@ -362,8 +375,8 @@ export default function MyOutings() {
                       )}
                       {outing.status === "expired" && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
-                          <TimerOff size={15} className="text-rose-500 shrink-0 mt-0.5" />
-                          <p className="text-xs font-semibold text-rose-600">Departure time passed before this pass could be used. This request has expired — file a new one to go out.</p>
+                          <TimerOff size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                          <p className="text-xs font-semibold text-slate-500">This pass was not used before that day&rsquo;s exit window closed, so it closed automatically. File a new request to go out.</p>
                         </div>
                       )}
                       {outing.status === "cancelled" && (

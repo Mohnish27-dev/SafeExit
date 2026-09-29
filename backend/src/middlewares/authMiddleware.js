@@ -3,6 +3,7 @@ const { User } = require('../models');
 const { UUID_RE } = require('./validateParams');
 const { isLegacyId } = require('../utils/legacyIdGrace');
 const { GOOGLE_SIGNIN_ROLES } = require('../utils/googleIdToken');
+const { isAdminEmail } = require('../config/adminAllowlist');
 
 // The projection got shorter, and not by relaxing anything.
 //
@@ -63,6 +64,12 @@ const protect = async (req, res, next) => {
       // stops working at once; the real warden simply signs in with Google again.
       if (GOOGLE_SIGNIN_ROLES.includes(req.user.role) && decoded.auth !== 'google') {
         return res.status(401).json({ message: 'Please sign in again with your college Google account.' });
+      }
+      // The admin console belongs to the allowlisted mailbox alone. googleLogin already
+      // refuses anyone else; this also shuts out an Admin row that reaches here some other
+      // way, such as one whose email was changed in the database after it signed in.
+      if (req.user.role === 'Admin' && !isAdminEmail(req.user.email)) {
+        return res.status(401).json({ message: 'This account is not authorized for admin access.' });
       }
 
       next();

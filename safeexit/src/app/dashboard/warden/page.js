@@ -62,7 +62,8 @@ const mapForwardedOuting = (o) => ({
   room: room(o.student),
   destination: o.destination || "",
   outingType: o.outingType || "",
-  out: formatTime(o.outTime),
+  // outTime is the exit-by deadline (close of the day's exit window), not a departure.
+  out: o.actualOutTime ? formatTime(o.actualOutTime) : `by ${formatTime(o.outTime)}`,
   return: formatTime(o.inTime),
   forwardedBy: o.forwardedBy?.name || "",
   forwardedNote: o.forwardedNote || "",
@@ -95,7 +96,8 @@ const mapOutingHistory = (o) => ({
   id: o._id,
   name: o.student?.name || "Unknown Student",
   destination: o.destination || "",
-  out: formatTime(o.outTime),
+  // outTime is the exit-by deadline (close of the day's exit window), not a departure.
+  out: o.actualOutTime ? formatTime(o.actualOutTime) : `by ${formatTime(o.outTime)}`,
   return: formatTime(o.inTime),
   decision: o.decision || "",
   // Set when the pass never played out as decided — "Cancelled" or "Expired".

@@ -31,68 +31,27 @@ import CaretakerSelect from "@/app/components/student/CaretakerSelect";
 import GateQrInstruction from "@/app/components/student/GateQrInstruction";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import { isSignatureRequiredError } from "@/app/lib/signatureImage";
+import {
+  CAMPUS_TIMEZONE,
+  clockLabel,
+  getOutingWindowState,
+  resolveOutingPolicy,
+} from "@/app/lib/outingRules.mjs";
 
 const STEPS = ["form", "review", "success"];
 
-// Time checks use the campus clock, not the browser's, matching the backend.
-const CAMPUS_TIMEZONE = "Asia/Kolkata";
+// Re-evaluate the exit window this often so an open form flips to "closed" on its own.
+const WINDOW_TICK_MS = 30_000;
 
-// Minute-of-day (0..1439) in campus TZ; mirrors backend minutesOfDayInTimeZone.
-const nowMinutesInCampusTZ = () => {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: CAMPUS_TIMEZONE,
-    hour: "numeric",
-    minute: "numeric",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const hour = Number(parts.find((p) => p.type === "hour").value);
-  const minute = Number(parts.find((p) => p.type === "minute").value);
-  return hour * 60 + minute;
-};
-
-// UX-only mirror of backend outingRules policies — keep values in sync. Minutes since midnight.
-const OUTING_POLICIES = {
-  femaleNearby: { departStart: 6 * 60, departEnd: 18 * 60 + 30, returnDeadline: 20 * 60, requiresCaretaker: false },
-  femaleMarket: { departStart: 6 * 60, departEnd: 15 * 60, returnDeadline: 17 * 60 + 30, requiresCaretaker: true },
-  general: { departStart: 6 * 60, departEnd: 20 * 60 - 1, returnDeadline: 20 * 60, requiresCaretaker: false },
-};
-
-// Females: Nearby/Market; everyone else: 'General'. Mirrors backend normalizeOutingType.
-const resolveOutingPolicy = (gender, outingType) => {
-  if (gender === "Female") return outingType === "Market" ? OUTING_POLICIES.femaleMarket : OUTING_POLICIES.femaleNearby;
-  return OUTING_POLICIES.general;
-};
-
-// "1110" minutes -> "6:30 PM" for window/return labels.
-const clockLabel = (minutes) => {
-  const h24 = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  const period = h24 < 12 ? "AM" : "PM";
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
-};
-
-// "14:30" (input value, 24h) -> "02:30 PM" (stored form value)
-const from24Hour = (hhmm) => {
-  if (!hhmm) return "";
-  const [h, m] = hhmm.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return "";
-  const period = h >= 12 ? "PM" : "AM";
-  let hour12 = h % 12;
-  if (hour12 === 0) hour12 = 12;
-  return `${String(hour12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
-};
-
-// "02:30 PM" (stored form value) -> "14:30" (input value, 24h)
-const to24Hour = (timeStr) => {
-  if (!timeStr) return "";
-  const [time, period] = timeStr.split(" ");
-  let [hours, minutes] = time.split(":").map(Number);
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) return "";
-  if (period === "PM" && hours !== 12) hours += 12;
-  if (period === "AM" && hours === 12) hours = 0;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-};
+// "2026-09-29T14:30:00Z" -> "8:00 PM" on the campus clock.
+const campusClock = (value) =>
+  value
+    ? new Date(value).toLocaleTimeString("en-US", {
+        timeZone: CAMPUS_TIMEZONE,
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "";
 
 function StepBar({ current }) {
   const idx = STEPS.indexOf(current);
@@ -118,11 +77,7 @@ export default function GenerateTicket() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     destination: "",
-    outingType: "Nearby", 
-    dateOut: "",
-    timeOut: "",
-    dateReturn: "",
-    timeReturn: "",
+    outingType: "Nearby",
     contact: "",
     parentContact: "",
     note: "",
@@ -195,20 +150,9 @@ export default function GenerateTicket() {
   useEffect(() => {
     if (!hydrated) return;
     const digits = String(display.mobile || "").replace(/\D/g, "");
-    
-    const today = new Date();
-    const formattedDate = today.toLocaleDateString("en-US", {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-
-    setForm((prev) => ({ 
-      ...prev, 
+    setForm((prev) => ({
+      ...prev,
       contact: digits.length >= 10 ? digits.slice(-10) : prev.contact,
-      dateOut: prev.dateOut || formattedDate,
-      dateReturn: prev.dateReturn || formattedDate
     }));
   }, [hydrated, display.mobile]);
 
@@ -217,47 +161,31 @@ export default function GenerateTicket() {
   const isFemale = gender === "Female";
   const activePolicy = resolveOutingPolicy(gender, form.outingType);
 
+  // Ticks so the window state below stays current while the form sits open.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), WINDOW_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+  const windowState = getOutingWindowState(activePolicy, now);
+  const windowText = `${clockLabel(activePolicy.departStart)} – ${clockLabel(activePolicy.departEnd)}`;
+  const todayLabel = now.toLocaleDateString("en-US", {
+    timeZone: CAMPUS_TIMEZONE,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
   const set = (key) => (event) =>
     setForm((value) => ({ ...value, [key]: event.target.value }));
 
-  // Store <input type="time"> values as "hh:mm AM/PM".
-  const setTime = (key) => (event) =>
-    setForm((value) => ({ ...value, [key]: from24Hour(event.target.value) }));
-
-  const parseTimeToMinutes = (timeStr) => {
-    if (!timeStr) return 0;
-    const [time, period] = timeStr.split(" ");
-    let [hours, minutes] = time.split(":").map(Number);
-    if (period === "PM" && hours !== 12) hours += 12;
-    if (period === "AM" && hours === 12) hours = 0;
-    return hours * 60 + minutes;
-  };
-
-  const buildTodayISOFromMinutes = (totalMinutes) => {
-    const when = new Date();
-    when.setHours(Math.floor(totalMinutes / 60), totalMinutes % 60, 0, 0);
-    return when.toISOString();
-  };
-
-  const buildTodayISO = (timeStr) => buildTodayISOFromMinutes(parseTimeToMinutes(timeStr));
-
+  // No departure time: the student leaves whenever they like inside today's exit window,
+  // and the gate scan records the actual departure.
   const validate = () => {
     const nextErrors = {};
     if (!form.destination.trim()) nextErrors.destination = "Destination is required";
-    if (!form.timeOut) nextErrors.timeOut = "Departure time is required";
-
-    if (form.timeOut) {
-      const outMins = parseTimeToMinutes(form.timeOut);
-      // "Past" is judged on the campus clock (IST), matching the backend.
-      const currentMins = nowMinutesInCampusTZ();
-
-      if (outMins < currentMins) {
-        nextErrors.timeOut = "Departure time cannot be in the past";
-      } else if (outMins < activePolicy.departStart || outMins > activePolicy.departEnd) {
-        nextErrors.timeOut = `Departure must be between ${clockLabel(activePolicy.departStart)} and ${clockLabel(activePolicy.departEnd)}`;
-      }
-    }
-
+    if (windowState === "closed") nextErrors.window = true;
     if (!form.contact || form.contact.length < 10) nextErrors.contact = "Valid contact number required";
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -278,15 +206,7 @@ export default function GenerateTicket() {
   };
 
   const handleReview = () => {
-    if (validate()) {
-      // Stamp the policy-fixed return time so review/success show the server's deadline.
-      setForm((value) => ({
-        ...value,
-        timeReturn: clockLabel(activePolicy.returnDeadline),
-        dateReturn: value.dateReturn || value.dateOut,
-      }));
-      setStep("review");
-    }
+    if (validate()) setStep("review");
   };
 
   const handleSubmit = async () => {
@@ -299,11 +219,11 @@ export default function GenerateTicket() {
     });
     try {
       const body = {
-        destination: form.destination,
+        destination: form.destination.trim(),
         purpose: form.note || "Outing",
-        // Return time is NOT sent — the server fixes it from policy.
+        // No times are sent: the exit window and return deadline are fixed by policy, and
+        // the departure is recorded by the gate scan.
         outingType: isFemale ? form.outingType : "General",
-        outTime: buildTodayISO(form.timeOut),
         // No signature in the body — the server stamps the student's saved one.
         // Only caretaker-gated outings route to a chosen caretaker; server ignores it otherwise.
         ...(activePolicy.requiresCaretaker && targetCaretakerId ? { targetCaretakerId } : {}),
@@ -504,8 +424,9 @@ export default function GenerateTicket() {
             {[
               { label: "Ticket ID", value: ticketId, highlight: true },
               { label: "Destination", value: destLabel },
-              { label: "Departure", value: `${form.dateOut} · ${form.timeOut}` },
-              { label: "Return", value: `${form.dateReturn} · ${form.timeReturn}` },
+              { label: "Departure", value: "At gate scan" },
+              { label: "Exit by", value: `Today · ${campusClock(createdOuting?.outTime) || clockLabel(activePolicy.departEnd)}` },
+              { label: "Return by", value: `Today · ${campusClock(createdOuting?.inTime) || clockLabel(activePolicy.returnDeadline)}` },
             ].map(({ label, value, highlight }) => (
               <div key={label} className="flex justify-between items-center">
                 <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">{label}</span>
@@ -609,8 +530,9 @@ export default function GenerateTicket() {
                   { label: "Student Name", value: display.name },
                   { label: "Room / Hostel", value: `${display.room} · ${display.hostel}` },
                   { label: "Destination", value: destLabel, highlight: true },
-                  { label: "Departure Time", value: `${form.dateOut} at ${form.timeOut}` },
-                  { label: "Return Time", value: `${form.dateReturn} at ${form.timeReturn}` },
+                  { label: "Exit Window", value: `${todayLabel} · ${windowText}` },
+                  { label: "Departure", value: "Recorded at gate scan" },
+                  { label: "Return By", value: `${todayLabel} · ${clockLabel(activePolicy.returnDeadline)}` },
                   { label: "Primary Contact", value: form.contact },
                   { label: "Parent's Contact", value: form.parentContact || "Not provided" },
                 ].map(({ label, value, highlight }) => (
@@ -797,8 +719,8 @@ export default function GenerateTicket() {
               <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
               <p className="text-[11px] text-amber-800 leading-relaxed">
                 {form.outingType === "Market"
-                  ? "Local market outings need caretaker approval. Leave between 6:00 AM and 3:00 PM; you must return by 5:30 PM."
-                  : "Nearby outings are auto-approved. Leave between 6:00 AM and 6:30 PM; you must return by 8:00 PM."}
+                  ? "Local market outings need caretaker approval. Exit through the gate any time between 6:00 AM and 3:00 PM; you must return by 5:30 PM."
+                  : "Nearby outings are auto-approved. Exit through the gate any time between 6:00 AM and 6:30 PM; you must return by 8:00 PM."}
               </p>
             </div>
           </div>
@@ -813,6 +735,7 @@ export default function GenerateTicket() {
           <input
             type="text"
             placeholder="Enter destination name"
+            maxLength={120}
             value={form.destination}
             onChange={set("destination")}
             className={`sf-input ${errors.destination ? "sf-input--error" : ""}`}
@@ -827,23 +750,20 @@ export default function GenerateTicket() {
       </StudentFeaturePanel>
 
       <StudentFeaturePanel className="p-4 sm:p-5 space-y-3 sm:space-y-4" delay={120}>
-        <p className="sf-section-label">Schedule</p>
+        <p className="sf-section-label">Schedule · {todayLabel}</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1.5">
               <Clock size={11} className="inline mr-1 text-sky-500" />
-              Departure Time *
+              Exit Window (today)
             </label>
-            <input
-              type="time"
-              value={to24Hour(form.timeOut)}
-              onChange={setTime("timeOut")}
-              className={`sf-input ${errors.timeOut ? "sf-input--error" : ""}`}
-            />
+            {/* No departure time to pick: leave whenever you like inside this window. */}
+            <div className="sf-input flex items-center bg-slate-50 text-slate-700 font-semibold cursor-not-allowed">
+              {windowText}
+            </div>
             <p className="text-[11px] text-slate-400 font-medium mt-1">
-              Allowed: {clockLabel(activePolicy.departStart)} – {clockLabel(activePolicy.departEnd)}
+              Your departure is recorded when your QR is scanned at the gate.
             </p>
-            {errors.timeOut && <p className="text-xs text-rose-500 mt-1">{errors.timeOut}</p>}
           </div>
 
           <div>
@@ -860,9 +780,27 @@ export default function GenerateTicket() {
             </p>
           </div>
         </div>
+
+        {windowState === "before" && (
+          <div className="sf-notice">
+            <Clock size={13} className="text-sky-600 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              You can request now, but the gate will only let you out from {clockLabel(activePolicy.departStart)}.
+            </p>
+          </div>
+        )}
+        {windowState === "closed" && (
+          <div className="sf-notice sf-notice--danger" role="alert">
+            <AlertCircle size={13} className="text-rose-600 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-rose-700 leading-relaxed">
+              Today&rsquo;s exit window for this outing has closed ({windowText}). You can request one from {clockLabel(activePolicy.departStart)} tomorrow.
+            </p>
+          </div>
+        )}
+        <p className="text-[11px] text-slate-400 font-medium">
+          An unused pass closes automatically when today&rsquo;s exit window ends.
+        </p>
       </StudentFeaturePanel>
-
-
 
       <StudentFeaturePanel className="p-4 sm:p-5 space-y-3 sm:space-y-4" delay={200}>
         <p className="sf-section-label">Contact Information</p>
@@ -916,7 +854,12 @@ export default function GenerateTicket() {
         </p>
       </div>
 
-      <button type="button" onClick={handleReview} className="sf-btn-primary w-full sf-rise sf-stagger-4">
+      <button
+        type="button"
+        onClick={handleReview}
+        disabled={windowState === "closed"}
+        className="sf-btn-primary w-full sf-rise sf-stagger-4 disabled:opacity-45 disabled:cursor-not-allowed"
+      >
         Review & Continue
         <ChevronRight size={16} />
       </button>

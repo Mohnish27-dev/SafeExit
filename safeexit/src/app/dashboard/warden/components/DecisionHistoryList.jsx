@@ -81,7 +81,7 @@ export default function DecisionHistoryList({ list = [], kind = "outing", loadin
               {req.lapsed ? (
                 <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
                   <AlertTriangle className="h-3 w-3" />
-                  {req.lapsed === "Cancelled" ? "Cancelled by student" : "Expired unused"}
+                  {req.lapsed === "Cancelled" ? "Cancelled by student" : "Not used"}
                 </span>
               ) : null}
               <span className="text-[11px] text-slate-400">{formatDateTime(req.decidedAt)}</span>

@@ -12,7 +12,7 @@ database role, the DNS name, and physical access to the gate station.
 
 Steps 3 to 6 were rehearsed against a genuinely empty database before this was written: the
 DDL and both constraint files apply, the five hostels seed, `ensureAdmins` provisions the
-admin accounts from environment variables alone, the admin console answers on every
+admin account, the admin console answers on every
 endpoint including the analytics pipelines with zero rows to aggregate, and admin sign-in
 works. What was *not* rehearsed is anything specific to the machine itself — Docker, the
 college's PostgreSQL, nginx, and the scanner.
@@ -143,7 +143,7 @@ four that decide whether this works at all:
 JWT_SECRET=<48 random bytes, fresh — never the development value>
 DATABASE_URL=postgres://safeexit:...@host.docker.internal:5432/safeexit
 FRONTEND_URL=http://safeexit.nitp.ac.in
-ADMIN_1_NAME= / ADMIN_1_ID= / ADMIN_1_PIN=
+GOOGLE_CLIENT_ID=<the OAuth web client ID>
 ```
 
 **`host.docker.internal`, not `127.0.0.1`.** Inside a container, `127.0.0.1` is the
@@ -159,7 +159,7 @@ database on a *different* machine takes its real hostname instead.
 > 1. **Geolocation API** (`navigator.geolocation`) — Student live location during SOS alerts. On plain HTTP, the browser automatically reports location as denied and shows "Location requires HTTPS" / "Location is blocked".
 > 2. **Web Push API** (`navigator.serviceWorker` & `PushManager`) — Overdue return alerts and push notifications.
 > 3. **WebAuthn / Passkeys** (`@simplewebauthn`) — Biometric login.
-> 4. **Google sign-in for wardens and the Chief Warden.** Google only accepts HTTPS origins on a real domain, so warden login does not work at all over plain HTTP (localhost excepted).
+> 4. **Google sign-in for wardens, the Chief Warden and the admin.** Google only accepts HTTPS origins on a real domain, so warden and admin login do not work at all over plain HTTP (localhost excepted).
 >
 > If initially testing over plain HTTP, keep `COOKIE_SECURE=false` and `ENABLE_HSTS=0`. As soon as the domain is live, terminate TLS using Certbot (`sudo certbot --nginx -d safeexit.nitp.ac.in`) and switch `FRONTEND_URL=https://...`, `COOKIE_SECURE=true`, and `ENABLE_HSTS=1`.
 
@@ -168,12 +168,11 @@ for the weeks after a migration. This database was never migrated.
 
 `MONGO_URI` is not needed. Nothing under `src/` reads it.
 
-Admins come from the `ADMIN_n_*` variables, and the server provisions them on every boot.
-Adding an admin later is an environment change and a restart, not a database edit.
-
-**All three of `ADMIN_1_NAME`, `ADMIN_1_ID` and `ADMIN_1_PIN` are credentials.** Signing in
-to the admin console requires the name as well as the ID and PIN, so a typo in the name
-locks that admin out just as surely as a wrong PIN would.
+**The admin signs in with Google as `safeexit@nitp.ac.in`, and only that account.** There
+are no admin credentials in `.env`: the address is fixed in `src/config/adminAllowlist.js`
+and the server provisions its account on every boot. Changing or adding an admin address is
+a code change, on purpose. Leftover `ADMIN_n_NAME` / `ADMIN_n_ID` / `ADMIN_n_PIN` lines are
+ignored; accounts they once created can no longer sign in and are listed in the boot log.
 
 **`GOOGLE_CLIENT_ID` for warden sign-in.** Wardens, assistant wardens and the Chief Warden
 have no ID or PIN: they press "Sign in with Google" and use their `@nitp.ac.in` account.
@@ -219,10 +218,10 @@ curl -si http://localhost:5000/health
 
 In this order, because each step depends on the one before.
 
-1. **Sign in as admin.** This takes **three** fields, not two: the name, the Admin ID and
-   the PIN, all exactly as set in `.env`. `ADMIN_1_NAME` is a credential here, not a label,
-   and a login with the right ID and PIN but no name is refused with `Invalid credentials`.
-   If sign-in fails outright, the allowlist did not load and the boot log will say so.
+1. **Sign in as admin** at `/login/admin` with "Sign in with Google", choosing the
+   `safeexit@nitp.ac.in` account. Any other Google account is refused. "Google sign-in is
+   not configured" means `GOOGLE_CLIENT_ID` is missing; a Google error about the origin
+   means the OAuth client does not list this site's origin.
 2. **Create the staff** the college needs: a guard and one caretaker per hostel from
    Admin → People. For the wardens (two or three per hostel) and the chief warden, copy
    `backend/wardens.example.json` to `backend/wardens.json` (full walkthrough, including a

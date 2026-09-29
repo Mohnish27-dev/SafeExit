@@ -77,7 +77,8 @@ const mapPending = (o) => ({
   roll: o.student?.studentId || "",
   destination: o.destination || "",
   outingType: o.outingType || "",
-  out: formatTime(o.outTime),
+  // outTime is the exit-by deadline (close of the day's exit window), not a departure.
+  out: o.actualOutTime ? formatTime(o.actualOutTime) : `by ${formatTime(o.outTime)}`,
   return: formatTime(o.inTime),
   hasStudentSignature: Boolean(o.hasStudentSignature),
   initials: initials(o.student?.name),
@@ -568,7 +569,7 @@ export default function CaretakerDashboardPage() {
     if (!req) return;
     // Optimistic update; persist to backend after.
     setPending((p) => p.filter((r) => r.id !== id));
-    setApproved((a) => [{ id: req.id, name: req.name, outSince: req.out, initials: req.initials }, ...a]);
+    setApproved((a) => [{ id: req.id, name: req.name, outSince: req.out.replace(/^by /, ""), initials: req.initials }, ...a]);
     try {
       // The server stamps our saved profile signature; nothing to send.
       await apiFetch(`/outing/${id}/status`, {

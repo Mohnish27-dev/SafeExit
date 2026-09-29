@@ -114,8 +114,10 @@ const outingBadge = (outing) => {
     case "returned":
       return { label: "Returned", className: "bg-slate-100 text-slate-600" };
     case "rejected":
-    case "expired":
       return { label: outing?.status, className: "bg-rose-100 text-rose-700" };
+    // Stored 'Expired' = never scanned out before that day's exit window closed.
+    case "expired":
+      return { label: "Unused", className: "bg-slate-100 text-slate-600" };
     default:
       return { label: outing?.status || "Pending", className: "bg-amber-100 text-amber-700" };
   }
@@ -133,8 +135,9 @@ const outingAccent = (outing) => {
     case "returned":
       return "#94a3b8";
     case "rejected":
+      return "#f43f5e";
     case "expired":
-      return "#f43f5e"; 
+      return "#94a3b8";
     default:
       return "#f59e0b";
   }
@@ -527,8 +530,10 @@ export default function StudentDashboardPage() {
           returnPunctuality: o.returnPunctuality || null,
           outTime: o.outTime,
           inTime: o.inTime,
-          date: new Date(o.outTime).toLocaleDateString("en-US", { day: "2-digit", month: "short" }),
-          time: formatClock(o.outTime),
+          actualOutTime: o.actualOutTime || null,
+          // Departure is the gate scan; before it, the pass's day and exit-by deadline.
+          date: new Date(o.actualOutTime || o.createdAt || o.outTime).toLocaleDateString("en-US", { day: "2-digit", month: "short" }),
+          time: o.actualOutTime ? formatClock(o.actualOutTime) : `by ${formatClock(o.outTime)}`,
         }));
         setOutings(mapped);
       } catch {
@@ -663,7 +668,7 @@ export default function StudentDashboardPage() {
     return [
       {
         title: "Outing approved",
-        meta: `${latestApproved.place} · ${formatClock(latestApproved.outTime)}`,
+        meta: `${latestApproved.place} · exit by ${formatClock(latestApproved.outTime)}`,
         tone: "bg-emerald-100 text-emerald-700",
       },
       {

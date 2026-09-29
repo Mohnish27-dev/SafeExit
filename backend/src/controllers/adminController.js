@@ -290,7 +290,7 @@ const createStaff = async (req, res) => {
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Name is required.' });
     }
-    // Admins come only from the .env allowlist — this endpoint can't mint one.
+    // The admin is the one Google account in config/adminAllowlist.js — this endpoint can't mint one.
     if (!['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(role)) {
       return res.status(400).json({ message: 'Role must be Caretaker, Warden, Chief Warden, or Guard.' });
     }

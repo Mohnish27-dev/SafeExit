@@ -179,7 +179,7 @@ export default function OverdueStudentsView({ onCountChange }) {
                           <Clock3 className="h-3.5 w-3.5" /> {t("expectedReturn")} {formatTime(o.inTime)}
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <Timer className="h-3.5 w-3.5" /> {t("departedAt")} {formatTime(o.outTime)}
+                          <Timer className="h-3.5 w-3.5" /> {t("departedAt")} {formatTime(o.actualOutTime || o.outTime)}
                         </span>
                       </p>
                       {o.destination && (

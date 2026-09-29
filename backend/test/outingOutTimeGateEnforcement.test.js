@@ -5,10 +5,12 @@ const crypto = require('node:crypto');
 const { User, OutingRequest, LeaveApplication } = require('../src/models');
 const { previewScan, createScanLog } = require('../src/controllers/scanController');
 
-// An outing's outTime is a DEPARTURE DEADLINE, not a start time: leaving early is fine,
-// leaving after it is not. These pin that the gate enforces it even inside normal open
-// hours, and that a refused exit still persists 'Expired' so the dashboards agree with
-// what the guard was just told.
+// An outing's outTime is an EXIT-BY DEADLINE, not a start time. The server sets it to the
+// close of the requesting day's exit window (the student no longer chooses it — see
+// outingNoDepartureTime.test.js), so in practice it passes only for a pass left unused past
+// its window, e.g. yesterday's pass shown at the gate this morning. These pin that the gate
+// enforces it even inside today's open hours, and that a refused exit still persists
+// 'Expired' ("lapsed unused") so the dashboards agree with what the guard was just told.
 
 const responseRecorder = () => {
   const result = { statusCode: null, body: null };
@@ -128,7 +130,7 @@ test('createScanLog rejects exit and marks pass Expired when outTime has passed'
   await createScanLog(req, res);
 
   assert.equal(res.statusCode, 403);
-  assert.match(res.body.message, /This outing pass has expired/);
+  assert.match(res.body.message, /This outing pass lapsed unused/);
   assert.equal(res.body.campusStatus, 'Inside');
 
   // The refusal still persists 'Expired', so the caretaker dashboard shows the same thing

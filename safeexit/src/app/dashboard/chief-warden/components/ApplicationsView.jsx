@@ -103,7 +103,8 @@ export default function ApplicationsView({ type }) {
         <div className="grid gap-4">
           {visible.map((row) => {
             const student = row.student || {};
-            const start = isLeave ? row.leaveDate : row.outTime;
+            // Outings: the gate-scan departure, else the day the pass was for.
+            const start = isLeave ? row.leaveDate : row.actualOutTime || row.createdAt || row.outTime;
             const end = isLeave ? row.returnDate : row.inTime;
             return (
               <article key={row._id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">

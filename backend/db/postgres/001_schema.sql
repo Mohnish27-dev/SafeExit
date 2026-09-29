@@ -225,10 +225,14 @@ CREATE TABLE IF NOT EXISTS outing_requests (
   -- Nearby/Market are female-only, General is the single male path.
   outing_type                 text NOT NULL DEFAULT 'General'
                                 CHECK (outing_type IN ('Nearby','Market','General')),
+  -- Exit-by deadline, computed by the server at request time as the close of that day's
+  -- exit window; the student never picks it. The real departure is actual_out_time.
   out_time                    timestamptz NOT NULL,
+  -- Return deadline, fixed by policy.
   in_time                     timestamptz NOT NULL,
 
-  -- Approved -> Expired happens lazily at read time when out_time passes unused.
+  -- Approved -> Expired ("lapsed unused") happens lazily at read time when out_time passes
+  -- with the pass never scanned out.
   -- 'Forwarded' = a caretaker escalated it to the hostel warden.
   status                      text NOT NULL DEFAULT 'Pending'
                                 CHECK (status IN ('Pending','Approved','Rejected','Out',

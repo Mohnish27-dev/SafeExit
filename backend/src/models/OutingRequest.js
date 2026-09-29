@@ -42,10 +42,16 @@ const OutingRequest = getSequelize().define(
     // path.
     outingType: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'General', field: 'outing_type' },
 
+    // EXIT-BY deadline, not a departure time: computed by the server at request time as the
+    // close of that day's exit window (utils/outingRules.computeExitDeadline). The student
+    // never picks it. The real departure is actualOutTime, stamped by the exit scan.
+    // (Rows written before this change hold the student-chosen departure time instead.)
     outTime: { type: DataTypes.DATE, allowNull: false, field: 'out_time' },
+    // Return deadline, also fixed by policy.
     inTime: { type: DataTypes.DATE, allowNull: false, field: 'in_time' },
 
-    // Approved -> Expired happens lazily at read time when outTime passes unused.
+    // Approved -> Expired ("lapsed unused") happens lazily at read time once outTime passes
+    // with the pass never scanned out.
     // 'Forwarded' = a caretaker escalated it to the hostel warden.
     status: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'Pending' },
 

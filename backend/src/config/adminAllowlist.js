@@ -1,36 +1,15 @@
-// Admin access allowlist — the real security boundary for the admin console
-// Configure it via ADMIN_n_NAME / ADMIN_n_ID / ADMIN_n_PIN env vars in
-// backend/.env, scanned until the first gap.
-const buildAllowlistFromEnv = () => {
-  const list = [];
-  for (let i = 1; ; i += 1) {
-    const name = process.env[`ADMIN_${i}_NAME`];
-    const adminId = process.env[`ADMIN_${i}_ID`];
-    const pin = process.env[`ADMIN_${i}_PIN`];
-    if (!name || !adminId || !pin) break;
-    list.push({ name, adminId, pin });
-  }
-  if (list.length === 0) {
-    console.warn(
-      '[adminAllowlist] No ADMIN_*_ env vars found — the admin console has NO ' +
-        'authorized users. Set ADMIN_1_NAME/ID/PIN in backend/.env.'
-    );
-  }
-  return list;
-};
+const { normalizeEmail } = require('./emailPolicy');
 
-const ADMIN_ALLOWLIST = buildAllowlistFromEnv();
+// Admin access allowlist — the real security boundary for the admin console.
+//
+// The admin console is opened by exactly one college Google account. It used to be a
+// name + Admin ID + PIN read from backend/.env; anyone who saw that file (or a copy of
+// it) could sign in from any device. A Google sign-in cannot be replayed that way.
+//
+// The address lives here, in code, and deliberately NOT in .env: adding an administrator
+// should take a reviewed commit, not a line in a file that gets copied between machines.
+const ADMIN_EMAILS = Object.freeze(['safeexit@nitp.ac.in']);
 
-const normalizeId = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, '');
+const isAdminEmail = (email) => ADMIN_EMAILS.includes(normalizeEmail(email));
 
-// Canonical loginId for an admin is their normalized Admin ID.
-const buildAdminLoginId = (adminId) => normalizeId(adminId);
-
-const isAllowedAdminLoginId = (loginId) =>
-  ADMIN_ALLOWLIST.some((a) => buildAdminLoginId(a.adminId) === normalizeId(loginId));
-
-module.exports = {
-  ADMIN_ALLOWLIST,
-  isAllowedAdminLoginId,
-  buildAdminLoginId,
-};
+module.exports = { ADMIN_EMAILS, isAdminEmail };
