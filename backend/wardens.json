@@ -1,0 +1,22 @@
+{
+  "chiefWarden": { "name": "Dr. Bambam Kumar", "email": "bambam.ec@nitp.ac.in", "phone": "7895717492" },
+  "wardens": [
+    { "name": "Dr. Manpuran Mahto", "email": "mmahto@nitp.ac.in", "hostel": "Kautilya", "phone": "7752957828" },
+    { "name": "Dr. Rajan Agrahari", "email": "rajan.ec@nitp.ac.in", "hostel": "Kautilya", "phone": "9506096868" },
+    { "name": "Dr. Antriksh Goswami", "email": "antriksh.cs@nitp.ac.in", "hostel": "Kautilya", "phone": "8619529720" },
+
+    { "name": "Dr. Subodh Srivastava", "email": "subosh@nitp.ac.in", "hostel": "Aryabhatta", "phone": "7565036892" },
+    { "name": "Dr. Mukesh Kumar", "email": "mukesh.kumar@nitp.ac.in", "hostel": "Aryabhatta", "phone": "8984142557" },
+    { "name": "Dr. Ajay Kumar Maurya", "email": "ajay.ec@nitp.ac.in", "hostel": "Aryabhatta", "phone": "9455262876" },
+
+    { "name": "Dr. Kakali Chatterjee", "email": "kakali@nitp.ac.in", "hostel": "Kadambini", "phone": "8544401016" },
+    { "name": "Dr. Richa Aggarwal", "email": "richa.ec@nitp.ac.in", "hostel": "Kadambini", "phone": "9559090527" },
+
+    { "name": "Dr. Trilochan Penthia", "email": "trilochan.ee@nitp.ac.in", "hostel": "Nagarjuna", "phone": "7504812988" },
+    { "name": "Dr. Ajishek Raj", "email": "ajishek.ee@nitp.ac.in", "hostel": "Nagarjuna", "phone": "7011885545" },
+    { "name":"Dr. Girdhar Gopal", "email": "girdhar.ec@nitp.ac.in", "hostel": "Nagarjuna", "phone" :"7404649752"},
+
+    { "name": "Dr. Meena Panchore", "email": "meenap.ec@nitp.ac.in", "hostel": "Sarojini", "phone": "6265308787" },
+    { "name": "Dr. Sangeeta Singh", "email": "sangeeta.singh@nitp.ac.in", "hostel": "Sarojini", "phone": "9479646111" }
+  ]
+}
