@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const { LeaveApplication, OutingRequest } = require('../models');
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
-const { expireStaleRequests, expireStaleApplications } = require('../utils/passExpiry');
+const { expireStaleApplications } = require('../utils/passExpiry');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { estimatedRowCount } = require('../utils/rowCount');
@@ -91,12 +91,10 @@ const withDecisionMeta = (doc) => {
   return obj;
 };
 
-const blockingOutingForLeaveMessage = (status) =>
-  status === 'Out'
-    ? 'You already have an outing in progress. Log your entry at the gate before applying for leave.'
-    : status === 'Forwarded'
-    ? 'Your outing request is with the warden for a decision. Wait for the outcome or cancel it before applying for leave.'
-    : `You already have an active outing request (${String(status).toLowerCase()}). Complete that journey or cancel it before applying for leave.`;
+// Only a live outing blocks a leave application: outings have no request step, so the one
+// that matters is a student who is out right now.
+const OUTING_IN_PROGRESS_MESSAGE =
+  'You already have an outing in progress. Log your entry at the gate before applying for leave.';
 
 
 // POST /api/leave — private (Student)
@@ -175,16 +173,17 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
-    const existingOutings = await OutingRequest.findAll({
-      where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_LEAVE_STATUSES } },
+    // A request left open by the old outing flow does not block: the leave departure burns it
+    // at the gate (scanController).
+    const outingInProgress = await OutingRequest.findOne({
+      where: { studentId: req.user._id, status: 'Out' },
+      attributes: ['id', 'status'],
     });
-    await expireStaleRequests(existingOutings);
-    const blockingOuting = existingOutings.find((doc) => ACTIVE_LEAVE_STATUSES.includes(doc.status));
-    if (blockingOuting) {
+    if (outingInProgress) {
       return res.status(409).json({
-        message: blockingOutingForLeaveMessage(blockingOuting.status),
-        status: blockingOuting.status,
-        activeRequestId: blockingOuting.id,
+        message: OUTING_IN_PROGRESS_MESSAGE,
+        status: outingInProgress.status,
+        activeRequestId: outingInProgress.id,
       });
     }
 

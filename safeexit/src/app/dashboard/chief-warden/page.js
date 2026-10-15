@@ -72,8 +72,6 @@ function HostelCard({ hostel }) {
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs font-semibold text-slate-600">
-        <span>Pending outings <b className="float-right text-slate-900">{hostel.outings.pending}</b></span>
-        <span>With warden <b className="float-right text-slate-900">{hostel.outings.forwarded}</b></span>
         <span>Pending leave <b className="float-right text-slate-900">{hostel.leaves.pending}</b></span>
         <span>Leave forwarded <b className="float-right text-slate-900">{hostel.leaves.forwarded}</b></span>
         <span>Active SOS <b className="float-right text-rose-600">{hostel.activeSOS}</b></span>
@@ -174,10 +172,9 @@ export default function ChiefWardenDashboardPage() {
   const students = overview?.students || {};
   const stats = [
     { icon: UserCheck, label: "Inside", value: students.inside ?? "—", note: "Students currently inside campus", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-    { icon: UserRound, label: "Outside", value: students.outside ?? "—", note: "Students outside on active passes", tone: "border-amber-200 bg-amber-50 text-amber-700" },
+    { icon: UserRound, label: "Outside", value: students.outside ?? "—", note: "Students out on an outing or leave", tone: "border-amber-200 bg-amber-50 text-amber-700" },
     { icon: Clock3, label: "Overdue", value: students.overdue ?? "—", note: "Students past their return time", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: Siren, label: "Active SOS", value: overview?.activeSOS ?? "—", note: "Across boys' and girls' hostels", tone: "border-rose-200 bg-rose-50 text-rose-700" },
-    { icon: Footprints, label: "Pending Outings", value: overview?.outings?.pending ?? "—", note: `${overview?.outings?.forwarded ?? 0} currently with wardens`, tone: "border-sky-200 bg-sky-50 text-sky-700" },
     { icon: FileText, label: "Pending Leave", value: overview?.leaves?.pending ?? "—", note: `${overview?.leaves?.forwarded ?? 0} currently with wardens`, tone: "border-violet-200 bg-violet-50 text-violet-700" },
     { icon: Building2, label: "All Students", value: students.total ?? "—", note: `${overview?.hostels?.length ?? 0} campus hostels`, tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];

@@ -7,7 +7,6 @@ import { Scanner } from '@yudiel/react-qr-scanner';
 import {
   AlertTriangle,
   ArrowUpRight,
-  Ban,
   Bell,
   CalendarDays,
   Check,
@@ -17,10 +16,8 @@ import {
   LogIn,
   LogOut,
   MoonStar,
-  OctagonAlert,
   ScanLine,
   Shield,
-  ShieldAlert,
   ShieldCheck,
   Sunrise,
   SunMedium,
@@ -33,7 +30,7 @@ import {
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
 import { parseScannedQr } from "@/app/lib/qrPayload.mjs";
-import { canAutoCommit, deriveGateDirection, isExitDenied, readControlBarcode } from "@/app/lib/gateFlow.mjs";
+import { canAutoCommit, deriveGateDirection, readControlBarcode } from "@/app/lib/gateFlow.mjs";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
@@ -59,50 +56,8 @@ const AUTO_COMMIT_TICK_MS = 200;
 
 const PENDING_SCAN_TIMEOUT_MS = 25000;
 
-// Keep denied/non-approved alerts on screen for 3 seconds so the guard clearly registers
-// the red alert without needing to touch the mouse, then auto-clears for the next student.
-const DENIED_SCAN_DISMISS_MS = 3000;
 // Just long enough for the guard to register the result before the screen returns to idle.
 const SUCCESS_FLASH_MS = 2200;
-
-const playAlertBuzzer = () => {
-  if (typeof window === "undefined") return;
-  try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
-    const now = ctx.currentTime;
-    // 3 sharp attention-grabbing warning tones: 440Hz -> 350Hz -> 440Hz
-    const beeps = [
-      { freq: 440, time: 0 },
-      { freq: 350, time: 0.15 },
-      { freq: 440, time: 0.3 },
-    ];
-    beeps.forEach(({ freq, time }) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(freq, now + time);
-      gain.gain.setValueAtTime(0.35, now + time);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + time + 0.12);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + time);
-      osc.stop(now + time + 0.13);
-    });
-    // One context per buzz; close it after the last tone so a busy gate doesn't pile them up.
-    setTimeout(() => ctx.close().catch(() => {}), 600);
-  } catch {
-    // Autoplay restrictions or audio unavailable
-  }
-
-  if (typeof navigator !== "undefined" && navigator.vibrate) {
-    try {
-      navigator.vibrate([250, 100, 250, 100, 350]);
-    } catch {}
-  }
-};
-
 
 const formatClock = (value) => {
   if (!value) return "N/A";
@@ -195,7 +150,6 @@ export default function SecurityDashboardPage() {
   const pendingRef = useRef(null);
 
   const lastCommitRef = useRef({ key: "", at: 0 });
-  const buzzedRef = useRef(null);
 
 
   // Recent scans + Inside/Outside/Overdue counts; backend overlays live 'Overdue'.
@@ -237,11 +191,12 @@ export default function SecurityDashboardPage() {
       : "exit";
 
 
-  const exitBlocked = !previewLoading && isExitDenied(scanPreview);
-  // Allowed exit/entry get their own full-screen colour so the guard can read the
-  // direction from across the cabin. Neutral while the preview is loading, since
-  // derivedMode falls back to "exit" until the student's campus status arrives.
-  const gateTone = previewLoading || exitBlocked ? null : derivedMode;
+  // Exit and entry get their own full-screen colour so the guard can read the direction
+  // from across the cabin. There is no refusal state: every scan logs the one movement the
+  // student's status allows, and whether it is a sensible hour is the guard's call. Neutral
+  // while the preview is loading, since derivedMode falls back to "exit" until the student's
+  // campus status arrives.
+  const gateTone = previewLoading ? null : derivedMode;
 
 
   const disarmAutoCommit = useCallback(() => {
@@ -409,29 +364,25 @@ export default function SecurityDashboardPage() {
         );
 
         const mode = deriveGateDirection(preview.student.campusStatus) === "IN" ? "entry" : "exit";
-        const denied = isExitDenied(preview);
+        const pending = {
+          sid: preview.student._id || parsed.sid,
+          id: preview.student.studentId || parsed.id,
+          name: preview.student.name || parsed.name,
+          mode,
+          armed: false,
+        };
 
-        if (!denied) {
-          const pending = {
-            sid: preview.student._id || parsed.sid,
-            id: preview.student.studentId || parsed.id,
-            name: preview.student.name || parsed.name,
-            mode,
-            armed: false,
-          };
+        const cooling =
+          lastCommitRef.current.key === (pending.sid || pending.id) &&
+          Date.now() - lastCommitRef.current.at < RECOMMIT_COOLDOWN_MS;
 
-          const cooling =
-            lastCommitRef.current.key === (pending.sid || pending.id) &&
-            Date.now() - lastCommitRef.current.at < RECOMMIT_COOLDOWN_MS;
-
-          pending.armed = AUTO_COMMIT_MS > 0 && canAutoCommit(preview) && !cooling;
-          pendingRef.current = pending;
-          if (pending.armed) {
-            setAutoCommitAt(Date.now() + AUTO_COMMIT_MS);
-            setAutoCommitLeft(Math.ceil(AUTO_COMMIT_MS / 1000));
-          }
-          setJustLogged(cooling);
+        pending.armed = AUTO_COMMIT_MS > 0 && canAutoCommit(preview) && !cooling;
+        pendingRef.current = pending;
+        if (pending.armed) {
+          setAutoCommitAt(Date.now() + AUTO_COMMIT_MS);
+          setAutoCommitLeft(Math.ceil(AUTO_COMMIT_MS / 1000));
         }
+        setJustLogged(cooling);
       }
     } catch (e) {
       console.error("Failed to load scan preview:", e);
@@ -458,22 +409,9 @@ export default function SecurityDashboardPage() {
 
   useEffect(() => {
     if (!scanResult || logging) return;
-    const dwell = exitBlocked ? DENIED_SCAN_DISMISS_MS : PENDING_SCAN_TIMEOUT_MS;
-    const timer = setTimeout(clearPendingScan, dwell);
+    const timer = setTimeout(clearPendingScan, PENDING_SCAN_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [scanResult, logging, exitBlocked, clearPendingScan]);
-
-  useEffect(() => {
-    if (exitBlocked && (scanResult?.id || scanResult?.sid)) {
-      const scanKey = `${scanResult.id || scanResult.sid}-${scanPreview?.exit?.reason || "denied"}`;
-      if (buzzedRef.current !== scanKey) {
-        buzzedRef.current = scanKey;
-        playAlertBuzzer();
-      }
-    } else if (!exitBlocked) {
-      buzzedRef.current = null;
-    }
-  }, [exitBlocked, scanResult, scanPreview]);
+  }, [scanResult, logging, clearPendingScan]);
 
   useEffect(() => {
     if (!flash) return;
@@ -895,22 +833,18 @@ export default function SecurityDashboardPage() {
 
       {scanResult && (
         <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 backdrop-blur-md sm:p-4 transition-colors duration-300 ${
-          exitBlocked
-            ? "bg-rose-950/85 ring-inset ring-8 ring-rose-600/70"
-            : gateTone === "exit"
-              ? "bg-sky-950/85 ring-inset ring-8 ring-sky-500/70"
-              : gateTone === "entry"
-                ? "bg-emerald-950/85 ring-inset ring-8 ring-emerald-500/70"
-                : "bg-slate-950/80"
+          gateTone === "exit"
+            ? "bg-sky-950/85 ring-inset ring-8 ring-sky-500/70"
+            : gateTone === "entry"
+              ? "bg-emerald-950/85 ring-inset ring-8 ring-emerald-500/70"
+              : "bg-slate-950/80"
         }`}>
           <div className={`sd-enter relative max-h-[94dvh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white text-center shadow-2xl transition-all duration-300 ${
-            exitBlocked
-              ? "ring-4 ring-rose-600 shadow-[0_0_60px_rgba(225,29,72,0.65)] border-2 border-rose-500 overflow-hidden"
-              : gateTone === "exit"
-                ? "ring-4 ring-sky-500 shadow-[0_0_60px_rgba(14,165,233,0.6)] border-2 border-sky-400"
-                : gateTone === "entry"
-                  ? "ring-4 ring-emerald-500 shadow-[0_0_60px_rgba(16,185,129,0.6)] border-2 border-emerald-400"
-                  : ""
+            gateTone === "exit"
+              ? "ring-4 ring-sky-500 shadow-[0_0_60px_rgba(14,165,233,0.6)] border-2 border-sky-400"
+              : gateTone === "entry"
+                ? "ring-4 ring-emerald-500 shadow-[0_0_60px_rgba(16,185,129,0.6)] border-2 border-emerald-400"
+                : ""
           }`}>
             {gateTone && (
               <div className={`sticky top-0 z-20 flex items-center gap-2.5 px-4 py-3.5 pr-16 text-white shadow-md bg-gradient-to-r ${
@@ -929,35 +863,10 @@ export default function SecurityDashboardPage() {
               </div>
             )}
 
-            {exitBlocked && (
-              <div className="sticky top-0 z-20 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 px-4 py-3.5 text-white flex items-center justify-between shadow-md">
-                <div className="flex items-center gap-2.5">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 text-white animate-pulse">
-                    <Ban className="h-5 w-5 stroke-[2.5]" />
-                  </span>
-                  <div className="text-left">
-                    <span className="block text-sm font-black tracking-wider uppercase text-white drop-shadow-sm">
-                      {t("exitDeniedTitle")}
-                    </span>
-                    <span className="block text-[0.72rem] font-bold text-rose-100">
-                      {t("actionRequiredStop")}
-                    </span>
-                  </div>
-                </div>
-                <span className="rounded-full bg-white/25 px-2.5 py-1 text-[0.68rem] font-extrabold tracking-widest uppercase text-white animate-pulse">
-                  {t("exitDenied")}
-                </span>
-              </div>
-            )}
-
             <button
               onClick={clearPendingScan}
               aria-label={tc("cancel")}
-              className={`absolute top-3 right-3 z-30 cursor-pointer rounded-full p-2.5 shadow-lg transition sm:top-4 sm:right-4 ${
-                exitBlocked
-                  ? "bg-rose-700/90 text-white hover:bg-rose-800 ring-2 ring-white/60"
-                  : "bg-white/95 text-slate-600 hover:bg-white"
-              }`}
+              className="absolute top-3 right-3 z-30 cursor-pointer rounded-full bg-white/95 p-2.5 text-slate-600 shadow-lg transition hover:bg-white sm:top-4 sm:right-4"
             >
               <X className="h-5 w-5" />
             </button>
@@ -968,42 +877,23 @@ export default function SecurityDashboardPage() {
                 <img
                   src={scanResult.photo}
                   alt={scanResult.name || t("unknownStudent")}
-                  className={`h-full w-full object-cover object-[center_20%] ${
-                    exitBlocked ? "filter contrast-105" : ""
-                  }`}
+                  className="h-full w-full object-cover object-[center_20%]"
                 />
               ) : (
                 <UserRound className="h-24 w-24 text-slate-400" />
-              )}
-              {exitBlocked && (
-                <div className="absolute inset-0 bg-rose-950/25 pointer-events-none flex items-center justify-center p-4">
-                  <div className="rounded-2xl bg-rose-600/95 backdrop-blur-md px-5 py-2.5 text-white shadow-2xl border-2 border-white/90 rotate-[-3deg] flex items-center gap-2.5 animate-pulse">
-                    <Ban className="h-6 w-6 stroke-[3] text-white" />
-                    <span className="text-sm font-black uppercase tracking-widest drop-shadow">
-                      {t("cannotGoForOuting")}
-                    </span>
-                  </div>
-                </div>
               )}
             </div>
 
             <div className="flex flex-col items-center p-4 sm:p-5">
               {/* Direction pill */}
-              {exitBlocked ? (
-                <span className="-mt-9 mb-3 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-white shadow-xl bg-rose-600 shadow-rose-600/60 ring-4 ring-white animate-pulse">
-                  <Ban className="h-4 w-4 stroke-[2.5]" />
-                  {t("exitDenied")} &bull; {t("cannotGoForOutingShort")}
-                </span>
-              ) : (
-                <span
-                  className={`-mt-9 mb-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-extrabold uppercase tracking-[0.18em] text-white shadow-lg ${
-                    derivedMode === "exit" ? "bg-sky-500 shadow-sky-500/40" : "bg-emerald-500 shadow-emerald-500/40"
-                  }`}
-                >
-                  {derivedMode === "exit" ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
-                  {derivedMode === "exit" ? t("goingOut") : t("comingIn")}
-                </span>
-              )}
+              <span
+                className={`-mt-9 mb-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-extrabold uppercase tracking-[0.18em] text-white shadow-lg ${
+                  derivedMode === "exit" ? "bg-sky-500 shadow-sky-500/40" : "bg-emerald-500 shadow-emerald-500/40"
+                }`}
+              >
+                {derivedMode === "exit" ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                {derivedMode === "exit" ? t("goingOut") : t("comingIn")}
+              </span>
 
               <div className="w-full border-b border-slate-100 pb-4">
                 <h2 className="sd-title sd-title-sm">{scanResult.name || t("unknownStudent")}</h2>
@@ -1012,51 +902,9 @@ export default function SecurityDashboardPage() {
                 </p>
               </div>
 
-              {/* If exit is blocked / non-approved: Highlighted, unmistakable RED alert box */}
-              {exitBlocked && (
-                <div className="mt-4 mb-2 w-full rounded-2xl bg-gradient-to-br from-rose-600 to-red-700 p-4 text-white shadow-xl shadow-rose-600/35 text-left border-2 border-rose-500">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 text-white shadow-inner">
-                      <ShieldAlert className="h-6 w-6 stroke-[2.5] animate-pulse" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <h4 className="text-sm font-black uppercase tracking-wider text-white">
-                          {t("cannotGoForOuting")}
-                        </h4>
-                        <span className="rounded-full bg-black/25 px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider text-rose-100">
-                          {t("stopNotice")}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-xs font-bold leading-relaxed text-white">
-                        {(() => {
-                          const blockedMsg =
-                            scanPreview?.exit?.reason === "expired"
-                              ? t("exitBlockedExpired")
-                              : scanPreview?.exit?.reason === "not-yet-valid"
-                                ? t("exitBlockedNotYetValid")
-                                : t("exitBlockedNoPass");
-                          return blockedMsg;
-                        })()}
-                      </p>
-                      <div className="mt-2.5 flex items-center gap-1.5 text-[0.7rem] font-black uppercase tracking-wider text-rose-100 bg-rose-800/40 rounded-lg px-2.5 py-1">
-                        <OctagonAlert className="h-3.5 w-3.5 text-white shrink-0" />
-                        <span>{t("doNotAllowExitAction")}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className={`mt-3 mb-4 w-full space-y-3 rounded-2xl border p-4 transition-colors ${
-                exitBlocked
-                  ? "border-rose-300 bg-rose-50/90 text-slate-800"
-                  : "border-slate-100 bg-slate-50"
-              }`}>
+              <div className="mt-3 mb-4 w-full space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
                 <div className="flex items-center justify-between">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${
-                    exitBlocked ? "text-rose-700" : "text-slate-400"
-                  }`}>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     {t("status")}
                   </span>
                   {derivedMode === 'exit' ? (
@@ -1070,26 +918,15 @@ export default function SecurityDashboardPage() {
                         );
                       }
                       if (scanPreview?.exit) {
-                        const { allowed, reason } = scanPreview.exit;
-                        const isAllowed = allowed === true;
-                        const label = isAllowed
-                          ? t("approved")
-                          : reason === "expired"
-                            ? t("expiredPass")
-                            : reason === "not-yet-valid"
-                              ? t("notYetValidPass")
-                              : t("noApprovedOuting");
                         return (
-                          <span className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider ${
-                            isAllowed
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-rose-600 text-white shadow-md shadow-rose-600/30 animate-pulse"
-                          }`}>
-                            {label}
+                          <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-700">
+                            {t("exitAllowed")}
                           </span>
                         );
                       }
 
+                      // The preview failed to load: no photo to match, so it says so — but
+                      // the guard can still log the exit by hand.
                       return (
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
                           {t("unverified")}
@@ -1110,21 +947,18 @@ export default function SecurityDashboardPage() {
                   )}
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${
-                    exitBlocked ? "text-rose-700" : "text-slate-400"
-                  }`}>
-                    {derivedMode === 'exit' ? t("validWindow") : t("loggedTime")}
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    {derivedMode === 'exit'
+                      ? (scanPreview?.exit?.passType === 'Leave' ? t("validWindow") : t("returnBy"))
+                      : t("loggedTime")}
                   </span>
                   <span className="text-sm font-semibold text-slate-800">
                     {derivedMode === 'exit'
                       ? (scanPreview?.exit?.pass
-                          // An outing's windowStart is its exit-by deadline, not a start time.
-                          ? scanPreview.exit.passType === 'Outing'
-                            ? t("outingExitWindow", {
-                                exitBy: formatClock(scanPreview.exit.pass.windowStart),
-                                returnBy: formatClock(scanPreview.exit.pass.windowEnd),
-                              })
-                            : `${formatClock(scanPreview.exit.pass.windowStart)} to ${formatClock(scanPreview.exit.pass.windowEnd)}`
+                          // An outing starts at this scan, so only its return deadline matters.
+                          ? scanPreview.exit.passType === 'Leave'
+                            ? `${formatClock(scanPreview.exit.pass.windowStart)} to ${formatClock(scanPreview.exit.pass.windowEnd)}`
+                            : formatClock(scanPreview.exit.pass.windowEnd)
                           : t("na"))
                       : formattedTime
                     }
@@ -1142,9 +976,7 @@ export default function SecurityDashboardPage() {
                 )}
                 {((derivedMode === 'exit' && scanPreview?.exit?.passType) || (derivedMode === 'entry' && scanPreview?.activePass?.passType)) && (
                   <div className="flex items-center justify-between">
-                    <span className={`text-xs font-bold uppercase tracking-wider ${
-                      exitBlocked ? "text-rose-700" : "text-slate-400"
-                    }`}>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                       {t("passType")}
                     </span>
                     <span className="text-sm font-semibold text-slate-800">
@@ -1163,31 +995,6 @@ export default function SecurityDashboardPage() {
               {(() => {
                 const counting = autoCommitAt !== null && !logging;
 
-                if (exitBlocked) {
-                  return (
-                    <div className="flex flex-col gap-2.5 w-full">
-                      <button
-                        onClick={clearPendingScan}
-                        className="relative overflow-hidden w-full py-4 rounded-xl text-sm font-black uppercase tracking-wider text-white bg-rose-600 hover:bg-rose-700 shadow-xl shadow-rose-600/40 transition cursor-pointer flex items-center justify-center gap-2 select-none"
-                      >
-                        <span
-                          key={scanResult?.id || "denied-drain"}
-                          className="grd-drain absolute inset-0 bg-white/25"
-                          style={{ "--grd-dur": `${DENIED_SCAN_DISMISS_MS}ms` }}
-                          aria-hidden="true"
-                        />
-                        <span className="relative flex items-center gap-2">
-                          <Ban className="h-5 w-5 stroke-[2.5]" />
-                          {t("dismissAlert")}
-                        </span>
-                      </button>
-                      <p className="text-center text-[0.7rem] font-bold text-rose-600 uppercase tracking-wider">
-                        {t("pressToDismissHint")}
-                      </p>
-                    </div>
-                  );
-                }
-
                 return (
                   <>
                     <div className="flex gap-3 w-full">
@@ -1200,7 +1007,7 @@ export default function SecurityDashboardPage() {
                       </button>
                       <button
                         onClick={() => commitScan(pendingRef.current)}
-                        disabled={logging || previewLoading || exitBlocked}
+                        disabled={logging || previewLoading}
                         className={`relative flex-1 overflow-hidden py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                           derivedMode === 'exit'
                             ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ClipboardList,
-  MapPin,
   Clock,
   Calendar,
   Search,
@@ -24,7 +23,6 @@ import {
 import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
-import GateQrInstruction from "@/app/components/student/GateQrInstruction";
 import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import { getFirstName } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
@@ -32,6 +30,8 @@ import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import ApprovalSignature from "@/app/components/ApprovalSignature";
 
+// Gate-created outings are only ever Out -> Returned. The other statuses remain for rows
+// written by the old request flow, so a student's history still reads correctly.
 const statusConfig = {
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
   out: { label: "Outside", color: "text-sky-700", bg: "bg-sky-100", icon: LogOut },
@@ -41,7 +41,7 @@ const statusConfig = {
   forwarded: { label: "With warden", color: "text-teal-700", bg: "bg-teal-100", icon: ArrowUpRight },
   returned: { label: "Returned", color: "text-slate-600", bg: "bg-slate-100", icon: RotateCcw },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
-  // Stored as 'Expired': the pass was never scanned out before its day's exit window closed.
+  // Stored as 'Expired': an old request that was never scanned out.
   expired: { label: "Unused", color: "text-slate-600", bg: "bg-slate-100", icon: TimerOff },
   cancelled: { label: "Cancelled", color: "text-slate-500", bg: "bg-slate-100", icon: Ban },
   // UI-derived status for a 'Returned' trip closed late (returnPunctuality 'Overdue').
@@ -56,23 +56,20 @@ const badgeKeyFor = (outing) =>
 
 const filters = [
   { key: "all", label: "All" },
-  { key: "approved", label: "Approved" },
   { key: "out", label: "Outside" },
   { key: "overdue", label: "Overdue" },
-  { key: "pending", label: "Pending" },
-  { key: "forwarded", label: "With warden" },
   { key: "returned", label: "Returned" },
-  { key: "rejected", label: "Rejected" },
-  { key: "expired", label: "Unused" },
-  { key: "cancelled", label: "Cancelled" },
 ];
 
 const statAccents = {
   Total: "linear-gradient(90deg, #0f172a, #4338ca)",
-  Approved: "linear-gradient(90deg, #059669, #34d399)",
-  Pending: "linear-gradient(90deg, #d97706, #fbbf24)",
+  "Out now": "linear-gradient(90deg, #0284c7, #38bdf8)",
   Returned: "linear-gradient(90deg, #475569, #94a3b8)",
+  "Back late": "linear-gradient(90deg, #e11d48, #fb7185)",
 };
+
+// Only rows from the old request flow can still be sitting unused.
+const OLD_REQUEST_STATUSES = ["approved", "pending", "forwarded"];
 
 export default function MyOutings() {
   const router = useRouter();
@@ -83,8 +80,6 @@ export default function MyOutings() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(null);
-  const [confirmCancel, setConfirmCancel] = useState(null); // _id of outing being confirmed
-  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -101,12 +96,12 @@ export default function MyOutings() {
         const mapped = data.map((o) => ({
           _id: o._id,
           id: `SE-${String(o._id).slice(-6).toUpperCase()}`,
-          destination: o.destination,
-          // The departure is the gate scan; outTime is only the exit-by deadline the server
-          // set (close of that day's exit window). Before the scan, show the deadline.
+          // Gate-created outings carry no destination; only old requests do.
+          destination: o.destination || "Outing",
+          // The departure is the gate scan. Only an old request that was never used has no
+          // scan time; its outTime is the exit-by deadline it was given.
           dateOut: fmtDate(o.actualOutTime || o.createdAt || o.outTime),
           timeOut: o.actualOutTime ? fmtTime(o.actualOutTime) : `Exit by ${fmtTime(o.outTime)}`,
-          exitBy: fmtTime(o.outTime),
           departed: Boolean(o.actualOutTime),
           dateReturn: fmtDate(o.inTime),
           timeReturn: fmtTime(o.inTime),
@@ -144,21 +139,6 @@ export default function MyOutings() {
     };
   }, [hydrated]);
 
-  const handleCancel = async (outingId) => {
-    setCancelling(true);
-    try {
-      await apiFetch(`/outing/${outingId}/cancel`, { method: "PATCH" });
-      setOutings((prev) =>
-        prev.map((o) => (o._id === outingId ? { ...o, status: "cancelled" } : o))
-      );
-      setConfirmCancel(null);
-    } catch (err) {
-      console.error("Failed to cancel outing:", err);
-    } finally {
-      setCancelling(false);
-    }
-  };
-
   const filtered = outings.filter((outing) => {
     const matchFilter = filter === "all" || outing.status === filter;
     const matchSearch =
@@ -169,9 +149,9 @@ export default function MyOutings() {
 
   const stats = {
     total: outings.length,
-    approved: outings.filter((outing) => outing.status === "approved").length,
-    pending: outings.filter((outing) => outing.status === "pending").length,
+    outNow: outings.filter((outing) => outing.status === "out" || outing.status === "overdue").length,
     returned: outings.filter((outing) => outing.status === "returned").length,
+    late: outings.filter((outing) => outing.status === "returned" && outing.returnPunctuality === "Overdue").length,
   };
 
   if (!checked || !authorized) return <AuthLoading />;
@@ -189,7 +169,7 @@ export default function MyOutings() {
         variant="outings"
         icon={ClipboardList}
         title={hydrated ? `${getFirstName(display.name)}'s outing history` : "Your outing history"}
-        description="Track approvals, returns, and ticket status in one place."
+        description="Every gate exit and return, in one place."
       />
 
       {hydrated && <StudentProfileBanner display={display} />}
@@ -197,9 +177,9 @@ export default function MyOutings() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sf-rise sf-stagger-1">
         {[
           { label: "Total", value: stats.total, color: "text-slate-800" },
-          { label: "Approved", value: stats.approved, color: "text-emerald-600" },
-          { label: "Pending", value: stats.pending, color: "text-amber-600" },
+          { label: "Out now", value: stats.outNow, color: "text-sky-600" },
           { label: "Returned", value: stats.returned, color: "text-slate-600" },
+          { label: "Back late", value: stats.late, color: "text-rose-600" },
         ].map(({ label, value, color }) => (
           <div
             key={label}
@@ -216,7 +196,7 @@ export default function MyOutings() {
         <Search size={15} className="text-slate-400 shrink-0" />
         <input
           type="text"
-          placeholder="Search destination or ticket ID..."
+          placeholder="Search ticket ID..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className="flex-1 bg-transparent text-base text-slate-700 placeholder-slate-400 outline-none"
@@ -254,7 +234,11 @@ export default function MyOutings() {
             <ClipboardList size={24} className="text-slate-400" />
           </div>
           <p className="font-sora font-semibold text-slate-700">No outings found</p>
-          <p className="text-sm text-slate-500 mt-1">Try adjusting your search or filter.</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {outings.length === 0
+              ? "To go out, just show your QR at the main gate — your outing appears here."
+              : "Try adjusting your search or filter."}
+          </p>
         </StudentFeaturePanel>
       ) : (
         <div className="space-y-3">
@@ -277,7 +261,7 @@ export default function MyOutings() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-sky-100 to-indigo-100 flex items-center justify-center shrink-0 shadow-xs">
-                        <MapPin size={20} className="text-sky-600" />
+                        <LogOut size={20} className="text-sky-600" />
                       </div>
                       <div>
                         <p className="font-sora font-extrabold text-slate-800 text-lg sm:text-xl leading-snug">{outing.destination}</p>
@@ -315,13 +299,8 @@ export default function MyOutings() {
                       {[
                         {
                           label: "Departure",
-                          value: outing.departed
-                            ? `${outing.dateOut} at ${outing.timeOut}`
-                            : ["approved", "pending", "forwarded"].includes(outing.status)
-                              ? "Recorded when you scan out at the gate"
-                              : "Not used",
+                          value: outing.departed ? `${outing.dateOut} at ${outing.timeOut}` : "Not used",
                         },
-                        { label: "Exit Window Closes", value: `${outing.dateOut} at ${outing.exitBy}` },
                         { label: "Return By", value: `${outing.dateReturn} at ${outing.timeReturn}` },
                       ].map(({ label, value }) => (
                         <div key={label} className="flex justify-between items-center py-0.5">
@@ -358,25 +337,12 @@ export default function MyOutings() {
                           <p className="text-xs font-semibold text-rose-600">Request was rejected. Contact your caretaker for details.</p>
                         </div>
                       )}
-                      {outing.status === "pending" && (
-                        <div className="mt-3 pt-3 border-t border-amber-100 flex items-start gap-2.5">
-                          <Loader2 size={15} className="text-amber-500 shrink-0 mt-0.5 animate-spin" />
-                          <p className="text-xs font-semibold text-amber-705">Awaiting caretaker approval. You will be notified.</p>
-                        </div>
-                      )}
-                      {outing.status === "forwarded" && (
-                        <div className="mt-3 pt-3 border-t border-teal-100 flex items-start gap-2.5">
-                          <ArrowUpRight size={15} className="text-teal-600 shrink-0 mt-0.5" />
-                          <p className="text-xs font-semibold text-teal-700">Escalated to the warden for a decision. You will be notified.</p>
-                        </div>
-                      )}
-                      {outing.status === "approved" && (
-                        <GateQrInstruction ready showAction className="mt-3" />
-                      )}
-                      {outing.status === "expired" && (
-                        <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
+                      {(OLD_REQUEST_STATUSES.includes(outing.status) || outing.status === "expired") && (
+                        <div className="mt-3 pt-3 border-t border-slate-200 flex items-start gap-2.5">
                           <TimerOff size={15} className="text-slate-400 shrink-0 mt-0.5" />
-                          <p className="text-xs font-semibold text-slate-500">This pass was not used before that day&rsquo;s exit window closed, so it closed automatically. File a new request to go out.</p>
+                          <p className="text-xs font-semibold text-slate-500">
+                            An old outing request that was never used. Outings no longer need a request — just show your QR at the main gate.
+                          </p>
                         </div>
                       )}
                       {outing.status === "cancelled" && (
@@ -410,42 +376,6 @@ export default function MyOutings() {
                           </button>
                         </div>
                       )}
-                      {(outing.status === "approved" || outing.status === "pending" || outing.status === "forwarded") && (
-                        <div className="mt-4 pt-3 border-t border-slate-100">
-                          {confirmCancel === outing._id ? (
-                            <div className="flex flex-col gap-2">
-                              <p className="text-xs font-semibold text-slate-600">Are you sure you want to cancel this pass?</p>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  disabled={cancelling}
-                                  onClick={(e) => { e.stopPropagation(); handleCancel(outing._id); }}
-                                  className="flex-1 py-2 rounded-xl bg-rose-500 text-white text-xs font-bold shadow-sm hover:bg-rose-600 transition disabled:opacity-60 cursor-pointer"
-                                >
-                                  {cancelling ? "Cancelling…" : "Yes, Cancel"}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={cancelling}
-                                  onClick={(e) => { e.stopPropagation(); setConfirmCancel(null); }}
-                                  className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 transition cursor-pointer"
-                                >
-                                  Keep Pass
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setConfirmCancel(outing._id); }}
-                              className="w-full py-2.5 rounded-xl border border-rose-200 text-rose-600 text-xs font-bold hover:bg-rose-50 transition cursor-pointer flex items-center justify-center gap-2"
-                            >
-                              <Ban size={13} />
-                              Cancel Pass
-                            </button>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -458,7 +388,7 @@ export default function MyOutings() {
       <div className="sf-notice sf-rise sf-stagger-4">
         <Ticket size={14} className="text-sky-600 shrink-0 mt-0.5" />
         <p className="text-xs text-slate-600 leading-relaxed">
-          Digital outing tickets replace manual register entries. Your data is protected and only visible to authorized college staff.
+          Every outing is logged by the gate scan — no register, no form. Your data is protected and only visible to authorized college staff.
         </p>
       </div>
 

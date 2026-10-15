@@ -82,7 +82,7 @@ export default function DelayNotice() {
 
       const outing = (outings || []).find((o) => o.status === "Out");
       const out = outing
-        ? { _id: outing._id, destination: outing.destination, dueAt: outing.inTime }
+        ? { _id: outing._id, destination: outing.destination || "Outing", dueAt: outing.inTime }
         : null;
 
       setActiveTrip(out);

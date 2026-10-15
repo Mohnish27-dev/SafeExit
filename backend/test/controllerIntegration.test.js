@@ -143,29 +143,18 @@ const releaseActivePasses = async (studentId) => {
   );
 };
 
-// An EXIT is only legal inside the gender/type departure window, judged against the
-// current wall clock — so an exit test run at 2 AM correctly fails. Rather than freeze
-// time or weaken the rule, the exit-path tests announce that they were skipped.
-// The entry path has no window, so the transaction tests below use it and run at any hour.
-const { isWithinDepartureWindow } = require('../src/utils/outingRules');
-const departureWindowOpen = isWithinDepartureWindow('Male', 'General', new Date());
-const outsideWindowReason = departureWindowOpen
-  ? false
-  : 'the campus departure window is closed right now — an exit is correctly refused at this hour';
-
 // ---------------------------------------------------------------------------
 // The gate scan
 // ---------------------------------------------------------------------------
 
-test('a full gate cycle moves the student out and back, and logs both movements', {
-  skip: outsideWindowReason,
-}, async (t) => {
-  // skipReason is only known after test.before runs, so it is checked here, not in options.
-  if (skipReason) return t.skip(skipReason);
+maybe('a full gate cycle creates the outing on exit and closes it on entry', async () => {
+  // No request at all — the exit scan IS the outing. A request left open by the old flow is
+  // seeded too, because the new outing can only be inserted once one_active_outing_per_student
+  // has been satisfied by retiring it in the same transaction.
   const { kautilyaStudent: student, guard } = fixtures;
   await releaseActivePasses(student.id);
   await setCampusStatus(student, 'Inside');
-  const pass = await makeOuting({ studentId: student.id, status: 'Approved' });
+  const leftover = await makeOuting({ studentId: student.id, status: 'Pending' });
 
   const out = recorder();
   await scanController.createScanLog(
@@ -176,10 +165,20 @@ test('a full gate cycle moves the student out and back, and logs both movements'
   assert.equal(out.body.direction, 'OUT');
   created.scanLogs.push(out.body.id);
 
-  await pass.reload();
+  await leftover.reload();
+  assert.equal(leftover.status, 'Expired', 'the old request is retired, not left blocking');
+
+  const outing = await OutingRequest.findOne({ where: { studentId: student.id, status: 'Out' } });
+  assert.ok(outing, 'the exit created a live outing');
+  created.outings.push(outing.id);
+  assert.equal(outing.autoApproved, true);
+  assert.ok(outing.actualOutTime instanceof Date, 'actualOutTime is stamped for the student view');
+  assert.ok(outing.inTime > outing.outTime, 'outing_window_ordered holds');
+  const log = await ScanLog.findByPk(out.body.id);
+  assert.equal(log.outingId, outing.id);
+  assert.equal(log.passType, 'Outing');
+
   await student.reload();
-  assert.equal(pass.status, 'Out');
-  assert.ok(pass.actualOutTime instanceof Date, 'actualOutTime is stamped for the student view');
   assert.equal(student.campusStatus, 'Outside');
 
   // Resolved by ROLL NUMBER on the way back in — the printed-college-ID path.
@@ -192,10 +191,10 @@ test('a full gate cycle moves the student out and back, and logs both movements'
   assert.equal(back.body.direction, 'IN');
   created.scanLogs.push(back.body.id);
 
-  await pass.reload();
+  await outing.reload();
   await student.reload();
-  assert.equal(pass.status, 'Returned');
-  assert.equal(pass.returnPunctuality, 'On-Time');
+  assert.equal(outing.status, 'Returned');
+  assert.ok(['On-Time', 'Overdue'].includes(outing.returnPunctuality));
   assert.equal(student.campusStatus, 'Inside');
 });
 
@@ -423,9 +422,21 @@ maybe('a list query cannot pull pass signature bytes, but the byte endpoint can'
 // Several wardens per hostel (warden + assistant wardens, Google sign-in)
 // ---------------------------------------------------------------------------
 
-const outingController = require('../src/controllers/outingController');
+const leaveController = require('../src/controllers/leaveController');
 
-maybe('every warden of the hostel sees a forwarded request, and only one can decide it', async () => {
+const makeLeave = async (attrs) => {
+  const row = await LeaveApplication.create({
+    destination: 'ITEST',
+    reason: 'integration fixture',
+    leaveDate: new Date(Date.now() + 86400_000),
+    returnDate: new Date(Date.now() + 3 * 86400_000),
+    ...attrs,
+  });
+  created.leaves.push(row.id);
+  return row;
+};
+
+maybe('every warden of the hostel sees a forwarded leave, and only one can decide it', async () => {
   const { kautilyaStudent: student, warden } = fixtures;
   const assistant = await makeUser({
     name: 'ITEST Assistant Warden', role: 'Warden', managedHostel: 'Kautilya', managedGender: 'Male',
@@ -436,11 +447,11 @@ maybe('every warden of the hostel sees a forwarded request, and only one can dec
   });
 
   await releaseActivePasses(student.id);
-  const pass = await makeOuting({ studentId: student.id, status: 'Forwarded', forwardedAt: new Date() });
+  const pass = await makeLeave({ studentId: student.id, status: 'Forwarded', forwardedAt: new Date() });
 
   const queueIds = async (user) => {
     const res = recorder();
-    await outingController.getForwardedRequests({ user, query: {} }, res);
+    await leaveController.getForwardedLeaveApplications({ user, query: {} }, res);
     assert.equal(res.statusCode ?? 200, 200, JSON.stringify(res.body));
     return res.body.map((r) => r.id || r._id);
   };
@@ -451,7 +462,7 @@ maybe('every warden of the hostel sees a forwarded request, and only one can dec
   // Both press Reject at the same moment: exactly one verdict lands.
   const decide = async (user) => {
     const res = recorder();
-    await outingController.updateWardenRequestStatus(
+    await leaveController.updateWardenLeaveStatus(
       { user, params: { id: pass.id }, body: { status: 'Rejected', remarks: `by ${user.name}` } },
       res
     );
@@ -463,8 +474,6 @@ maybe('every warden of the hostel sees a forwarded request, and only one can dec
 
   await pass.reload();
   assert.equal(pass.status, 'Rejected');
-  const winner = results.find((r) => (r.statusCode ?? 200) === 200);
-  assert.equal(String(pass.forwardedTo), String(winner.body.forwardedTo), 'the deciding warden is recorded');
 });
 
 

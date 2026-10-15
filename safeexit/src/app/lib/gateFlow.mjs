@@ -33,13 +33,8 @@ export const readControlBarcode = (rawValue) => {
 export const deriveGateDirection = (campusStatus) =>
   campusStatus === "Outside" || campusStatus === "Overdue" ? "IN" : "OUT";
 
-export const canAutoCommit = (preview) => {
-  if (!preview?.student) return false;
-  if (deriveGateDirection(preview.student.campusStatus) === "IN") return true;
-  return preview.exit?.allowed === true;
-};
-
-export const isExitDenied = (preview) => {
-  if (deriveGateDirection(preview?.student?.campusStatus) === "IN") return false;
-  return preview?.exit ? preview.exit.allowed !== true : false;
-};
+// Every scan logs a movement: there is no refusal at the gate any more (outings need no
+// approval; the guard decides whether it is a sensible hour). What still gates the
+// countdown is a resolved student — that is what puts the photo on screen for the face
+// match. A failed preview stays a manual, by-hand commit.
+export const canAutoCommit = (preview) => Boolean(preview?.student);

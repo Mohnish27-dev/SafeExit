@@ -42,17 +42,16 @@ const OutingRequest = getSequelize().define(
     // path.
     outingType: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'General', field: 'outing_type' },
 
-    // EXIT-BY deadline, not a departure time: computed by the server at request time as the
-    // close of that day's exit window (utils/outingRules.computeExitDeadline). The student
-    // never picks it. The real departure is actualOutTime, stamped by the exit scan.
-    // (Rows written before this change hold the student-chosen departure time instead.)
+    // Outings are created by the gate's exit scan (controllers/scanController.js), already
+    // 'Out': outTime and actualOutTime are both that scan's instant. Older rows hold what the
+    // retired request flow stored here — an exit-by deadline, or before that a
+    // student-chosen departure time — and destination/purpose are only filled on those.
     outTime: { type: DataTypes.DATE, allowNull: false, field: 'out_time' },
-    // Return deadline, also fixed by policy.
+    // Return deadline, fixed by policy (utils/outingRules.computeOutingReturnDeadline).
     inTime: { type: DataTypes.DATE, allowNull: false, field: 'in_time' },
 
-    // Approved -> Expired ("lapsed unused") happens lazily at read time once outTime passes
-    // with the pass never scanned out.
-    // 'Forwarded' = a caretaker escalated it to the hostel warden.
+    // Pending/Approved/Forwarded only occur on rows from the old request flow. An unused one
+    // lapses lazily to Expired at read time, and a gate exit retires any still open.
     status: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'Pending' },
 
     // True when approved by the system rule rather than a caretaker (approvedBy stays null).

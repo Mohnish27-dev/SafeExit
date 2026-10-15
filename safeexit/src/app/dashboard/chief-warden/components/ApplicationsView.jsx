@@ -37,7 +37,7 @@ export default function ApplicationsView({ type }) {
       setRows(await apiFetch(isLeave ? "/leave/all" : "/outing/all"));
       setError("");
     } catch (err) {
-      setError(err.message || `Could not load ${isLeave ? "leave applications" : "outing requests"}.`);
+      setError(err.message || `Could not load ${isLeave ? "leave applications" : "outings"}.`);
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ export default function ApplicationsView({ type }) {
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700"><FileText className="h-6 w-6" /></span>
             <div>
-              <h2 className="text-xl font-extrabold text-slate-900">{isLeave ? "Leave Applications" : "Outing Requests"}</h2>
+              <h2 className="text-xl font-extrabold text-slate-900">{isLeave ? "Leave Applications" : "Outings"}</h2>
               <p className="text-sm font-medium text-slate-500">{visible.length} records across all hostels · view only</p>
             </div>
           </div>
@@ -80,7 +80,7 @@ export default function ApplicationsView({ type }) {
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <div className="relative sm:col-span-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search student, room, destination" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isLeave ? "Search student, room, destination" : "Search student or room"} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" />
           </div>
           <select value={hostel} onChange={(event) => setHostel(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
             <option value="">All hostels</option>
@@ -113,23 +113,27 @@ export default function ApplicationsView({ type }) {
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-extrabold text-slate-900">{student.name || "Unknown student"}</h3>
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${STATUS_TONE[row.status] || STATUS_TONE.Expired}`}>{row.status}</span>
-                      {row.autoApproved && <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[11px] font-bold text-cyan-700">Auto-approved</span>}
                     </div>
                     <p className="mt-1 text-xs font-semibold text-slate-500">{[student.studentId, student.department, student.year].filter(Boolean).join(" · ") || "—"}</p>
                   </div>
-                  <p className="text-xs font-semibold text-slate-400">Submitted {formatDate(row.createdAt)}</p>
+                  <p className="text-xs font-semibold text-slate-400">{isLeave ? "Submitted" : "Logged"} {formatDate(row.createdAt)}</p>
                 </div>
 
                 <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-                  <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Destination:</b> {row.destination || "—"}</span></p>
+                  {/* Outings logged at the gate have no destination; only leave and old requests do. */}
+                  {row.destination && (
+                    <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Destination:</b> {row.destination}</span></p>
+                  )}
                   <p className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">From:</b> {formatDate(start)}</span></p>
                   <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Return:</b> {formatDate(end)}</span></p>
                   <p><b className="text-slate-800">Hostel / Room:</b> {[student.hostelName, student.roomNumber && `Room ${student.roomNumber}`].filter(Boolean).join(" · ") || "—"}</p>
                 </div>
 
-                <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  <b className="text-slate-800">{isLeave ? "Reason" : "Purpose"}:</b> {isLeave ? row.reason : row.purpose}
-                </div>
+                {isLeave && (
+                  <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    <b className="text-slate-800">Reason:</b> {row.reason}
+                  </div>
+                )}
 
                 {(row.forwardedBy?.name || row.approvedBy?.name || row.remarks) && (
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-semibold text-slate-500">

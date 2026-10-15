@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Home,
-  ClipboardList,
   CalendarDays,
   Siren,
   MessageSquare,
@@ -38,7 +37,6 @@ import {
   subscribePush,
   autoSubscribeIfGranted,
 } from "@/app/lib/pushManager";
-import ForwardedRequestsView from "./components/ForwardedRequestsView";
 import ForwardedLeaveView from "./components/ForwardedLeaveView";
 import SOSAlertsView from "../caretaker/components/SOSAlertsView";
 // Wardens get the same read-only movement log as caretakers; /scan already scopes by managedHostel.
@@ -50,25 +48,7 @@ import DelayNoticeToast from "../caretaker/components/DelayNoticeToast";
 const initials = (name = "") =>
   name.split(" ").map((n) => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
 
-const formatTime = (value) =>
-  value ? new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "—";
-
 const room = (s) => [s?.hostelName, s?.roomNumber].filter(Boolean).join(", ") || "—";
-
-const mapForwardedOuting = (o) => ({
-  id: o._id,
-  name: o.student?.name || "Unknown Student",
-  roll: o.student?.studentId || "",
-  room: room(o.student),
-  destination: o.destination || "",
-  outingType: o.outingType || "",
-  // outTime is the exit-by deadline (close of the day's exit window), not a departure.
-  out: o.actualOutTime ? formatTime(o.actualOutTime) : `by ${formatTime(o.outTime)}`,
-  return: formatTime(o.inTime),
-  forwardedBy: o.forwardedBy?.name || "",
-  forwardedNote: o.forwardedNote || "",
-  initials: initials(o.student?.name),
-});
 
 const mapForwardedLeave = (l) => ({
   id: l._id,
@@ -92,22 +72,6 @@ const mapForwardedLeave = (l) => ({
 // History rows render off `decision` — the frozen verdict — not `status`. `status` keeps
 // moving after the call is made (Out, Returned, Cancelled, Expired); the verdict doesn't,
 // so a pass the student later cancelled still shows as the Approved it was.
-const mapOutingHistory = (o) => ({
-  id: o._id,
-  name: o.student?.name || "Unknown Student",
-  destination: o.destination || "",
-  // outTime is the exit-by deadline (close of the day's exit window), not a departure.
-  out: o.actualOutTime ? formatTime(o.actualOutTime) : `by ${formatTime(o.outTime)}`,
-  return: formatTime(o.inTime),
-  decision: o.decision || "",
-  // Set when the pass never played out as decided — "Cancelled" or "Expired".
-  lapsed: o.lapsed || "",
-  decidedByName: o.approvedBy?.name || "",
-  decidedByRole: o.decidedByRole || o.approvedBy?.role || "",
-  remarks: o.remarks || "",
-  decidedAt: o.decidedAt || o.updatedAt,
-});
-
 const mapLeaveHistory = (l) => ({
   id: l._id,
   name: l.student?.name || "Unknown Student",
@@ -158,19 +122,19 @@ export default function WardenDashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Deep link from push notifications (?view=requests etc.); consumed once.
+  // Deep link from push notifications (?view=leave etc.); consumed once.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["requests", "leave", "sos", "overdue", "delays", "logs", "profile"].includes(target)) {
+    if (target && ["leave", "sos", "overdue", "delays", "logs", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
 
-  const [pending, setPending] = useState([]);
+  // Outings need no approval any more (the gate scan creates them), so leave is the only
+  // thing escalated to a warden.
   const [leavePending, setLeavePending] = useState([]);
-  const [outingHistory, setOutingHistory] = useState([]);
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [sosCount, setSosCount] = useState(0);
   const [overdueCount, setOverdueCount] = useState(0);
@@ -178,24 +142,9 @@ export default function WardenDashboardPage() {
   // student can file *before* their deadline passes — they aren't overdue yet.
   const [delayCount, setDelayCount] = useState(0);
 
-  const [loadingRequests, setLoadingRequests] = useState(true);
   const [loadingLeave, setLoadingLeave] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const [requestsError, setRequestsError] = useState("");
   const [leaveError, setLeaveError] = useState("");
-
-  const loadRequests = useCallback(async () => {
-    setLoadingRequests(true);
-    setRequestsError("");
-    try {
-      const data = await apiFetch("/outing/forwarded");
-      setPending(data.map(mapForwardedOuting));
-    } catch (err) {
-      setRequestsError(err.message || "Could not load forwarded requests.");
-    } finally {
-      setLoadingRequests(false);
-    }
-  }, []);
 
   const loadLeave = useCallback(async () => {
     setLoadingLeave(true);
@@ -213,11 +162,7 @@ export default function WardenDashboardPage() {
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true);
     try {
-      const [o, l] = await Promise.all([
-        apiFetch("/outing/warden-history").catch(() => []),
-        apiFetch("/leave/warden-history").catch(() => []),
-      ]);
-      setOutingHistory(o.map(mapOutingHistory));
+      const l = await apiFetch("/leave/warden-history").catch(() => []);
       setLeaveHistory(l.map(mapLeaveHistory));
     } finally {
       setLoadingHistory(false);
@@ -252,13 +197,12 @@ export default function WardenDashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadRequests();
     loadLeave();
     loadHistory();
     loadSosCount();
     loadOverdueCount();
     loadDelayCount();
-  }, [loadRequests, loadLeave, loadHistory, loadSosCount, loadOverdueCount, loadDelayCount]);
+  }, [loadLeave, loadHistory, loadSosCount, loadOverdueCount, loadDelayCount]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -270,9 +214,9 @@ export default function WardenDashboardPage() {
   // SSE: refresh the affected queues + history when the backend broadcasts a change.
   useEffect(() => {
     return subscribeToStaffEvents({
-      "outing:changed": () => { loadRequests(); loadHistory(); loadOverdueCount(); },
+      "outing:changed": () => { loadOverdueCount(); },
     });
-  }, [loadRequests, loadHistory, loadOverdueCount]);
+  }, [loadOverdueCount]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -289,9 +233,9 @@ export default function WardenDashboardPage() {
 
   // Poll as a safety net in case an SSE connection is silently dropped.
   useEffect(() => {
-    const id = setInterval(() => { loadRequests(); loadLeave(); loadSosCount(); loadOverdueCount(); }, 30000);
+    const id = setInterval(() => { loadLeave(); loadSosCount(); loadOverdueCount(); }, 30000);
     return () => clearInterval(id);
-  }, [loadRequests, loadLeave, loadSosCount, loadOverdueCount]);
+  }, [loadLeave, loadSosCount, loadOverdueCount]);
 
   // ---- Approve (signature modal) / Reject (leave needs remarks) ----
   const [approvalTarget, setApprovalTarget] = useState(null); // { kind, id, name }
@@ -308,8 +252,7 @@ export default function WardenDashboardPage() {
   const [rejecting, setRejecting] = useState(false);
 
   const openApproval = (kind, id) => {
-    const list = kind === "leave" ? leavePending : pending;
-    const req = list.find((r) => r.id === id);
+    const req = leavePending.find((r) => r.id === id);
     setApprovalTarget({ kind, id, name: req?.name || "" });
   };
   const closeApproval = () => {
@@ -340,16 +283,14 @@ export default function WardenDashboardPage() {
     if (!approvalTarget) return;
     setApproving(true);
     setSignatureError("");
-    const { kind, id } = approvalTarget;
-    const path = kind === "leave" ? `/leave/${id}/warden-status` : `/outing/${id}/warden-status`;
+    const { id } = approvalTarget;
     try {
       // The server stamps our saved profile signature; nothing to send.
-      await apiFetch(path, {
+      await apiFetch(`/leave/${id}/warden-status`, {
         method: "PATCH",
         body: JSON.stringify({ status: "Approved" }),
       });
-      if (kind === "leave") { setLeavePending((l) => l.filter((r) => r.id !== id)); }
-      else { setPending((p) => p.filter((r) => r.id !== id)); }
+      setLeavePending((l) => l.filter((r) => r.id !== id));
       loadHistory();
       closeApproval();
     } catch (err) {
@@ -360,8 +301,7 @@ export default function WardenDashboardPage() {
         setSignatureError(err?.message || "Add your signature before approving.");
         return;
       }
-      if (kind === "leave") setLeaveError(err.message || "Could not approve application.");
-      else setRequestsError(err.message || "Could not approve request.");
+      setLeaveError(err.message || "Could not approve application.");
       closeApproval();
     } finally {
       setApproving(false);
@@ -369,8 +309,7 @@ export default function WardenDashboardPage() {
   }
 
   const openReject = (kind, id) => {
-    const list = kind === "leave" ? leavePending : pending;
-    const req = list.find((r) => r.id === id);
+    const req = leavePending.find((r) => r.id === id);
     setRejectRemarks("");
     setRejectTarget({ kind, id, name: req?.name || "" });
   };
@@ -378,22 +317,18 @@ export default function WardenDashboardPage() {
 
   async function confirmReject() {
     if (!rejectTarget) return;
-    const { kind, id } = rejectTarget;
+    const { id } = rejectTarget;
     // Leave rejections require a remark server-side.
-    if (kind === "leave" && !rejectRemarks.trim()) return;
+    if (!rejectRemarks.trim()) return;
     setRejecting(true);
-    const path = kind === "leave" ? `/leave/${id}/warden-status` : `/outing/${id}/warden-status`;
-    const body = { status: "Rejected" };
-    if (rejectRemarks.trim()) body.remarks = rejectRemarks.trim();
+    const body = { status: "Rejected", remarks: rejectRemarks.trim() };
     try {
-      await apiFetch(path, { method: "PATCH", body: JSON.stringify(body) });
-      if (kind === "leave") { setLeavePending((l) => l.filter((r) => r.id !== id)); }
-      else { setPending((p) => p.filter((r) => r.id !== id)); }
+      await apiFetch(`/leave/${id}/warden-status`, { method: "PATCH", body: JSON.stringify(body) });
+      setLeavePending((l) => l.filter((r) => r.id !== id));
       loadHistory();
       closeReject();
     } catch (err) {
-      if (kind === "leave") setLeaveError(err.message || "Could not reject application.");
-      else setRequestsError(err.message || "Could not reject request.");
+      setLeaveError(err.message || "Could not reject application.");
       closeReject();
     } finally {
       setRejecting(false);
@@ -431,7 +366,6 @@ export default function WardenDashboardPage() {
 
   const navItems = [
     { key: "home", label: "Home", icon: Home },
-    { key: "requests", label: "Outings", icon: ClipboardList, badge: pending.length },
     { key: "leave", label: "Leave", icon: CalendarDays, badge: leavePending.length },
     { key: "sos", label: "Alerts", icon: Siren, badge: sosCount },
     { key: "overdue", label: "Overdue", icon: Clock, badge: overdueCount },
@@ -440,7 +374,7 @@ export default function WardenDashboardPage() {
     { key: "profile", label: "Profile", icon: User },
   ];
 
-  // Five comfortably tappable phone tabs. Profile lives behind the header avatar,
+  // Four comfortably tappable phone tabs. Profile lives behind the header avatar,
   // movement logs remain available from the full-width home shortcut, and delay
   // notices surface via the "needs your attention" tile whenever any are pending.
   const mobileNavItems = navItems.filter((n) => !["profile", "logs", "delays"].includes(n.key));
@@ -512,7 +446,7 @@ export default function WardenDashboardPage() {
               <Bell className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500 animate-bounce" />
               <div className="min-w-0 flex-1">
                 <p className="font-bold">Enable push notifications</p>
-                <p className="text-sm text-indigo-700">Get alerted the moment a caretaker escalates an outing or leave request to you — even when this app is closed.</p>
+                <p className="text-sm text-indigo-700">Get alerted the moment a caretaker escalates a leave application to you — even when this app is closed.</p>
               </div>
               <button onClick={handleEnablePush} disabled={pushEnabling} className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700 active:scale-95 disabled:opacity-60">
                 {pushEnabling ? "Enabling…" : "Enable"}
@@ -543,7 +477,6 @@ export default function WardenDashboardPage() {
                   sosCount > 0 && { key: "sos", label: "Safety Alerts", count: sosCount, icon: Siren, onClick: () => setView("sos") },
                   overdueCount > 0 && { key: "overdue", label: "Overdue Students", count: overdueCount, icon: Clock, onClick: () => setView("overdue") },
                   delayCount > 0 && { key: "delays", label: "Delay Notices", count: delayCount, icon: MessageSquare, onClick: () => setView("delays") },
-                  pending.length > 0 && { key: "requests", label: "Forwarded Outings", count: pending.length, icon: ClipboardList, onClick: () => setView("requests") },
                   leavePending.length > 0 && { key: "leave", label: "Forwarded Leave", count: leavePending.length, icon: CalendarDays, onClick: () => setView("leave") },
                 ].filter(Boolean);
                 if (attention.length === 0) return null;
@@ -583,7 +516,7 @@ export default function WardenDashboardPage() {
                     <div className="min-w-0">
                       <p className="sd-kicker">Daily pulse</p>
                       <h2 className="sd-title sd-title-md mt-1 sm:mt-2">Welcome, <span className="sd-name-live">Warden</span>.</h2>
-                      <p className="sd-body mt-2 hidden max-w-md sm:block">You decide the outing and leave requests caretakers escalate, and keep an eye on your hostel&apos;s safety alerts.</p>
+                      <p className="sd-body mt-2 hidden max-w-md sm:block">You decide the leave applications caretakers escalate, and keep an eye on overdue returns and your hostel&apos;s safety alerts. Outings need no approval — the gate logs them.</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
@@ -602,8 +535,8 @@ export default function WardenDashboardPage() {
                   odd slot on tablets instead of leaving a gap. */}
               <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {[
-                  { label: "Forwarded Outings", value: pending.length, icon: ClipboardList, onClick: () => setView("requests"), fill: "from-indigo-500 to-cyan-400" },
                   { label: "Forwarded Leave", value: leavePending.length, icon: CalendarDays, onClick: () => setView("leave"), fill: "from-violet-500 to-fuchsia-400" },
+                  { label: "Overdue Students", value: overdueCount, icon: Clock, onClick: () => setView("overdue"), fill: "from-amber-500 to-orange-400" },
                   { label: "Active Alerts", value: sosCount, icon: Siren, onClick: () => setView("sos"), fill: "from-rose-500 to-orange-400" },
                 ].map((s, i, arr) => (
                   <button
@@ -641,20 +574,6 @@ export default function WardenDashboardPage() {
                 <ArrowRight className="h-5 w-5 shrink-0 text-slate-400" />
               </button>
             </>
-          )}
-
-          {view === "requests" && (
-            <ForwardedRequestsView
-              pending={pending}
-              history={outingHistory}
-              approve={(id) => openApproval("outing", id)}
-              reject={(id) => openReject("outing", id)}
-              loading={loadingRequests}
-              loadingHistory={loadingHistory}
-              error={requestsError}
-              onRefresh={loadRequests}
-              onRefreshHistory={loadHistory}
-            />
           )}
 
           {view === "leave" && (
@@ -740,7 +659,7 @@ export default function WardenDashboardPage() {
           <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <p className="sd-kicker">{approvalTarget.kind === "leave" ? "Leave Application" : "Outing Request"}</p>
+                <p className="sd-kicker">Leave Application</p>
                 <h3 className="sd-title sd-title-sm mt-0.5">Approve{approvalTarget.name ? ` — ${approvalTarget.name}` : ""}</h3>
               </div>
               <button onClick={closeApproval} disabled={approving} className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50">
@@ -749,8 +668,8 @@ export default function WardenDashboardPage() {
             </div>
             <p className="mt-4 text-sm text-slate-600">
               {mySignature && !changingSignature
-                ? `Your saved signature will be attached to this ${approvalTarget.kind === "leave" ? "leave application" : "outing request"}.`
-                : `Add your signature once — it will be attached to every ${approvalTarget.kind === "leave" ? "application" : "request"} you approve from now on.`}
+                ? "Your saved signature will be attached to this leave application."
+                : "Add your signature once — it will be attached to every application you approve from now on."}
             </p>
             {mySignature && !changingSignature ? (
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
@@ -808,13 +727,13 @@ export default function WardenDashboardPage() {
         </div>
       )}
 
-      {/* Reject modal — remarks required for leave, optional for outing */}
+      {/* Reject modal — leave rejections need a remark */}
       {rejectTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
           <div className="sd-enter relative w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <p className="sd-kicker">{rejectTarget.kind === "leave" ? "Leave Application" : "Outing Request"}</p>
+                <p className="sd-kicker">Leave Application</p>
                 <h3 className="sd-title sd-title-sm mt-0.5">Reject{rejectTarget.name ? ` — ${rejectTarget.name}` : ""}</h3>
               </div>
               <button onClick={closeReject} disabled={rejecting} className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50">
@@ -822,15 +741,13 @@ export default function WardenDashboardPage() {
               </button>
             </div>
             <p className="mt-4 text-sm text-slate-600">
-              {rejectTarget.kind === "leave"
-                ? "Add a reason for rejecting this leave application — the student will see it."
-                : "Optionally add a reason for rejecting this outing request."}
+              Add a reason for rejecting this leave application — the student will see it.
             </p>
             <textarea
               value={rejectRemarks}
               onChange={(e) => setRejectRemarks(e.target.value)}
               rows={3}
-              placeholder={rejectTarget.kind === "leave" ? "Reason (required)" : "Reason (optional)"}
+              placeholder="Reason (required)"
               className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-rose-400 focus:bg-white transition-colors"
             />
             <div className="mt-5 flex gap-3">
@@ -839,7 +756,7 @@ export default function WardenDashboardPage() {
               </button>
               <button
                 onClick={confirmReject}
-                disabled={rejecting || (rejectTarget.kind === "leave" && !rejectRemarks.trim())}
+                disabled={rejecting || !rejectRemarks.trim()}
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-rose-600 to-orange-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <X className="h-4 w-4" />

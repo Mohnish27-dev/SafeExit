@@ -1,16 +1,17 @@
 # NITP-SafeExit 🚀
 
-NITP-SafeExit is a comprehensive student outing and hostel safety management system designed for hostels/universities. It streamlines the process of requesting outings, approving them by caretakers, and verifying student exits/entries at the security gate using QR codes. It also covers leave applications, SOS alerts, and delay notices.
+NITP-SafeExit is a comprehensive student outing and hostel safety management system designed for hostels/universities. Outings need no request or approval: the student shows their QR at the security gate, the exit scan starts the outing and the entry scan ends it, and anyone not back by 8:00 PM is flagged overdue. It also covers leave applications (which caretakers approve), SOS alerts, and delay notices.
 
 ## 📋 Features
 
 - **Role-Based Access Control**: Different dashboards for Students, Caretakers, and Security Guards.
-- **Outing Management**:
-  - Students can raise outing requests (destination, purpose, out/in time).
-  - Caretakers can approve or reject these requests.
+- **Outings, logged at the gate**:
+  - No form, no destination, no approval — boys and girls (nearby or market) alike.
+  - The exit scan creates the outing; everyone is due back by 8:00 PM, and late returns are flagged.
 - **QR Code Verification**:
-  - Approved requests generate a unique QR code for the student.
-  - Security guards scan the QR code to mark students as "Out" or "Returned" at the gate.
+  - Each student has one permanent identity QR (the college ID card works too).
+  - Security guards scan it once; the gate logs an exit or an entry from the student's current status.
+- **Leave Applications**: filed by the student, approved by caretakers (or escalated to wardens).
 - **Secure Authentication**:
   - Built with JWT and `bcryptjs` for secure password hashing and session management.
   - Includes boilerplate for WebAuthn/Passkeys integration (`@simplewebauthn`).
@@ -132,17 +133,17 @@ cd SafeExit
 
 1. **Student**: 
    - Registers/Logs in.
-   - Submits a new Outing Request.
-   - Once approved, views the generated QR code.
-   - Shows the QR code to security while leaving and returning.
+   - To go out, shows their permanent QR to security at the gate — no request needed.
+   - Shows the same QR when returning, by 8:00 PM.
+   - Applies for leave in the portal for overnight / multi-day trips.
 2. **Caretaker**:
    - Logs in to the Caretaker Dashboard.
-   - Reviews pending outing requests.
-   - Approves or Rejects requests with remarks.
+   - Reviews pending leave applications; approves, rejects, or forwards them to the warden.
+   - Watches overdue returns, delay notices, and SOS alerts.
 3. **Security (Guard)**:
    - Logs in to the Security Dashboard.
    - Uses the built-in QR Scanner to scan student QR codes.
-   - Verifies identity and updates status to "Out" or "Returned".
+   - Matches the face to the photo on screen; the scan logs "Out" or "Returned" automatically.
 
 ## 📜 License
 

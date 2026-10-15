@@ -6,21 +6,16 @@ const { passScope, mergeWhere } = require('../utils/hostelScope');
 const { isLegacyId } = require('../utils/legacyIdGrace');
 const { UUID_RE } = require('../middlewares/validateParams');
 const {
-  isDeparturePassed,
   isBeforeDeparture,
   isReturnLate,
   isAfterLeaveCurfew,
-  resolveOutingPolicy,
-  isWithinDepartureWindow,
+  computeOutingReturnDeadline,
+  outingTypeFor,
 } = require('../utils/outingRules');
 
-const clockLabel = (minutes) => {
-  const h24 = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  const period = h24 < 12 ? 'AM' : 'PM';
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
-};
+// Outing rows from the old request flow that never left the gate. A gate exit replaces them
+// with the outing it creates, and a leave departure burns them, so none can be used later.
+const OPEN_OUTING_STATUSES = ['Pending', 'Approved', 'Forwarded'];
 
 // Thrown to roll the scan transaction back on a legitimate refusal rather than an error.
 // It carries the payload so the catch can answer with the 409 the old code returned
@@ -77,34 +72,24 @@ const passWindow = (passType, doc) =>
     ? { windowStart: doc.outTime, windowEnd: doc.inTime }
     : { windowStart: doc.leaveDate, windowEnd: doc.returnDate };
 
-// Outing outTime is the server-computed exit-by deadline (the close of the requesting day's
-// exit window) — the student never chose it, and the exit scan itself is the departure.
-// Leave is valid leaveDate → 5:30 PM same day.
-const isOutingExitOpen = (doc) => !isDeparturePassed(doc.outTime);
+// Leave is valid from leaveDate until 5:30 PM that day.
 const isLeaveExitOpen = (doc) =>
   !isBeforeDeparture(doc.leaveDate) && !isAfterLeaveCurfew(doc.leaveDate);
 
-// Prefer the pass usable right now (Outing first) so a stale/future pass can't shadow a
-// valid one; else return any approved pass so the caller can give a precise denial reason.
-const resolveApprovedPass = async (studentId, options = {}) => {
-  const outing = await OutingRequest.findOne({
-    where: { studentId, status: 'Approved' },
-    order: [['createdAt', 'DESC']],
-    ...options,
-  });
+// An exit is never refused. It leaves on the student's approved leave when that leave is
+// valid right now, and as an outing otherwise. `lapsed` is an approved leave whose day is
+// over: the caller persists it as Expired, so the dashboards stop offering it. A leave that
+// is not valid YET is left untouched, so taking an outing today cannot burn tomorrow's leave.
+const resolveExitLeave = async (studentId, options = {}) => {
   const leave = await LeaveApplication.findOne({
     where: { studentId, status: 'Approved' },
     order: [['createdAt', 'DESC']],
     ...options,
   });
-
-  if (outing && isOutingExitOpen(outing)) return { passType: 'Outing', doc: outing };
-  if (leave && isLeaveExitOpen(leave)) return { passType: 'Leave', doc: leave };
-
-  if (outing) return { passType: 'Outing', doc: outing };
-  if (leave) return { passType: 'Leave', doc: leave };
-
-  return null;
+  if (!leave) return { usable: null, lapsed: null };
+  if (isLeaveExitOpen(leave)) return { usable: leave, lapsed: null };
+  if (isAfterLeaveCurfew(leave.leaveDate)) return { usable: null, lapsed: leave };
+  return { usable: null, lapsed: null };
 };
 
 const resolveOutPass = async (studentId, options = {}) => {
@@ -145,7 +130,7 @@ const modelFor = (passType) => (passType === 'Outing' ? OutingRequest : LeaveApp
 // ---------------------------------------------------------------------------
 const createScanLog = async (req, res) => {
   // punctuality is decided server-side; never read from the body.
-  const { studentId, student, direction: requestedDirection, outing, gate } = req.body;
+  const { studentId, student, direction: requestedDirection, gate } = req.body;
 
   // 'AUTO' lets a single-scanner gate station omit the direction entirely.
   if (!requestedDirection || !['IN', 'OUT', 'AUTO'].includes(requestedDirection)) {
@@ -166,88 +151,26 @@ const createScanLog = async (req, res) => {
     const direction =
       requestedDirection === 'AUTO' ? deriveDirection(studentDoc.campusStatus) : requestedDirection;
 
-    // ---- Denial checks, before the transaction ----
+    // ---- Which pass the exit uses (never a refusal) ----
     //
-    // These run first and outside it on purpose. Two of them persist an 'Expired' status
-    // and then refuse the exit; that write must SURVIVE the refusal, so that a dashboard
-    // shows the same thing the gate just enforced. Rolling it back with the denial would
-    // put the two back out of step, which is the confusion the write exists to prevent.
-    let linkedPass = null;
+    // Resolved before the transaction. An approved leave whose day is over is persisted as
+    // Expired here, outside the transaction, so it stays expired even if the scan itself
+    // then loses a race and rolls back.
+    let exitLeave = null;
     if (direction === 'OUT') {
-      linkedPass = await resolveApprovedPass(studentDoc.id);
-
-      if (!linkedPass) {
-        return res.status(403).json({
-          message:
-            'This student has no caretaker-approved outing or leave pass. Exit denied until a request is approved.',
-          campusStatus: studentDoc.campusStatus,
-        });
-      }
-
-      const { windowStart, windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
-      // Guarded on the current status so this can never expire a pass that a concurrent
-      // scan has already taken to 'Out'.
-      const expirePass = () =>
-        modelFor(linkedPass.passType).update(
+      const { usable, lapsed } = await resolveExitLeave(studentDoc.id);
+      exitLeave = usable;
+      if (lapsed) {
+        // Guarded on status so it can never touch a leave a concurrent scan took 'Out'.
+        await LeaveApplication.update(
           { status: 'Expired' },
-          { where: { id: linkedPass.doc.id, status: 'Approved' } }
+          { where: { id: lapsed.id, status: 'Approved' } }
         );
-
-      if (linkedPass.passType === 'Leave') {
-        // Not open yet — leave the pass untouched so it's still usable on its day.
-        if (isBeforeDeparture(windowStart)) {
-          return res.status(403).json({
-            message: `This leave pass is not valid yet — the approved departure is ${new Date(windowStart).toLocaleString()}. Exit denied until then.`,
-            outTime: windowStart,
-            inTime: windowEnd,
-            campusStatus: studentDoc.campusStatus,
-          });
-        }
-
-        // Past curfew: persist 'Expired' so dashboards match what the gate enforced.
-        if (isAfterLeaveCurfew(windowStart)) {
-          await expirePass();
-          return res.status(403).json({
-            message:
-              'This leave pass has expired — leave passes are only valid until 5:30 PM on the departure day. Exit denied; the student must file a new request.',
-            outTime: windowStart,
-            inTime: windowEnd,
-            campusStatus: studentDoc.campusStatus,
-          });
-        }
-      } else {
-        // outTime is the close of the day's exit window, so this only fires once the whole
-        // window is gone (or for a pass requested on an earlier day). Persist the lapse.
-        if (isDeparturePassed(windowStart)) {
-          await expirePass();
-          return res.status(403).json({
-            message:
-              "This outing pass lapsed unused — the exit window for the day it was requested has closed. Exit denied; the student must file a new request.",
-            outTime: windowStart,
-            inTime: windowEnd,
-            campusStatus: studentDoc.campusStatus,
-          });
-        }
-
-        // Judge the current moment against the gender/type departure window; gender comes
-        // from the DB, never the QR. Before it opens: leave the pass untouched so it can
-        // be used once the window opens.
-        const policy = resolveOutingPolicy(studentDoc.gender, linkedPass.doc.outingType);
-        if (!isWithinDepartureWindow(studentDoc.gender, linkedPass.doc.outingType, new Date())) {
-          const windowText = `${clockLabel(policy.departStartMinutes)}-${clockLabel(
-            policy.departEndMinutes
-          )}`;
-          return res.status(403).json({
-            message: `This outing may only be used to exit between ${windowText} (campus time). Exit denied until the window opens.`,
-            outTime: windowStart,
-            inTime: windowEnd,
-            campusStatus: studentDoc.campusStatus,
-          });
-        }
       }
     }
 
     // ---- The movement itself: all of it, or none of it ----
+    let linkedPass = null;
     let resolvedPunctuality = 'N/A';
     let logId = null;
 
@@ -279,40 +202,70 @@ const createScanLog = async (req, res) => {
         });
       }
 
-      // Mutate the pass only after the flip has won the race. The status guard is new and
-      // the transaction is what makes it safe to act on: if a caretaker cancelled this
-      // pass in the moment between resolving it and here, zero rows update and the whole
-      // scan rolls back rather than marking a cancelled pass as Out.
-      if (direction === 'OUT' && linkedPass) {
-        const [used] = await modelFor(linkedPass.passType).update(
-          {
-            status: 'Out',
-            // Stamp actual gate-exit time so student dashboards show it without reading
-            // scan logs. Leave applications have no actual_out_time column.
-            ...(linkedPass.passType === 'Outing' ? { actualOutTime: new Date() } : {}),
-          },
-          { where: { id: linkedPass.doc.id, status: 'Approved' }, transaction: tx }
+      // Mutate passes only after the flip has won the race, so a concurrent scan at another
+      // gate (which gets the 409 above) can never create or consume anything.
+      if (direction === 'OUT' && exitLeave) {
+        // The status guard matters: if a caretaker cancelled this leave in the moment since
+        // it was resolved, zero rows update and the whole scan rolls back rather than marking
+        // a cancelled leave as Out.
+        const [used] = await LeaveApplication.update(
+          { status: 'Out' },
+          { where: { id: exitLeave.id, status: 'Approved' }, transaction: tx }
         );
-
         if (used === 0) {
           throw new ScanConflict({
             message:
-              'This pass changed while the scan was being processed — it is no longer approved. Nothing was logged; scan again.',
+              "This student's leave changed while the scan was being processed. Nothing was logged; scan again.",
             campusStatus: studentDoc.campusStatus,
           });
         }
-        linkedPass.doc.setDataValue('status', 'Out');
+        exitLeave.setDataValue('status', 'Out');
+        linkedPass = { passType: 'Leave', doc: exitLeave };
 
-        // Burn any conflicting approved pass in the other table so a student who departed
-        // on one pass cannot exit twice after returning.
-        const other = linkedPass.passType === 'Outing' ? LeaveApplication : OutingRequest;
-        await other.update(
-          {
-            status: 'Expired',
-            remarks: `Superseded by ${linkedPass.passType.toLowerCase()} departure`,
-          },
-          { where: { studentId: studentDoc.id, status: 'Approved' }, transaction: tx }
+        // Burn any leftover outing from the old request flow so it can't be used after the
+        // student returns from leave.
+        await OutingRequest.update(
+          { status: 'Expired', remarks: 'Superseded by leave departure' },
+          { where: { studentId: studentDoc.id, status: { [Op.in]: OPEN_OUTING_STATUSES } }, transaction: tx }
         );
+      } else if (direction === 'OUT') {
+        // The exit scan IS the outing: no request, no approval, no destination. Created
+        // inside the transaction, so the movement and its outing commit together or not at
+        // all.
+        const exitAt = new Date();
+
+        // one_active_outing_per_student allows a single live outing row, so anything still
+        // open from the old request flow is retired first, in the same transaction. Shown to
+        // the student as "Not used".
+        await OutingRequest.update(
+          { status: 'Expired', remarks: 'Replaced by gate exit' },
+          { where: { studentId: studentDoc.id, status: { [Op.in]: OPEN_OUTING_STATUSES } }, transaction: tx }
+        );
+        // Only scans write campusStatus, so a row still 'Out' for a student who was just
+        // 'Inside' should not exist. If old data left one behind, close it rather than fail
+        // this exit on the unique index.
+        await OutingRequest.update(
+          { status: 'Returned', remarks: 'Closed automatically: no entry scan was logged before the next exit' },
+          { where: { studentId: studentDoc.id, status: 'Out' }, transaction: tx }
+        );
+
+        const outing = await OutingRequest.create(
+          {
+            studentId: studentDoc.id,
+            // The column stays NOT NULL for the rows written before this change.
+            destination: '',
+            purpose: 'Outing',
+            outingType: outingTypeFor(studentDoc.gender),
+            // The real departure; there is no separate exit-by deadline any more.
+            outTime: exitAt,
+            actualOutTime: exitAt,
+            inTime: computeOutingReturnDeadline(exitAt),
+            status: 'Out',
+            autoApproved: true,
+          },
+          { transaction: tx }
+        );
+        linkedPass = { passType: 'Outing', doc: outing };
       } else if (direction === 'IN') {
         linkedPass = await resolveOutPass(studentDoc.id, { transaction: tx });
         if (linkedPass) {
@@ -337,9 +290,9 @@ const createScanLog = async (req, res) => {
           studentId: studentDoc.id,
           guardId: req.user._id,
           direction,
-          // Prefer the server-resolved pass; a caller-supplied id is kept for backward
-          // compatibility. scan_logs_one_pass CHECKs that at most one is set.
-          outingId: linkedPass?.passType === 'Outing' ? linkedPass.doc.id : outing || null,
+          // Always the server-resolved pass. A caller-supplied id is not accepted: with no
+          // pass behind it, it would break scan_logs_pass_type_matches and fail the scan.
+          outingId: linkedPass?.passType === 'Outing' ? linkedPass.doc.id : null,
           leaveId: linkedPass?.passType === 'Leave' ? linkedPass.doc.id : null,
           passType: linkedPass?.passType ?? null,
           punctuality: resolvedPunctuality,
@@ -355,9 +308,10 @@ const createScanLog = async (req, res) => {
       );
     });
 
-    // A gate scan flips a pass Approved->Out or Out->Returned, which moves the caretaker's
-    // "Out Now" counter. Reuse the outing channel both caretaker dashboards already listen
-    // on so the tile updates immediately instead of waiting for the 30s poll.
+    // A gate scan creates an outing, takes a leave Approved->Out, or closes a pass
+    // Out->Returned, any of which moves the caretaker's "Out Now" counter. Reuse the outing
+    // channel both caretaker dashboards already listen on so the tile updates immediately
+    // instead of waiting for the 30s poll.
     //
     // Deliberately AFTER the commit: broadcasting from inside the transaction would tell
     // dashboards to re-read state that no other connection can see yet, and that no other
@@ -402,33 +356,18 @@ const previewScan = async (req, res) => {
         : 'On-Time'
       : 'N/A';
 
-    const approvedPass = await resolveApprovedPass(studentDoc.id);
-
-    let exit;
-    if (!approvedPass) {
-      exit = { allowed: false, reason: 'no-approved', passType: null, pass: null };
-    } else {
-      const window = passWindow(approvedPass.passType, approvedPass.doc);
-      if (approvedPass.passType === 'Leave') {
-        if (isBeforeDeparture(window.windowStart)) {
-          exit = { allowed: false, reason: 'not-yet-valid', passType: 'Leave', pass: window };
-        } else if (isAfterLeaveCurfew(window.windowStart)) {
-          exit = { allowed: false, reason: 'expired', passType: 'Leave', pass: window };
-        } else {
-          exit = { allowed: true, reason: null, passType: 'Leave', pass: window };
-        }
-      } else {
-        if (isDeparturePassed(window.windowStart)) {
-          exit = { allowed: false, reason: 'expired', passType: 'Outing', pass: window };
-        } else if (
-          !isWithinDepartureWindow(studentDoc.gender, approvedPass.doc.outingType, new Date())
-        ) {
-          exit = { allowed: false, reason: 'not-yet-valid', passType: 'Outing', pass: window };
-        } else {
-          exit = { allowed: true, reason: null, passType: 'Outing', pass: window };
-        }
-      }
-    }
+    // Read-only mirror of the exit createScanLog would log: on the student's leave if it is
+    // valid right now, otherwise a new outing due back by the return deadline. Never refused.
+    const { usable: exitLeave } = await resolveExitLeave(studentDoc.id);
+    const exitAt = new Date();
+    const exit = exitLeave
+      ? { allowed: true, reason: null, passType: 'Leave', pass: passWindow('Leave', exitLeave) }
+      : {
+          allowed: true,
+          reason: null,
+          passType: 'Outing',
+          pass: { windowStart: exitAt, windowEnd: computeOutingReturnDeadline(exitAt) },
+        };
 
     res.json({
       student: {
