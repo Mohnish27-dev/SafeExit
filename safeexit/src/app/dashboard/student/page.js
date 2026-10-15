@@ -72,6 +72,7 @@ import {
   cropCoverScale,
   getCropSourceRect,
 } from "@/app/lib/profilePhotoCrop.mjs";
+import { OUTING_RETURN_LABEL } from "@/app/lib/outingRules.mjs";
 
 const formatClock = (value) =>
   new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
@@ -145,8 +146,8 @@ const outingAccent = (outing) => {
 
 const actions = [
   {
-    title: "Make An Outing",
-    description: "Request a café, meal, or market outing.",
+    title: "Go Out",
+    description: "No form needed — show your QR at the gate.",
     icon: Ticket,
     href: "/dashboard/student/generate-ticket",
     badge: "linear-gradient(145deg, #0f172a 0%, #4338ca 52%, #06b6d4 100%)",
@@ -156,7 +157,7 @@ const actions = [
   },
   {
     title: "My Outings",
-    description: "Track approvals, returns, and gate status.",
+    description: "Your gate exits, returns, and status.",
     icon: ClipboardList,
     href: "/dashboard/student/my-outings",
     badge: "linear-gradient(145deg, #1e40af 0%, #38bdf8 100%)",
@@ -199,7 +200,7 @@ const actions = [
 const navItems = [
   { label: "Home", icon: Home, href: "/dashboard/student", active: true },
   { label: "Outings", icon: ClipboardList, href: "/dashboard/student/my-outings" },
-  { label: "New Pass", icon: Ticket, href: "/dashboard/student/generate-ticket" },
+  { label: "Go Out", icon: Ticket, href: "/dashboard/student/generate-ticket" },
   { label: "SOS", icon: Siren, href: "/dashboard/student/sos" },
   { label: "Leave", icon: CalendarDays, href: "/dashboard/student/leave-application" },
 ];
@@ -523,7 +524,8 @@ export default function StudentDashboardPage() {
         if (cancelled) return;
         const mapped = (data || []).map((o) => ({
           id: o._id,
-          place: o.destination,
+          // Gate-created outings carry no destination; only old requests do.
+          place: o.destination || "Outing",
           purpose: o.purpose,
           status: o.status || "Pending",
           isOverdue: Boolean(o.isOverdue),
@@ -625,9 +627,7 @@ export default function StudentDashboardPage() {
   );
 
   const stats = useMemo(() => {
-    const approvedCount = outings.filter((o) =>
-      ["Approved", "Out", "Returned"].includes(o.status)
-    ).length;
+    const returnedCount = outings.filter((o) => o.status === "Returned").length;
     const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : "0%");
     return [
       {
@@ -641,10 +641,10 @@ export default function StudentDashboardPage() {
         glow: "rgba(6,182,212,0.45)",
       },
       {
-        key: "approved",
-        label: "Approved",
-        value: String(approvedCount),
-        width: pct(approvedCount, outings.length || 1),
+        key: "returned",
+        label: "Completed",
+        value: String(returnedCount),
+        width: pct(returnedCount, outings.length || 1),
         icon: CheckCircle2,
         fill: "linear-gradient(90deg, #059669, #10b981, #34d399)",
         chip: "linear-gradient(135deg, #047857, #10b981)",
@@ -666,11 +666,17 @@ export default function StudentDashboardPage() {
   const timeline = useMemo(() => {
     if (!latestApproved) return [];
     return [
-      {
-        title: "Outing approved",
-        meta: `${latestApproved.place} · exit by ${formatClock(latestApproved.outTime)}`,
-        tone: "bg-emerald-100 text-emerald-700",
-      },
+      latestApproved.status === "Out"
+        ? {
+            title: "Went out",
+            meta: `Left at ${formatClock(latestApproved.actualOutTime || latestApproved.outTime)}`,
+            tone: "bg-emerald-100 text-emerald-700",
+          }
+        : {
+            title: "Outing approved",
+            meta: `${latestApproved.place} · exit by ${formatClock(latestApproved.outTime)}`,
+            tone: "bg-emerald-100 text-emerald-700",
+          },
       {
         title: "Return due",
         meta: `By ${formatClock(latestApproved.inTime)}`,
@@ -1145,7 +1151,7 @@ export default function StudentDashboardPage() {
                         : latestApproved.status === "Out"
                           ? `You're outside campus until ${formatClock(latestApproved.inTime)}. Show this same permanent QR at the main gate to log your entry when you return.`
                         : `Your pass is approved. Show your permanent QR at the main gate to log your exit; return by ${formatClock(latestApproved.inTime)}.`
-                      : "No active pass right now. Generate an outing ticket or send an alert from the quick actions below."}
+                      : `No outing in progress. To go out, just show your QR at the main gate — no request needed. Be back by ${OUTING_RETURN_LABEL}.`}
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-2 sm:mt-4 sm:gap-2.5">
                     <span
@@ -1162,7 +1168,7 @@ export default function StudentDashboardPage() {
                           overdueOuting ? "bg-rose-500" : latestApproved ? "bg-emerald-500" : "bg-amber-500"
                         }`}
                       />
-                      {overdueOuting ? "Return overdue" : latestApproved ? "Pass active" : "On campus"}
+                      {overdueOuting ? "Return overdue" : latestApproved ? (latestApproved.status === "Out" ? "Out now" : "Pass active") : "On campus"}
                     </span>
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-600">
                       <TrendingUp className="h-3.5 w-3.5 text-indigo-500" />
@@ -1477,7 +1483,7 @@ export default function StudentDashboardPage() {
                       </span>
                     </div>
                     <p className="sd-card-title text-slate-700 text-[0.95rem]">No outings yet</p>
-                    <p className="sd-micro mt-1 max-w-xs mx-auto">Generate an outing ticket to get started.</p>
+                    <p className="sd-micro mt-1 max-w-xs mx-auto">Show your QR at the main gate to go out.</p>
                   </div>
                 ) : (
                   outings.slice(0, 3).map((outing, i) => {
@@ -1553,7 +1559,7 @@ export default function StudentDashboardPage() {
                     </div>
                     <p className="sd-card-title text-slate-700 text-[0.95rem]">Nothing in motion</p>
                     <p className="sd-micro mt-1 max-w-xs mx-auto">
-                      Your movement updates appear here once a pass is approved.
+                      Your movement updates appear here once the gate logs your exit.
                     </p>
                   </div>
                 ) : (

@@ -162,13 +162,12 @@ export default function AdminDashboardPage() {
   const s = overview?.students || {};
   const stats = [
     { icon: UserCheck, label: "Inside Campus", value: s.inside ?? "—", note: "Students currently in", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-    { icon: UserRound, label: "Outside Campus", value: s.outside ?? "—", note: "On approved outings", tone: "border-amber-200 bg-amber-50 text-amber-700" },
+    { icon: UserRound, label: "Outside Campus", value: s.outside ?? "—", note: "On an outing or leave", tone: "border-amber-200 bg-amber-50 text-amber-700" },
     { icon: Clock3, label: "Overdue", value: s.overdue ?? "—", note: "Not returned in time", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: Siren, label: "Active SOS", value: overview?.activeSOS ?? "—", note: "Awaiting response", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: ShieldCheck, label: "Guards On Duty", value: overview ? `${overview.guards.onDuty}/${overview.guards.total}` : "—", note: "Active security staff", tone: "border-indigo-200 bg-indigo-50 text-indigo-700" },
-    { icon: CalendarDays, label: "Pending Outings", value: overview?.pendingOutings ?? "—", note: "Awaiting caretaker approval", tone: "border-sky-200 bg-sky-50 text-sky-700" },
     // Counts OutingRequest.status === 'Out' (pass-level), distinct from campusStatus 'Outside'.
-    { icon: DoorOpen, label: "Gate: Out", value: overview?.studentsOut ?? "—", note: "Outing passes currently 'Out'", tone: "border-cyan-200 bg-cyan-50 text-cyan-700" },
+    { icon: DoorOpen, label: "Gate: Out", value: overview?.studentsOut ?? "—", note: "Outings currently in progress", tone: "border-cyan-200 bg-cyan-50 text-cyan-700" },
     { icon: Building2, label: "Total Students", value: s.total ?? "—", note: "Registered on platform", tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];
 

@@ -1,49 +1,19 @@
+// Outings have no request or approval step any more: the gate's exit scan creates the
+// outing (controllers/scanController.js). What is left here is read-only — the student's
+// history, the overdue lists, staff history of outings decided under the old flow — plus
+// cancel, so a student can clear a request left over from before the change.
 const { Op } = require('sequelize');
-const { OutingRequest, LeaveApplication, DelayNotice } = require('../models');
-const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
-const { expireStaleRequests, expireStaleApplications } = require('../utils/passExpiry');
-const { notifyCaretakers, notifyWardensForScope } = require('../utils/pushService');
-const { saveWardenDecision } = require('../utils/claimForwarded');
-const {
-  isDeparturePassed,
-  resolveOutingPolicy,
-  normalizeOutingType,
-  computeReturnDeadline,
-  computeExitDeadline,
-  getOutingRequestViolation,
-  isReturnLate,
-} = require('../utils/outingRules');
+const { OutingRequest, DelayNotice } = require('../models');
+const { expireStaleRequests } = require('../utils/passExpiry');
+const { isReturnLate } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { estimatedRowCount } = require('../utils/rowCount');
-const {
-  passScope,
-  mergeWhere,
-  forwardedQueueScope,
-  requestInScope,
-  canReadSignatures,
-  resolveTargetCaretaker,
-  resolveWardensForHostel,
-} = require('../utils/hostelScope');
-const {
-  fetchOwnSignature,
-  sendSignatureRequired,
-  signaturePresence,
-  withSignatureFlags,
-} = require('../utils/signature');
+const { passScope, mergeWhere, canReadSignatures } = require('../utils/hostelScope');
+const { signaturePresence, withSignatureFlags } = require('../utils/signature');
 
-const clockLabel = (minutes) => {
-  const h24 = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  const period = h24 < 12 ? 'AM' : 'PM';
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
-};
-
-const DESTINATION_MAX_LENGTH = 120;
-
-const QUEUE_STUDENT_FIELDS = ['id', 'name', 'studentId', 'roomNumber', 'hostelName'];
-const WIDE_STUDENT_FIELDS = [...QUEUE_STUDENT_FIELDS, 'department', 'year'];
+const HISTORY_STUDENT_FIELDS = ['id', 'name', 'studentId', 'roomNumber', 'hostelName'];
+const WIDE_STUDENT_FIELDS = [...HISTORY_STUDENT_FIELDS, 'department', 'year'];
 const SIGNATURE_ATTRIBUTES = [
   'studentSignature', 'studentSignatureMime',
   'caretakerSignature', 'caretakerSignatureMime',
@@ -87,211 +57,16 @@ const withDecisionMeta = (doc) => {
   return obj;
 };
 
-// 'Forwarded' counts as live too — a request sitting with the warden must block a second
-// one just like a Pending one does, or a student could stack approvals.
-// Sourced from config/passStatuses.js because the partial unique index
-// one_active_outing_per_student filters on the same list; if the two drift, the index
-// enforces a different rule than this check and the double-submit race reopens.
-const ACTIVE_STATUSES = ACTIVE_PASS_STATUSES;
-
-// The database's name for that index. A unique violation carrying it is the lost
-// double-submit race, not a bug — see the catch in createOutingRequest.
-const ONE_ACTIVE_OUTING_CONSTRAINT = 'one_active_outing_per_student';
-
-const isOneActivePassViolation = (error, constraint) =>
-  error?.name === 'SequelizeUniqueConstraintError' &&
-  (error.parent?.constraint === constraint || error.parent?.constraint === undefined);
-
-// Shared by the pre-check below and the unique-violation branch in the catch, so a student
-// who loses the insert race sees exactly the message they'd have seen by arriving a moment
-// later.
-const blockingOutingMessage = (status) =>
-  status === 'Out'
-    ? 'You already have an outing in progress. Log your entry at the gate before creating a new request.'
-    : status === 'Forwarded'
-    ? 'Your outing request is with the warden for a decision. Wait for the outcome or cancel it before creating a new one.'
-    : `You already have a ${String(status).toLowerCase()} outing request. Complete that journey or cancel it before creating a new one.`;
-
-const blockingLeaveForOutingMessage = (status) =>
-  status === 'Out'
-    ? 'You are currently on leave outside campus. Log your entry at the gate before creating an outing request.'
-    : status === 'Forwarded'
-    ? 'Your leave application is with the warden for a decision. Wait for the outcome or cancel it before requesting an outing.'
-    : `You already have an active leave application (${String(status).toLowerCase()}). Complete or cancel that leave before requesting an outing.`;
-
-
 // POST /api/outing — private (Student)
-const createOutingRequest = async (req, res) => {
-  const { destination, purpose, outingType, targetCaretakerId } = req.body;
-
-  try {
-    // Stamped from the student's saved profile signature — never accepted from the body,
-    // so no client can substitute someone else's signature.
-    //
-    // KEEP THIS FIRST: the frontend re-submits automatically after the student captures a
-    // signature in response to this 428, which is only safe while the rejection happens
-    // before any row is created or state is touched.
-    const studentSignature = await fetchOwnSignature(req.user);
-    if (!studentSignature) {
-      return sendSignatureRequired(
-        res,
-        'Add your signature to your profile before submitting a request.'
-      );
-    }
-
-    // Destination is the one thing the student fills in, so it is the one thing checked
-    // here: a blank one would reach a NOT NULL column as '' and print an empty pass.
-    const cleanDestination = typeof destination === 'string' ? destination.trim() : '';
-    if (!cleanDestination) {
-      return res.status(400).json({ message: 'Destination is required.' });
-    }
-    if (cleanDestination.length > DESTINATION_MAX_LENGTH) {
-      return res.status(400).json({
-        message: `Destination must be at most ${DESTINATION_MAX_LENGTH} characters.`,
-      });
-    }
-    const cleanPurpose = (typeof purpose === 'string' && purpose.trim()) || 'Outing';
-
-    // Must be 'Inside' to request — prevents stacking passes while off-campus.
-    if (req.user.campusStatus && req.user.campusStatus !== 'Inside') {
-      return res.status(409).json({
-        message:
-          'You are currently marked outside campus. Log your entry at the gate before creating a new outing request.',
-        campusStatus: req.user.campusStatus,
-      });
-    }
-
-    const activeRequests = await OutingRequest.findAll({
-      where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_STATUSES } },
-    });
-
-    await expireStaleRequests(activeRequests);
-    const blocking = activeRequests.find((r) => ACTIVE_STATUSES.includes(r.status));
-    if (blocking) {
-      return res.status(409).json({
-        message: blockingOutingMessage(blocking.status),
-        status: blocking.status,
-        activeRequestId: blocking.id,
-      });
-    }
-
-    const activeLeaves = await LeaveApplication.findAll({
-      where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_STATUSES } },
-    });
-    await expireStaleApplications(activeLeaves);
-    const blockingLeave = activeLeaves.find((l) => ACTIVE_STATUSES.includes(l.status));
-    if (blockingLeave) {
-      return res.status(409).json({
-        message: blockingLeaveForOutingMessage(blockingLeave.status),
-        status: blockingLeave.status,
-        activeLeaveId: blockingLeave.id,
-      });
-    }
-
-    // Gender comes from the authenticated user row, never the body.
-    const gender = req.user.gender;
-    const resolvedType = normalizeOutingType(gender, outingType);
-    const policy = resolveOutingPolicy(gender, resolvedType);
-
-    // The student no longer picks a departure time — their departure is the gate scan
-    // (actualOutTime). A client that still sends outTime is ignored, not trusted. A pass is
-    // for the day it is requested, so once today's exit window has closed there is nothing
-    // left to request.
-    const requestedAt = new Date();
-    if (getOutingRequestViolation(gender, resolvedType, requestedAt) === 'EXIT_WINDOW_CLOSED') {
-      return res.status(400).json({
-        message: `Outings can only be taken between ${clockLabel(
-          policy.departStartMinutes
-        )} and ${clockLabel(policy.departEndMinutes)} (campus time). Today's window has closed — request again from ${clockLabel(
-          policy.departStartMinutes
-        )} tomorrow.`,
-        window: {
-          start: clockLabel(policy.departStartMinutes),
-          end: clockLabel(policy.departEndMinutes),
-        },
-      });
-    }
-
-    // Both ends are fixed by college rule, never student-chosen. outTime is the EXIT-BY
-    // deadline (close of today's window): the pass works at the gate any time before it and
-    // lapses unused after it. inTime is the return deadline (8:00 PM, or 5:30 PM for market).
-    const outTime = computeExitDeadline(gender, resolvedType, requestedAt);
-    const inTime = computeReturnDeadline(gender, resolvedType, requestedAt);
-
-    // Male general and female nearby outings are auto-approved (no caretaker step).
-    const autoApproved = !policy.requiresCaretaker;
-
-    // Only caretaker-gated outings carry a routed target. Resolve it (default = own-hostel
-    // caretaker) and enforce the same-gender fence server-side before storing.
-    let targetCaretaker = null;
-    if (!autoApproved) {
-      try {
-        targetCaretaker = await resolveTargetCaretaker(req.user, targetCaretakerId);
-      } catch (err) {
-        return res.status(err.statusCode || 400).json({ message: err.message });
-      }
-    }
-
-    const outingRequest = await OutingRequest.create({
-      studentId: req.user._id,
-      destination: cleanDestination,
-      purpose: cleanPurpose,
-      outingType: resolvedType,
-      outTime,
-      inTime,
-      status: autoApproved ? 'Approved' : 'Pending',
-      autoApproved,
-      // The setter decodes this data URL into bytea plus its mime type.
-      studentSignature,
-      targetCaretaker: targetCaretaker ? targetCaretaker.id : null,
-    });
-
-    sseHub.broadcast('outing:changed', {
-      reason: 'created',
-      id: outingRequest.id,
-      status: outingRequest.status,
-    });
-
-    if (!autoApproved) {
-      // Route to the chosen caretaker when resolved; else fall back to hostel routing.
-      const scope = targetCaretaker
-        ? { caretakerId: targetCaretaker.id }
-        : { hostelName: req.user.hostelName, gender };
-      notifyCaretakers(scope, {
-        title: '🔔 New Outing Request',
-        body: `${req.user.name} has requested a ${resolvedType} outing to ${cleanDestination}.`,
-        url: '/dashboard/caretaker?view=requests',
-      });
-    }
-
-    res.status(201).json(outingRequest);
-  } catch (error) {
-    // Lost the insert race. The pre-check above found nothing blocking, but a concurrent
-    // POST from the same student committed first and one_active_outing_per_student — the
-    // partial unique index filtered to ACTIVE_STATUSES — rejected this one. That is not a
-    // server error; it is the same "you already have a live request" the pre-check
-    // reports, so re-read the winner and answer identically.
-    //
-    // The Mongo version matched error.code === 11000. Postgres raises a named
-    // SequelizeUniqueConstraintError, so the check can now assert WHICH constraint fired
-    // rather than treating every duplicate-key error as this one.
-    if (isOneActivePassViolation(error, ONE_ACTIVE_OUTING_CONSTRAINT)) {
-      const blocking = await OutingRequest.findOne({
-        where: { studentId: req.user._id, status: { [Op.in]: ACTIVE_STATUSES } },
-        attributes: ['id', 'status'],
-      });
-
-      return res.status(409).json({
-        message: blocking
-          ? blockingOutingMessage(blocking.status)
-          : 'You already have a live outing request. Complete that journey or cancel it before creating a new one.',
-        status: blocking ? blocking.status : undefined,
-        activeRequestId: blocking ? blocking.id : undefined,
-      });
-    }
-    res.status(500).json({ message: error.message });
-  }
-};
+//
+// Retired. There is nothing to request: the student shows their QR at the gate and the exit
+// scan records the outing. Kept as a clear 410 rather than a 404 so an app still cached on a
+// phone shows the student what to do instead of a generic failure.
+const createOutingRequest = (req, res) =>
+  res.status(410).json({
+    message:
+      'Outings no longer need a request. Just show your QR code to the guard at the main gate.',
+  });
 
 // GET /api/outing/myrequests — private (Student)
 const getMyOutingRequests = async (req, res) => {
@@ -403,47 +178,6 @@ const getAllOutingRequests = async (req, res) => {
   }
 };
 
-// GET /api/outing/pending — private (Caretaker)
-const getPendingRequests = async (req, res) => {
-  try {
-    const { limit, skip } = readPageParams(req);
-    const scope = passScope(OutingRequest, req.user, QUEUE_STUDENT_FIELDS);
-    const where = mergeWhere(scope.where, { status: 'Pending' });
-
-    const requests = await OutingRequest.findAll({
-      where,
-      include: scope.include,
-      order: [['createdAt', 'ASC']],
-      offset: skip,
-      limit,
-      subQuery: false,
-    });
-
-    await expireStaleRequests(requests);
-    const stillPending = requests.filter((r) => r.status === 'Pending');
-
-    // The approval modal shows the student's signature before the caretaker signs off; the
-    // flag tells it whether there is one to fetch.
-    const presence = await signaturePresence(
-      OutingRequest,
-      stillPending.map((r) => r.id),
-      ['studentSignature']
-    );
-
-    // `fetched` is the window, not stillPending.length — expiry above can drop rows, and
-    // a short *result* from a full window must not read as "nothing more to fetch".
-    return sendPage(res, stillPending.map((r) => withSignatureFlags(r.toJSON(), presence)), {
-      limit,
-      skip,
-      fetched: requests.length,
-      label: 'outing/pending',
-      count: () => OutingRequest.count({ where, include: scope.include, distinct: true }),
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // GET /api/outing/overdue — private (staff)
 //
 // Deliberately *not* paginated. Its filter is `status: 'Out'`, so the result is bounded by
@@ -500,209 +234,13 @@ const getOverdueOutings = async (req, res) => {
   }
 };
 
-// PATCH /api/outing/:id/status — private (Caretaker)
-const updateRequestStatus = async (req, res) => {
-  const { status, remarks } = req.body;
-
-  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a caretaker.
-  if (!['Approved', 'Rejected'].includes(status)) {
-    return res.status(400).json({
-      message: 'Status can only be set to Approved or Rejected.',
-    });
-  }
-
-  // Approving mints a pass, so it carries the caretaker's saved signature. (Rejection
-  // needs none.) Inside the try: this is a DB read now, so a failure belongs on the
-  // same 500 path as every other query in this handler.
-  try {
-    const caretakerSignature =
-      status === 'Approved' ? await fetchOwnSignature(req.user) : null;
-    if (status === 'Approved' && !caretakerSignature) {
-      return sendSignatureRequired(
-        res,
-        'Add your signature in your profile before approving requests.'
-      );
-    }
-
-    const request = await OutingRequest.findByPk(req.params.id, {
-      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
-    });
-
-    if (request) {
-      // Server-side scope re-check: the caretaker must be the routed target (or, for
-      // legacy untargeted requests, own this student's hostel).
-      if (!requestInScope(req.user, request, request.student)) {
-        return res.status(403).json({
-          message: 'This request is not routed to you.',
-        });
-      }
-
-      // Only a still-Pending request can be decided; live/terminal passes can't be flipped back.
-      if (request.status !== 'Pending') {
-        return res.status(409).json({
-          message: `This request has already been ${request.status.toLowerCase()} and can no longer be changed.`,
-          status: request.status,
-        });
-      }
-
-      // Approving after today's exit window closed would mint a pass that can never be used.
-      if (status === 'Approved' && isDeparturePassed(request.outTime)) {
-        request.status = 'Expired';
-        await request.save();
-
-        sseHub.broadcast('outing:changed', {
-          reason: 'expired',
-          id: request.id,
-          status: 'Expired',
-        });
-
-        return res.status(409).json({
-          message:
-            "This request lapsed unused — today's exit window for this outing has closed. It can no longer be approved.",
-          status: 'Expired',
-        });
-      }
-
-      request.status = status;
-      if (remarks) request.remarks = remarks;
-
-      if (['Approved', 'Rejected'].includes(status)) {
-         request.approvedBy = req.user._id;
-         // Immutable audit verdict — `status` moves on from here (Out/Returned/Cancelled/
-         // Expired), `decision` does not, so history stays complete.
-         request.decision = status;
-         request.decidedAt = new Date();
-         request.decidedByRole = 'Caretaker';
-      }
-
-      if (status === 'Approved') {
-        request.caretakerSignature = caretakerSignature;
-      }
-
-      await request.save();
-
-      sseHub.broadcast('outing:changed', {
-        reason: 'status',
-        id: request.id,
-        status: request.status,
-      });
-
-      res.json(request);
-    } else {
-      res.status(404).json({ message: 'Request not found' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// PATCH /api/outing/:id/forward — private (Caretaker)
-const forwardOutingRequest = async (req, res) => {
-  const { note } = req.body;
-
-  try {
-    const request = await OutingRequest.findByPk(req.params.id, {
-      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName', 'name'] }],
-    });
-
-    if (!request) {
-      return res.status(404).json({ message: 'Request not found' });
-    }
-
-    if (!requestInScope(req.user, request, request.student)) {
-      return res.status(403).json({ message: 'This request is not routed to you.' });
-    }
-
-    if (request.status !== 'Pending') {
-      return res.status(409).json({
-        message: `Only a pending request can be forwarded — this one is already ${request.status.toLowerCase()}.`,
-        status: request.status,
-      });
-    }
-
-    // Don't forward a pass whose exit window already closed; lapse it instead.
-    if (isDeparturePassed(request.outTime)) {
-      request.status = 'Expired';
-      await request.save();
-      sseHub.broadcast('outing:changed', { reason: 'expired', id: request.id, status: 'Expired' });
-      return res.status(409).json({
-        message: "This request lapsed unused — today's exit window for this outing has closed. It can no longer be forwarded.",
-        status: 'Expired',
-      });
-    }
-
-    // Every warden of the student's hostel; any one of them may decide it.
-    const wardens = await resolveWardensForHostel(request.student.hostelName);
-    if (wardens.length === 0) {
-      return res.status(409).json({
-        message:
-          'No warden is assigned to this hostel yet, so this request can\'t be forwarded. Decide it yourself or ask an admin to assign a warden.',
-      });
-    }
-
-    request.status = 'Forwarded';
-    // Left empty on purpose: it goes to the hostel's wardens, not one of them. The
-    // warden who decides it is recorded here at decision time.
-    request.forwardedTo = null;
-    request.forwardedBy = req.user._id;
-    request.forwardedNote = note || null;
-    request.forwardedAt = new Date();
-
-    await request.save();
-
-    sseHub.broadcast('outing:changed', { reason: 'forwarded', id: request.id, status: 'Forwarded' });
-
-    notifyWardensForScope({ hostelName: request.student.hostelName }, {
-      title: '⬆️ Outing Forwarded to Wardens',
-      body: `${req.user.name} forwarded ${request.student.name}'s outing request for your decision.`,
-      url: '/dashboard/warden?view=requests',
-    });
-
-    res.json(request);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// GET /api/outing/forwarded — private (Warden); the warden's action queue.
-const getForwardedRequests = async (req, res) => {
-  try {
-    const { limit, skip } = readPageParams(req);
-    const { where, include: scopeInclude } = forwardedQueueScope(OutingRequest, req.user, QUEUE_STUDENT_FIELDS);
-    const requests = await OutingRequest.findAll({
-      where,
-      include: [
-        ...scopeInclude,
-        { association: 'forwardedByUser', attributes: ['id', 'name'] },
-      ],
-      order: [['forwardedAt', 'ASC']],
-      offset: skip,
-      limit,
-      subQuery: false,
-    });
-
-    await expireStaleRequests(requests);
-    const stillForwarded = requests.filter((r) => r.status === 'Forwarded');
-
-    return sendPage(res, stillForwarded, {
-      limit,
-      skip,
-      fetched: requests.length,
-      label: 'outing/forwarded',
-      count: () => OutingRequest.count({ where, include: scopeInclude, distinct: true }),
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // GET /api/outing/history — private (Caretaker); every decided request in their scope,
 // whoever signed it, plus anything still sitting with the warden. Keyed off the frozen
 // `decision`, not `status`, so a later cancel/expire/gate scan can't erase the record.
 const getCaretakerRequestHistory = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const scope = passScope(OutingRequest, req.user, QUEUE_STUDENT_FIELDS);
+    const scope = passScope(OutingRequest, req.user, HISTORY_STUDENT_FIELDS);
     const where = mergeWhere(scope.where, {
       [Op.or]: [DECIDED_FILTER, { status: 'Forwarded' }],
     });
@@ -737,7 +275,7 @@ const getCaretakerRequestHistory = async (req, res) => {
 const getWardenRequestHistory = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const scope = passScope(OutingRequest, req.user, QUEUE_STUDENT_FIELDS);
+    const scope = passScope(OutingRequest, req.user, HISTORY_STUDENT_FIELDS);
     const where = mergeWhere(scope.where, DECIDED_FILTER);
 
     const requests = await OutingRequest.findAll({
@@ -764,98 +302,6 @@ const getWardenRequestHistory = async (req, res) => {
   }
 };
 
-// PATCH /api/outing/:id/warden-status — private (Warden). Final decision on a forwarded
-// request. Approve (with the warden's signature) -> Approved and the pass is live;
-// reject -> Rejected.
-const updateWardenRequestStatus = async (req, res) => {
-  const { status, remarks } = req.body;
-
-  if (!['Approved', 'Rejected'].includes(status)) {
-    return res.status(400).json({ message: 'Status can only be set to Approved or Rejected.' });
-  }
-
-  // See updateRequestStatus: the signature read moved inside the try with the queries.
-  try {
-    const wardenSignature =
-      status === 'Approved' ? await fetchOwnSignature(req.user) : null;
-    if (status === 'Approved' && !wardenSignature) {
-      return sendSignatureRequired(
-        res,
-        'Add your signature in your profile before approving requests.'
-      );
-    }
-
-    const request = await OutingRequest.findByPk(req.params.id, {
-      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
-    });
-
-    if (!request) {
-      return res.status(404).json({ message: 'Request not found' });
-    }
-
-    if (!requestInScope(req.user, request, request.student)) {
-      return res.status(403).json({ message: 'This request is not from a student of your hostel.' });
-    }
-
-    if (request.status !== 'Forwarded') {
-      return res.status(409).json({
-        message: `This request is ${request.status.toLowerCase()} and can no longer be decided.`,
-        status: request.status,
-      });
-    }
-
-    // Approving after today's exit window closed would mint a pass that can never be used.
-    if (status === 'Approved' && isDeparturePassed(request.outTime)) {
-      request.status = 'Expired';
-      await request.save();
-      sseHub.broadcast('outing:changed', { reason: 'expired', id: request.id, status: 'Expired' });
-      return res.status(409).json({
-        message: "This request lapsed unused — today's exit window for this outing has closed. It can no longer be approved.",
-        status: 'Expired',
-      });
-    }
-
-    request.status = status;
-    if (remarks) request.remarks = remarks;
-    request.approvedBy = req.user._id;
-    // Immutable audit verdict; see the note in updateRequestStatus.
-    request.decision = status;
-    request.decidedAt = new Date();
-    request.decidedByRole = 'Warden';
-    request.forwardedTo = req.user._id; // the warden who actually decided it
-    if (status === 'Approved') {
-      request.wardenSignature = wardenSignature;
-      // Mirror into caretakerSignature too: the student's my-outings view and the gate
-      // scan both read caretakerSignature as "the signed pass", so a warden-approved
-      // pass must carry it there to display and validate like any other.
-      request.caretakerSignature = wardenSignature;
-    }
-
-    if (!(await saveWardenDecision(OutingRequest, request))) {
-      return res.status(409).json({
-        message: 'Another warden of this hostel has already decided this request.',
-      });
-    }
-
-    sseHub.broadcast('outing:changed', { reason: 'warden-status', id: request.id, status: request.status });
-
-    if (request.forwardedBy) {
-      notifyCaretakers(
-        { caretakerId: request.forwardedBy },
-        {
-          title: status === 'Approved' ? '✅ Warden Approved Outing' : '❌ Warden Rejected Outing',
-          body: `The warden ${status.toLowerCase()} an outing request you forwarded.`,
-          url: '/dashboard/caretaker?view=requests',
-        }
-      );
-    }
-
-    res.json(request);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // PATCH /api/outing/:id/cancel — private (Student)
 const cancelOutingRequest = async (req, res) => {
   try {
@@ -869,11 +315,8 @@ const cancelOutingRequest = async (req, res) => {
       return res.status(403).json({ message: 'You can only cancel your own outing requests.' });
     }
 
-    // Once scanned out, the trip is live and must close via the gate. Forwarded is
-    // cancellable — it's still undecided, and since it now blocks new requests the
-    // student needs a way out while the warden holds it. The warden's decision endpoint
-    // re-checks for 'Forwarded', so a cancel won during the race turns their action
-    // into a 409.
+    // Only requests left over from the old flow can still be open. Once scanned out, the
+    // trip is live and must close via the gate.
     if (!['Pending', 'Approved', 'Forwarded'].includes(request.status)) {
       return res.status(409).json({
         message: `Cannot cancel a request that is already ${request.status.toLowerCase()}.`,
@@ -906,14 +349,9 @@ module.exports = {
   getMyOutingRequests,
   getOutingSignatures,
   getAllOutingRequests,
-  getPendingRequests,
   getOverdueOutings,
-  updateRequestStatus,
-  forwardOutingRequest,
-  getForwardedRequests,
   getCaretakerRequestHistory,
   getWardenRequestHistory,
-  updateWardenRequestStatus,
   cancelOutingRequest,
   streamOutingEvents
 };

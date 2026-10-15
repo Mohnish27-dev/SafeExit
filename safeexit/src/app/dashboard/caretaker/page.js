@@ -6,7 +6,6 @@ import {
   BellOff,
   CalendarDays,
   Check,
-  ClipboardList,
   Clock,
   Home,
   MessageSquare,
@@ -19,7 +18,6 @@ import {
   ShieldAlert,
   Siren,
   Sparkles,
-  Users,
   Wifi,
   Armchair,
   ScrollText,
@@ -27,8 +25,6 @@ import {
 } from "lucide-react";
 import ProfileView from "./components/ProfileView";
 import MovementLogsView from "./components/MovementLogsView";
-import AutoApprovedView from "./components/AutoApprovedView";
-import RequestsView from "./components/RequestsView";
 import SOSAlertsView from "./components/SOSAlertsView";
 import OverdueStudentsView from "./components/OverdueStudentsView";
 import DelayNoticesView from "./components/DelayNoticesView";
@@ -62,27 +58,8 @@ const initials = (name = "") =>
     .join("")
     .toUpperCase() || "?";
 
-const formatTime = (value) =>
-  value
-    ? new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
-    : "—";
-
 // managedGender maps to the hostel the caretaker oversees.
 const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
-
-const mapPending = (o) => ({
-  id: o._id,
-  name: o.student?.name || "Unknown Student",
-  branch: [o.student?.year, o.student?.department].filter(Boolean).join(", ") || "—",
-  roll: o.student?.studentId || "",
-  destination: o.destination || "",
-  outingType: o.outingType || "",
-  // outTime is the exit-by deadline (close of the day's exit window), not a departure.
-  out: o.actualOutTime ? formatTime(o.actualOutTime) : `by ${formatTime(o.outTime)}`,
-  return: formatTime(o.inTime),
-  hasStudentSignature: Boolean(o.hasStudentSignature),
-  initials: initials(o.student?.name),
-});
 
 const mapLeavePending = (l) => ({
   id: l._id,
@@ -208,12 +185,6 @@ export default function CaretakerDashboardPage() {
   const formattedDate = now ? now.toLocaleDateString(dateLocale, { weekday: "short", day: "2-digit", month: "short" }) : tc("loading");
   const formattedTime = now ? now.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : tc("loading");
 
-  const [pending, setPending] = useState([]);
-  const [approved, setApproved] = useState([]);
-
-  const [loadingRequests, setLoadingRequests] = useState(true);
-  const [requestsError, setRequestsError] = useState("");
-
   const [leavePending, setLeavePending] = useState([]);
   const [loadingLeave, setLoadingLeave] = useState(true);
   const [leaveError, setLeaveError] = useState("");
@@ -311,19 +282,6 @@ export default function CaretakerDashboardPage() {
     });
   }, [loadSosCount]);
 
-  const loadRequests = useCallback(async () => {
-    setLoadingRequests(true);
-    setRequestsError("");
-    try {
-      const data = await apiFetch("/outing/pending");
-      setPending(data.map(mapPending));
-    } catch (err) {
-      setRequestsError(err.message || t("couldNotLoadRequests"));
-    } finally {
-      setLoadingRequests(false);
-    }
-  }, [t]);
-
   const loadLeaveApplications = useCallback(async () => {
     setLoadingLeave(true);
     setLeaveError("");
@@ -350,26 +308,20 @@ export default function CaretakerDashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadRequests();
     loadLeaveApplications();
     loadLeaveHistory();
-  }, [loadRequests, loadLeaveApplications, loadLeaveHistory]);
+  }, [loadLeaveApplications, loadLeaveHistory]);
 
+  // Outings need no approval — the gate scan creates them — so the outing channel only
+  // moves the overdue badge and the "Out Now" counter.
   useEffect(() => {
     return subscribeToStaffEvents({
       "outing:changed": () => {
-        loadRequests();
         loadOverdueCount();
         loadLiveStats();
       },
     });
-  }, [loadRequests, loadOverdueCount, loadLiveStats]);
-
-  // Poll as safety net in case the SSE connection is silently dropped.
-  useEffect(() => {
-    const interval = setInterval(loadRequests, 30000);
-    return () => clearInterval(interval);
-  }, [loadRequests]);
+  }, [loadOverdueCount, loadLiveStats]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -388,29 +340,21 @@ export default function CaretakerDashboardPage() {
     return () => clearInterval(interval);
   }, [loadLeaveApplications, loadLeaveHistory]);
 
-  function openPanel(key) {
-    setActivePanel(key);
-  }
-
-  const [activePanel, setActivePanel] = useState(null);
   const [view, setView] = useState("home");
 
   // Push-notification deep link (?view=sos etc.); param consumed once and stripped.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["sos", "overdue", "delays", "leave", "requests", "approved", "profile"].includes(target)) {
+    if (target && ["sos", "overdue", "delays", "leave", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
 
-  function closePanel() {
-    setActivePanel(null);
-  }
-
   // Approving mints a signed pass, so it routes through a modal that captures the
-  // caretaker's drawn signature. { kind: 'outing' | 'leave', id, name } while open.
+  // caretaker's drawn signature. { kind: 'leave', id, name } while open — leave is the only
+  // thing a caretaker approves now; outings need no approval.
   const [approvalTarget, setApprovalTarget] = useState(null);
   const [approving, setApproving] = useState(false);
   // Only used by the fallback capture for caretakers who have not set up a signature yet,
@@ -424,21 +368,11 @@ export default function CaretakerDashboardPage() {
   // The student's signature is fetched when the approval dialog opens, not carried by the
   // pending list (see lib/signatures.js).
   const { signatures: approvalSignatures, error: approvalSignatureError } = useSignatures(
-    approvalTarget?.kind === "leave" ? "leave" : "outing",
+    "leave",
     approvalTarget?.id,
     Boolean(approvalTarget?.hasStudentSignature)
   );
   const approvalStudentSignature = approvalSignatures?.studentSignature || null;
-
-  const openOutingApproval = (id) => {
-    const req = pending.find((p) => p.id === id);
-    setApprovalTarget({
-      kind: "outing",
-      id,
-      name: req?.name || "",
-      hasStudentSignature: Boolean(req?.hasStudentSignature),
-    });
-  };
 
   const openLeaveApproval = (id) => {
     const req = leavePending.find((l) => l.id === id);
@@ -479,12 +413,6 @@ export default function CaretakerDashboardPage() {
   const [forwardNote, setForwardNote] = useState("");
   const [forwarding, setForwarding] = useState(false);
 
-  const openOutingForward = (id) => {
-    const req = pending.find((p) => p.id === id);
-    setForwardNote("");
-    setForwardTarget({ kind: "outing", id, name: req?.name || "" });
-  };
-
   const openLeaveForward = (id) => {
     const req = leavePending.find((l) => l.id === id);
     setForwardNote("");
@@ -499,32 +427,11 @@ export default function CaretakerDashboardPage() {
   async function confirmForward() {
     if (!forwardTarget) return;
     setForwarding(true);
-    const { kind, id } = forwardTarget;
     try {
-      if (kind === "outing") {
-        await forwardRequest(id, forwardNote);
-      } else {
-        await forwardLeave(id, forwardNote);
-      }
+      await forwardLeave(forwardTarget.id, forwardNote);
       closeForward();
     } finally {
       setForwarding(false);
-    }
-  }
-
-  async function forwardRequest(id, note) {
-    const req = pending.find((p) => p.id === id);
-    if (!req) return;
-    // Optimistic: drop from pending — the warden owns it now.
-    setPending((p) => p.filter((r) => r.id !== id));
-    try {
-      await apiFetch(`/outing/${id}/forward`, {
-        method: "PATCH",
-        body: JSON.stringify({ note: note?.trim() || undefined }),
-      });
-    } catch (err) {
-      setPending((p) => [req, ...p]);
-      setRequestsError(err.message || t("couldNotForward"));
     }
   }
 
@@ -547,13 +454,8 @@ export default function CaretakerDashboardPage() {
     if (!approvalTarget) return;
     setApproving(true);
     setSignatureError("");
-    const { kind, id } = approvalTarget;
     try {
-      if (kind === "outing") {
-        await approveRequest(id);
-      } else {
-        await approveLeave(id);
-      }
+      await approveLeave(approvalTarget.id);
       closeApproval();
     } catch (err) {
       // Only a missing signature reaches here (the approve fns handle everything else
@@ -561,53 +463,6 @@ export default function CaretakerDashboardPage() {
       setSignatureError(err?.message || "Add your signature before approving.");
     } finally {
       setApproving(false);
-    }
-  }
-
-  async function approveRequest(id) {
-    const req = pending.find((p) => p.id === id);
-    if (!req) return;
-    // Optimistic update; persist to backend after.
-    setPending((p) => p.filter((r) => r.id !== id));
-    setApproved((a) => [{ id: req.id, name: req.name, outSince: req.out.replace(/^by /, ""), initials: req.initials }, ...a]);
-    try {
-      // The server stamps our saved profile signature; nothing to send.
-      await apiFetch(`/outing/${id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "Approved" }),
-      });
-    } catch (err) {
-      // Checked before the 409 branch: this dashboard reads 409 as "request expired".
-      if (isSignatureRequiredError(err)) {
-        setApproved((a) => a.filter((r) => r.id !== id));
-        setPending((p) => [req, ...p]);
-        setUser((u) => ({ ...(u || {}), signature: undefined }));
-        throw err;
-      }
-      // 409 = request expired: don't roll back, just drop the card.
-      if (err?.status === 409) {
-        setApproved((a) => a.filter((r) => r.id !== id));
-        setRequestsError(t("requestExpired"));
-        return;
-      }
-      setApproved((a) => a.filter((r) =>r.id !== id));
-      setPending((p) => [req, ...p]);
-      setRequestsError(err.message || t("couldNotApprove"));
-    }
-  }
-
-  async function rejectRequest(id) {
-    const req = pending.find((p) => p.id === id);
-    if (!req) return;
-    setPending((p) => p.filter((r) => r.id !== id));
-    try {
-      await apiFetch(`/outing/${id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "Rejected" }),
-      });
-    } catch (err) {
-      setPending((p) => [req, ...p]);
-      setRequestsError(err.message || t("couldNotReject"));
     }
   }
 
@@ -664,9 +519,6 @@ export default function CaretakerDashboardPage() {
   const hostelLabel = managedHostel || HOSTEL_LABEL[managedGender];
   const isConfigured = Boolean(managedHostel || managedGender);
 
-  // Boys' outings are auto-approved, so a boys' caretaker only approves leave.
-  const isBoysCaretaker = managedGender === "Male";
-
   // Single source of truth for both nav bars. They used to be hand-written twice, which
   // is how the phone bar drifted to four tabs while the desktop one carried seven —
   // Delay Notices, Movement Logs and Profile were simply unreachable on a phone. Both
@@ -675,12 +527,6 @@ export default function CaretakerDashboardPage() {
   // versus leave/SOS (rose, needs action).
   const navTabs = [
     { key: "home", icon: Home, label: tc("home"), short: t("navHome") },
-    !isBoysCaretaker && {
-      key: "requests",
-      icon: ClipboardList,
-      label: t("requests"),
-      short: t("navRequests"),
-    },
     {
       key: "delays",
       icon: Clock,
@@ -813,7 +659,7 @@ export default function CaretakerDashboardPage() {
               <Bell className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500 animate-bounce" />
               <div className="min-w-0 flex-1">
                 <p className="font-bold">Enable push notifications</p>
-                <p className="text-sm text-indigo-700">Get instant alerts when students submit outing requests, leave applications, or emergencies — even when this app is closed.</p>
+                <p className="text-sm text-indigo-700">Get instant alerts for leave applications, overdue returns, and emergencies — even when this app is closed.</p>
               </div>
               <button
                 onClick={handleEnablePush}
@@ -878,14 +724,6 @@ export default function CaretakerDashboardPage() {
                     className: 'wd-attn--leave',
                     onClick: () => setView('delays'),
                   },
-                  !isBoysCaretaker && pending.length > 0 && {
-                    key: 'requests',
-                    label: t("requests"),
-                    count: pending.length,
-                    icon: ClipboardList,
-                    className: 'wd-attn--requests',
-                    onClick: () => setView('requests'),
-                  },
                   leavePending.length > 0 && {
                     key: 'leave',
                     label: t("leaveApplications"),
@@ -948,7 +786,7 @@ export default function CaretakerDashboardPage() {
                   <p className="sd-kicker">{t("dailyPulse")}</p>
                   <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">{t("greeting")} <span className="sd-name-live">Caretaker</span>.</h2>
                   {/* Desktop-only overview text */}
-                  <p className="sd-body mt-2 hidden max-w-md sm:block">{isBoysCaretaker ? t("overviewTextBoys") : t("overviewText")}</p>
+                  <p className="sd-body mt-2 hidden max-w-md sm:block">{t("overviewText")}</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
@@ -972,21 +810,10 @@ export default function CaretakerDashboardPage() {
                 <h2 className="sd-title sd-title-sm mt-2">{t("respondFaster")}</h2>
               </div>
             </div>
-            {/* Phones: two-up compact launchers. From lg every tile sits side by side —
-                five for the girls' set, four for the boys' — the same equal-tile row the
-                student dashboard uses, so nothing is a stretched odd one out. */}
-            <div className={`mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-5 ${isBoysCaretaker ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
+            {/* Phones: two-up compact launchers. From lg all four tiles sit side by side —
+                the same equal-tile row the student dashboard uses. */}
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
               {(() => {
-                const manageAction = {
-                  title: t("manageRequests"),
-                  desc: t("manageRequestsDesc"),
-                  icon: Users,
-                  badgeBg: "linear-gradient(145deg, #4338ca 0%, #6366f1 100%)",
-                  tint: "linear-gradient(160deg, rgba(99,102,241,0.14) 0%, rgba(56,189,248,0.08) 100%)",
-                  glow: "rgba(99,102,241,0.45)",
-                  border: "rgba(129,140,248,0.5)",
-                  onClick: () => openPanel('manage'),
-                };
                 const safetyAction = {
                   title: t("safetyAlerts"),
                   desc: t("safetyAlertsDesc"),
@@ -1030,15 +857,9 @@ export default function CaretakerDashboardPage() {
                   badge: overdueCount,
                   onClick: () => setView('overdue'),
                 };
-                // Boys' caretaker has no outing approvals: lead with Leave.
-                return isBoysCaretaker
-                  ? [leaveAction, safetyAction, overdueAction, logsAction]
-                  : [manageAction, safetyAction, overdueAction, leaveAction, logsAction];
+                // Outings need no approval, so every caretaker leads with Leave.
+                return [leaveAction, safetyAction, overdueAction, logsAction];
               })().map((a, idx) => {
-                // Girls' set is five tiles, so at sm — where the grid is two columns — the
-                // lead one spans both to avoid an orphan. It drops back to a single column
-                // at lg, where all five sit side by side. Boys' four tile evenly throughout.
-                const featured = !isBoysCaretaker && idx === 0;
                 const badgeStyle = { background: a.badgeBg, boxShadow: `0 14px 26px -12px ${a.glow}` };
                 const countBubble = a.badge ? (
                   <span className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
@@ -1055,9 +876,7 @@ export default function CaretakerDashboardPage() {
                     "--glow": a.glow,
                     "--tile-border": a.border,
                   }}
-                  className={`sd-tile sd-qa sd-luxe-rise group block h-full text-left ${
-                    featured ? "sm:col-span-2 lg:col-span-1" : ""
-                  }`}
+                  className="sd-tile sd-qa sd-luxe-rise group block h-full text-left"
                 >
                   {/* One shape at every size — badge top-left, copy pinned to the bottom by
                       mt-auto: a compact two-up card on phones, a row of equal tiles at lg.
@@ -1087,7 +906,6 @@ export default function CaretakerDashboardPage() {
             </div>
               </section>
 
-              {isBoysCaretaker ? (
               <section className="mt-6">
             <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-5 sm:p-7 shadow-xl">
               <div className="flex items-center justify-between gap-3">
@@ -1139,53 +957,6 @@ export default function CaretakerDashboardPage() {
               </div>
             </div>
               </section>
-              ) : (
-              <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="sd-luxe-panel sd-enter rounded-4xl p-6 sm:p-7 shadow-xl" style={{ animationDelay: "0.26s" }}>
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="sd-title sd-title-sm">{t("pendingApproval")}</h2>
-                <span className="sd-tag">{t("after530")}</span>
-              </div>
-              <div className="mt-6 space-y-3">
-                {pending.map((req, i) => (
-                  <div key={req.id} className="sd-row sd-luxe-rise flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center" style={{ "--accent": "#6366f1", animationDelay: `${0.12 + i * 0.06}s` }}>
-                    <span className="sd-row__accent" aria-hidden="true" />
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-indigo-400 to-cyan-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
-                      <div className="min-w-0">
-                        <p className="sd-card-title text-slate-900 text-base">{req.name}</p>
-                        <p className="sd-micro mt-0.5">{req.branch} • <span className="font-mono">{req.roll}</span></p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="mr-2 shrink-0">
-                        <p className="text-xs text-slate-500">{tc("out")}</p>
-                        <p className="font-semibold text-slate-900">{req.out}</p>
-                      </div>
-                      <div className="grid flex-1 grid-cols-2 gap-2 sm:flex sm:flex-none sm:flex-col">
-                        <button
-                          onClick={() => openOutingApproval(req.id)}
-                          onPointerMove={handleMagneticMove}
-                          onPointerLeave={handleMagneticLeave}
-                          className="sd-magnetic flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 text-sm text-white font-bold shadow sm:px-4 sm:py-2"
-                        >
-                          <Check className="h-4 w-4 shrink-0" /> {tc("approve")}
-                        </button>
-                        <button onClick={() => rejectRequest(req.id)} className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 border border-rose-300 text-sm text-rose-600 font-bold hover:bg-rose-50 transition-colors sm:px-4 sm:py-2">
-                          <X className="h-4 w-4 shrink-0" /> {tc("reject")}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <AutoApprovedView approved={approved} compact={true} onViewAll={() => setView('approved')} onClear={() => setApproved([])} />
-              </section>
-              )}
-
               <section className="mt-6 grid gap-6 lg:grid-cols-[0.7fr_1.3fr]">
             <div className="sd-luxe-panel sd-enter rounded-4xl p-5 sm:p-6 shadow-xl" style={{ animationDelay: "0.3s" }}>
               <div className="flex items-center justify-between">
@@ -1206,22 +977,6 @@ export default function CaretakerDashboardPage() {
             </div>
               </section>
             </>
-          )}
-
-          {view === 'requests' && (
-            <RequestsView
-              pending={pending}
-              approveRequest={openOutingApproval}
-              rejectRequest={rejectRequest}
-              forwardRequest={openOutingForward}
-              loading={loadingRequests}
-              error={requestsError}
-              onRefresh={loadRequests}
-            />
-          )}
-
-          {view === 'approved' && (
-            <AutoApprovedView approved={approved} compact={false} onBack={() => setView('home')} onClear={() => setApproved([])} pageSize={6} />
           )}
 
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
@@ -1279,43 +1034,12 @@ export default function CaretakerDashboardPage() {
         </div>
       </div>
 
-      {activePanel && (
-        <div className="fixed inset-0 z-[60] flex">
-          <div onClick={closePanel} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <aside className="sd-luxe-panel sd-glow-border sd-enter relative ml-auto h-full w-full max-w-md overflow-y-auto rounded-l-[2.25rem] p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="sd-title sd-title-sm">{activePanel === 'manage' ? t("manageRequests") : t("safetyAlerts")}</h3>
-              <button onClick={closePanel} className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors"><X className="h-5 w-5" /></button>
-            </div>
-
-            {activePanel === 'manage' && (
-              <div className="space-y-3">
-                {pending.length === 0 ? <p className="sd-micro">{t("noPendingRequests")}</p> : pending.map((r, i) => (
-                  <div key={r.id} className="sd-row sd-luxe-rise" style={{ "--accent": "#6366f1", animationDelay: `${0.05 + i * 0.05}s` }}>
-                    <span className="sd-row__accent" aria-hidden="true" />
-                    <div>
-                      <p className="sd-card-title text-[0.9rem]">{r.name}</p>
-                      <p className="sd-micro">{r.branch} • {r.roll}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => openOutingApproval(r.id)} className="rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500">{tc("approve")}</button>
-                      <button onClick={() => rejectRequest(r.id)} className="rounded-xl border border-rose-300 px-3 py-1.5 text-sm font-bold text-rose-600 hover:bg-rose-50 transition-colors">{tc("reject")}</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-          </aside>
-        </div>
-      )}
-
       {approvalTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
           <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <p className="sd-kicker">{approvalTarget.kind === "leave" ? t("leaveApplications") : t("outingRequests")}</p>
+                <p className="sd-kicker">{t("leaveApplications")}</p>
                 <h3 className="sd-title sd-title-sm mt-0.5">{tc("approve")}{approvalTarget.name ? ` — ${approvalTarget.name}` : ""}</h3>
               </div>
               <button
@@ -1329,8 +1053,8 @@ export default function CaretakerDashboardPage() {
 
             <p className="mt-4 text-sm text-slate-600">
               {mySignature && !changingSignature
-                ? `Your saved signature will be attached to this ${approvalTarget.kind === "leave" ? "leave application" : "outing request"}.`
-                : `Add your signature once — it will be attached to every ${approvalTarget.kind === "leave" ? "application" : "request"} you approve from now on.`}
+                ? "Your saved signature will be attached to this leave application."
+                : "Add your signature once — it will be attached to every application you approve from now on."}
             </p>
 
             {approvalTarget.hasStudentSignature && (
@@ -1430,7 +1154,7 @@ export default function CaretakerDashboardPage() {
           <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <p className="sd-kicker">{forwardTarget.kind === "leave" ? t("leaveApplications") : t("outingRequests")}</p>
+                <p className="sd-kicker">{t("leaveApplications")}</p>
                 <h3 className="sd-title sd-title-sm mt-0.5">{t("forwardToWarden")}{forwardTarget.name ? ` — ${forwardTarget.name}` : ""}</h3>
               </div>
               <button

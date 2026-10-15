@@ -185,9 +185,9 @@ export default function Features() {
               <div className="h-11 w-11 rounded-xl flex items-center justify-center mb-4 border bg-emerald-50 border-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-900/60 text-emerald-600 dark:text-emerald-400">
                 <FileCheck className="h-5 w-5" />
               </div>
-              <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Smart Outing Approvals</h4>
+              <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Gate-Logged Outings</h4>
               <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed font-medium">
-                Students submit digital outing requests; caretakers review and approve them, then a QR exit pass is issued instantly.
+                Outings need no form — one QR scan at the gate logs the exit and the return deadline. Leave applications are reviewed and approved by caretakers.
               </p>
             </div>
             <ApprovalVisual />
