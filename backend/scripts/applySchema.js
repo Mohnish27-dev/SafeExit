@@ -24,6 +24,7 @@ const STEPS = {
   constraints: '002_post_etl_constraints.sql',
   validate: '003_validate_constraints.sql',
   'drop-legacy': '004_drop_legacy_ids.sql',
+  'profile-window': '005_profile_window.sql',
 };
 
 // What `check` expects to find. Kept as data rather than prose so it fails loudly if the
