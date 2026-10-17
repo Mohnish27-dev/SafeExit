@@ -129,8 +129,36 @@ test('a guard is pinned to students and to non-confidential fields', async (t) =
   await getUsers({ user: { role: 'Guard' }, query: { role: 'Warden' } }, res);
 
   assert.equal(seen.page.where.role, 'Student');
-  for (const confidential of ['email', 'phoneNumber', 'guardianPhoneNumber', 'photo']) {
+  // phoneNumber is read (outside boys' numbers are shown at the gate) — see the next test.
+  for (const confidential of ['email', 'guardianPhoneNumber', 'photo']) {
     assert.ok(!seen.page.attributes.includes(confidential), `guard can read ${confidential}`);
+  }
+});
+
+test('a guard gets a phone number only for a boy who is outside', async (t) => {
+  stubOverdue(t, ['boy-late']);
+  stubRoster(t, [
+    { id: 'boy-out', campusStatus: 'Outside', gender: 'Male', hostelName: 'Kautilya', phoneNumber: '9000000001' },
+    { id: 'boy-late', campusStatus: 'Outside', gender: 'Male', hostelName: 'Aryabhatta', phoneNumber: '9000000002' },
+    { id: 'boy-in', campusStatus: 'Inside', gender: 'Male', hostelName: 'Kautilya', phoneNumber: '9000000003' },
+    { id: 'girl-out', campusStatus: 'Outside', gender: 'Female', hostelName: 'Sarojini', phoneNumber: '9000000004' },
+    // Gender missing: the girls' hostel alone must still hide her number.
+    { id: 'girl-nogender', campusStatus: 'Outside', gender: null, hostelName: 'Kadambini', phoneNumber: '9000000005' },
+  ]);
+  const res = recorder();
+  await getUsers({ user: { role: 'Guard' }, query: {} }, res);
+
+  const byId = Object.fromEntries(res.body.map((u) => [u.id, u]));
+  assert.equal(byId['boy-out'].phoneNumber, '9000000001');
+  assert.equal(byId['boy-late'].phoneNumber, '9000000002');
+  assert.equal(byId['boy-late'].campusStatus, 'Overdue');
+  for (const id of ['boy-in', 'girl-out', 'girl-nogender']) {
+    assert.equal('phoneNumber' in byId[id], false, `${id} number leaked to guard`);
+  }
+  // Read only to decide; never returned.
+  for (const u of res.body) {
+    assert.equal('gender' in u, false);
+    assert.equal('hostelName' in u, false);
   }
 });
 
@@ -221,6 +249,8 @@ test('student counts are disjoint and sum to the total', async (t) => {
   const original = User.count;
   User.count = async ({ where }) => {
     if (where.campusStatus === 'Inside') return 30;
+    // The overdue bucket is the late passes held by students stored outside.
+    if (where.id) return 2;
     if (where.campusStatus && typeof where.campusStatus === 'object') return 12;
     return 42;
   };
@@ -258,4 +288,47 @@ test('the outside count includes rows legacy-stored as Overdue', async (t) => {
     Object.getOwnPropertySymbols(outsideWhere.campusStatus)[0]
   ];
   assert.deepEqual(values, ['Outside', 'Overdue']);
+});
+
+// The guard's Students screen used to fetch the newest page of the whole roster and filter
+// it in the browser, so an outside student outside that page vanished from the Outside list
+// while the dashboard tile still counted them. The filter is server-side now, and must cut
+// the same buckets as getStudentCounts.
+const opValues = (clause) => clause[Object.getOwnPropertySymbols(clause)[0]];
+
+test('the Outside filter excludes overdue students, matching the tile', async (t) => {
+  stubOverdue(t, ['stu-9']);
+  const seen = stubRoster(t, []);
+
+  await getUsers({ user: { role: 'Guard' }, query: { campusStatus: 'Outside' } }, recorder());
+
+  assert.deepEqual(opValues(seen.page.where.campusStatus), ['Outside', 'Overdue']);
+  assert.deepEqual(opValues(seen.page.where.id), ['stu-9']);
+});
+
+test('the Overdue filter is derived from late passes held by students stored outside', async (t) => {
+  stubOverdue(t, ['stu-9', 'stu-8']);
+  const seen = stubRoster(t, []);
+
+  await getUsers({ user: { role: 'Guard' }, query: { campusStatus: 'Overdue' } }, recorder());
+
+  // 'Overdue' is never stored, so an exact-match filter on it would always come back empty.
+  assert.deepEqual(opValues(seen.page.where.campusStatus), ['Outside', 'Overdue']);
+  assert.deepEqual(opValues(seen.page.where.id), ['stu-9', 'stu-8']);
+});
+
+test('the overlay only marks outside students overdue, and clears stale stored Overdue', async (t) => {
+  stubOverdue(t, ['stu-1']);
+  stubRoster(t, [
+    // A stale late pass on a student stored inside: the inside tile counts them, so must the roster.
+    { id: 'stu-1', name: 'A', campusStatus: 'Inside' },
+    // Legacy stored 'Overdue' with no late pass: the counts put this in the outside tile.
+    { id: 'stu-2', name: 'B', campusStatus: 'Overdue' },
+  ]);
+  const res = recorder();
+
+  await getUsers({ user: { role: 'Guard' }, query: {} }, res);
+
+  assert.equal(res.body[0].campusStatus, 'Inside');
+  assert.equal(res.body[1].campusStatus, 'Outside');
 });
