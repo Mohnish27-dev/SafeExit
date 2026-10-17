@@ -645,6 +645,7 @@ export default function SecurityDashboardPage() {
               <div className="mt-5 space-y-3">
                 {[
                   {
+                    filter: "inside",
                     label: t("insideCampus"),
                     note: t("insideCampusNote"),
                     count: counts.inside,
@@ -654,6 +655,7 @@ export default function SecurityDashboardPage() {
                     Icon: UserCheck,
                   },
                   {
+                    filter: "outside",
                     label: t("outsideCampus"),
                     note: t("outsideCampusNote"),
                     count: counts.outside,
@@ -663,6 +665,7 @@ export default function SecurityDashboardPage() {
                     Icon: UserRound,
                   },
                   {
+                    filter: "overdue",
                     label: t("overdue"),
                     note: t("overdueNote"),
                     count: counts.overdue,
@@ -674,7 +677,13 @@ export default function SecurityDashboardPage() {
                 ].map((item) => {
                   const barW = totalTracked > 0 ? Math.min(100, Math.max(4, (item.count / totalTracked) * 100)) : 4;
                   return (
-                    <div key={item.label} className="sd-stat px-4 py-3.5" style={{ "--stat-glow": item.glow }}>
+                    <Link
+                      key={item.filter}
+                      href={`/dashboard/security/students?filter=${item.filter}`}
+                      aria-label={`${item.label}: ${item.count}`}
+                      className="sd-stat block px-4 py-3.5 cursor-pointer transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                      style={{ "--stat-glow": item.glow }}
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex min-w-0 flex-1 items-center gap-3">
                           <span
@@ -698,7 +707,7 @@ export default function SecurityDashboardPage() {
                       <div className="sd-bar mt-3">
                         <div className="sd-bar__fill" style={{ width: `${barW}%`, background: item.fill, boxShadow: `0 0 10px ${item.glow}` }} />
                       </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>

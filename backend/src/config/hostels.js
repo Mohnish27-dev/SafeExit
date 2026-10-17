@@ -33,6 +33,11 @@ const hostelNames = () => HOSTELS.map((h) => h.name);
 // hostels in admin pickers grouped by boys'/girls'.
 const hostelsForGender = (gender) => HOSTELS.filter((h) => h.gender === gender);
 
+// A girl counts as one if either her own gender or her hostel says so, so a row with a
+// missing or stale gender still errs towards hiding her number from the gate.
+const isGirlStudent = (student) =>
+  !!student && (student.gender === 'Female' || genderForHostel(student.hostelName) === 'Female');
+
 module.exports = {
   HOSTELS,
   isValidHostel,
@@ -40,4 +45,5 @@ module.exports = {
   canonicalHostelName,
   hostelNames,
   hostelsForGender,
+  isGirlStudent,
 };

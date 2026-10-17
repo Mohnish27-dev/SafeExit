@@ -2,7 +2,7 @@ const { Op } = require('sequelize');
 const { sequelize, User, UserPhoto, WebauthnCredential, OutingRequest, SOSAlert } = require('../models');
 const { getOverdueStudentIds } = require('../utils/overdue');
 const { readPageParams, sendPage } = require('../utils/pagination');
-const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
+const { isValidHostel, genderForHostel, canonicalHostelName, isGirlStudent } = require('../config/hostels');
 const { ciEquals } = require('../utils/ciCompare');
 const { isCollegeEmail, normalizeEmail } = require('../config/emailPolicy');
 const { GOOGLE_SIGNIN_ROLES } = require('../utils/googleIdToken');
@@ -19,6 +19,17 @@ const {
 // it, so "not inside" is the union of both. Counting bare 'Outside' would leave such a row
 // in `total` and in none of the three tiles. Matches caretakerController's occupancy query.
 const OUTSIDE_STATUSES = ['Outside', 'Overdue'];
+
+// The one definition of "overdue" shared by the counts and the roster: stored outside AND
+// holding a pass past its return window. A late pass alone is not enough — a stale 'Out'
+// row left on a student stored 'Inside' would otherwise be counted in both the inside and
+// the overdue tile, and the roster's Overdue filter would disagree with the tile.
+const countOverdueOutside = (overdueIds) =>
+  overdueIds.size
+    ? User.count({
+      where: { role: 'Student', campusStatus: { [Op.in]: OUTSIDE_STATUSES }, id: { [Op.in]: [...overdueIds] } },
+    })
+    : 0;
 
 // GET /api/admin/overview — private (Admin)
 const getOverview = async (req, res) => {
@@ -51,7 +62,7 @@ const getOverview = async (req, res) => {
     ]);
 
     // Overdue students are still stored 'Outside' — subtract so the tiles are disjoint.
-    const studentsOverdue = overdueIds.size;
+    const studentsOverdue = await countOverdueOutside(overdueIds);
     const onTimeOutside = Math.max(0, studentsOutside - studentsOverdue);
 
     res.json({
@@ -75,6 +86,11 @@ const getOverview = async (req, res) => {
 
 // Guards may only browse students, and only non-confidential fields.
 const GUARD_FIELDS = ['id', 'name', 'studentId', 'campusStatus', 'lastSeenAt'];
+// Read for a guard but not all returned: the gate phones boys who are outside, so a boy's
+// number goes out only while he is Outside/Overdue. Girls are phoned by their caretaker
+// (see outingController.getOverdueOutings), so a girl's number never goes to a guard.
+// gender/hostelName are only read to decide that and are stripped before the response.
+const GUARD_QUERY_FIELDS = [...GUARD_FIELDS, 'phoneNumber', 'gender', 'hostelName'];
 const ALL_FIELDS = [
   'id', 'name', 'email', 'role', 'studentId', 'department', 'year', 'roomNumber', 'hostelName',
   'phoneNumber', 'guardianPhoneNumber', 'gender', 'managedGender', 'managedHostel', 'campusStatus', 'lastSeenAt',
@@ -130,11 +146,22 @@ const getUsers = async (req, res) => {
       where.department = { [Op.iLike]: String(req.query.department).trim() };
     }
 
-    if (req.query.campusStatus && String(req.query.campusStatus).trim() && req.query.campusStatus !== 'ALL') {
-      if (req.query.campusStatus === 'Outside') {
+    // Needed both to filter and to overlay, so it is read once, before the query.
+    const overdueIds = await getOverdueStudentIds();
+    const overdueList = [...overdueIds];
+
+    // Same buckets as getStudentCounts, so a filtered roster lists exactly the students
+    // its dashboard tile counted: Outside excludes the overdue, Overdue is derived.
+    const campusFilter = String(req.query.campusStatus || '').trim();
+    if (campusFilter && campusFilter !== 'ALL') {
+      if (campusFilter === 'Outside') {
         where.campusStatus = { [Op.in]: OUTSIDE_STATUSES };
+        if (overdueList.length) where.id = { [Op.notIn]: overdueList };
+      } else if (campusFilter === 'Overdue') {
+        where.campusStatus = { [Op.in]: OUTSIDE_STATUSES };
+        where.id = { [Op.in]: overdueList };
       } else {
-        where.campusStatus = String(req.query.campusStatus).trim();
+        where.campusStatus = campusFilter;
       }
     }
 
@@ -158,7 +185,7 @@ const getUsers = async (req, res) => {
     const { limit, skip } = readPageParams(req);
     const users = await User.findAll({
       where,
-      attributes: req.user.role === 'Guard' ? GUARD_FIELDS : ALL_FIELDS,
+      attributes: req.user.role === 'Guard' ? GUARD_QUERY_FIELDS : ALL_FIELDS,
       order: [['createdAt', 'DESC']],
       offset: skip,
       limit,
@@ -174,10 +201,18 @@ const getUsers = async (req, res) => {
       : [];
     const photoIds = new Set(withPhoto.map((p) => String(p.userId)));
 
-    // Overlay derived (never persisted) 'Overdue' onto late students.
-    const overdueIds = await getOverdueStudentIds();
+    // Overlay derived (never persisted) 'Overdue' onto late students who are outside. A
+    // legacy stored 'Overdue' with no late pass reads as 'Outside', which is the tile the
+    // counts put it in.
     for (const u of users) {
-      if (overdueIds.has(String(u.id))) u.campusStatus = 'Overdue';
+      if (OUTSIDE_STATUSES.includes(u.campusStatus)) {
+        u.campusStatus = overdueIds.has(String(u.id)) ? 'Overdue' : 'Outside';
+      }
+      if (req.user.role === 'Guard') {
+        if (!OUTSIDE_STATUSES.includes(u.campusStatus) || isGirlStudent(u)) delete u.phoneNumber;
+        delete u.gender;
+        delete u.hostelName;
+      }
       u.hasPhoto = photoIds.has(String(u.id));
       if (windowStart) u.profileUnlocked = canEditProfile(u, windowStart);
       // raw:true skips the model's toJSON, so the `_id` contract is applied by hand here.
@@ -246,7 +281,7 @@ const getStudentCounts = async (req, res) => {
 
     // Same disjoint-tiles rule as getOverview: an overdue student is still stored
     // 'Outside', so it has to come back out of that bucket.
-    const overdue = overdueIds.size;
+    const overdue = await countOverdueOutside(overdueIds);
 
     res.json({
       total,
