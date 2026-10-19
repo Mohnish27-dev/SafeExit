@@ -351,7 +351,7 @@ export default function StudentDashboardPage() {
   const [outingsLoading, setOutingsLoading] = useState(true);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
 
-  // Browser push is separate from passkey/WebAuthn login and needs one explicit
+  // Browser push is separate from login and needs one explicit
   // permission gesture before overdue alerts can reach this device.
   const [pushPermission, setPushPermission] = useState(null);
   const [pushBannerDismissed, setPushBannerDismissed] = useState(false);

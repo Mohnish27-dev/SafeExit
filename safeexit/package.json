@@ -13,7 +13,6 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@simplewebauthn/browser": "^13.3.0",
     "@yudiel/react-qr-scanner": "^2.6.0",
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^1.16.0",

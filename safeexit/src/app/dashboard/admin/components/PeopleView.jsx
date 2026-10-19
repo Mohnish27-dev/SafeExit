@@ -643,7 +643,6 @@ export default function PeopleView() {
                 {role === "Student"
                   ? `Last seen ${formatWhen(p.lastSeenAt)}`
                   : `Last active ${formatWhen(p.lastActiveAt)}`}
-                {p.webAuthnRegistered && <span className="ml-2 text-emerald-500">· Passkey ✓</span>}
               </div>
 
               {role === "Student" && (
@@ -837,7 +836,7 @@ export default function PeopleView() {
               </button>
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              Set a new PIN for <span className="font-semibold text-slate-700">{resetTarget.name}</span>. Any existing passkeys are revoked, so they&apos;ll set one up again on next login.
+              Set a new PIN for <span className="font-semibold text-slate-700">{resetTarget.name}</span>. They&apos;ll set up Quick Login again on next login.
             </p>
 
             {actionMsg && (

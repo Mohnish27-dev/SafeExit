@@ -7,7 +7,7 @@ import { getApiBase } from "./api";
 import { getStoredUser, setStoredUser, syncStoredStudentProfile } from "./userProfile";
 import { autoSubscribeIfGranted } from "./pushManager";
 
-// Logout deliberately keeps each role's device-local Quick Login (PIN/passkey)
+// Logout deliberately keeps each role's device-local Quick Login PIN
 const ROLE_CONFIG = {
   student: { loginPath: "/login/student" },
   caretaker: { loginPath: "/login/caretaker" },

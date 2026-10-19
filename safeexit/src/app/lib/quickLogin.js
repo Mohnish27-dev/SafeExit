@@ -5,7 +5,6 @@ const STUDENT_KEYS = {
   pinKey: "safeexit_quick_pin",           // encrypted secret blob
   labelKey: "safeexit_quick_label",       // display name for the PIN screen
   profileKey: "safeexit_user_profile",
-  webauthnKey: "safeexit_webauthn_registered",
 };
 
 const PBKDF2_ITERATIONS = 250000;
@@ -43,15 +42,10 @@ const deriveKey = async (pin, salt) => {
 };
 
 // Build a Quick Login helper bound to a role's localStorage keys.
-export const makeQuickLogin = ({ pinKey, labelKey, profileKey, webauthnKey }) => {
+export const makeQuickLogin = ({ pinKey, labelKey, profileKey }) => {
   const hasQuickPin = () => {
     if (typeof window === "undefined") return false;
     return !!localStorage.getItem(pinKey);
-  };
-
-  const hasBiometric = () => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(webauthnKey) === "true";
   };
 
   const getQuickLabel = () => {
@@ -102,17 +96,15 @@ export const makeQuickLogin = ({ pinKey, labelKey, profileKey, webauthnKey }) =>
     if (typeof window === "undefined") return;
     localStorage.removeItem(pinKey);
     localStorage.removeItem(labelKey);
-    localStorage.removeItem(webauthnKey);
     if (forgetProfile) localStorage.removeItem(profileKey);
   };
 
-  return { hasQuickPin, hasBiometric, getQuickLabel, setQuickPin, verifyQuickPin, clearQuickLogin };
+  return { hasQuickPin, getQuickLabel, setQuickPin, verifyQuickPin, clearQuickLogin };
 };
 
 // Student-bound instance — named exports used by the student page
 const student = makeQuickLogin(STUDENT_KEYS);
 export const hasQuickPin = student.hasQuickPin;
-export const hasBiometric = student.hasBiometric;
 export const getQuickLabel = student.getQuickLabel;
 export const setQuickPin = student.setQuickPin;
 export const verifyQuickPin = student.verifyQuickPin;

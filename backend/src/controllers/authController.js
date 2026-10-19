@@ -1,6 +1,6 @@
 const { Op } = require('sequelize');
 const {
-  sequelize, User, WebauthnCredential, CloseContact, OutingRequest, LeaveApplication,
+  sequelize, User, CloseContact, OutingRequest, LeaveApplication,
 } = require('../models');
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { getProfileWindowStart, canEditProfile, isProfileEditable } = require('../utils/profileWindow');
@@ -40,21 +40,6 @@ const findByIdentifier = async (rawKey) => {
     (await User.findOne({ where: { [Op.and]: [ciEquals('student_id', String(rawKey).trim())] } }))
   );
 };
-const {
-  generateRegistrationOptions,
-  verifyRegistrationResponse,
-  generateAuthenticationOptions,
-  verifyAuthenticationResponse,
-} = require('@simplewebauthn/server');
-
-// The credentials array used to be embedded on the user document, so it came along with
-// every read. It is a table now, and only the four WebAuthn handlers need it.
-const WITH_CREDENTIALS = { include: [{ association: 'webAuthnCredentials' }] };
-
-// In production set RP_ID / RP_ORIGIN to the real frontend domain.
-const rpName = process.env.RP_NAME || 'NITP-SafeExit';
-const rpID = process.env.RP_ID || 'localhost';
-const origin = process.env.RP_ORIGIN || 'http://localhost:3000';
 
 // The profile payload, in one place, so /profile, PATCH /profile and /refresh cannot
 // drift apart in what they expose. `profileUnlocked` is derived, not stored, so every
@@ -623,208 +608,6 @@ const refreshSession = async (req, res) => {
   }
 };
 
-// WebAuthn: challenge is stashed on the user row between /options and /verify, cleared after use.
-
-// POST /api/auth/webauthn/register/options — private
-const getRegistrationOptions = async (req, res) => {
-  try {
-    const user = await User.findByPk(req.user._id, WITH_CREDENTIALS);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    const options = await generateRegistrationOptions({
-      rpName,
-      rpID,
-      userName: user.loginId || user.email || user.studentId,
-      userDisplayName: user.name,
-      // Stable per-user handle so re-registration maps to the same account.
-      //
-      // NOTE FOR CUTOVER: this is the uuid now, where it used to be the ObjectId. An
-      // authenticator that enrolled before the migration carries the old handle, so its
-      // credential still authenticates (that path matches on credentialID, not this) but a
-      // re-registration mints a second credential rather than replacing the first. Both
-      // work; the account simply lists two passkeys.
-      userID: new TextEncoder().encode(String(user.id)),
-      attestationType: 'none',
-      excludeCredentials: user.webAuthnCredentials.map((c) => ({
-        id: c.credentialID,
-        transports: c.transports,
-      })),
-      authenticatorSelection: {
-        residentKey: 'preferred',
-        userVerification: 'preferred',
-      },
-    });
-
-    user.currentChallenge = options.challenge;
-    await user.save();
-    res.json(options);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// POST /api/auth/webauthn/register/verify — private
-const verifyRegistration = async (req, res) => {
-  try {
-    const user = await User.findByPk(req.user._id, WITH_CREDENTIALS);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    if (!user.currentChallenge) {
-      return res.status(400).json({ message: 'No registration in progress' });
-    }
-
-    let verification;
-    try {
-      verification = await verifyRegistrationResponse({
-        response: req.body,
-        expectedChallenge: user.currentChallenge,
-        expectedOrigin: origin,
-        expectedRPID: rpID,
-        requireUserVerification: false,
-      });
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
-
-    const { verified, registrationInfo } = verification;
-    if (!verified || !registrationInfo) {
-      return res.status(400).json({ message: 'Registration could not be verified' });
-    }
-
-    const { credential } = registrationInfo;
-    const exists = user.webAuthnCredentials.some((c) => c.credentialID === credential.id);
-
-    // The credential row and the flag that advertises it move together. Half of this
-    // committing would either claim a passkey that does not exist or hide one that does.
-    await sequelize.transaction(async (tx) => {
-      if (!exists) {
-        await WebauthnCredential.create(
-          {
-            userId: user.id,
-            credentialID: credential.id,
-            publicKey: Buffer.from(credential.publicKey),
-            counter: credential.counter,
-            transports: credential.transports || [],
-          },
-          { transaction: tx }
-        );
-      }
-      user.webAuthnRegistered = true;
-      user.currentChallenge = null;
-      await user.save({ transaction: tx });
-    });
-
-    res.json({ verified: true, webAuthnRegistered: true });
-  } catch (error) {
-    console.error('WebAuthn registration error:', error);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// POST /api/auth/webauthn/login/options — public
-const getAuthenticationOptions = async (req, res) => {
-  const loginId = resolveLoginId(req.body);
-  try {
-    const user = await findByLoginId(loginId, WITH_CREDENTIALS);
-    if (!user || !user.webAuthnRegistered || user.webAuthnCredentials.length === 0) {
-      return res.status(404).json({ message: 'No passkey registered for this account' });
-    }
-    if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
-      return res.status(403).json({ message: GOOGLE_ONLY_MESSAGE });
-    }
-
-    const options = await generateAuthenticationOptions({
-      rpID,
-      allowCredentials: user.webAuthnCredentials.map((c) => ({
-        id: c.credentialID,
-        transports: c.transports,
-      })),
-      userVerification: 'preferred',
-    });
-
-    user.currentChallenge = options.challenge;
-    await user.save();
-    res.json(options);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// POST /api/auth/webauthn/login/verify — public
-const verifyAuthentication = async (req, res) => {
-  const { response } = req.body;
-  const loginId = resolveLoginId(req.body);
-  try {
-    const user = await findByLoginId(loginId, WITH_CREDENTIALS);
-    if (!user || !user.currentChallenge) {
-      return res.status(400).json({ message: 'No login in progress for this account' });
-    }
-    if (GOOGLE_SIGNIN_ROLES.includes(user.role)) {
-      return res.status(403).json({ message: GOOGLE_ONLY_MESSAGE });
-    }
-
-    const cred = user.webAuthnCredentials.find((c) => c.credentialID === response?.id);
-    if (!cred) {
-      return res.status(400).json({ message: 'Credential not recognized' });
-    }
-
-    let verification;
-    try {
-      verification = await verifyAuthenticationResponse({
-        response,
-        expectedChallenge: user.currentChallenge,
-        expectedOrigin: origin,
-        expectedRPID: rpID,
-        requireUserVerification: false,
-        credential: {
-          id: cred.credentialID,
-          // bytea comes back as a Buffer, which is what this always was.
-          publicKey: new Uint8Array(cred.publicKey),
-          counter: cred.counter,
-          transports: cred.transports,
-        },
-      });
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
-
-    const { verified, authenticationInfo } = verification;
-    if (!verified) {
-      return res.status(401).json({ message: 'Biometric verification failed' });
-    }
-
-    // Replay protection: persist the authenticator's monotonic counter. It lives on its
-    // own row now, so it saves separately from the user — in the same transaction, because
-    // a committed login that lost the counter bump would leave the replay window open.
-    await sequelize.transaction(async (tx) => {
-      cred.counter = authenticationInfo.newCounter;
-      await cred.save({ transaction: tx });
-
-      user.currentChallenge = null;
-      if (['Guard', 'Caretaker', 'Admin', 'Warden', 'ChiefWarden'].includes(user.role)) {
-        user.lastActiveAt = new Date();
-        if (user.role === 'Guard') user.onDuty = true;
-      }
-      await user.save({ transaction: tx });
-    });
-
-    const token = generateToken(res, user.id);
-    res.json({
-      _id: user.id,
-      name: user.name,
-      loginId: user.loginId,
-      email: user.email,
-      role: user.role,
-      studentId: user.studentId,
-      hasSignature: await User.hasSignature(user.id),
-      webAuthnRegistered: user.webAuthnRegistered,
-      token,
-    });
-  } catch (error) {
-    console.error('WebAuthn login error:', error);
-    res.status(500).json({ message: error.message });
-  }
-};
-
 module.exports = {
   registerUser,
   authUser,
@@ -834,8 +617,4 @@ module.exports = {
   updateUserProfile,
   logoutUser,
   refreshSession,
-  getRegistrationOptions,
-  verifyRegistration,
-  getAuthenticationOptions,
-  verifyAuthentication,
 };
