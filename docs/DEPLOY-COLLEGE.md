@@ -158,8 +158,7 @@ database on a *different* machine takes its real hostname instead.
 > Modern mobile browsers (Chrome on Android, iOS Safari) strictly require a **Secure Context (HTTPS)** for:
 > 1. **Geolocation API** (`navigator.geolocation`) — Student live location during SOS alerts. On plain HTTP, the browser automatically reports location as denied and shows "Location requires HTTPS" / "Location is blocked".
 > 2. **Web Push API** (`navigator.serviceWorker` & `PushManager`) — Overdue return alerts and push notifications.
-> 3. **WebAuthn / Passkeys** (`@simplewebauthn`) — Biometric login.
-> 4. **Google sign-in for wardens, the Chief Warden and the admin.** Google only accepts HTTPS origins on a real domain, so warden and admin login do not work at all over plain HTTP (localhost excepted).
+> 3. **Google sign-in for wardens, the Chief Warden and the admin.** Google only accepts HTTPS origins on a real domain, so warden and admin login do not work at all over plain HTTP (localhost excepted).
 >
 > If initially testing over plain HTTP, keep `COOKIE_SECURE=false` and `ENABLE_HSTS=0`. As soon as the domain is live, terminate TLS using Certbot (`sudo certbot --nginx -d safeexit.nitp.ac.in`) and switch `FRONTEND_URL=https://...`, `COOKIE_SECURE=true`, and `ENABLE_HSTS=1`.
 

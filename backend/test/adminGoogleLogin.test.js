@@ -16,7 +16,7 @@ googleIdToken.verifyGoogleCredential = async (credential) => {
 
 const jwt = require('jsonwebtoken');
 const User = require('../src/models/User');
-const { googleLogin, authUser, getAuthenticationOptions } = require('../src/controllers/authController');
+const { googleLogin, authUser } = require('../src/controllers/authController');
 const { protect } = require('../src/middlewares/authMiddleware');
 const { ensureAdmins } = require('../src/utils/ensureAdmins');
 
@@ -114,16 +114,6 @@ test('an old admin ID + correct PIN no longer opens the console', async (t) => {
   assert.equal(res.statusCode, 403);
   assert.match(res.body.message, /Google/);
   assert.equal(res.cookies.length, 0);
-});
-
-test('an admin passkey no longer opens the console', async (t) => {
-  stub(t, User, 'findOne', async () => makeAdmin({
-    webAuthnRegistered: true, webAuthnCredentials: [{ credentialID: 'abc', transports: [] }],
-  }));
-
-  const res = responseRecorder();
-  await getAuthenticationOptions({ body: { loginId: ADMIN_EMAIL } }, res);
-  assert.equal(res.statusCode, 403);
 });
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,6 @@ import {
 	ShieldCheck,
 	User,
 	ArrowRight,
-	Fingerprint,
 	KeyRound,
 	Eye,
 	EyeOff,
@@ -18,10 +17,6 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import TeamCreditLink from "@/app/components/TeamCreditLink";
-import {
-	startRegistration,
-	startAuthentication,
-} from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 import { makeQuickLogin } from "@/app/lib/quickLogin";
 import { BASE_PATH } from "@/app/lib/basePath";
@@ -35,7 +30,6 @@ const quick = makeQuickLogin({
 	pinKey: "safeexit_quick_pin_guard",
 	labelKey: "safeexit_quick_label_guard",
 	profileKey: "safeexit_guard_profile",
-	webauthnKey: "safeexit_guard_registered",
 });
 
 export default function SecurityLoginPage() {
@@ -57,14 +51,11 @@ export default function SecurityLoginPage() {
 	const [quickPin, setQuickPin] = useState("");
 	const [confirmQuickPin, setConfirmQuickPin] = useState("");
 	const [showSetupPin, setShowSetupPin] = useState(false);
-	const [enableBiometric, setEnableBiometric] = useState(false);
 	// Admin-issued PIN captured at step 1, locked behind the Quick Login PIN
 	const [pendingSecret, setPendingSecret] = useState("");
-	const [sessionToken, setSessionToken] = useState(null);
 
 	const [loginPin, setLoginPin] = useState("");
 	const [showLoginPin, setShowLoginPin] = useState(false);
-	const [hasBio, setHasBio] = useState(false);
 	const [quickLabel, setQuickLabel] = useState("");
 
 	useEffect(() => {
@@ -75,7 +66,6 @@ export default function SecurityLoginPage() {
 			} catch {
 				setStoredProfile(null);
 			}
-			setHasBio(quick.hasBiometric());
 			setQuickLabel(quick.getQuickLabel());
 			setAppState("RETURNING_USER");
 		} else {
@@ -135,38 +125,6 @@ export default function SecurityLoginPage() {
 		});
 	};
 
-	const enrollBiometric = async (token) => {
-		const authHeaders = {
-			"Content-Type": "application/json",
-			Authorization: `Bearer ${token}`,
-		};
-		let optionsJSON;
-		try {
-			optionsJSON = await apiFetch("/auth/webauthn/register/options", {
-				method: "POST",
-				credentials: "include",
-				headers: authHeaders,
-			});
-		} catch {
-			throw new Error("Could not start passkey setup");
-		}
-
-		const attResp = await startRegistration({ optionsJSON });
-
-		const verifyData = await apiFetch("/auth/webauthn/register/verify", {
-			method: "POST",
-			credentials: "include",
-			headers: authHeaders,
-			body: JSON.stringify(attResp),
-		});
-		if (!verifyData.verified) {
-			throw new Error(
-				verifyData.message || "Passkey verification failed",
-			);
-		}
-		localStorage.setItem("safeexit_guard_registered", "true");
-	};
-
 	// STEP 1: authenticate with ID + admin PIN, then move to Quick Login setup.
 	const submitStep1 = async (e) => {
 		e.preventDefault();
@@ -188,10 +146,8 @@ export default function SecurityLoginPage() {
 			persistGuardSession(profile);
 
 			setPendingSecret(formData.pin);
-			setSessionToken(data.token);
 			setQuickPin("");
 			setConfirmQuickPin("");
-			setEnableBiometric(false);
 			setOnboardingStep(2);
 		} catch (err) {
 			setErrorMsg(err?.message || "Login failed. Please try again.");
@@ -200,7 +156,7 @@ export default function SecurityLoginPage() {
 		}
 	};
 
-	// STEP 2: enrol a 4-digit Quick Login PIN (+ optional biometric), then go in.
+	// STEP 2: enrol a 4-digit Quick Login PIN , then go in.
 	const submitQuickSetup = async () => {
 		if (!/^\d{4}$/.test(quickPin)) {
 			setErrorMsg("Please set a 4-digit numeric PIN.");
@@ -219,27 +175,13 @@ export default function SecurityLoginPage() {
 			// Lock the admin PIN behind the Quick Login PIN
 			await quick.setQuickPin(quickPin, pendingSecret, profile.guardId);
 
-			if (enableBiometric && !quick.hasBiometric()) {
-				await enrollBiometric(sessionToken);
-			}
-
 			persistGuardSession(profile);
 			router.push("/dashboard/security");
 		} catch (err) {
-			if (err?.name === "NotAllowedError") {
-				setErrorMsg(
-					"Biometric setup was cancelled. Your PIN is saved — press Enable again to finish, or turn off biometrics.",
-				);
-			} else if (err?.name === "InvalidStateError") {
-				setErrorMsg(
-					"A passkey already exists on this device for this account. Turn off biometrics to continue.",
-				);
-			} else {
-				setErrorMsg(
-					err?.message ||
-						"Couldn't finish Quick Login setup. Please try again.",
-				);
-			}
+			setErrorMsg(
+				err?.message ||
+					"Couldn't finish Quick Login setup. Please try again.",
+			);
 		} finally {
 			setIsProcessing(false);
 		}
@@ -266,51 +208,6 @@ export default function SecurityLoginPage() {
 			router.push("/dashboard/security");
 		} catch (err) {
 			setErrorMsg(err?.message || "Login failed.");
-		} finally {
-			setIsProcessing(false);
-		}
-	};
-
-	const handleBiometricLogin = async () => {
-		setIsProcessing(true);
-		setErrorMsg("");
-		try {
-			const loginId = buildGuardLoginId(storedProfile.guardId);
-
-			let optionsJSON;
-			try {
-				optionsJSON = await apiFetch("/auth/webauthn/login/options", {
-					method: "POST",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ loginId }),
-				});
-			} catch {
-				throw new Error(
-					"No passkey found for this account on the server.",
-				);
-			}
-
-			const asseResp = await startAuthentication({ optionsJSON });
-
-			const data = await apiFetch("/auth/webauthn/login/verify", {
-				method: "POST",
-				credentials: "include",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ loginId, response: asseResp }),
-			});
-			sessionStorage.setItem("safeexit_token", data.token);
-
-			persistGuardSession(storedProfile);
-			router.push("/dashboard/security");
-		} catch (err) {
-			if (err?.name === "NotAllowedError") {
-				setErrorMsg(
-					"Login was cancelled or timed out. Please try again.",
-				);
-			} else {
-				setErrorMsg(err?.message || "Biometric login failed.");
-			}
 		} finally {
 			setIsProcessing(false);
 		}
@@ -384,7 +281,7 @@ export default function SecurityLoginPage() {
 				{/* ── WHITE CARD ── */}
 				<div className="w-full max-w-[480px] bg-white rounded-3xl shadow-2xl shadow-indigo-900/10 border border-slate-200/60 px-6 sm:px-8 pt-10 pb-7 relative z-10">
 					{appState === "RETURNING_USER" ? (
-						// ── RETURNING GUARD: Quick Login with PIN (+ passkey if enrolled) ──
+						// ── RETURNING GUARD: Quick Login with PIN ──
 						<div className="flex flex-col items-center text-center animate-fade-in-up">
 							<div className="relative w-24 h-24 mb-6">
 								<div className="absolute inset-0 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 animate-pulse opacity-20" />
@@ -478,17 +375,6 @@ export default function SecurityLoginPage() {
 								</button>
 							</form>
 
-							{/* Optional biometric */}
-							{hasBio && (
-								<button
-									onClick={handleBiometricLogin}
-									disabled={isProcessing}
-									className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
-								>
-									<Fingerprint className="w-5 h-5 text-indigo-600" />{" "}
-									Use fingerprint / FaceID
-								</button>
-							)}
 						</div>
 					) : (
 						// ── ONBOARDING FLOW ──
@@ -578,7 +464,7 @@ export default function SecurityLoginPage() {
 										</label>
 										<div className="relative">
 											<div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-												<Fingerprint className="h-[18px] w-[18px]" />
+												<KeyRound className="h-[18px] w-[18px]" />
 											</div>
 											<input
 												type="password"
@@ -612,7 +498,7 @@ export default function SecurityLoginPage() {
 								</form>
 							)}
 
-							{/* STEP 2: Quick Login setup (4-digit PIN + optional biometric) */}
+							{/* STEP 2: Quick Login setup (4-digit PIN) */}
 							{onboardingStep === 2 && (
 								<div className="space-y-6 animate-fade-in-up flex flex-col items-center text-center">
 									<div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center">
@@ -624,9 +510,7 @@ export default function SecurityLoginPage() {
 										</h2>
 										<p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
 											Create a 4-digit PIN to sign in fast
-											next time. Add your fingerprint or
-											face for even quicker access —
-											it&apos;s optional.
+											next time.
 										</p>
 									</div>
 
@@ -717,38 +601,6 @@ export default function SecurityLoginPage() {
 											</div>
 										</div>
 
-										{/* Optional biometric toggle */}
-										<div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4">
-											<div className="flex items-center gap-3">
-												<div className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-indigo-600 shrink-0">
-													<Fingerprint className="w-5 h-5" />
-												</div>
-												<div>
-													<p className="text-sm font-bold text-slate-800">
-														Biometric Authentication
-													</p>
-													<p className="text-xs text-slate-500">
-														Optional — Fingerprint /
-														FaceID
-													</p>
-												</div>
-											</div>
-											<button
-												type="button"
-												role="switch"
-												aria-checked={enableBiometric}
-												onClick={() =>
-													setEnableBiometric(
-														(v) => !v,
-													)
-												}
-												className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${enableBiometric ? "bg-indigo-600" : "bg-slate-300"}`}
-											>
-												<span
-													className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${enableBiometric ? "translate-x-5" : "translate-x-0"}`}
-												/>
-											</button>
-										</div>
 									</div>
 
 									<button

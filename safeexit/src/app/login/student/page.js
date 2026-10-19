@@ -11,7 +11,6 @@ import {
 	ShieldCheck,
 	ChevronDown,
 	Camera,
-	Fingerprint,
 	CheckCircle,
 	Building,
 	MapPin,
@@ -32,15 +31,10 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import {
-	startRegistration,
-	startAuthentication,
-} from "@simplewebauthn/browser";
 import { setStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
 import {
 	hasQuickPin,
-	hasBiometric,
 	getQuickLabel,
 	setQuickPin,
 	verifyQuickPin,
@@ -120,7 +114,6 @@ export default function StudentLoginPage() {
 	const [errorMsg, setErrorMsg] = useState("");
 	const [isProcessing, setIsProcessing] = useState(false);
 
-	const [hasBio, setHasBio] = useState(false); // passkey enrolled on THIS device?
 	const [quickLabel, setQuickLabel] = useState(""); // roll number shown on the PIN screen
 	const [loginPin, setLoginPin] = useState("");
 	const [showLoginPin, setShowLoginPin] = useState(false);
@@ -128,8 +121,7 @@ export default function StudentLoginPage() {
 	const [pin, setPin] = useState("");
 	const [confirmPin, setConfirmPin] = useState("");
 	const [showSetupPin, setShowSetupPin] = useState(false);
-	const [enableBiometric, setEnableBiometric] = useState(false);
-	// Kept so a retry after a cancelled biometric prompt doesn't re-register
+	// Kept so a retry after a failed PIN setup doesn't re-register
 	const [sessionToken, setSessionToken] = useState(null);
 	// Password to lock behind the PIN in QUICK_SETUP (ONBOARDING uses formData.password)
 	const [pendingPassword, setPendingPassword] = useState("");
@@ -154,7 +146,6 @@ export default function StudentLoginPage() {
 			} catch {
 				setStoredProfile(null);
 			}
-			setHasBio(hasBiometric());
 			setQuickLabel(getQuickLabel());
 			setAppState("RETURNING_USER");
 		} else {
@@ -253,38 +244,6 @@ export default function StudentLoginPage() {
 			hasSignature: Boolean(p.signature),
 		});
 		router.push("/dashboard/student");
-	};
-
-	const enrollBiometric = async (token) => {
-		const authHeaders = {
-			"Content-Type": "application/json",
-			Authorization: `Bearer ${token}`,
-		};
-		let optionsJSON;
-		try {
-			optionsJSON = await apiFetch("/auth/webauthn/register/options", {
-				method: "POST",
-				credentials: "include",
-				headers: authHeaders,
-			});
-		} catch {
-			throw new Error("Could not start passkey setup");
-		}
-
-		const attResp = await startRegistration({ optionsJSON });
-
-		const verifyData = await apiFetch("/auth/webauthn/register/verify", {
-			method: "POST",
-			credentials: "include",
-			headers: authHeaders,
-			body: JSON.stringify(attResp),
-		});
-		if (!verifyData.verified) {
-			throw new Error(
-				verifyData.message || "Passkey verification failed",
-			);
-		}
-		localStorage.setItem("safeexit_webauthn_registered", "true");
 	};
 
 	const registerAccount = async () => {
@@ -846,12 +805,11 @@ export default function StudentLoginPage() {
 		});
 		setPin("");
 		setConfirmPin("");
-		setEnableBiometric(false);
 		setSessionToken(null);
 		setOnboardingStep(5);
 	};
 
-	// Enrol PIN (+ optional biometric); handles both ONBOARDING and QUICK_SETUP
+	// Enrol the PIN; handles both ONBOARDING and QUICK_SETUP
 	const submitQuickSetup = async () => {
 		if (!/^\d{4}$/.test(pin)) {
 			setErrorMsg("Please set a 4-digit numeric PIN.");
@@ -864,7 +822,6 @@ export default function StudentLoginPage() {
 		setIsProcessing(true);
 		setErrorMsg("");
 		try {
-			let token = sessionToken;
 			let password;
 			let profile;
 
@@ -873,10 +830,9 @@ export default function StudentLoginPage() {
 					localStorage.getItem("safeexit_user_profile"),
 				);
 				password = formData.password;
-				// Register once; a retry after a cancelled biometric reuses the token
-				if (!token) {
-					token = await registerAccount();
-					setSessionToken(token);
+				// Register once; a retry after a failed PIN setup reuses the session
+				if (!sessionToken) {
+					setSessionToken(await registerAccount());
 				}
 			} else {
 				profile = storedProfile;
@@ -889,26 +845,12 @@ export default function StudentLoginPage() {
 				profile.rollNumber || profile.email,
 			);
 
-			if (enableBiometric && !hasBiometric()) {
-				await enrollBiometric(token);
-			}
-
 			hydrateAndGo(profile);
 		} catch (err) {
-			if (err?.name === "NotAllowedError") {
-				setErrorMsg(
-					"Biometric setup was cancelled. Your PIN is saved — press Enable again to finish, or turn off biometrics.",
-				);
-			} else if (err?.name === "InvalidStateError") {
-				setErrorMsg(
-					"A passkey already exists on this device for this account. Turn off biometrics to continue.",
-				);
-			} else {
-				setErrorMsg(
-					err?.message ||
-						"Couldn't finish Quick Login setup. Please try again.",
-				);
-			}
+			setErrorMsg(
+				err?.message ||
+					"Couldn't finish Quick Login setup. Please try again.",
+			);
 		} finally {
 			setIsProcessing(false);
 		}
@@ -966,49 +908,6 @@ export default function StudentLoginPage() {
 			hydrateAndGo(storedProfile);
 		} catch (err) {
 			setErrorMsg(err?.message || "Login failed.");
-		} finally {
-			setIsProcessing(false);
-		}
-	};
-
-	const handleBiometricLogin = async () => {
-		setIsProcessing(true);
-		setErrorMsg("");
-		try {
-			const email = storedProfile.email;
-
-			let optionsJSON;
-			try {
-				optionsJSON = await apiFetch("/auth/webauthn/login/options", {
-					method: "POST",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ email }),
-				});
-			} catch {
-				throw new Error(
-					"No passkey found for this account on the server.",
-				);
-			}
-
-			const asseResp = await startAuthentication({ optionsJSON });
-
-			const data = await apiFetch("/auth/webauthn/login/verify", {
-				method: "POST",
-				credentials: "include",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ email, response: asseResp }),
-			});
-			sessionStorage.setItem("safeexit_token", data.token);
-			hydrateAndGo(storedProfile);
-		} catch (err) {
-			if (err?.name === "NotAllowedError") {
-				setErrorMsg(
-					"Login was cancelled or timed out. Please try again.",
-				);
-			} else {
-				setErrorMsg(err?.message || "Biometric login failed.");
-			}
 		} finally {
 			setIsProcessing(false);
 		}
@@ -1076,7 +975,6 @@ export default function StudentLoginPage() {
 		setPendingPassword(password);
 		setPin("");
 		setConfirmPin("");
-		setEnableBiometric(false);
 		setErrorMsg("");
 		setAppState("QUICK_SETUP");
 	};
@@ -1206,7 +1104,6 @@ export default function StudentLoginPage() {
 			}
 			// The old PIN encrypted the OLD password — clear it before re-enrolling
 			clearQuickLogin({ forgetProfile: false });
-			setHasBio(false);
 			setResetToken(null);
 			await enterQuickSetupWithSession(data.token, newPassword, email);
 		} catch (err) {
@@ -1230,13 +1127,11 @@ export default function StudentLoginPage() {
 
 	const forgotQuickLogin = () => {
 		clearQuickLogin({ forgetProfile: false });
-		setHasBio(false);
 		goToLogin({ keepProfile: true });
 	};
 
 	const signInAsSomeoneElse = () => {
 		clearQuickLogin({ forgetProfile: true });
-		setHasBio(false);
 		setQuickLabel("");
 		goToLogin({ keepProfile: false });
 	};
@@ -1304,9 +1199,7 @@ export default function StudentLoginPage() {
 					Set up Quick Login
 				</h2>
 				<p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
-					Create a 4-digit PIN to sign in fast next time. Add your
-					fingerprint or face for even quicker access — it&apos;s
-					optional.
+					Create a 4-digit PIN to sign in fast next time.
 				</p>
 			</div>
 
@@ -1379,33 +1272,6 @@ export default function StudentLoginPage() {
 					</div>
 				</div>
 
-				{/* Optional biometric toggle */}
-				<div className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4">
-					<div className="flex items-center gap-3">
-						<div className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-indigo-600 shrink-0">
-							<Fingerprint className="w-5 h-5" />
-						</div>
-						<div>
-							<p className="text-sm font-bold text-slate-800">
-								Biometric Authentication
-							</p>
-							<p className="text-xs text-slate-500">
-								Optional — Fingerprint / FaceID
-							</p>
-						</div>
-					</div>
-					<button
-						type="button"
-						role="switch"
-						aria-checked={enableBiometric}
-						onClick={() => setEnableBiometric((v) => !v)}
-						className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${enableBiometric ? "bg-indigo-600" : "bg-slate-300"}`}
-					>
-						<span
-							className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${enableBiometric ? "translate-x-5" : "translate-x-0"}`}
-						/>
-					</button>
-				</div>
 			</div>
 
 			<button
@@ -1568,18 +1434,6 @@ export default function StudentLoginPage() {
 								)}
 							</button>
 						</form>
-
-						{/* Optional biometric */}
-						{hasBio && (
-							<button
-								onClick={handleBiometricLogin}
-								disabled={isProcessing}
-								className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-slate-200 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors disabled:opacity-70"
-							>
-								<Fingerprint className="w-5 h-5 text-indigo-600" />{" "}
-								Use fingerprint / FaceID
-							</button>
-						)}
 
 						<div className="mt-6 flex flex-col items-center gap-2">
 							<button
@@ -3014,7 +2868,7 @@ export default function StudentLoginPage() {
 								</div>
 							)}
 
-							{/* STEP 5: Quick Login setup (4-digit PIN + optional biometric) */}
+							{/* STEP 5: Quick Login setup (4-digit PIN) */}
 							{onboardingStep === 5 && renderQuickSetupBody()}
 						</div>
 					</div>

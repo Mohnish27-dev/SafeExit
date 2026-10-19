@@ -9,11 +9,7 @@ const {
   updateUserProfile,
   logoutUser,
   refreshSession,
-  getRegistrationOptions,
-  verifyRegistration,
-  getAuthenticationOptions,
-  verifyAuthentication
-} = require('../controllers/authController');
+} =require('../controllers/authController');
 const { sendOtp, verifyOtp } = require('../controllers/otpController');
 const {
   requestPasswordReset,
@@ -52,12 +48,5 @@ router.post('/refresh', protect, refreshSession);
 router.get('/profile', protect, getUserProfile);
 // profileLimiter because this is the 2mb-body photo endpoint, per-user keyed.
 router.patch('/profile', protect, profileLimiter, updateUserProfile);
-
-router.post('/webauthn/register/options', protect, getRegistrationOptions);
-router.post('/webauthn/register/verify', protect, verifyRegistration);
-
-// Login is public — security comes from the signed challenge; limiter blunts account-probing.
-router.post('/webauthn/login/options', authLimiter, getAuthenticationOptions);
-router.post('/webauthn/login/verify', verifyAuthentication);
 
 module.exports = router;

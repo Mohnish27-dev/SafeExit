@@ -445,7 +445,7 @@ const resetStaffPin = async (req, res) => {
       await WebauthnCredential.destroy({ where: { userId: user.id }, transaction: tx });
     });
 
-    res.json({ message: 'PIN reset. Existing passkeys were revoked; the staff member must set one up again.' });
+    res.json({ message: 'PIN reset. The staff member must sign in with the new PIN.' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

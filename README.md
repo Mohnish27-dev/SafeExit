@@ -14,7 +14,6 @@ NITP-SafeExit is a comprehensive student outing and hostel safety management sys
 - **Leave Applications**: filed by the student, approved by caretakers (or escalated to wardens).
 - **Secure Authentication**:
   - Built with JWT and `bcryptjs` for secure password hashing and session management.
-  - Includes boilerplate for WebAuthn/Passkeys integration (`@simplewebauthn`).
 
 ## 🛠 Tech Stack
 
@@ -30,7 +29,6 @@ NITP-SafeExit is a comprehensive student outing and hostel safety management sys
 - **Framework**: Express.js
 - **Database**: PostgreSQL Database (Local, Docker, or a hosted instance) — see `backend/db/postgres/README.md`
 - **Authentication**: JSON Web Tokens (JWT), bcryptjs
-- **Passkeys**: `@simplewebauthn/server`
 
 ## 📁 Project Structure
 
