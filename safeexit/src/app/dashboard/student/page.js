@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Clock3,
+  Download,
   Fingerprint,
   Home,
   IdCard,
@@ -687,6 +688,57 @@ export default function StudentDashboardPage() {
 
   const handleLogout = () => logout(router, { role: "student" });
 
+  const downloadQrPass = () => {
+    try {
+      const svg = document.querySelector("#student-gate-qr-modal svg");
+      if (!svg) return;
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const canvas = document.createElement("canvas");
+      const scale = 2;
+      const qrSize = 300;
+      canvas.width = (qrSize + 80) * scale;
+      canvas.height = (qrSize + 170) * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(scale, scale);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, qrSize + 80, qrSize + 170);
+
+      ctx.fillStyle = "#4f46e5";
+      ctx.fillRect(0, 0, qrSize + 80, 8);
+
+      const img = new window.Image();
+      img.onload = () => {
+        ctx.drawImage(img, 40, 25, qrSize, qrSize);
+
+        ctx.font = "bold 18px sans-serif";
+        ctx.fillStyle = "#0f172a";
+        ctx.textAlign = "center";
+        ctx.fillText(profile.name || "Student Pass", (qrSize + 80) / 2, qrSize + 55);
+
+        ctx.font = "bold 14px monospace";
+        ctx.fillStyle = "#4f46e5";
+        ctx.fillText(`Roll: ${profile.rollNo || ""}`, (qrSize + 80) / 2, qrSize + 80);
+
+        ctx.font = "12px sans-serif";
+        ctx.fillStyle = "#64748b";
+        ctx.fillText(`${profile.hostel || "NIT Patna"}`, (qrSize + 80) / 2, qrSize + 102);
+
+        ctx.font = "italic 11px sans-serif";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText("Permanent Gate Pass • Valid for Entry & Exit", (qrSize + 80) / 2, qrSize + 130);
+
+        const a = document.createElement("a");
+        a.download = `SafeExit-QR-${profile.rollNo || "pass"}.png`;
+        a.href = canvas.toDataURL("image/png");
+        a.click();
+      };
+      img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+    } catch (err) {
+      console.error("Error downloading QR pass:", err);
+    }
+  };
+
   // Click-outside dismissal for the modals. Both the press and the release must land on
   // the overlay itself, so a crop drag that starts inside the panel and ends over the
   // backdrop isn't mistaken for an outside click.
@@ -1192,6 +1244,43 @@ export default function StudentDashboardPage() {
                 </span>
               </div>
             </div>
+
+            {/* Prominent High-Convenience Gate Pass Action Strip */}
+            <div className="mt-4 pt-3.5 sm:mt-5 sm:pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-gradient-to-r from-sky-50 via-indigo-50/50 to-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl border border-sky-100 shadow-xs">
+              <div className="flex items-center gap-3">
+                <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-500 text-white shadow-md shadow-sky-500/25">
+                  <ScanLine className="h-5 w-5" />
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500" />
+                  </span>
+                </span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs sm:text-sm font-black text-slate-900 tracking-tight">
+                      Campus Gate Pass
+                    </p>
+                    <span className="inline-block rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-black text-cyan-800 uppercase tracking-wider">
+                      One-Tap
+                    </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-500 truncate mt-0.5">
+                    Show QR to security at main gate for entry / exit
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(true)}
+                title="Tap to display your gate pass QR code"
+                className="group relative inline-flex items-center justify-center gap-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 px-5 py-3 text-xs sm:text-sm font-black uppercase tracking-wider text-white shadow-lg shadow-sky-500/30 hover:shadow-xl hover:shadow-cyan-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer ring-2 ring-white overflow-hidden"
+              >
+                <span className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+                <QrCode className="h-4 w-4 text-white animate-pulse shrink-0" />
+                <span className="relative z-10">Show My Gate QR</span>
+                <ArrowUpRight className="h-4 w-4 relative z-10 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </button>
+            </div>
           </section>
 
           {overdueOuting && (
@@ -1622,19 +1711,18 @@ export default function StudentDashboardPage() {
               </span>
 
               <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">Your Permanent Student QR</h2>
-              <p className="text-xs text-slate-400 mt-1 leading-normal max-w-xs mx-auto">
-                Show this QR to security at the campus main gate. Your entry or exit is logged only after it is scanned.
-                The QR on your college ID card works at the gate too.
+              <p className="text-xs text-slate-500 mt-1 leading-normal max-w-xs mx-auto">
+                Show this QR to security at the campus main gate for entry or exit.
               </p>
 
-              <div className="relative mt-6 p-6 rounded-3xl bg-linear-to-br from-indigo-50/50 to-sky-50/50 border border-slate-100 shadow-inner flex justify-center items-center">
-                <div className="p-4 bg-white rounded-2xl shadow-md border border-slate-100/60 relative overflow-hidden">
-                  <QRCode value={qrValue} size={200} />
+              <div className="relative mt-5 p-5 rounded-3xl bg-linear-to-br from-indigo-50/50 to-sky-50/50 border border-slate-100 shadow-inner flex justify-center items-center">
+                <div id="student-gate-qr-modal" className="p-4 bg-white rounded-2xl shadow-md border border-slate-100/60 relative overflow-hidden">
+                  <QRCode value={qrValue} size={190} />
                   <div className="absolute left-0 right-0 h-0.5 bg-indigo-500/80 shadow-[0_0_8px_rgba(79,70,229,0.8)] animate-scan" style={{ top: '50%' }} />
                 </div>
               </div>
 
-              <div className="mt-6 w-full text-left bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
+              <div className="mt-4 w-full text-left bg-slate-50 rounded-2xl p-3.5 border border-slate-100 space-y-1.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Name</span>
                   <span className="text-sm font-bold text-slate-800">{profile.name}</span>
@@ -1649,13 +1737,42 @@ export default function StudentDashboardPage() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowQrModal(false)}
-                className="mt-6 w-full sf-btn-primary cursor-pointer"
-              >
-                Close Pass
-              </button>
+              {/* Convenience tip: save screenshot to gallery */}
+              <div className="mt-3.5 w-full flex items-start gap-2.5 rounded-2xl bg-amber-50/90 border border-amber-200/80 p-3 text-left shadow-xs">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-sm mt-0.5">
+                  <Camera className="h-3.5 w-3.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-bold text-amber-950">Save to Gallery for Quick Access</p>
+                    <span className="inline-block rounded-full bg-amber-200/80 px-1.5 py-0.2 text-[9px] font-black text-amber-900 uppercase">
+                      Tip
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-900/90 leading-relaxed mt-0.5">
+                    Take a screenshot of this QR pass to save it in your photo gallery. You can show the photo directly to the guard at the gate without opening the app every time!
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 w-full flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={downloadQrPass}
+                  title="Download pass image directly to your device"
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 active:scale-98 py-2.5 text-xs font-bold text-indigo-700 transition cursor-pointer shadow-xs"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Download / Save Pass to Photos</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(false)}
+                  className="w-full sf-btn-primary py-2.5 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  Close Pass
+                </button>
+              </div>
             </div>
           </div>
         </div>

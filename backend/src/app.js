@@ -91,6 +91,19 @@ app.use("/api/events", eventRoutes);
 // before re-keying the last IP-keyed limiter; see routes/diagRoutes.js.
 app.use("/api/_diag", diagRoutes);
 
+app.get("/", (req, res) => {
+	res.send(`
+		<div style="font-family: sans-serif; text-align: center; padding: 50px; background: #0f172a; color: white; min-height: 100vh;">
+			<h2 style="color: #38bdf8;">SafeExit Backend API is Running 🚀</h2>
+			<p style="color: #94a3b8;">Status: Active | Port: 5000 | PostgreSQL Connected</p>
+			<p style="margin-top: 30px;">To view the full website, visit the frontend at:</p>
+			<a href="http://localhost:3000/safeexit" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 10px;">
+				Open SafeExit Frontend (http://localhost:3000/safeexit) &rarr;
+			</a>
+		</div>
+	`);
+});
+
 app.get("/api/health", (req, res) => {
 	res.status(200).json({ status: "OK" });
 });

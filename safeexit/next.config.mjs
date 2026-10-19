@@ -16,6 +16,16 @@ const nextConfig = {
 	turbopack: {
 		root: projectRoot,
 	},
+	async redirects() {
+		return [
+			{
+				source: "/",
+				destination: "/safeexit",
+				basePath: false,
+				permanent: false,
+			},
+		];
+	},
 	async rewrites() {
 		// In Docker the backend is another container, reachable by its service name.
 		// Locally this falls back to 127.0.0.1:5000. Override with BACKEND_ORIGIN.

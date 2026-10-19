@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   CalendarDays,
+  Camera,
   Clock,
   ClipboardList,
   DoorOpen,
@@ -19,6 +20,7 @@ import { useStudentProfile } from "@/app/hooks/useStudentProfile";
 import StudentProfileBanner from "@/app/components/student/StudentProfileBanner";
 import FeatureHeroStrip from "@/app/components/student/FeatureHeroStrip";
 import StudentFeatureShell, { StudentFeaturePanel } from "@/app/components/student/StudentFeatureShell";
+import StudentQrModal from "@/app/components/student/StudentQrModal";
 import { apiFetch } from "@/app/lib/api";
 import { CAMPUS_TIMEZONE, OUTING_RETURN_LABEL } from "@/app/lib/outingRules.mjs";
 
@@ -58,7 +60,8 @@ const STEPS = [
 export default function GoingOutPage() {
   const router = useRouter();
   const { checked, authorized } = useRequireAuth("student");
-  const { display, hydrated } = useStudentProfile();
+  const { profile, display, hydrated } = useStudentProfile();
+  const [showQrModal, setShowQrModal] = useState(false);
 
   // The trip in progress, if any — newest-first, so the first 'Out' row is it.
   const [current, setCurrent] = useState(null);
@@ -163,10 +166,25 @@ export default function GoingOutPage() {
         </div>
       </StudentFeaturePanel>
 
-      <Link href="/dashboard/student?showQr=1" className="sf-btn-primary w-full">
-        <QrCode size={16} />
-        Show my QR
-      </Link>
+      <button
+        type="button"
+        onClick={() => setShowQrModal(true)}
+        className="sf-btn-primary w-full cursor-pointer py-3.5 text-sm font-extrabold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 active:scale-[0.98] transition-all"
+      >
+        <QrCode size={18} className="animate-pulse" />
+        Show My QR
+      </button>
+
+      {/* Convenience tip right on the page */}
+      <div className="flex items-start gap-2.5 rounded-2xl bg-amber-50/90 border border-amber-200/80 p-3 text-left shadow-xs">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-xs mt-0.5">
+          <Camera size={13} />
+        </div>
+        <p className="text-[11px] text-amber-900/90 leading-relaxed">
+          <strong className="text-amber-950 font-bold">Pro Tip:</strong> Tap &ldquo;Show My QR&rdquo; and save a screenshot to your photo gallery. You can show it directly to the guard at the main gate without opening the app every time!
+        </p>
+      </div>
+
       <Link href="/dashboard/student/my-outings" className="sf-btn-secondary w-full">
         <ClipboardList size={16} />
         My Outings
@@ -182,6 +200,12 @@ export default function GoingOutPage() {
           instead — leave still needs approval.
         </p>
       </div>
+
+      <StudentQrModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        profile={profile}
+      />
 
       <div className="h-4" />
     </StudentFeatureShell>
