@@ -38,6 +38,17 @@ const hostelsForGender = (gender) => HOSTELS.filter((h) => h.gender === gender);
 const isGirlStudent = (student) =>
   !!student && (student.gender === 'Female' || genderForHostel(student.hostelName) === 'Female');
 
+// The gate guard is given only a girl's name, roll number and hostel (so they know which
+// hostel's female guard to tell): her number and room are not theirs to see.
+// Mutates a plain student object; returns whether it was a girl. Needs gender/hostelName
+// on the object to decide, so read them and strip gender afterwards if it isn't wanted.
+const hideGirlFromGuard = (student) => {
+  if (!isGirlStudent(student)) return false;
+  delete student.phoneNumber;
+  delete student.roomNumber;
+  return true;
+};
+
 module.exports = {
   HOSTELS,
   isValidHostel,
@@ -46,4 +57,5 @@ module.exports = {
   hostelNames,
   hostelsForGender,
   isGirlStudent,
+  hideGirlFromGuard,
 };

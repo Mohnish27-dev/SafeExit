@@ -3,7 +3,7 @@
 // history, the overdue lists, staff history of outings decided under the old flow — plus
 // cancel, so a student can clear a request left over from before the change.
 const { Op } = require('sequelize');
-const { OutingRequest, DelayNotice, User } = require('../models');
+const { OutingRequest, DelayNotice } = require('../models');
 const { expireStaleRequests } = require('../utils/passExpiry');
 const { isReturnLate } = require('../utils/outingRules');
 const sseHub = require('../utils/sseHub');
@@ -11,8 +11,7 @@ const { readPageParams, sendPage } = require('../utils/pagination');
 const { estimatedRowCount } = require('../utils/rowCount');
 const { passScope, mergeWhere, canReadSignatures } = require('../utils/hostelScope');
 const { signaturePresence, withSignatureFlags } = require('../utils/signature');
-const { ciEquals } = require('../utils/ciCompare');
-const { isGirlStudent } = require('../config/hostels');
+const { hideGirlFromGuard } = require('../config/hostels');
 
 const HISTORY_STUDENT_FIELDS = ['id', 'name', 'studentId', 'roomNumber', 'hostelName'];
 const WIDE_STUDENT_FIELDS = [...HISTORY_STUDENT_FIELDS, 'department', 'year'];
@@ -187,40 +186,13 @@ const getAllOutingRequests = async (req, res) => {
 // because the overdue test runs after the fetch, a window would produce a page of zero
 // overdue rows while later ones held real cases, which is a worse failure than the size.
 // Gate practice at 8 PM: the guard phones overdue boys themselves, but an overdue girl is
-// phoned by her hostel's caretaker — the guard only passes on her name and roll number.
-// So a girl's number is removed here, server side, and the row carries the caretaker(s)
-// the guard should ring instead. Mutates the plain rows in place.
-const shapeOverdueForGuard = async (rows) => {
-  const girlHostels = new Map(); // lower(hostel) -> spelling as stored
+// phoned by the female guard at her hostel — the gate guard only passes on her name and
+// roll number. So the gate guard gets no number at all for a girl (neither hers nor any
+// staff member's) and no room, only her hostel; the row is flagged so the screen says who calls.
+// Mutates the plain rows in place.
+const shapeOverdueForGuard = (rows) => {
   for (const o of rows) {
-    const s = o.student;
-    if (!s || !isGirlStudent(s)) continue;
-    delete s.phoneNumber;
-    o.caretakerCalls = true;
-    o.caretakers = [];
-    const key = String(s.hostelName || '').trim().toLowerCase();
-    if (key) girlHostels.set(key, s.hostelName);
-  }
-
-  const contacts = new Map();
-  await Promise.all([...girlHostels].map(async ([key, hostelName]) => {
-    // Same routing as the overdue push (pushService.staffFilterForScope): the hostel's
-    // caretakers, plus any girls' caretaker not yet assigned a hostel.
-    const caretakers = await User.findAll({
-      where: {
-        role: 'Caretaker',
-        [Op.or]: [ciEquals('managed_hostel', hostelName), { managedHostel: null, managedGender: 'Female' }],
-      },
-      attributes: ['name', 'phoneNumber'],
-      order: [['name', 'ASC']],
-      raw: true,
-    });
-    contacts.set(key, caretakers.map((c) => ({ name: c.name, phoneNumber: c.phoneNumber || null })));
-  }));
-
-  for (const o of rows) {
-    if (!o.caretakerCalls) continue;
-    o.caretakers = contacts.get(String(o.student.hostelName || '').trim().toLowerCase()) || [];
+    if (o.student && hideGirlFromGuard(o.student)) o.hostelGuardCalls = true;
   }
 };
 
@@ -268,7 +240,7 @@ const getOverdueOutings = async (req, res) => {
       for (const o of overdue) o.delayNotice = byTrip.get(String(o._id)) || null;
     }
 
-    if (req.user.role === 'Guard') await shapeOverdueForGuard(overdue);
+    if (req.user.role === 'Guard') shapeOverdueForGuard(overdue);
 
     res.json(overdue);
   } catch (error) {

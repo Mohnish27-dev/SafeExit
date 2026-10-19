@@ -4,6 +4,7 @@ const { readPageParams, sendPage } = require('../utils/pagination');
 const { notifyHostelStaffAndAdmins, notifyStudent } = require('../utils/pushService');
 const { passScope, mergeWhere, studentInScope } = require('../utils/hostelScope');
 const { isReturnLate } = require('../utils/outingRules');
+const { hideGirlFromGuard } = require('../config/hostels');
 
 const DELAY_STUDENT_FIELDS = [
   'id', 'name', 'studentId', 'roomNumber', 'hostelName', 'department', 'year', 'phoneNumber',
@@ -160,7 +161,9 @@ const getMyDelayNotices = async (req, res) => {
 const getDelayNotices = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
-    const scope = passScope(DelayNotice, req.user, DELAY_STUDENT_FIELDS);
+    const isGuard = req.user.role === 'Guard';
+    // gender is read for a guard only to spot girls below; stripped before the response.
+    const scope = passScope(DelayNotice, req.user, isGuard ? [...DELAY_STUDENT_FIELDS, 'gender'] : DELAY_STUDENT_FIELDS);
     const where = mergeWhere(scope.where, req.query.status ? { status: req.query.status } : null);
     const include = [...scope.include, { association: 'acknowledgedByUser', attributes: ACK_FIELDS }];
 
@@ -175,7 +178,18 @@ const getDelayNotices = async (req, res) => {
       subQuery: false,
     });
 
-    return sendPage(res, notices, {
+    let rows = notices;
+    if (isGuard) {
+      // The gate guard gets only a girl's name, roll number and hostel (config/hostels.hideGirlFromGuard).
+      rows = notices.map((n) => n.toJSON());
+      for (const { student } of rows) {
+        if (!student) continue;
+        hideGirlFromGuard(student);
+        delete student.gender;
+      }
+    }
+
+    return sendPage(res, rows, {
       limit,
       skip,
       label: 'delay/list',
