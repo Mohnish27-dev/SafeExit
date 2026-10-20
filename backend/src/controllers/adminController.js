@@ -9,9 +9,10 @@ const { GOOGLE_SIGNIN_ROLES } = require('../utils/googleIdToken');
 const {
   annualWindowStart,
   getProfileWindowStart,
-  getReopenedAt,
+  getProfileWindowState,
   canEditProfile,
   reopenProfileWindow: reopenWindow,
+  closeProfileWindow: closeWindow,
 } = require('../utils/profileWindow');
 
 // 'Overdue' is a derived overlay that the gate scan never writes — it only ever stores
@@ -166,20 +167,27 @@ const getUsers = async (req, res) => {
     }
 
     // Guards never see profile state, so never pay for the window lookup either.
-    const windowStart = req.user.role === 'Guard' ? null : await getProfileWindowStart();
+    const showsProfileState = req.user.role !== 'Guard';
+    // Null when an admin has closed the window: then every student is locked.
+    const windowStart = showsProfileState ? await getProfileWindowStart() : null;
 
     // "Unlocked" is derived — confirmed before the current window opened, or never.
     // Staff rows have no window, so the filter pins itself to students.
-    if (windowStart && req.query.profileUnlocked !== undefined && req.query.profileUnlocked !== 'ALL') {
+    if (showsProfileState && req.query.profileUnlocked !== undefined && req.query.profileUnlocked !== 'ALL') {
+      const wantUnlocked = req.query.profileUnlocked === 'true';
       where[Op.and] = where[Op.and] || [];
-      where[Op.and].push(
-        req.query.profileUnlocked === 'true'
-          ? {
-            role: 'Student',
-            [Op.or]: [{ profileConfirmedAt: null }, { profileConfirmedAt: { [Op.lt]: windowStart } }],
-          }
-          : { profileConfirmedAt: { [Op.gte]: windowStart } }
-      );
+      if (!windowStart) {
+        where[Op.and].push(wantUnlocked ? sequelize.literal('false') : { role: 'Student' });
+      } else {
+        where[Op.and].push(
+          wantUnlocked
+            ? {
+              role: 'Student',
+              [Op.or]: [{ profileConfirmedAt: null }, { profileConfirmedAt: { [Op.lt]: windowStart } }],
+            }
+            : { profileConfirmedAt: { [Op.gte]: windowStart } }
+        );
+      }
     }
 
     const { limit, skip } = readPageParams(req);
@@ -220,7 +228,7 @@ const getUsers = async (req, res) => {
       }
       u.hasPhoto = photoIds.has(String(u.id));
       if (req.user.role !== 'Guard') u.hasSignature = signatureIds.has(String(u.id));
-      if (windowStart) u.profileUnlocked = canEditProfile(u, windowStart);
+      if (showsProfileState) u.profileUnlocked = canEditProfile(u, windowStart);
       // raw:true skips the model's toJSON, so the `_id` contract is applied by hand here.
       u._id = u.id;
     }
@@ -694,11 +702,12 @@ const updateStudent = async (req, res) => {
 // GET /api/admin/profile-window — private (Admin)
 //
 // The annual profile-update window, for the People screen: when it opened, whether that was
-// 1 July or an admin's reopen, and how many students have still not confirmed.
+// 1 July or an admin's reopen, whether an admin has closed it early, and how many students
+// did not confirm in it.
 const getProfileWindow = async (req, res) => {
   try {
     const now = new Date();
-    const windowStart = await getProfileWindowStart(now);
+    const { start: windowStart, open, reopenedAt, closedAt } = await getProfileWindowState(now);
     const annualStart = annualWindowStart(now);
     const nextAnnual = new Date(annualStart);
     nextAnnual.setUTCFullYear(nextAnnual.getUTCFullYear() + 1);
@@ -716,7 +725,9 @@ const getProfileWindow = async (req, res) => {
     res.json({
       windowStart,
       openedBy: windowStart.getTime() === annualStart.getTime() ? 'annual' : 'admin',
-      reopenedAt: await getReopenedAt(),
+      reopenedAt,
+      open,
+      closedAt,
       nextAnnualOpen: nextAnnual,
       totalStudents,
       pendingStudents,
@@ -745,6 +756,23 @@ const reopenProfileWindow = async (req, res) => {
   }
 };
 
+// POST /api/admin/profile-window/close — private (Admin)
+//
+// Locks profile editing for every student now, until the next 1 July or an admin reopen,
+// whichever comes first. One write, like reopen: no student row changes, so students who
+// never updated still show as not having updated in this window.
+const closeProfileWindow = async (req, res) => {
+  try {
+    const closedAt = await closeWindow();
+    res.json({
+      message: 'Profile editing is now locked for all students. It opens again on 1 July, or when you reopen it.',
+      closedAt,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getOverview,
   getUsers,
@@ -757,6 +785,7 @@ module.exports = {
   updateStudent,
   getProfileWindow,
   reopenProfileWindow,
+  closeProfileWindow,
   resetUserPhoto,
   resetUserSignature,
 };

@@ -153,9 +153,10 @@ export default function PeopleView() {
 
   // --- Annual profile-update window ---
   // Students edit their own details every 1 July and lock themselves on save; there is no
-  // per-student unlock and no batch promote. The admin can only reopen it for everyone.
+  // per-student unlock and no batch promote. The admin can only reopen or close it for everyone.
   const [profileWindow, setProfileWindow] = useState(null);
   const [reopening, setReopening] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   // Debounce search input so backend isn't hammered on every keypress
   useEffect(() => {
@@ -305,6 +306,24 @@ export default function PeopleView() {
       setError(err.message || "Could not reopen profile editing.");
     } finally {
       setReopening(false);
+    }
+  };
+
+  const closeForAll = async () => {
+    if (!window.confirm(
+      "Lock profile editing for ALL students now?\n\nNo student will be able to change their year, hostel, room or contacts until it opens again on 1 July, or until you reopen it."
+    )) return;
+    setClosing(true);
+    setError("");
+    try {
+      const res = await apiFetch("/admin/profile-window/close", { method: "POST" });
+      setSuccessMsg(res.message || "Profile editing locked for all students.");
+      await Promise.all([load(), loadProfileWindow()]);
+      setTimeout(() => setSuccessMsg(""), 5000);
+    } catch (err) {
+      setError(err.message || "Could not lock profile editing.");
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -569,7 +588,30 @@ export default function PeopleView() {
 
       {error && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</p>}
 
-      {role === "Student" && profileWindow && (
+      {role === "Student" && profileWindow && profileWindow.open === false && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+            <div className="min-w-0 text-sm">
+              <p className="font-bold text-slate-900">
+                Profile updates locked by admin on {formatDay(profileWindow.closedAt)}
+              </p>
+              <p className="text-xs text-slate-600">
+                No student can edit their details. Opens again automatically on {formatDay(profileWindow.nextAnnualOpen)}, or when you reopen it.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={reopenForAll}
+            disabled={reopening}
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60 cursor-pointer"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> {reopening ? "Reopening…" : "Reopen for all"}
+          </button>
+        </div>
+      )}
+
+      {role === "Student" && profileWindow && profileWindow.open !== false && (
         <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-2.5">
             <Unlock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
@@ -584,13 +626,22 @@ export default function PeopleView() {
               </p>
             </div>
           </div>
-          <button
-            onClick={reopenForAll}
-            disabled={reopening}
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60 cursor-pointer"
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> {reopening ? "Reopening…" : "Reopen for all"}
-          </button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              onClick={closeForAll}
+              disabled={closing || reopening}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 cursor-pointer"
+            >
+              <Lock className="h-3.5 w-3.5" /> {closing ? "Locking…" : "Lock for all"}
+            </button>
+            <button
+              onClick={reopenForAll}
+              disabled={reopening || closing}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60 cursor-pointer"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> {reopening ? "Reopening…" : "Reopen for all"}
+            </button>
+          </div>
         </div>
       )}
 

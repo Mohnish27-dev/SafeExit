@@ -8,6 +8,7 @@ const {
   updateStudent,
   getProfileWindow,
   reopenProfileWindow,
+  closeProfileWindow,
 } = require('../src/controllers/adminController');
 const { updateUserProfile } = require('../src/controllers/authController');
 const { annualWindowStart, canEditProfile } = require('../src/utils/profileWindow');
@@ -34,10 +35,11 @@ const responseRecorder = () => {
 const beforeWindow = () => new Date(annualWindowStart().getTime() - 24 * 3600 * 1000);
 const insideWindow = () => new Date(annualWindowStart().getTime() + 60 * 1000);
 
-// No admin reopen stored unless a test says otherwise: the window is the last 1 July.
-const stubSettings = (t, reopenedAt = null) => {
+// No admin reopen or close stored unless a test says otherwise: the window is the last 1 July.
+const stubSettings = (t, reopenedAt = null, closedAt = null) => {
   const orig = AppSetting.findByPk;
-  AppSetting.findByPk = async () => (reopenedAt ? { value: reopenedAt.toISOString() } : null);
+  const values = { profile_window_reopened_at: reopenedAt, profile_window_closed_at: closedAt };
+  AppSetting.findByPk = async (key) => (values[key] ? { value: values[key].toISOString() } : null);
   t.after(() => { AppSetting.findByPk = orig; });
 };
 
@@ -456,5 +458,102 @@ test('reopenProfileWindow stores one timestamp instead of touching students', as
   assert.equal(res.statusCode, 200);
   assert.equal(stored.key, 'profile_window_reopened_at');
   assert.ok(!Number.isNaN(new Date(stored.value).getTime()));
+  assert.equal(bulkUpdated, false);
+});
+
+test('an admin close locks students who have not updated, until the next reopen', async (t) => {
+  const origFindByPk = User.findByPk;
+  const mockStudent = {
+    id: 'stu-10', role: 'Student', gender: 'Male', hostelName: 'Kautilya', year: '2nd',
+    profileConfirmedAt: beforeWindow(), save: async () => {}, closeContacts: [],
+  };
+  User.findByPk = async () => mockStudent;
+  stubSettings(t, null, insideWindow());
+  t.after(() => { User.findByPk = origFindByPk; });
+
+  const res = responseRecorder();
+  await updateUserProfile({ user: { _id: 'stu-10' }, body: { year: '3rd', roomNumber: 'B-12' } }, res);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(mockStudent.year, '2nd');
+  assert.equal(canEditProfile({ role: 'Student', profileConfirmedAt: null }, null), false);
+});
+
+test('a reopen after a close opens the window again', async (t) => {
+  const origCount = User.count;
+  User.count = async ({ where }) => (where[Op.or] ? 12 : 160);
+  const closed = insideWindow();
+  stubSettings(t, new Date(closed.getTime() + 60 * 1000), closed);
+  t.after(() => { User.count = origCount; });
+
+  const res = responseRecorder();
+  await getProfileWindow({}, res);
+
+  assert.equal(res.body.open, true);
+  assert.equal(res.body.closedAt, null);
+  assert.equal(res.body.openedBy, 'admin');
+});
+
+test('getProfileWindow reports a closed window', async (t) => {
+  const origCount = User.count;
+  User.count = async ({ where }) => (where[Op.or] ? 12 : 160);
+  const closed = insideWindow();
+  stubSettings(t, null, closed);
+  t.after(() => { User.count = origCount; });
+
+  const res = responseRecorder();
+  await getProfileWindow({}, res);
+
+  assert.equal(res.body.open, false);
+  assert.equal(res.body.closedAt.toISOString(), closed.toISOString());
+});
+
+test('getUsers marks every student locked while the window is closed', async (t) => {
+  const origFindAll = User.findAll;
+  const origPhotos = UserPhoto.findAll;
+  const origSigs = UserSignature.findAll;
+  const origCount = User.count;
+  const origOutings = OutingRequest.findAll;
+  const origLeaves = LeaveApplication.findAll;
+  let capturedWhere = null;
+  let rows = null;
+  User.findAll = async ({ where }) => {
+    capturedWhere = where;
+    rows = [{ id: 's1', role: 'Student', campusStatus: 'Inside', profileConfirmedAt: null }];
+    return rows;
+  };
+  UserPhoto.findAll = async () => [];
+  UserSignature.findAll = async () => [];
+  User.count = async () => 1;
+  OutingRequest.findAll = async () => [];
+  LeaveApplication.findAll = async () => [];
+  stubSettings(t, null, insideWindow());
+  t.after(() => {
+    User.findAll = origFindAll; UserPhoto.findAll = origPhotos; UserSignature.findAll = origSigs;
+    User.count = origCount; OutingRequest.findAll = origOutings; LeaveApplication.findAll = origLeaves;
+  });
+
+  const res = responseRecorder();
+  await getUsers({ user: { role: 'Admin' }, query: { role: 'Student', profileUnlocked: 'true' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(rows[0].profileUnlocked, false);
+  assert.ok(capturedWhere[Op.and].some((c) => c && c.val === 'false'), 'unlocked filter should match nothing');
+});
+
+test('closeProfileWindow stores one timestamp instead of touching students', async (t) => {
+  const origUpsert = AppSetting.upsert;
+  const origUpdate = User.update;
+  let stored = null;
+  let bulkUpdated = false;
+  AppSetting.upsert = async (row) => { stored = row; };
+  User.update = async () => { bulkUpdated = true; return [0]; };
+  t.after(() => { AppSetting.upsert = origUpsert; User.update = origUpdate; });
+
+  const res = responseRecorder();
+  await closeProfileWindow({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(stored.key, 'profile_window_closed_at');
   assert.equal(bulkUpdated, false);
 });

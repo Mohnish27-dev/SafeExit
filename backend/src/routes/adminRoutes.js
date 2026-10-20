@@ -17,6 +17,7 @@ const {
   updateStudent,
   getProfileWindow,
   reopenProfileWindow,
+  closeProfileWindow,
   resetUserPhoto,
   resetUserSignature,
 } = require('../controllers/adminController');
@@ -41,10 +42,11 @@ router.get('/students/counts', protect, authorizeRoles('Admin', 'Guard'), getStu
 
 // Student management. There is no per-student unlock and no batch promote: every 1 July
 // students update their own details (utils/profileWindow.js); the admin can only reopen
-// that window for everyone at once.
+// or close that window for everyone at once.
 router.patch('/students/:id', protect, authorizeRoles('Admin'), updateStudent);
 router.get('/profile-window', protect, authorizeRoles('Admin'), getProfileWindow);
 router.post('/profile-window/reopen', protect, authorizeRoles('Admin'), reopenProfileWindow);
+router.post('/profile-window/close', protect, authorizeRoles('Admin'), closeProfileWindow);
 
 router.post('/staff', protect, authorizeRoles('Admin'), createStaff);
 router.patch('/staff/:id/pin', protect, authorizeRoles('Admin'), resetStaffPin);
