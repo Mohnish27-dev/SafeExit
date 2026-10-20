@@ -187,21 +187,20 @@ export default function StudentLoginPage() {
 		setFormData((prev) => ({ ...prev, hostelBlock, gender }));
 	};
 
-	// Persist the face photo (guard scanner) and signature (stamped onto every request) to
-	// the authenticated backend. Collected before the account exists, so this runs after
-	// registration. Fire-and-forget is safe: if it fails, the request forms still gate on a
-	// missing signature (HTTP 428) and prompt for it again.
-	const publishPhoto = (p) => {
-		const body = {};
-		if (p?.photo) body.photo = p.photo;
-		if (p?.signature) body.signature = p.signature;
-		if (!Object.keys(body).length) return;
+	// Persist the signature (stamped onto every request) to the authenticated backend. It is
+	// collected before the account exists, so this runs after registration. The face photo
+	// is not sent: registration already stored it, and both lock once set, so re-sending
+	// either from this device's cache could only ever be refused. Fire-and-forget is safe: if
+	// it fails, the request forms still gate on a missing signature (HTTP 428) and prompt
+	// for it again. A 403 just means a signature is already on file.
+	const publishSignature = (p) => {
+		if (!p?.signature) return;
 		apiFetch("/auth/profile", {
 			method: "PATCH",
-			body: JSON.stringify(body),
-		}).catch((err) =>
-			console.error("Failed to publish profile media", err),
-		);
+			body: JSON.stringify({ signature: p.signature }),
+		}).catch((err) => {
+			if (err?.status !== 403) console.error("Failed to publish signature", err);
+		});
 	};
 
 	const persistProfile = (p) => {
@@ -221,7 +220,7 @@ export default function StudentLoginPage() {
 	};
 
 	const hydrateAndGo = (p) => {
-		publishPhoto(p);
+		publishSignature(p);
 		setStoredUser({
 			name: p.fullName,
 			role: "student",

@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { sequelize, User, UserPhoto, WebauthnCredential, OutingRequest, SOSAlert } = require('../models');
+const { sequelize, User, UserPhoto, UserSignature, WebauthnCredential, OutingRequest, SOSAlert } = require('../models');
 const { getOverdueStudentIds } = require('../utils/overdue');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { isValidHostel, genderForHostel, canonicalHostelName, isGirlStudent } = require('../config/hostels');
@@ -200,6 +200,11 @@ const getUsers = async (req, res) => {
       ? await UserPhoto.findAll({ where: { userId: { [Op.in]: ids } }, attributes: ['userId'], raw: true })
       : [];
     const photoIds = new Set(withPhoto.map((p) => String(p.userId)));
+    // Same keyed lookup for signatures, admin only: it drives the reset buttons there.
+    const withSignature = ids.length && req.user.role !== 'Guard'
+      ? await UserSignature.findAll({ where: { userId: { [Op.in]: ids } }, attributes: ['userId'], raw: true })
+      : [];
+    const signatureIds = new Set(withSignature.map((s) => String(s.userId)));
 
     // Overlay derived (never persisted) 'Overdue' onto late students who are outside. A
     // legacy stored 'Overdue' with no late pass reads as 'Outside', which is the tile the
@@ -214,6 +219,7 @@ const getUsers = async (req, res) => {
         delete u.hostelName;
       }
       u.hasPhoto = photoIds.has(String(u.id));
+      if (req.user.role !== 'Guard') u.hasSignature = signatureIds.has(String(u.id));
       if (windowStart) u.profileUnlocked = canEditProfile(u, windowStart);
       // raw:true skips the model's toJSON, so the `_id` contract is applied by hand here.
       u._id = u.id;
@@ -514,6 +520,39 @@ const removeStaff = async (req, res) => {
   }
 };
 
+// Owners set their photo/signature once and cannot change it (authController
+// updateUserProfile). These are the only way to change one: the admin clears it, and the
+// owner uploads a fresh one, which locks again. Clearing rather than uploading here keeps
+// the new image coming from the owner's own device and camera.
+
+// DELETE /api/admin/users/:id/photo — private (Admin); students only, the photos the gate checks.
+const resetUserPhoto = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id, { attributes: ['id', 'name', 'role'] });
+    if (!user || user.role !== 'Student') {
+      return res.status(404).json({ message: 'Student not found.' });
+    }
+    await User.setPhoto(user.id, null);
+    res.json({ message: `Profile photo cleared for ${user.name}. They can now upload a new one.` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// DELETE /api/admin/users/:id/signature — private (Admin); students and signing staff.
+const resetUserSignature = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id, { attributes: ['id', 'name', 'role'] });
+    if (!user || user.role === 'Admin') {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    await User.setSignature(user.id, null);
+    res.json({ message: `Signature cleared for ${user.name}. They can now add a new one.` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // PATCH /api/admin/students/:id — private (Admin)
 const updateStudent = async (req, res) => {
   try {
@@ -718,4 +757,6 @@ module.exports = {
   updateStudent,
   getProfileWindow,
   reopenProfileWindow,
+  resetUserPhoto,
+  resetUserSignature,
 };

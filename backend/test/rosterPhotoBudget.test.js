@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { User, UserPhoto, OutingRequest, LeaveApplication, AppSetting } = require('../src/models');
+const { User, UserPhoto, UserSignature, OutingRequest, LeaveApplication, AppSetting } = require('../src/models');
 const { getUsers, getUserPhoto, getStudentCounts } = require('../src/controllers/adminController');
 
 // A roster row is a few hundred bytes; a stored face photo is a few hundred KILObytes.
@@ -58,6 +58,7 @@ const stubOverdue = (t, outStudentIds = []) => {
 const stubRoster = (t, rows, photoOwnerIds = []) => {
   const originalFindAll = User.findAll;
   const originalPhoto = UserPhoto.findAll;
+  const originalSignature = UserSignature.findAll;
   const originalCount = User.count;
   const originalSetting = AppSetting.findByPk;
   const seen = { page: null, probe: null };
@@ -71,11 +72,16 @@ const stubRoster = (t, rows, photoOwnerIds = []) => {
     seen.probe = options;
     return photoOwnerIds.map((id) => ({ userId: id }));
   };
+  UserSignature.findAll = async (options) => {
+    seen.signatureProbe = options;
+    return [];
+  };
   User.count = async () => rows.length;
 
   t.after(() => {
     User.findAll = originalFindAll;
     UserPhoto.findAll = originalPhoto;
+    UserSignature.findAll = originalSignature;
     User.count = originalCount;
     AppSetting.findByPk = originalSetting;
   });

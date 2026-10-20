@@ -343,18 +343,29 @@ const getUserProfile = async (req, res) => {
   if (user) {
     res.json(profilePayload(user, {
       profileUnlocked: await isProfileEditable(user),
-      photo: user.photo,
+      photo: user.photo ?? null, // explicit null: "no photo" must reach the client
       // The owner's own signature bytes; every capture UI reads them from here.
       signature: user.signature,
       hasSignature: Boolean(user.signature),
+      hasPhoto: Boolean(user.photo),
     }));
   } else {
     res.status(404).json({ message: 'User not found' });
   }
 };
 
-// PATCH /api/auth/profile — private (photo/signature always; student details inside the
-// annual edit window, see utils/profileWindow.js)
+// The face photo (students) and signature (everyone) are set once by their owner and then
+// locked: students were swapping in a friend's face so the friend could walk out at the
+// gate in their name. Accounts that predate the mandatory photo can still add one, once.
+// Changing either afterwards is an admin reset (DELETE /api/admin/users/:id/photo|signature),
+// which clears it so the owner can upload a fresh one.
+const PHOTO_LOCKED_MESSAGE =
+  'Your profile photo is locked. To change it, contact the SafeExit administrator.';
+const SIGNATURE_LOCKED_MESSAGE =
+  'Your signature is locked. To change it, contact the SafeExit administrator.';
+
+// PATCH /api/auth/profile — private (first photo/signature upload only; student details
+// inside the annual edit window, see utils/profileWindow.js)
 const updateUserProfile = async (req, res) => {
   const {
     gender,
@@ -417,6 +428,21 @@ const updateUserProfile = async (req, res) => {
     const user = await User.findByPk(req.user._id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Students' photos lock; staff photos are not identity-checked and stay as they were.
+    const photoIsLocked = photo !== undefined && user.role === 'Student';
+    if (photoIsLocked) {
+      if (photo === null || await User.hasPhoto(user.id)) {
+        return res.status(403).json({ code: 'PHOTO_LOCKED', message: PHOTO_LOCKED_MESSAGE });
+      }
+      // Same shape registration accepts, so a backfilled photo is no looser than a new one.
+      if (!/^data:image\/(jpeg|png|webp);base64,/.test(photo)) {
+        return res.status(400).json({ message: 'Invalid photo.' });
+      }
+    }
+    if (signature !== undefined && (signature === null || await User.hasSignature(user.id))) {
+      return res.status(403).json({ code: 'SIGNATURE_LOCKED', message: SIGNATURE_LOCKED_MESSAGE });
     }
 
     let normalizedCloseContacts = null;
@@ -547,11 +573,13 @@ const updateUserProfile = async (req, res) => {
         );
       }
 
-      if (photo !== undefined) {
+      if (photoIsLocked) {
+        await User.addPhotoOnce(user.id, photo, { transaction: tx });
+      } else if (photo !== undefined) {
         await User.setPhoto(user.id, photo || null, { transaction: tx });
       }
       if (signature !== undefined) {
-        await User.setSignature(user.id, signature || null, { transaction: tx });
+        await User.addSignatureOnce(user.id, signature, { transaction: tx });
       }
     });
 
@@ -561,11 +589,20 @@ const updateUserProfile = async (req, res) => {
 
     res.json(profilePayload(fresh, {
       profileUnlocked: await isProfileEditable(fresh),
-      photo: fresh.photo,
+      photo: fresh.photo ?? null,
       signature: fresh.signature,
       hasSignature: Boolean(fresh.signature),
+      hasPhoto: Boolean(fresh.photo),
     }));
   } catch (error) {
+    // A concurrent first upload won the insert; this one is now looking at a locked blob.
+    if (error?.name === 'SequelizeUniqueConstraintError') {
+      const isPhoto = error.parent?.table === 'user_photos';
+      return res.status(403).json({
+        code: isPhoto ? 'PHOTO_LOCKED' : 'SIGNATURE_LOCKED',
+        message: isPhoto ? PHOTO_LOCKED_MESSAGE : SIGNATURE_LOCKED_MESSAGE,
+      });
+    }
     res.status(500).json({ message: error.message });
   }
 };

@@ -17,6 +17,8 @@ const {
   updateStudent,
   getProfileWindow,
   reopenProfileWindow,
+  resetUserPhoto,
+  resetUserSignature,
 } = require('../controllers/adminController');
 const { getAnalytics } = require('../controllers/adminAnalyticsController');
 const { protect } = require('../middlewares/authMiddleware');
@@ -29,6 +31,10 @@ router.get('/users', protect, authorizeRoles('Admin', 'Guard'), getUsers);
 // The roster no longer carries photo bytes; this serves one on demand. Same roles, and
 // getUserPhoto re-checks that a Guard is only ever reading a Student.
 router.get('/users/:id/photo', protect, authorizeRoles('Admin', 'Guard'), getUserPhoto);
+// Photos and signatures lock once their owner sets them; changing one is an admin reset
+// that clears it for the owner to upload again.
+router.delete('/users/:id/photo', protect, authorizeRoles('Admin'), resetUserPhoto);
+router.delete('/users/:id/signature', protect, authorizeRoles('Admin'), resetUserSignature);
 // Index-served tallies for the security dashboard, so its 15s refresh does not have to
 // page through the roster to add up three numbers.
 router.get('/students/counts', protect, authorizeRoles('Admin', 'Guard'), getStudentCounts);

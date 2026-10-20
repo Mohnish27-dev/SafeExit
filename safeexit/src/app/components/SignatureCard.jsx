@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { PenLine, Plus } from "lucide-react";
+import { Lock, PenLine, Plus } from "lucide-react";
 import SignatureSetupModal from "./SignatureSetupModal";
 
-// Profile row showing the saved signature, tappable to replace it — the same affordance
-// the profile photo already has. Signatures are freely re-writable: past requests keep
-// their own snapshot, so a change here never rewrites history.
+// Profile row showing the saved signature. Tapping it adds one when there is none; once
+// saved it is locked and the row only shows it — changing it is an administrator reset.
+// Past requests keep their own snapshot either way.
 export default function SignatureCard({ signature, onSaved, label = "My signature" }) {
   const [open, setOpen] = useState(false);
 
@@ -36,14 +36,20 @@ export default function SignatureCard({ signature, onSaved, label = "My signatur
           </div>
         </div>
         <span className="shrink-0 text-[11px] font-bold text-indigo-600">
-          {signature ? "Change" : <Plus className="h-4 w-4" />}
+          {signature ? (
+            <span className="inline-flex items-center gap-1 text-slate-500">
+              <Lock className="h-3 w-3" /> Locked
+            </span>
+          ) : (
+            <Plus className="h-4 w-4" />
+          )}
         </span>
       </button>
 
       <SignatureSetupModal
         open={open}
         currentSignature={signature}
-        title={signature ? "Update your signature" : "Add your signature"}
+        title={signature ? "Your signature" : "Add your signature"}
         description="Draw it or upload a photo — it is attached automatically to everything you approve."
         onClose={() => setOpen(false)}
         onSaved={(saved) => {

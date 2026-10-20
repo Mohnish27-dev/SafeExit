@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { Op } = require('sequelize');
-const { sequelize, User, UserPhoto, OutingRequest, LeaveApplication, AppSetting } = require('../src/models');
+const { sequelize, User, UserPhoto, UserSignature, OutingRequest, LeaveApplication, AppSetting } = require('../src/models');
 const {
   getUsers,
   updateStudent,
@@ -56,6 +56,8 @@ test('getUsers applies search query and filters to where clause', async (t) => {
     return rows;
   };
   UserPhoto.findAll = async () => [];
+  const origSignatureFindAll = UserSignature.findAll;
+  UserSignature.findAll = async () => [];
   User.count = async () => 1;
   OutingRequest.findAll = async () => [];
   LeaveApplication.findAll = async () => [];
@@ -64,6 +66,7 @@ test('getUsers applies search query and filters to where clause', async (t) => {
   t.after(() => {
     User.findAll = origFindAll;
     UserPhoto.findAll = origPhotoFindAll;
+    UserSignature.findAll = origSignatureFindAll;
     User.count = origCount;
     OutingRequest.findAll = origOutingFindAll;
     LeaveApplication.findAll = origLeaveFindAll;
@@ -108,6 +111,8 @@ test('getUsers never computes profile state for a guard', async (t) => {
   let rows = null;
   User.findAll = async () => { rows = [{ id: 'stu-1', name: 'A' }]; return rows; };
   UserPhoto.findAll = async () => [];
+  const origSignatureFindAll = UserSignature.findAll;
+  UserSignature.findAll = async () => [];
   User.count = async () => 1;
   OutingRequest.findAll = async () => [];
   LeaveApplication.findAll = async () => [];
@@ -115,6 +120,7 @@ test('getUsers never computes profile state for a guard', async (t) => {
   t.after(() => {
     User.findAll = origFindAll;
     UserPhoto.findAll = origPhotoFindAll;
+    UserSignature.findAll = origSignatureFindAll;
     User.count = origCount;
     OutingRequest.findAll = origOutingFindAll;
     LeaveApplication.findAll = origLeaveFindAll;

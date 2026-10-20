@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PenLine, X } from "lucide-react";
+import { Lock, PenLine, X } from "lucide-react";
 import SignatureCapture from "./SignatureCapture";
 import { apiFetch } from "@/app/lib/api";
 import { markSignatureSaved } from "@/app/lib/userProfile";
@@ -10,7 +10,11 @@ import { markSignatureSaved } from "@/app/lib/userProfile";
 // 
 // Owns persistence because four surfaces need identical behaviour: both student request
 // forms and both staff approval modals. Errors are surfaced inline rather than swallowed
-// into console.error — unlike the photo save, an unsaved signature blocks real work.
+// into console.error — an unsaved signature blocks real work.
+//
+// A saved signature is locked (the server refuses to replace it), so with one present this
+// only shows it and says who can change it: an administrator reset clears it, and the
+// owner then captures a new one here.
 export default function SignatureSetupModal({
   open,
   dismissible = true,
@@ -76,14 +80,32 @@ export default function SignatureSetupModal({
           )}
         </div>
 
-        <div className="mt-4">
-          <SignatureCapture
-            currentSignature={currentSignature}
-            onSave={handleSave}
-            saving={saving}
-            error={error}
-          />
-        </div>
+        {currentSignature ? (
+          <div className="mt-4">
+            <div className="flex justify-center rounded-2xl border border-slate-200 bg-white p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={currentSignature} alt="Your saved signature" className="h-20 w-auto" />
+            </div>
+            <div className="mt-3 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+              <p className="text-xs leading-relaxed text-slate-600">
+                Your signature is locked. To change it, contact the SafeExit administrator.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4">
+            <p className="mb-3 text-[11px] font-semibold text-amber-700">
+              Once saved, your signature is locked. Only the administrator can change it.
+            </p>
+            <SignatureCapture
+              currentSignature={null}
+              onSave={handleSave}
+              saving={saving}
+              error={error}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
