@@ -26,6 +26,8 @@ import {
   CheckCircle2,
   RotateCcw,
   AlertCircle,
+  Camera,
+  PenLine,
 } from "lucide-react";
 import { apiFetch, apiFetchWithHeaders } from "@/app/lib/api";
 import { getInitials } from "@/app/lib/userProfile";
@@ -41,6 +43,9 @@ const TABS = [
 
 
 const HOSTEL_ROLES = ["Caretaker", "Warden"];
+
+// Roles that sign leave approvals, so their signatures can need an admin reset.
+const SIGNING_STAFF_ROLES = ["Caretaker", "Warden", "ChiefWarden"];
 
 const ROLE_LABELS = {
   Student: "Student",
@@ -136,11 +141,22 @@ export default function PeopleView() {
   const [editStudentSaving, setEditStudentSaving] = useState(false);
   const [editStudentError, setEditStudentError] = useState("");
 
+  // --- Photo & signature ---
+  // Users cannot change either once set (a student swapping in a friend's face is how
+  // outings were taken in someone else's name). The admin's only lever is a reset, which
+  // clears it so the owner uploads a fresh one that locks again.
+  const [mediaTarget, setMediaTarget] = useState(null);
+  const [mediaPhoto, setMediaPhoto] = useState(null);
+  const [mediaPhotoLoading, setMediaPhotoLoading] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState("");
+  const [mediaMsg, setMediaMsg] = useState("");
+
   // --- Annual profile-update window ---
   // Students edit their own details every 1 July and lock themselves on save; there is no
-  // per-student unlock and no batch promote. The admin can only reopen it for everyone.
+  // per-student unlock and no batch promote. The admin can only reopen or close it for everyone.
   const [profileWindow, setProfileWindow] = useState(null);
   const [reopening, setReopening] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   // Debounce search input so backend isn't hammered on every keypress
   useEffect(() => {
@@ -236,6 +252,45 @@ export default function PeopleView() {
     }
   };
 
+  const openMedia = async (person) => {
+    setMediaTarget(person);
+    setMediaPhoto(null);
+    setMediaMsg("");
+    if (person.role !== "Student" || !person.hasPhoto) return;
+    setMediaPhotoLoading(true);
+    try {
+      const { photo } = await apiFetch(`/admin/users/${person._id}/photo`);
+      setMediaPhoto(photo || null);
+    } catch {
+      // Preview only; the reset still works without it.
+    } finally {
+      setMediaPhotoLoading(false);
+    }
+  };
+
+  const resetMedia = async (kind) => {
+    if (!mediaTarget) return;
+    const label = kind === "photo" ? "profile photo" : "signature";
+    if (!window.confirm(
+      `Reset ${mediaTarget.name}'s ${label}?\n\nIt is deleted now. They will be asked to upload a new one, which locks again once saved. Verify their identity in person first.`
+    )) return;
+    setMediaBusy(kind);
+    setMediaMsg("");
+    try {
+      const res = await apiFetch(`/admin/users/${mediaTarget._id}/${kind}`, { method: "DELETE" });
+      const flag = kind === "photo" ? "hasPhoto" : "hasSignature";
+      setMediaTarget((t) => (t ? { ...t, [flag]: false } : t));
+      setPeople((list) => list.map((u) => (u._id === mediaTarget._id ? { ...u, [flag]: false } : u)));
+      if (kind === "photo") setMediaPhoto(null);
+      setSuccessMsg(res.message || `The ${label} was reset.`);
+      setTimeout(() => setSuccessMsg(""), 5000);
+    } catch (err) {
+      setMediaMsg(err.message || `Could not reset the ${label}.`);
+    } finally {
+      setMediaBusy("");
+    }
+  };
+
   const reopenForAll = async () => {
     if (!window.confirm(
       "Open profile editing for ALL students now?\n\nEvery student will be able to update their year, hostel, room and contacts once. Each profile locks again as soon as that student saves."
@@ -251,6 +306,24 @@ export default function PeopleView() {
       setError(err.message || "Could not reopen profile editing.");
     } finally {
       setReopening(false);
+    }
+  };
+
+  const closeForAll = async () => {
+    if (!window.confirm(
+      "Lock profile editing for ALL students now?\n\nNo student will be able to change their year, hostel, room or contacts until it opens again on 1 July, or until you reopen it."
+    )) return;
+    setClosing(true);
+    setError("");
+    try {
+      const res = await apiFetch("/admin/profile-window/close", { method: "POST" });
+      setSuccessMsg(res.message || "Profile editing locked for all students.");
+      await Promise.all([load(), loadProfileWindow()]);
+      setTimeout(() => setSuccessMsg(""), 5000);
+    } catch (err) {
+      setError(err.message || "Could not lock profile editing.");
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -515,7 +588,30 @@ export default function PeopleView() {
 
       {error && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</p>}
 
-      {role === "Student" && profileWindow && (
+      {role === "Student" && profileWindow && profileWindow.open === false && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+            <div className="min-w-0 text-sm">
+              <p className="font-bold text-slate-900">
+                Profile updates locked by admin on {formatDay(profileWindow.closedAt)}
+              </p>
+              <p className="text-xs text-slate-600">
+                No student can edit their details. Opens again automatically on {formatDay(profileWindow.nextAnnualOpen)}, or when you reopen it.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={reopenForAll}
+            disabled={reopening}
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60 cursor-pointer"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> {reopening ? "Reopening…" : "Reopen for all"}
+          </button>
+        </div>
+      )}
+
+      {role === "Student" && profileWindow && profileWindow.open !== false && (
         <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-2.5">
             <Unlock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
@@ -530,13 +626,22 @@ export default function PeopleView() {
               </p>
             </div>
           </div>
-          <button
-            onClick={reopenForAll}
-            disabled={reopening}
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60 cursor-pointer"
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> {reopening ? "Reopening…" : "Reopen for all"}
-          </button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              onClick={closeForAll}
+              disabled={closing || reopening}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 cursor-pointer"
+            >
+              <Lock className="h-3.5 w-3.5" /> {closing ? "Locking…" : "Lock for all"}
+            </button>
+            <button
+              onClick={reopenForAll}
+              disabled={reopening || closing}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60 cursor-pointer"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> {reopening ? "Reopening…" : "Reopen for all"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -645,6 +750,21 @@ export default function PeopleView() {
                   : `Last active ${formatWhen(p.lastActiveAt)}`}
               </div>
 
+              {role === "Student" && (!p.hasPhoto || !p.hasSignature) && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {!p.hasPhoto && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                      <Camera className="h-2.5 w-2.5" /> No photo
+                    </span>
+                  )}
+                  {!p.hasSignature && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                      <PenLine className="h-2.5 w-2.5" /> No signature
+                    </span>
+                  )}
+                </div>
+              )}
+
               {role === "Student" && (
                 <div className="mt-3 flex gap-2">
                   <button
@@ -654,7 +774,24 @@ export default function PeopleView() {
                   >
                     <Pencil className="h-3.5 w-3.5" /> Edit
                   </button>
+                  <button
+                    onClick={() => openMedia(p)}
+                    disabled={busy}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Camera className="h-3.5 w-3.5" /> Photo &amp; Sign
+                  </button>
                 </div>
+              )}
+
+              {SIGNING_STAFF_ROLES.includes(role) && (
+                <button
+                  onClick={() => openMedia(p)}
+                  disabled={busy}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                >
+                  <PenLine className="h-3.5 w-3.5" /> Signature {p.hasSignature ? "" : "(not set up)"}
+                </button>
               )}
 
               {isHostelRole && (
@@ -937,6 +1074,85 @@ export default function PeopleView() {
           </div>
         </div>
       )}
+      {/* Photo & signature reset modal */}
+      {mediaTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                <Lock className="h-5 w-5 text-indigo-600" />
+                {mediaTarget.role === "Student" ? "Photo & Signature" : "Signature"}
+              </h3>
+              <button onClick={() => setMediaTarget(null)} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 cursor-pointer">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              <span className="font-semibold text-slate-800">{mediaTarget.name}</span> cannot change{" "}
+              {mediaTarget.role === "Student" ? "these" : "this"} once saved. Resetting deletes the current one so they
+              can upload a new one, which locks again.
+            </p>
+
+            {mediaMsg && (
+              <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{mediaMsg}</p>
+            )}
+
+            <div className="mt-4 space-y-3">
+              {mediaTarget.role === "Student" && (
+                <div className="flex items-center gap-4 rounded-2xl border border-slate-200 p-3">
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-slate-400">
+                    {mediaPhotoLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : mediaPhoto ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={mediaPhoto} alt={mediaTarget.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <Camera className="h-6 w-6" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-900">Profile photo</p>
+                    <p className="text-xs text-slate-500">{mediaTarget.hasPhoto ? "On file, locked" : "Not uploaded; the student is prompted to add one"}</p>
+                    <button
+                      onClick={() => resetMedia("photo")}
+                      disabled={!mediaTarget.hasPhoto || Boolean(mediaBusy)}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> {mediaBusy === "photo" ? "Resetting…" : "Reset photo"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 rounded-2xl border border-slate-200 p-3">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                  <PenLine className="h-6 w-6" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-slate-900">Signature</p>
+                  <p className="text-xs text-slate-500">{mediaTarget.hasSignature ? "On file, locked" : "Not set up; they are asked for one when needed"}</p>
+                  <button
+                    onClick={() => resetMedia("signature")}
+                    disabled={!mediaTarget.hasSignature || Boolean(mediaBusy)}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> {mediaBusy === "signature" ? "Resetting…" : "Reset signature"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMediaTarget(null)}
+              className="mt-5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Edit Student Modal */}
       {editStudentTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">

@@ -22,6 +22,7 @@ import {
   Armchair,
   ScrollText,
   AlarmClock,
+  Lock,
 } from "lucide-react";
 import ProfileView from "./components/ProfileView";
 import MovementLogsView from "./components/MovementLogsView";
@@ -357,11 +358,10 @@ export default function CaretakerDashboardPage() {
   // thing a caretaker approves now; outings need no approval.
   const [approvalTarget, setApprovalTarget] = useState(null);
   const [approving, setApproving] = useState(false);
-  // Only used by the fallback capture for caretakers who have not set up a signature yet,
-  // or who chose to replace it from inside the approval modal.
+  // Only used by the fallback capture for caretakers who have not set up a signature yet.
+  // A saved one is locked; changing it is an administrator reset.
   const [savingSignature, setSavingSignature] = useState(false);
   const [signatureError, setSignatureError] = useState("");
-  const [changingSignature, setChangingSignature] = useState(false);
   // Hydrated by the /auth/profile call this dashboard already makes on mount.
   const mySignature = user?.signature || null;
 
@@ -387,7 +387,6 @@ export default function CaretakerDashboardPage() {
   const closeApproval = () => {
     setApprovalTarget(null);
     setSignatureError("");
-    setChangingSignature(false);
   };
 
   // Persist the caretaker's signature to their profile, then reuse it for every later
@@ -401,7 +400,6 @@ export default function CaretakerDashboardPage() {
         body: JSON.stringify({ signature }),
       });
       setUser((u) => ({ ...(u || {}), signature: updated.signature || signature }));
-      setChangingSignature(false);
     } catch (err) {
       setSignatureError(err?.message || "Couldn't save your signature. Please try again.");
     } finally {
@@ -1052,7 +1050,7 @@ export default function CaretakerDashboardPage() {
             </div>
 
             <p className="mt-4 text-sm text-slate-600">
-              {mySignature && !changingSignature
+              {mySignature
                 ? "Your saved signature will be attached to this leave application."
                 : "Add your signature once — it will be attached to every application you approve from now on."}
             </p>
@@ -1079,18 +1077,13 @@ export default function CaretakerDashboardPage() {
               </div>
             )}
 
-            {mySignature && !changingSignature ? (
+            {mySignature ? (
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Your signature</p>
-                  <button
-                    type="button"
-                    onClick={() => setChangingSignature(true)}
-                    disabled={approving}
-                    className="cursor-pointer text-[11px] font-bold text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
-                  >
-                    Change
-                  </button>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400">
+                    <Lock className="h-3 w-3" /> Locked
+                  </span>
                 </div>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -1104,27 +1097,17 @@ export default function CaretakerDashboardPage() {
               // they set it up here and the approval continues in the same modal.
               <div className="mt-4">
                 <SignatureCapture
-                  currentSignature={mySignature}
+                  currentSignature={null}
                   onSave={saveMySignature}
                   saving={savingSignature}
                   error={signatureError}
                   disabled={approving}
-                  saveLabel={mySignature ? "Update signature" : "Save signature"}
+                  saveLabel="Save signature"
                 />
-                {mySignature && (
-                  <button
-                    type="button"
-                    onClick={() => { setChangingSignature(false); setSignatureError(""); }}
-                    disabled={savingSignature}
-                    className="mt-2 w-full cursor-pointer text-xs font-bold text-slate-500 hover:text-slate-700 disabled:opacity-50"
-                  >
-                    Keep my current signature
-                  </button>
-                )}
               </div>
             )}
 
-            {signatureError && mySignature && !changingSignature && (
+            {signatureError && mySignature && (
               <p className="mt-2 text-xs font-semibold text-rose-600">{signatureError}</p>
             )}
 
@@ -1138,7 +1121,7 @@ export default function CaretakerDashboardPage() {
               </button>
               <button
                 onClick={confirmApproval}
-                disabled={approving || !mySignature || changingSignature}
+                disabled={approving || !mySignature}
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Check className="h-4 w-4" />

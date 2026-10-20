@@ -10,7 +10,8 @@ const { AppSetting } = require('../models');
 // Nothing flips a flag at midnight. Editable is DERIVED:
 //
 //   windowStart = max(most recent 1 July 00:00 IST, the admin's last "reopen for all")
-//   editable    = student AND (never confirmed OR confirmed before windowStart)
+//   open        = no admin "close for all" at or after windowStart
+//   editable    = student AND open AND (never confirmed OR confirmed before windowStart)
 //
 // A scheduled job would have to run exactly once, on a server that might be down that
 // day, and would have to update every row. This way a server that boots on 3 July reaches
@@ -19,6 +20,9 @@ const { AppSetting } = require('../models');
 // Asia/Kolkata has no DST, so a fixed offset names the instant exactly.
 const CAMPUS_OFFSET = '+05:30';
 const REOPENED_AT_KEY = 'profile_window_reopened_at';
+// An admin's "close for all": locks every student until the next 1 July or reopen,
+// whichever comes first. Both of those land after it, so neither needs to clear it.
+const CLOSED_AT_KEY = 'profile_window_closed_at';
 // Records that the one-time profile_unlocked -> profile_confirmed_at backfill ran.
 const BACKFILL_KEY = 'profile_confirmed_backfill';
 
@@ -34,23 +38,36 @@ const annualWindowStart = (now = new Date()) => {
   return now >= thisYear ? thisYear : julyFirst(year - 1);
 };
 
-const getReopenedAt = async () => {
-  const row = await AppSetting.findByPk(REOPENED_AT_KEY);
+const getSettingDate = async (key) => {
+  const row = await AppSetting.findByPk(key);
   const at = row ? new Date(row.value) : null;
   return at && !Number.isNaN(at.getTime()) ? at : null;
 };
 
-const getProfileWindowStart = async (now = new Date()) => {
+const getReopenedAt = () => getSettingDate(REOPENED_AT_KEY);
+
+// The whole picture, for the admin screen. `start` is when the current window opened,
+// whether or not an admin has since closed it.
+const getProfileWindowState = async (now = new Date()) => {
   const annual = annualWindowStart(now);
-  const reopened = await getReopenedAt();
-  return reopened && reopened > annual ? reopened : annual;
+  const [reopenedAt, closedAt] = await Promise.all([getReopenedAt(), getSettingDate(CLOSED_AT_KEY)]);
+  const start = reopenedAt && reopenedAt > annual ? reopenedAt : annual;
+  const open = !closedAt || closedAt < start;
+  return { start, open, reopenedAt, closedAt: open ? null : closedAt };
+};
+
+// Null while an admin has closed the window: nobody is editable until it next opens.
+const getProfileWindowStart = async (now = new Date()) => {
+  const { start, open } = await getProfileWindowState(now);
+  return open ? start : null;
 };
 
 // Pure, so callers that already hold windowStart (a roster page) pay no extra query.
 // Staff are never "editable": this window is for student details only, and a NULL
 // profile_confirmed_at on an admin-provisioned account must not read as open.
+// A null windowStart is a closed window.
 const canEditProfile = (user, windowStart) => {
-  if (!user || user.role !== 'Student') return false;
+  if (!user || user.role !== 'Student' || !windowStart) return false;
   const confirmedAt = user.profileConfirmedAt ? new Date(user.profileConfirmedAt) : null;
   return !confirmedAt || confirmedAt < windowStart;
 };
@@ -60,6 +77,11 @@ const isProfileEditable = async (user) =>
 
 const reopenProfileWindow = async (now = new Date()) => {
   await AppSetting.upsert({ key: REOPENED_AT_KEY, value: now.toISOString() });
+  return now;
+};
+
+const closeProfileWindow = async (now = new Date()) => {
+  await AppSetting.upsert({ key: CLOSED_AT_KEY, value: now.toISOString() });
   return now;
 };
 
@@ -107,9 +129,11 @@ const ensureProfileWindowSchema = async (sequelize) => {
 module.exports = {
   annualWindowStart,
   getProfileWindowStart,
+  getProfileWindowState,
   getReopenedAt,
   canEditProfile,
   isProfileEditable,
   reopenProfileWindow,
+  closeProfileWindow,
   ensureProfileWindowSchema,
 };

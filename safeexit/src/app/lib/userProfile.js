@@ -48,8 +48,10 @@ export const setStoredUser = (profile) => {
   window.dispatchEvent(new Event(USER_UPDATED_EVENT));
 };
 
-// Server profile wins over the tab cache; device-only fields (the photo) fall back
-// to what the tab already holds. Returns the normalized profile it stored.
+// Server profile wins over the tab cache. The photo falls back to the tab's copy only
+// when the response does not carry one at all (login/refresh omit the bytes): a server
+// answer of "no photo" must show as no photo, or the missing-photo warning never appears
+// for a student whose picture only ever lived on their device. Returns the stored profile.
 export const syncStoredStudentProfile = (me) => {
   const cached = getStoredUser();
   // Only reuse the tab cache when it belongs to this same student.
@@ -59,7 +61,7 @@ export const syncStoredStudentProfile = (me) => {
   const merged = normalizeStudentProfile({
     ...stripStudentPlaceholders(stored),
     ...studentProfileFromServer(me),
-    photo: me?.photo || stored.photo || null,
+    photo: me && "photo" in me ? me.photo || null : stored.photo || null,
   });
   setStoredUser(merged);
   return merged;

@@ -9,7 +9,6 @@ import {
   Loader2,
   Phone,
   Search,
-  UserRound,
   UsersRound,
 } from "lucide-react";
 import { apiFetch, apiFetchWithHeaders } from "@/app/lib/api";
@@ -85,7 +84,7 @@ function SecurityStudentsContent() {
   // Responses can land out of order while the guard types; only the latest one counts.
   const requestIdRef = useRef(0);
   // Who to phone for each overdue student, keyed by student _id. The roster carries no
-  // phone numbers; /outing/overdue does, and for girls it carries the caretaker instead.
+  // phone numbers; /outing/overdue does, and for girls it carries no number at all.
   const [overdueContacts, setOverdueContacts] = useState(() => new Map());
 
   useEffect(() => {
@@ -348,38 +347,24 @@ function SecurityStudentsContent() {
 
 // Who the guard phones for an overdue student. Plain text on purpose, not a tel: link or a
 // call button: the gate PC cannot dial, so the guard reads the number off the screen.
-// Girls are called by their caretaker, so the backend sends the caretaker, not her number.
+// Girls are called by the female guard at their hostel, so the backend sends no number at
+// all for a girl — the gate guard passes her name and roll number to her hostel's female guard.
 function OverdueContact({ row, t }) {
   if (!row) return null;
   const student = row.student || {};
 
-  if (row.caretakerCalls) {
-    const caretakers = row.caretakers || [];
+  if (row.hostelGuardCalls) {
     return (
       <div className="sd-lift-md mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-        <p className="text-sm font-bold text-amber-800">{t("caretakerWillCall")}</p>
-        <p className="mt-0.5 text-xs text-amber-700">
-          {t("tellCaretakerNameRoll")}
-          {student.hostelName ? ` · ${student.hostelName}` : ""}
-          {student.roomNumber ? ` · ${t("room")} ${student.roomNumber}` : ""}
+        <p className="text-sm font-bold text-amber-800">{t("hostelGuardWillCall")}</p>
+        <p className="mt-0.5 text-xs text-amber-700">{t("tellHostelGuardNameRoll")}</p>
+        <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-amber-900">
+          <span className="text-base font-semibold">{student.name}</span>
+          <span className="select-all font-mono text-lg font-bold tabular-nums tracking-wide">
+            {student.studentId || "—"}
+          </span>
+          {student.hostelName && <span className="text-sm font-semibold">· {student.hostelName}</span>}
         </p>
-        {caretakers.length === 0 ? (
-          <p className="mt-2 text-xs font-semibold text-amber-800">{t("noCaretakerOnFile")}</p>
-        ) : (
-          <ul className="mt-2 space-y-1">
-            {caretakers.map((c, i) => (
-              <li key={i} className="flex flex-wrap items-baseline gap-x-2 text-sm text-amber-900">
-                <UserRound className="h-3.5 w-3.5 shrink-0 self-center" aria-hidden="true" />
-                <span className="font-semibold">{c.name}</span>
-                {c.phoneNumber && (
-                  <span className="select-all font-mono text-base font-bold tabular-nums tracking-wide">
-                    {c.phoneNumber}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     );
   }

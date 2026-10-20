@@ -179,6 +179,23 @@ const writeBlob = async (Model, column, userId, dataUrl, options = {}) => {
 User.setPhoto = (userId, dataUrl, options) => writeBlob(UserPhoto, 'photo', userId, dataUrl, options);
 User.setSignature = (userId, dataUrl, options) => writeBlob(UserSignature, 'signature', userId, dataUrl, options);
 
+// Set-once writes for the self-service path. A user's own photo and signature lock once
+// they exist (a student swapping in someone else's face is how outings were taken in
+// their name); only an admin reset clears them. A plain INSERT, not an upsert, so two
+// racing first uploads cannot both land: the loser hits the primary key and rejects with
+// SequelizeUniqueConstraintError, which the caller reports as "already locked".
+const insertBlob = async (Model, column, userId, dataUrl, options = {}) => {
+  const parsed = parseDataUrl(dataUrl);
+  if (!parsed) throw new Error(`Invalid ${column} image.`);
+  return Model.create(
+    { userId, [column]: parsed.buffer, mimeType: parsed.mime, byteSize: parsed.buffer.length },
+    options
+  );
+};
+
+User.addPhotoOnce = (userId, dataUrl, options) => insertBlob(UserPhoto, 'photo', userId, dataUrl, options);
+User.addSignatureOnce = (userId, dataUrl, options) => insertBlob(UserSignature, 'signature', userId, dataUrl, options);
+
 // One-row reads for the two per-row byte endpoints (GET /users/:id/photo and the
 // signature stamping path), so a caller that only wants the bytes does not have to build
 // an include.
@@ -192,6 +209,12 @@ User.setSignature = (userId, dataUrl, options) => writeBlob(UserSignature, 'sign
 User.hasSignature = async (userId, options) => {
   if (!userId) return false;
   return (await UserSignature.count({ where: { userId }, ...options })) > 0;
+};
+
+// Same primary-key existence check for the face photo.
+User.hasPhoto = async (userId, options) => {
+  if (!userId) return false;
+  return (await UserPhoto.count({ where: { userId }, ...options })) > 0;
 };
 
 User.getPhoto = async (userId) => {

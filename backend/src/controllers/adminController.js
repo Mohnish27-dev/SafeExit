@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { sequelize, User, UserPhoto, WebauthnCredential, OutingRequest, SOSAlert } = require('../models');
+const { sequelize, User, UserPhoto, UserSignature, WebauthnCredential, OutingRequest, SOSAlert } = require('../models');
 const { getOverdueStudentIds } = require('../utils/overdue');
 const { readPageParams, sendPage } = require('../utils/pagination');
 const { isValidHostel, genderForHostel, canonicalHostelName, isGirlStudent } = require('../config/hostels');
@@ -9,9 +9,10 @@ const { GOOGLE_SIGNIN_ROLES } = require('../utils/googleIdToken');
 const {
   annualWindowStart,
   getProfileWindowStart,
-  getReopenedAt,
+  getProfileWindowState,
   canEditProfile,
   reopenProfileWindow: reopenWindow,
+  closeProfileWindow: closeWindow,
 } = require('../utils/profileWindow');
 
 // 'Overdue' is a derived overlay that the gate scan never writes — it only ever stores
@@ -166,20 +167,27 @@ const getUsers = async (req, res) => {
     }
 
     // Guards never see profile state, so never pay for the window lookup either.
-    const windowStart = req.user.role === 'Guard' ? null : await getProfileWindowStart();
+    const showsProfileState = req.user.role !== 'Guard';
+    // Null when an admin has closed the window: then every student is locked.
+    const windowStart = showsProfileState ? await getProfileWindowStart() : null;
 
     // "Unlocked" is derived — confirmed before the current window opened, or never.
     // Staff rows have no window, so the filter pins itself to students.
-    if (windowStart && req.query.profileUnlocked !== undefined && req.query.profileUnlocked !== 'ALL') {
+    if (showsProfileState && req.query.profileUnlocked !== undefined && req.query.profileUnlocked !== 'ALL') {
+      const wantUnlocked = req.query.profileUnlocked === 'true';
       where[Op.and] = where[Op.and] || [];
-      where[Op.and].push(
-        req.query.profileUnlocked === 'true'
-          ? {
-            role: 'Student',
-            [Op.or]: [{ profileConfirmedAt: null }, { profileConfirmedAt: { [Op.lt]: windowStart } }],
-          }
-          : { profileConfirmedAt: { [Op.gte]: windowStart } }
-      );
+      if (!windowStart) {
+        where[Op.and].push(wantUnlocked ? sequelize.literal('false') : { role: 'Student' });
+      } else {
+        where[Op.and].push(
+          wantUnlocked
+            ? {
+              role: 'Student',
+              [Op.or]: [{ profileConfirmedAt: null }, { profileConfirmedAt: { [Op.lt]: windowStart } }],
+            }
+            : { profileConfirmedAt: { [Op.gte]: windowStart } }
+        );
+      }
     }
 
     const { limit, skip } = readPageParams(req);
@@ -200,6 +208,11 @@ const getUsers = async (req, res) => {
       ? await UserPhoto.findAll({ where: { userId: { [Op.in]: ids } }, attributes: ['userId'], raw: true })
       : [];
     const photoIds = new Set(withPhoto.map((p) => String(p.userId)));
+    // Same keyed lookup for signatures, admin only: it drives the reset buttons there.
+    const withSignature = ids.length && req.user.role !== 'Guard'
+      ? await UserSignature.findAll({ where: { userId: { [Op.in]: ids } }, attributes: ['userId'], raw: true })
+      : [];
+    const signatureIds = new Set(withSignature.map((s) => String(s.userId)));
 
     // Overlay derived (never persisted) 'Overdue' onto late students who are outside. A
     // legacy stored 'Overdue' with no late pass reads as 'Outside', which is the tile the
@@ -214,7 +227,8 @@ const getUsers = async (req, res) => {
         delete u.hostelName;
       }
       u.hasPhoto = photoIds.has(String(u.id));
-      if (windowStart) u.profileUnlocked = canEditProfile(u, windowStart);
+      if (req.user.role !== 'Guard') u.hasSignature = signatureIds.has(String(u.id));
+      if (showsProfileState) u.profileUnlocked = canEditProfile(u, windowStart);
       // raw:true skips the model's toJSON, so the `_id` contract is applied by hand here.
       u._id = u.id;
     }
@@ -514,6 +528,39 @@ const removeStaff = async (req, res) => {
   }
 };
 
+// Owners set their photo/signature once and cannot change it (authController
+// updateUserProfile). These are the only way to change one: the admin clears it, and the
+// owner uploads a fresh one, which locks again. Clearing rather than uploading here keeps
+// the new image coming from the owner's own device and camera.
+
+// DELETE /api/admin/users/:id/photo — private (Admin); students only, the photos the gate checks.
+const resetUserPhoto = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id, { attributes: ['id', 'name', 'role'] });
+    if (!user || user.role !== 'Student') {
+      return res.status(404).json({ message: 'Student not found.' });
+    }
+    await User.setPhoto(user.id, null);
+    res.json({ message: `Profile photo cleared for ${user.name}. They can now upload a new one.` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// DELETE /api/admin/users/:id/signature — private (Admin); students and signing staff.
+const resetUserSignature = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id, { attributes: ['id', 'name', 'role'] });
+    if (!user || user.role === 'Admin') {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    await User.setSignature(user.id, null);
+    res.json({ message: `Signature cleared for ${user.name}. They can now add a new one.` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // PATCH /api/admin/students/:id — private (Admin)
 const updateStudent = async (req, res) => {
   try {
@@ -655,11 +702,12 @@ const updateStudent = async (req, res) => {
 // GET /api/admin/profile-window — private (Admin)
 //
 // The annual profile-update window, for the People screen: when it opened, whether that was
-// 1 July or an admin's reopen, and how many students have still not confirmed.
+// 1 July or an admin's reopen, whether an admin has closed it early, and how many students
+// did not confirm in it.
 const getProfileWindow = async (req, res) => {
   try {
     const now = new Date();
-    const windowStart = await getProfileWindowStart(now);
+    const { start: windowStart, open, reopenedAt, closedAt } = await getProfileWindowState(now);
     const annualStart = annualWindowStart(now);
     const nextAnnual = new Date(annualStart);
     nextAnnual.setUTCFullYear(nextAnnual.getUTCFullYear() + 1);
@@ -677,7 +725,9 @@ const getProfileWindow = async (req, res) => {
     res.json({
       windowStart,
       openedBy: windowStart.getTime() === annualStart.getTime() ? 'annual' : 'admin',
-      reopenedAt: await getReopenedAt(),
+      reopenedAt,
+      open,
+      closedAt,
       nextAnnualOpen: nextAnnual,
       totalStudents,
       pendingStudents,
@@ -706,6 +756,23 @@ const reopenProfileWindow = async (req, res) => {
   }
 };
 
+// POST /api/admin/profile-window/close — private (Admin)
+//
+// Locks profile editing for every student now, until the next 1 July or an admin reopen,
+// whichever comes first. One write, like reopen: no student row changes, so students who
+// never updated still show as not having updated in this window.
+const closeProfileWindow = async (req, res) => {
+  try {
+    const closedAt = await closeWindow();
+    res.json({
+      message: 'Profile editing is now locked for all students. It opens again on 1 July, or when you reopen it.',
+      closedAt,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getOverview,
   getUsers,
@@ -718,4 +785,7 @@ module.exports = {
   updateStudent,
   getProfileWindow,
   reopenProfileWindow,
+  closeProfileWindow,
+  resetUserPhoto,
+  resetUserSignature,
 };

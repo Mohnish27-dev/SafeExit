@@ -5,6 +5,7 @@ const { ciEquals } = require('../utils/ciCompare');
 const { passScope, mergeWhere } = require('../utils/hostelScope');
 const { isLegacyId } = require('../utils/legacyIdGrace');
 const { UUID_RE } = require('../middlewares/validateParams');
+const { hideGirlFromGuard } = require('../config/hostels');
 const {
   isBeforeDeparture,
   isReturnLate,
@@ -399,9 +400,12 @@ const getScanLogs = async (req, res) => {
     // to be hand-rolled here — a User.find(...).collation(...) for every student in the
     // hostel, then their ids as an $in — separately from utils/hostelScope, which did the
     // same thing slightly differently. Both are now the same JOIN.
+    const isGuard = req.user.role === 'Guard';
     const scope = passScope(ScanLog, req.user, [
       // roomNumber/department are rendered and searched by the movement log view.
       'id', 'name', 'studentId', 'campusStatus', 'roomNumber', 'hostelName', 'department',
+      // Read for a guard only to spot girls below; stripped before the response.
+      ...(isGuard ? ['gender'] : []),
     ]);
     const where = mergeWhere(scope.where, req.query.direction ? { direction: req.query.direction } : null);
 
@@ -414,7 +418,16 @@ const getScanLogs = async (req, res) => {
       limit,
       subQuery: false,
     });
-    res.json(logs);
+    if (!isGuard) return res.json(logs);
+
+    // The gate guard gets only a girl's name, roll number and hostel (config/hostels.hideGirlFromGuard).
+    const rows = logs.map((l) => l.toJSON());
+    for (const { student } of rows) {
+      if (!student) continue;
+      hideGirlFromGuard(student);
+      delete student.gender;
+    }
+    res.json(rows);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

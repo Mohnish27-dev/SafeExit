@@ -417,14 +417,8 @@ export default function StudentDashboardPage() {
     // Hydrate the browser-backed profile before the server sync lands.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile((prev) => ({ ...normalized, signature: prev.signature }));
-
-    // Republish photo to the authenticated backend so the gate scanner can show it.
-    if (normalized.photo) {
-      apiFetch("/auth/profile", {
-        method: "PATCH",
-        body: JSON.stringify({ photo: normalized.photo }),
-      }).catch((err) => console.error("Failed to publish profile photo", err));
-    }
+    // No republish of the cached photo: the server copy is locked once set, and the
+    // gate only ever shows what the server holds.
   }, [authorized]);
 
   useEffect(() => {
@@ -753,7 +747,7 @@ export default function StudentDashboardPage() {
   };
 
   const openPhotoModal = () => {
-    setPhotoDraft(profile.photo || null);
+    setPhotoDraft(null);
     setPhotoError("");
     setShowPhotoModal(true);
   };
@@ -844,35 +838,34 @@ export default function StudentDashboardPage() {
     img.src = cropSrc;
   };
 
+  // Only for an account with no photo yet: once saved it locks, and changing it is an
+  // admin reset. Awaited (not fire-and-forget) so the student sees a refusal or failure
+  // instead of a picture that never reached the gate.
   const handleSavePhoto = async () => {
-    if (!photoDraft || photoDraft === profile.photo) return;
+    if (!photoDraft || profile.photo) return;
     setSavingPhoto(true);
     setPhotoError("");
     try {
-      const compressed = await compressImage(photoDraft, 800, 0.7);
-      const nextPhoto = compressed || photoDraft;
-      setProfile((prev) => ({ ...prev, photo: nextPhoto }));
-      // Merge onto the store, not page state: state may hold signature bytes or placeholders.
-      setStoredUser({ ...getStoredUser(), photo: nextPhoto });
+      const nextPhoto = (await compressImage(photoDraft, 800, 0.7)) || photoDraft;
+      const updated = await apiFetch("/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ photo: nextPhoto }),
+      });
+      const synced = syncStoredStudentProfile(updated);
+      setProfile((prev) => ({ ...prev, photo: synced.photo }));
 
       // Sync the on-device onboarding blob so quick-login keeps the latest photo.
       try {
         const existing = JSON.parse(localStorage.getItem("safeexit_user_profile") || "null") || {};
-        localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...existing, photo: nextPhoto }));
+        localStorage.setItem("safeexit_user_profile", JSON.stringify({ ...existing, photo: synced.photo }));
       } catch {
         /* best-effort — device storage may be full or unavailable */
       }
 
-      // Republish to the authenticated backend so the new photo shows at the gate immediately.
-      apiFetch("/auth/profile", {
-        method: "PATCH",
-        body: JSON.stringify({ photo: nextPhoto }),
-      }).catch((err) => console.error("Failed to publish profile photo", err));
-
       setShowPhotoModal(false);
       setPhotoDraft(null);
     } catch (err) {
-      setPhotoError("Couldn't process that image. Please try a different photo.");
+      setPhotoError(err?.message || "Couldn't save your photo. Please try again.");
     } finally {
       setSavingPhoto(false);
     }
@@ -1025,7 +1018,7 @@ export default function StudentDashboardPage() {
               <button
                 type="button"
                 onClick={() => setShowSignatureModal(true)}
-                title="Your Signature"
+                title={profile.signature ? "Your signature (locked)" : "Add your signature"}
                 className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-indigo-100 bg-white px-3 shadow-sm transition hover:bg-indigo-50 sm:h-[3.25rem]"
               >
                 {profile.signature ? (
@@ -1035,12 +1028,12 @@ export default function StudentDashboardPage() {
                   <PenLine className="h-5 w-5 text-indigo-500" />
                 )}
               </button>
-              {/* Whole chip is the photo-change target — the 24px camera badge alone was
-                  too small to hit reliably on a phone. */}
+              {/* Whole chip opens the photo modal — the 24px badge alone was too small to hit
+                  reliably on a phone. Upload when there is no photo, view-only once locked. */}
               <button
                 type="button"
                 onClick={openPhotoModal}
-                title="Change profile photo"
+                title={profile.photo ? "Your profile photo (locked)" : "Add your profile photo"}
                 className="sd-luxe-card sd-profile-chip sd-luxe-tilt group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left cursor-pointer sm:min-w-[200px] sm:px-4 sm:py-3"
               >
                 <span className="relative block shrink-0">
@@ -1056,14 +1049,14 @@ export default function StudentDashboardPage() {
                     aria-hidden="true"
                     className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white text-indigo-600 shadow-md ring-2 ring-white transition-transform group-hover:scale-110"
                   >
-                    <Camera className="h-3.5 w-3.5" />
+                    {profile.photo ? <Lock className="h-3.5 w-3.5" /> : <Camera className="h-3.5 w-3.5" />}
                   </span>
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-bold text-slate-900 text-base">{profile.name}</span>
                   <span className="block text-sm text-slate-500">{profile.subtitle}</span>
                 </span>
-                <span className="sr-only">Change profile photo</span>
+                <span className="sr-only">{profile.photo ? "View profile photo" : "Add profile photo"}</span>
               </button>
               <button
                 type="button"
@@ -1118,6 +1111,36 @@ export default function StudentDashboardPage() {
                 >
                   <PenLine className="h-4 w-4" />
                   Edit My Details
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* Not dismissable: accounts made before the photo was mandatory have none, and the
+              gate guard has nothing to match this student's face against until they add one.
+              Waits for the server sync so a device-cached photo cannot hide it. */}
+          {mounted && hostelSynced && !profile.photo && (
+            <section className="sd-luxe-panel sd-luxe-rise mt-4 rounded-4xl p-4 shadow-xl border-2 border-rose-300 bg-gradient-to-r from-rose-50 via-amber-50 to-white sm:mt-6 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-600 text-white shadow-md shadow-rose-200">
+                    <Camera className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base font-bold text-slate-900">Upload your profile photo</h3>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Your account has no photo, so the gate guard cannot verify your identity. Add a clear,
+                      recent photo of your face. It locks once saved; only the administrator can change it later.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={openPhotoModal}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold text-sm px-5 py-2.5 shadow-md shadow-rose-200 transition cursor-pointer"
+                >
+                  <Camera className="h-4 w-4" />
+                  Upload Photo
                 </button>
               </div>
             </section>
@@ -1799,15 +1822,37 @@ export default function StudentDashboardPage() {
                 <Camera className="w-7 h-7" />
               </div>
               <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">
-                {cropSrc ? "Adjust Your Photo" : "Update Profile Photo"}
+                {cropSrc ? "Adjust Your Photo" : profile.photo ? "Your Profile Photo" : "Add Profile Photo"}
               </h2>
               <p className="text-xs text-slate-400 mt-1 leading-normal max-w-xs mx-auto">
                 {cropSrc
                   ? "Drag to reposition, use the slider to zoom, then confirm."
-                  : "Security guards use this photo to verify your identity at the gate. Choose a clear, recent face photo."}
+                  : profile.photo
+                    ? "Security guards use this photo to verify your identity at the gate."
+                    : "Security guards use this photo to verify your identity at the gate. Choose a clear, recent face photo."}
               </p>
 
-              {cropSrc ? (
+              {profile.photo ? (
+                <>
+                  <div className="mt-6 w-36 h-36 rounded-full overflow-hidden ring-4 ring-indigo-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={profile.photo} alt={profile.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="mt-5 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left">
+                    <Lock className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" />
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Your photo is locked. To change it, contact the SafeExit administrator.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closePhotoModal}
+                    className="mt-6 w-full py-3.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </>
+              ) : cropSrc ? (
                 <>
                   <div
                     className="mt-6 relative rounded-full overflow-hidden bg-slate-900 cursor-grab active:cursor-grabbing touch-none select-none ring-4 ring-indigo-100"
@@ -1894,6 +1939,10 @@ export default function StudentDashboardPage() {
                     </button>
                   )}
 
+                  <p className="mt-4 text-[11px] font-semibold text-amber-700 leading-snug">
+                    Once saved, your photo is locked. Only the administrator can change it.
+                  </p>
+
                   {photoError && <p className="text-xs text-rose-500 mt-3">{photoError}</p>}
 
                   <div className="w-full flex gap-3 pt-6">
@@ -1908,7 +1957,7 @@ export default function StudentDashboardPage() {
                     <button
                       type="button"
                       onClick={handleSavePhoto}
-                      disabled={savingPhoto || !photoDraft || photoDraft === profile.photo}
+                      disabled={savingPhoto || !photoDraft}
                       className="flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                     >
                       {savingPhoto ? (
@@ -2194,8 +2243,8 @@ export default function StudentDashboardPage() {
       <SignatureSetupModal
         open={showSignatureModal}
         currentSignature={profile?.signature || null}
-        title={profile?.signature ? "Update your signature" : "Add your signature"}
-        description="Draw it or upload a photo — it is attached automatically to everything you approve."
+        title={profile?.signature ? "Your signature" : "Add your signature"}
+        description="Draw it or upload a photo — it is attached automatically to your outing and leave requests."
         onClose={() => setShowSignatureModal(false)}
         onSaved={(signature) => {
           setProfile((prev) => ({ ...prev, signature }));
