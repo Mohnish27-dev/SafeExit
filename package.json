@@ -1,0 +1,16 @@
+{
+  "name": "safeexit-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NITP-SafeExit student outing and hostel safety management system",
+  "scripts": {
+    "dev": "node scripts/start-all.js",
+    "dev:all": "node scripts/start-all.js",
+    "dev:frontend": "npm --prefix safeexit run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "start": "node scripts/start-all.js",
+    "build": "npm --prefix safeexit run build",
+    "test:frontend": "npm --prefix safeexit test",
+    "test": "npm --prefix safeexit test"
+  }
+}
