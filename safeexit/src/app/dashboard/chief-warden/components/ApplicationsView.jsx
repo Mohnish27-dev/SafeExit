@@ -132,6 +132,9 @@ export default function ApplicationsView({ type }) {
                   )}
                   <p className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">From:</b> {(isLeave ? formatDay : formatDate)(start)}</span></p>
                   <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Return:</b> {(isLeave ? formatDay : formatDate)(end)}</span></p>
+                  {isLeave && row.parentPhone && (
+                    <p><b className="text-slate-800">Parent&apos;s mobile:</b> <a href={`tel:${row.parentPhone}`} className="font-semibold text-indigo-700 hover:underline">{row.parentPhone}</a></p>
+                  )}
                   <p><b className="text-slate-800">Hostel / Room:</b> {[student.hostelName, student.roomNumber && `Room ${student.roomNumber}`].filter(Boolean).join(" · ") || "—"}</p>
                 </div>
 

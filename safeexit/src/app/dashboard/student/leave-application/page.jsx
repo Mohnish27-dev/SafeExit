@@ -21,6 +21,7 @@ import {
   Home,
   PenLine,
   ArrowUpRight,
+  Phone,
 } from "lucide-react";
 import StudentFeatureShell, {
   StudentFeaturePanel,
@@ -105,7 +106,7 @@ export default function LeaveApplicationPage() {
   const [tab, setTab] = useState("new");
   const [step, setStep] = useState("form");
 
-  const [form, setForm] = useState({ destination: "", reason: "", leaveDate: "", returnDate: "" });
+  const [form, setForm] = useState({ destination: "", reason: "", parentPhone: "", leaveDate: "", returnDate: "" });
   const [acknowledged, setAcknowledged] = useState(false);
   // Captured once (onboarding or profile) and stamped by the server; these only drive
   // the letter's rendered signature and the one-time setup fallback for older accounts.
@@ -179,6 +180,11 @@ export default function LeaveApplicationPage() {
   }, []);
 
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }));
+  // Digits only, at most ten: pasted "+91 98765-43210" keeps its last ten digits.
+  const setParentPhone = (event) => {
+    const digits = event.target.value.replace(/\D/g, "");
+    setForm((prev) => ({ ...prev, parentPhone: digits.slice(-10) }));
+  };
 
   // Mirrors the backend rule: one live leave at a time (Pending/Forwarded/Approved/Out).
   // A student must finish the current trip (Returned) or let it end before applying again.
@@ -212,6 +218,9 @@ export default function LeaveApplicationPage() {
     if (!form.destination.trim()) nextErrors.destination = "Destination is required";
     if (!form.reason.trim() || form.reason.trim().length < 10) {
       nextErrors.reason = "Please describe the reason for leave in at least 10 characters";
+    }
+    if (!/^[0-9]{10}$/.test(form.parentPhone)) {
+      nextErrors.parentPhone = "Enter your parent's 10-digit mobile number";
     }
     if (!form.leaveDate) {
       nextErrors.leaveDate = "Leave date is required";
@@ -254,6 +263,7 @@ export default function LeaveApplicationPage() {
         body: JSON.stringify({
           destination: form.destination.trim(),
           reason: form.reason.trim(),
+          parentPhone: form.parentPhone,
           leaveDate: leaveDateObj.toISOString(),
           returnDate: returnDateObj.toISOString(),
           acknowledgement: true,
@@ -280,7 +290,7 @@ export default function LeaveApplicationPage() {
 
   const resetForm = () => {
     setCreated(null);
-    setForm({ destination: "", reason: "", leaveDate: "", returnDate: "" });
+    setForm({ destination: "", reason: "", parentPhone: "", leaveDate: "", returnDate: "" });
     setAcknowledged(false);
     setTargetCaretakerId("");
     setErrors({});
@@ -339,6 +349,7 @@ export default function LeaveApplicationPage() {
             {[
               { label: "Application ID", value: applicationId, highlight: true },
               { label: "Destination", value: created.destination },
+              { label: "Parent's Mobile", value: created.parentPhone || "—" },
               { label: "Leave Date", value: formatDate(new Date(created.leaveDate)) },
               { label: "Return By", value: formatDate(new Date(created.returnDate)) },
               ...(duration ? [{ label: "Duration", value: duration.label }] : []),
@@ -424,6 +435,9 @@ export default function LeaveApplicationPage() {
             </p>
             <p className="mt-3">
               <strong>Reason:</strong> {form.reason}
+            </p>
+            <p className="mt-3">
+              My parent can be reached at <strong>{form.parentPhone}</strong> during this leave.
             </p>
             <p className="mt-3">
               I hereby acknowledge that the college/hostel administration shall not be responsible for my
@@ -621,6 +635,24 @@ export default function LeaveApplicationPage() {
                 {errors.reason && <p className="text-xs text-rose-500 mt-1">{errors.reason}</p>}
               </div>
 
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+                  <Phone size={11} className="inline mr-1 text-violet-500" />
+                  Parent&apos;s Mobile Number *
+                </label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel-national"
+                  maxLength={10}
+                  placeholder="10-digit number, e.g. 9876543210"
+                  value={form.parentPhone}
+                  onChange={setParentPhone}
+                  className={`sf-input ${errors.parentPhone ? "sf-input--error" : ""}`}
+                />
+                {errors.parentPhone && <p className="text-xs text-rose-500 mt-1">{errors.parentPhone}</p>}
+              </div>
+
               <CaretakerSelect value={targetCaretakerId} onChange={setTargetCaretakerId} />
             </div>
           </StudentFeaturePanel>
@@ -812,6 +844,7 @@ export default function LeaveApplicationPage() {
                         <div className="rounded-2xl p-5 space-y-3.5 bg-linear-to-br from-slate-50 to-violet-50/40 border border-slate-100/80 shadow-inner">
                           {[
                             { label: "Reason", value: a.reason },
+                            ...(a.parentPhone ? [{ label: "Parent's Mobile", value: a.parentPhone }] : []),
                             { label: "Departure", value: formatDate(leave) },
                             { label: "Expected Return", value: formatDate(ret) },
                           ].map(({ label, value }) => (

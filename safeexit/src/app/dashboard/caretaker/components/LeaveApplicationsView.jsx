@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, X, CalendarDays, Loader2, RefreshCcw, MapPin, Clock3, AlertTriangle, FileText, CheckCircle2, XCircle, ArrowUpRight } from "lucide-react";
+import { Check, X, CalendarDays, Loader2, RefreshCcw, MapPin, Clock3, AlertTriangle, FileText, CheckCircle2, XCircle, ArrowUpRight, Phone } from "lucide-react";
 import { useTranslation } from "@/app/lib/i18n";
 import { useSignatures } from "@/app/lib/signatures";
 import { campusDateKey, leaveDayCount, parseCampusDate } from "@/app/lib/leaveRules.mjs";
@@ -264,6 +264,11 @@ export default function LeaveApplicationsView({
                       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                         <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" /> {t("departure")} {formatDate(req.leaveDate)}</span>
                         <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" /> {t("returnLabel")} {formatDate(req.returnDate)}</span>
+                        {req.parentPhone && (
+                          <a href={`tel:${req.parentPhone}`} className="flex items-center gap-1.5 font-semibold text-violet-700 hover:underline">
+                            <Phone className="h-3.5 w-3.5" /> {t("parentPhone")} {req.parentPhone}
+                          </a>
+                        )}
                         <span className="sd-luxe-chip rounded-full px-2.5 py-0.5 font-semibold text-violet-700 bg-violet-50 border border-violet-200">
                           {t("duration")} {getDurationLabel(req.leaveDate, req.returnDate)}
                         </span>
@@ -383,6 +388,11 @@ export default function LeaveApplicationsView({
                       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                         <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" /> {t("departure")} {formatDate(req.leaveDate)}</span>
                         <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" /> {t("returnLabel")} {formatDate(req.returnDate)}</span>
+                        {req.parentPhone && (
+                          <a href={`tel:${req.parentPhone}`} className="flex items-center gap-1.5 font-semibold text-violet-700 hover:underline">
+                            <Phone className="h-3.5 w-3.5" /> {t("parentPhone")} {req.parentPhone}
+                          </a>
+                        )}
                         <span className="sd-luxe-chip rounded-full px-2.5 py-0.5 font-semibold text-violet-700 bg-violet-50 border border-violet-200">
                           {t("duration")} {getDurationLabel(req.leaveDate, req.returnDate)}
                         </span>
@@ -450,6 +460,11 @@ export default function LeaveApplicationsView({
                 <p className="mt-3">
                   <strong>Reason:</strong> {viewing.reason}
                 </p>
+                {viewing.parentPhone && (
+                  <p className="mt-3">
+                    My parent can be reached at <strong>{viewing.parentPhone}</strong> during this leave.
+                  </p>
+                )}
                 <p className="mt-3">
                   I hereby acknowledge that the college/hostel administration shall not be responsible for my
                   safety, whereabouts, or well-being during this leave period, and that I am undertaking this

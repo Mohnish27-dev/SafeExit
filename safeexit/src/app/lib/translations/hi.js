@@ -170,6 +170,7 @@ const hi = {
     departure: "जाने का समय",
     returnLabel: "वापसी की तारीख",
     duration: "अवधि:",
+    parentPhone: "अभिभावक:",
     actingSoon: "जल्द एक्शन ज़रूरी",
     viewFullApplication: "पूरी एप्लीकेशन देखें",
     fullApplication: "पूरी लीव एप्लीकेशन",

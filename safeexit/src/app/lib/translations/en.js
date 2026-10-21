@@ -170,6 +170,7 @@ const en = {
     departure: "Departs",
     returnLabel: "Returns",
     duration: "Duration:",
+    parentPhone: "Parent:",
     actingSoon: "Acting soon",
     viewFullApplication: "View full application",
     fullApplication: "Full Leave Application",

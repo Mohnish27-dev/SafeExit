@@ -71,6 +71,7 @@ const mapLeavePending = (l) => ({
   roomNumber: l.student?.roomNumber || "",
   destination: l.destination || "",
   reason: l.reason || "",
+  parentPhone: l.parentPhone || "",
   leaveDate: l.leaveDate,
   returnDate: l.returnDate,
   submittedAt: l.createdAt,

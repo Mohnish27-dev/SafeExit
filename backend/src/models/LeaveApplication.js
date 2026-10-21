@@ -26,6 +26,9 @@ const LeaveApplication = getSequelize().define(
     reason: { type: DataTypes.TEXT, allowNull: false },
     leaveDate: { type: DataTypes.DATE, allowNull: false, field: 'leave_date' },
     returnDate: { type: DataTypes.DATE, allowNull: false, field: 'return_date' },
+    // Parent's 10-digit mobile, given on the form so staff can call home. Null only on
+    // applications filed before db/postgres/006_leave_parent_phone.sql.
+    parentPhone: { type: DataTypes.TEXT, field: 'parent_phone' },
 
     // Audit trail of what the student agreed to — not a security boundary.
     acknowledgement: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },

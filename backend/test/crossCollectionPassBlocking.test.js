@@ -58,6 +58,7 @@ const leaveRequest = (studentId) => {
       reason: 'Vacation',
       leaveDate: tomorrow.toISOString(),
       returnDate: returnDate.toISOString(),
+      parentPhone: '9876543210',
       acknowledgement: true,
     },
   };
@@ -88,4 +89,15 @@ test('createLeaveApplication rejects with 409 while the student is out on an out
   assert.match(res.body.message, /outing in progress/i, 'must inform user of the live outing');
   assert.equal(res.body.status, 'Out');
   assert.deepEqual(queried, ['Out'], 'only a live outing is looked for');
+});
+
+test("createLeaveApplication requires the parent's number as exactly 10 digits", async () => {
+  for (const parentPhone of [undefined, '', '987654321', '98765432100', '98765 43210', '+919876543210', 'abcdefghij']) {
+    const req = leaveRequest(crypto.randomUUID());
+    req.body.parentPhone = parentPhone;
+    const res = responseRecorder();
+    await createLeaveApplication(req, res);
+    assert.equal(res.statusCode, 400, `accepted ${JSON.stringify(parentPhone)}`);
+    assert.match(res.body.message, /10-digit/);
+  }
 });

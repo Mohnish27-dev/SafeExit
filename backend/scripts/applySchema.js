@@ -25,6 +25,7 @@ const STEPS = {
   validate: '003_validate_constraints.sql',
   'drop-legacy': '004_drop_legacy_ids.sql',
   'profile-window': '005_profile_window.sql',
+  'leave-parent-phone': '006_leave_parent_phone.sql',
 };
 
 // What `check` expects to find. Kept as data rather than prose so it fails loudly if the

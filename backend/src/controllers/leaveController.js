@@ -4,6 +4,7 @@ const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { expireStaleApplications } = require('../utils/passExpiry');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
+const { PARENT_PHONE_RE } = require('../utils/leaveSchema');
 const { estimatedRowCount } = require('../utils/rowCount');
 const { notifyCaretakers, notifyWardensForScope } = require('../utils/pushService');
 const { saveWardenDecision } = require('../utils/claimForwarded');
@@ -101,10 +102,15 @@ const OUTING_IN_PROGRESS_MESSAGE =
 // POST /api/leave — private (Student)
 const createLeaveApplication = async (req, res) => {
   const { destination, reason, leaveDate, returnDate, acknowledgement, targetCaretakerId } = req.body;
+  const parentPhone = typeof req.body.parentPhone === 'string' ? req.body.parentPhone.trim() : '';
 
   try {
     if (!destination || !reason || !leaveDate || !returnDate) {
       return res.status(400).json({ message: 'Destination, reason, leave date and return date are all required.' });
+    }
+    // Boys and girls alike, so the caretaker and warden can call home about this leave.
+    if (!PARENT_PHONE_RE.test(parentPhone)) {
+      return res.status(400).json({ message: "Enter your parent's 10-digit mobile number (digits only)." });
     }
 
     // Stamped from the student's saved profile signature — never accepted from the body.
@@ -198,6 +204,7 @@ const createLeaveApplication = async (req, res) => {
       reason,
       leaveDate: leaveDateObj,
       returnDate: returnDateObj,
+      parentPhone,
       acknowledgement: true,
       status: 'Pending',
       studentSignature,

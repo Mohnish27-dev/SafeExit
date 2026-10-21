@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, X, CalendarDays, History, Loader2, RefreshCcw, ArrowUpRight, MapPin, FileText } from "lucide-react";
+import { Check, X, CalendarDays, History, Loader2, RefreshCcw, ArrowUpRight, MapPin, FileText, Phone } from "lucide-react";
 import DecisionHistoryList from "./DecisionHistoryList";
 import { useSignatures } from "@/app/lib/signatures";
 import { leaveDayCount } from "@/app/lib/leaveRules.mjs";
@@ -133,6 +133,11 @@ export default function ForwardedLeaveView({
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                       <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {req.destination || "—"}</span>
                       <span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" /> {formatDate(req.leaveDate)} → {formatDate(req.returnDate)}</span>
+                      {req.parentPhone && (
+                        <a href={`tel:${req.parentPhone}`} className="inline-flex items-center gap-1 font-semibold text-violet-700 hover:underline">
+                          <Phone className="h-3.5 w-3.5" /> Parent {req.parentPhone}
+                        </a>
+                      )}
                     </div>
                     {req.reason ? <p className="mt-1 text-xs text-slate-500"><span className="font-semibold">Reason:</span> {req.reason}</p> : null}
                     <button
@@ -205,6 +210,11 @@ export default function ForwardedLeaveView({
                 <p className="mt-3">
                   <strong>Reason:</strong> {viewing.reason}
                 </p>
+                {viewing.parentPhone && (
+                  <p className="mt-3">
+                    My parent can be reached at <strong>{viewing.parentPhone}</strong> during this leave.
+                  </p>
+                )}
                 <p className="mt-3">
                   I hereby acknowledge that the college/hostel administration shall not be responsible for my
                   safety, whereabouts, or well-being during this leave period, and that I am undertaking this

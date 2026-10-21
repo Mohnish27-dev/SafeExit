@@ -2,6 +2,7 @@ const app = require('./app');
 const { connectPostgres, closePostgres, getSequelize } = require('./config/sequelize');
 const { ensureAdmins } = require('./utils/ensureAdmins');
 const { ensureProfileWindowSchema } = require('./utils/profileWindow');
+const { ensureLeaveSchema } = require('./utils/leaveSchema');
 const { startOverdueSweep } = require('./utils/overdueSweep');
 const sseHub = require('./utils/sseHub');
 const { closeMailer } = require('./utils/mailer');
@@ -91,6 +92,13 @@ connectPostgres().then(async () => {
     // Not fatal to boot, but loud: the User model selects profile_confirmed_at, so without
     // the column every user query (login included) fails.
     console.error('Could not ensure the profile window schema — apply db/postgres/001_schema.sql:', err.message);
+  }
+  try {
+    await ensureLeaveSchema(getSequelize());
+  } catch (err) {
+    // Same stakes as above: the LeaveApplication model selects parent_phone, so without it
+    // every leave query and every gate scan fails.
+    console.error('Could not ensure leave_applications.parent_phone — apply db/postgres/006_leave_parent_phone.sql:', err.message);
   }
   // Idempotent; unchanged .env = no writes.
   try {
