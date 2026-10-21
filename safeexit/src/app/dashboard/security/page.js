@@ -66,6 +66,39 @@ const formatClock = (value) => {
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 };
 
+// One palette per kind of movement, so the guard reads it from across the cabin: blue for
+// an outing exit, green for an outing return, and the student dashboard's leave purple for
+// either direction of a leave. Written out in full so Tailwind can see every class.
+const GATE_TONES = {
+  exit: {
+    backdrop: "bg-sky-950/85 ring-inset ring-8 ring-sky-500/70",
+    card: "ring-4 ring-sky-500 shadow-[0_0_60px_rgba(14,165,233,0.6)] border-2 border-sky-400",
+    header: "from-sky-500 via-blue-600 to-sky-700",
+    pill: "bg-sky-500 shadow-sky-500/40",
+    button: "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600",
+    wash: "bg-sky-500",
+    toast: "bg-sky-600",
+  },
+  entry: {
+    backdrop: "bg-emerald-950/85 ring-inset ring-8 ring-emerald-500/70",
+    card: "ring-4 ring-emerald-500 shadow-[0_0_60px_rgba(16,185,129,0.6)] border-2 border-emerald-400",
+    header: "from-emerald-500 via-green-600 to-emerald-700",
+    pill: "bg-emerald-500 shadow-emerald-500/40",
+    button: "bg-emerald-500 shadow-emerald-500/30 hover:bg-emerald-600",
+    wash: "bg-emerald-500",
+    toast: "bg-emerald-600",
+  },
+  leave: {
+    backdrop: "bg-purple-950/85 ring-inset ring-8 ring-purple-500/70",
+    card: "ring-4 ring-purple-500 shadow-[0_0_60px_rgba(168,85,247,0.6)] border-2 border-purple-400",
+    header: "from-violet-700 via-purple-600 to-fuchsia-600",
+    pill: "bg-purple-600 shadow-purple-500/40",
+    button: "bg-purple-600 shadow-purple-500/30 hover:bg-purple-700",
+    wash: "bg-purple-500",
+    toast: "bg-purple-600",
+  },
+};
+
 // 3D tilt for hero tiles; module scope so handlers aren't recreated per render.
 const handleTilePointerMove = (e) => {
   const el = e.currentTarget;
@@ -125,7 +158,7 @@ export default function SecurityDashboardPage() {
   const [scanPreview, setScanPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [scans, setScans] = useState([]);
-  const [counts, setCounts] = useState({ inside: 0, outside: 0, overdue: 0 });
+  const [counts, setCounts] = useState({ inside: 0, outside: 0, onLeave: 0, overdue: 0 });
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
   // Brief post-commit confirmation, so a guard watching a wall monitor sees that the
@@ -168,6 +201,7 @@ export default function SecurityDashboardPage() {
       setCounts({
         inside: tally.inside || 0,
         outside: tally.outside || 0,
+        onLeave: tally.onLeave || 0,
         overdue: tally.overdue || 0,
       });
     } catch {
@@ -196,7 +230,18 @@ export default function SecurityDashboardPage() {
   // student's status allows, and whether it is a sensible hour is the guard's call. Neutral
   // while the preview is loading, since derivedMode falls back to "exit" until the student's
   // campus status arrives.
-  const gateTone = previewLoading ? null : derivedMode;
+  //
+  // A movement on an approved leave is purple in both directions instead: the exit takes
+  // the leave, the entry closes it. Read off the same preview the server mirrors.
+  const isLeaveMove =
+    derivedMode === "exit"
+      ? scanPreview?.exit?.passType === "Leave"
+      : scanPreview?.activePass?.passType === "Leave";
+  const moveTone = GATE_TONES[isLeaveMove ? "leave" : derivedMode];
+  const moveLabel = isLeaveMove
+    ? derivedMode === "exit" ? t("goingOnLeave") : t("returningFromLeave")
+    : derivedMode === "exit" ? t("goingOut") : t("comingIn");
+  const gateTone = previewLoading ? null : moveTone;
 
 
   const disarmAutoCommit = useCallback(() => {
@@ -216,7 +261,7 @@ export default function SecurityDashboardPage() {
 
 
   const commitScan = useCallback(async (payload, { detached = false } = {}) => {
-    const { sid, id, name, mode = "exit" } = payload || {};
+    const { sid, id, name, mode = "exit", leave = false } = payload || {};
     if (confirmInFlightRef.current) return;
     if (!sid && !id) return;
 
@@ -243,12 +288,12 @@ export default function SecurityDashboardPage() {
         setScanPreview(null);
         setJustLogged(false);
       }
-      setFlash({ mode, name, at: Date.now() });
+      setFlash({ mode, leave, name, at: Date.now() });
       await loadScans();
     } catch (err) {
       // A detached failure has no card left to annotate, and naming the student is the
       // only way the guard can tell which movement of the last few did not stick.
-      if (detached) setFlash({ mode, name, at: Date.now(), error: t("couldNotLogFor", { name: name || t("unknownStudent") }) });
+      if (detached) setFlash({ mode, leave, name, at: Date.now(), error: t("couldNotLogFor", { name: name || t("unknownStudent") }) });
       else setLogError(err.message || t("couldNotLogScan"));
     } finally {
       if (!detached) setLogging(false);
@@ -285,13 +330,15 @@ export default function SecurityDashboardPage() {
     () =>
       scans.slice(0, 8).map((log) => {
         const st = log.student || {};
+        const leave = log.passType === "Leave";
+        const inward = log.direction === "IN";
         return {
           id: log._id,
           name: st.name || t("unknownStudent"),
           meta: st.studentId || "—",
-          tag: log.direction === "IN" ? t("entryIn") : t("exitOut"),
+          tag: leave ? (inward ? t("leaveIn") : t("leaveOut")) : inward ? t("entryIn") : t("exitOut"),
           time: new Date(log.createdAt).toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" }),
-          type: log.direction === "IN" ? "in" : "out",
+          type: leave ? "leave" : inward ? "in" : "out",
         };
       }),
     [scans, t, dateLocale]
@@ -369,6 +416,8 @@ export default function SecurityDashboardPage() {
           id: preview.student.studentId || parsed.id,
           name: preview.student.name || parsed.name,
           mode,
+          // Only colours the confirmation flash; the server decides which pass is used.
+          leave: (mode === "exit" ? preview.exit?.passType : preview.activePass?.passType) === "Leave",
           armed: false,
         };
 
@@ -466,7 +515,7 @@ export default function SecurityDashboardPage() {
     e.currentTarget.style.setProperty("--spot-y", `${e.clientY - rect.top}px`);
   };
 
-  const totalTracked = counts.inside + counts.outside + counts.overdue;
+  const totalTracked = counts.inside + counts.outside + counts.onLeave + counts.overdue;
 
   // Gate on a valid security session; hook redirects to /login/security otherwise.
   if (!checked || !authorized) return <AuthLoading />;
@@ -665,6 +714,16 @@ export default function SecurityDashboardPage() {
                     Icon: UserRound,
                   },
                   {
+                    filter: "onleave",
+                    label: t("onLeave"),
+                    note: t("onLeaveNote"),
+                    count: counts.onLeave,
+                    chip: "linear-gradient(145deg,#6d28d9 0%,#a855f7 55%,#d946ef 100%)",
+                    fill: "linear-gradient(90deg,#a855f7,#d946ef)",
+                    glow: "rgba(147,51,234,0.45)",
+                    Icon: CalendarDays,
+                  },
+                  {
                     filter: "overdue",
                     label: t("overdue"),
                     note: t("overdueNote"),
@@ -744,7 +803,7 @@ export default function SecurityDashboardPage() {
                   </div>
                 )}
                 {recentScans.map((scan) => (
-                  <div key={scan.id} className="sd-row flex-wrap" style={{ "--accent": scan.type === "in" ? "#10b981" : "#38bdf8" }}>
+                  <div key={scan.id} className="sd-row flex-wrap" style={{ "--accent": scan.type === "leave" ? "#a855f7" : scan.type === "in" ? "#10b981" : "#38bdf8" }}>
                     <span className="sd-row__accent" aria-hidden="true" />
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <span
@@ -761,7 +820,9 @@ export default function SecurityDashboardPage() {
                     <div className="ml-auto flex shrink-0 items-center gap-2">
                       <span
                         className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-[0.7rem] font-bold uppercase tracking-wide ${
-                          scan.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
+                          scan.type === "leave"
+                            ? "bg-purple-100 text-purple-700"
+                            : scan.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
                         }`}
                       >
                         {scan.tag}
@@ -842,32 +903,20 @@ export default function SecurityDashboardPage() {
 
       {scanResult && (
         <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 backdrop-blur-md sm:p-4 transition-colors duration-300 ${
-          gateTone === "exit"
-            ? "bg-sky-950/85 ring-inset ring-8 ring-sky-500/70"
-            : gateTone === "entry"
-              ? "bg-emerald-950/85 ring-inset ring-8 ring-emerald-500/70"
-              : "bg-slate-950/80"
+          gateTone ? gateTone.backdrop : "bg-slate-950/80"
         }`}>
           <div className={`sd-enter relative max-h-[94dvh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white text-center shadow-2xl transition-all duration-300 ${
-            gateTone === "exit"
-              ? "ring-4 ring-sky-500 shadow-[0_0_60px_rgba(14,165,233,0.6)] border-2 border-sky-400"
-              : gateTone === "entry"
-                ? "ring-4 ring-emerald-500 shadow-[0_0_60px_rgba(16,185,129,0.6)] border-2 border-emerald-400"
-                : ""
+            gateTone ? gateTone.card : ""
           }`}>
             {gateTone && (
-              <div className={`sticky top-0 z-20 flex items-center gap-2.5 px-4 py-3.5 pr-16 text-white shadow-md bg-gradient-to-r ${
-                gateTone === "exit"
-                  ? "from-sky-500 via-blue-600 to-sky-700"
-                  : "from-emerald-500 via-green-600 to-emerald-700"
-              }`}>
+              <div className={`sticky top-0 z-20 flex items-center gap-2.5 px-4 py-3.5 pr-16 text-white shadow-md bg-gradient-to-r ${gateTone.header}`}>
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 text-white">
-                  {gateTone === "exit"
+                  {derivedMode === "exit"
                     ? <LogOut className="h-5 w-5 stroke-[2.5]" />
                     : <LogIn className="h-5 w-5 stroke-[2.5]" />}
                 </span>
                 <span className="text-left text-base font-black uppercase tracking-wider drop-shadow-sm">
-                  {gateTone === "exit" ? t("goingOut") : t("comingIn")}
+                  {moveLabel}
                 </span>
               </div>
             )}
@@ -896,12 +945,10 @@ export default function SecurityDashboardPage() {
             <div className="flex flex-col items-center p-4 sm:p-5">
               {/* Direction pill */}
               <span
-                className={`-mt-9 mb-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-extrabold uppercase tracking-[0.18em] text-white shadow-lg ${
-                  derivedMode === "exit" ? "bg-sky-500 shadow-sky-500/40" : "bg-emerald-500 shadow-emerald-500/40"
-                }`}
+                className={`-mt-9 mb-3 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-extrabold uppercase tracking-[0.18em] text-white shadow-lg ${moveTone.pill}`}
               >
                 {derivedMode === "exit" ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
-                {derivedMode === "exit" ? t("goingOut") : t("comingIn")}
+                {moveLabel}
               </span>
 
               <div className="w-full border-b border-slate-100 pb-4">
@@ -944,6 +991,15 @@ export default function SecurityDashboardPage() {
                     })()
                   ) : (
                     (() => {
+                      // A leave return is never late: its return date is only the
+                      // student's expected return, so there is no punctuality to show.
+                      if (isLeaveMove) {
+                        return (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+                            {t("returningFromLeave")}
+                          </span>
+                        );
+                      }
                       const isOverdue = scanPreview?.punctuality === "Overdue";
                       return (
                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -975,7 +1031,7 @@ export default function SecurityDashboardPage() {
                 </div>
                 {derivedMode === 'entry' && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{t("allowedReturn")}</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{isLeaveMove ? t("expectedReturn") : t("allowedReturn")}</span>
                     <span className="text-sm font-semibold text-slate-800">
                       {scanPreview?.activePass?.windowEnd
                         ? formatClock(scanPreview.activePass.windowEnd)
@@ -1017,11 +1073,7 @@ export default function SecurityDashboardPage() {
                       <button
                         onClick={() => commitScan(pendingRef.current)}
                         disabled={logging || previewLoading}
-                        className={`relative flex-1 overflow-hidden py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-                          derivedMode === 'exit'
-                            ? "bg-sky-500 shadow-sky-500/30 hover:bg-sky-600"
-                            : "bg-emerald-500 shadow-emerald-500/30 hover:bg-emerald-600"
-                        }`}
+                        className={`relative flex-1 overflow-hidden py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${moveTone.button}`}
                       >
                         {/* Drains over exactly the window the commit is scheduled for, so
                             the guard can see how long they have to stop it. Keyed on the
@@ -1064,7 +1116,7 @@ export default function SecurityDashboardPage() {
           <span
             key={flash.at}
             className={`grd-wash pointer-events-none fixed inset-0 z-54 ${
-              flash.error ? "bg-rose-500" : flash.mode === "exit" ? "bg-sky-500" : "bg-emerald-500"
+              flash.error ? "bg-rose-500" : GATE_TONES[flash.leave ? "leave" : flash.mode].wash
             }`}
             aria-hidden="true"
           />
@@ -1077,7 +1129,7 @@ export default function SecurityDashboardPage() {
           >
             <div
               className={`sd-enter flex items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-2xl ${
-                flash.error ? "bg-rose-600" : flash.mode === "exit" ? "bg-sky-600" : "bg-emerald-600"
+                flash.error ? "bg-rose-600" : GATE_TONES[flash.leave ? "leave" : flash.mode].toast
               }`}
             >
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">
@@ -1087,7 +1139,9 @@ export default function SecurityDashboardPage() {
                 <span className="block text-sm font-extrabold">
                   {flash.error
                     ? flash.error
-                    : flash.mode === "exit" ? t("exitLogged") : t("entryLogged")}
+                    : flash.leave
+                      ? flash.mode === "exit" ? t("leaveExitLogged") : t("leaveEntryLogged")
+                      : flash.mode === "exit" ? t("exitLogged") : t("entryLogged")}
                 </span>
                 {!flash.error && (
                   <span className="block text-xs font-semibold text-white/85">{flash.name || t("unknownStudent")}</span>

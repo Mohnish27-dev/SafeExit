@@ -232,7 +232,7 @@ const en = {
     insideCampus: "Inside Campus",
     insideCampusNote: "Latest gate scan was an entry",
     outsideCampus: "Outside Campus",
-    outsideCampusNote: "Latest gate scan was an exit",
+    outsideCampusNote: "Out on an outing",
     overdue: "Overdue",
     overdueNote: "Returned late / not yet back",
     recentScans: "Recent Scans",
@@ -303,6 +303,17 @@ const en = {
     couldNotLoadProfile: "Could not load your profile",
 
     leavePass: "Leave",
+    onLeave: "On Leave",
+    onLeaveNote: "Left on an approved leave",
+    noneOnLeaveNow: "No students are on leave right now.",
+    goingOnLeave: "Going on leave",
+    returningFromLeave: "Back from leave",
+    leaveExitLogged: "Leave exit logged",
+    leaveEntryLogged: "Leave return logged",
+    leaveOut: "Leave (OUT)",
+    leaveIn: "Leave (IN)",
+    expectedReturn: "Expected return",
+    hostel: "Hostel",
   },
 
   // ─── SOS Alerts ───

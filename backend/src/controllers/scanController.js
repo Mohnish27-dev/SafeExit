@@ -270,8 +270,11 @@ const createScanLog = async (req, res) => {
       } else if (direction === 'IN') {
         linkedPass = await resolveOutPass(studentDoc.id, { transaction: tx });
         if (linkedPass) {
-          const { windowEnd } = passWindow(linkedPass.passType, linkedPass.doc);
-          resolvedPunctuality = isReturnLate(windowEnd) ? 'Overdue' : 'On-Time';
+          // A leave's return date is the student's expected return, not a deadline, so a
+          // leave return is never judged late (utils/overdue.js treats it the same way).
+          if (linkedPass.passType === 'Outing') {
+            resolvedPunctuality = isReturnLate(linkedPass.doc.inTime) ? 'Overdue' : 'On-Time';
+          }
           await modelFor(linkedPass.passType).update(
             {
               status: 'Returned',
@@ -351,8 +354,9 @@ const previewScan = async (req, res) => {
     }
 
     const activePass = await resolveOutPass(studentDoc.id);
-    const punctuality = activePass
-      ? isReturnLate(passWindow(activePass.passType, activePass.doc).windowEnd)
+    // Mirrors createScanLog: only an outing return can be late.
+    const punctuality = activePass?.passType === 'Outing'
+      ? isReturnLate(activePass.doc.inTime)
         ? 'Overdue'
         : 'On-Time'
       : 'N/A';

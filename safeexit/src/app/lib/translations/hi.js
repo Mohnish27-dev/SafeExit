@@ -232,7 +232,7 @@ const hi = {
     insideCampus: "कैंपस में अंदर",
     insideCampusNote: "आखिरी गेट स्कैन एंट्री था",
     outsideCampus: "कैंपस से बाहर",
-    outsideCampusNote: "आखिरी गेट स्कैन एग्ज़िट था",
+    outsideCampusNote: "आउटिंग पर बाहर",
     overdue: "ओवरड्यू",
     overdueNote: "देर से लौटे / अभी तक नहीं आए",
     recentScans: "हाल के स्कैन",
@@ -303,6 +303,17 @@ const hi = {
     couldNotLoadProfile: "प्रोफ़ाइल लोड नहीं हो पाई",
 
     leavePass: "लीव",
+    onLeave: "लीव पर",
+    onLeaveNote: "मंज़ूर लीव पर गए हैं",
+    noneOnLeaveNow: "अभी कोई स्टूडेंट लीव पर नहीं है।",
+    goingOnLeave: "लीव पर जा रहे हैं",
+    returningFromLeave: "लीव से लौट रहे हैं",
+    leaveExitLogged: "लीव एग्ज़िट लॉग हो गई",
+    leaveEntryLogged: "लीव से वापसी लॉग हो गई",
+    leaveOut: "लीव (OUT)",
+    leaveIn: "लीव (IN)",
+    expectedReturn: "अपेक्षित वापसी",
+    hostel: "हॉस्टल",
   },
 
   // ─── SOS Alerts ───

@@ -22,11 +22,12 @@ import LanguageSwitcher from "@/app/components/LanguageSwitcher";
 const CAMPUS_TONE = {
   Inside: "bg-emerald-100 text-emerald-700",
   Outside: "bg-amber-100 text-amber-700",
+  OnLeave: "bg-purple-100 text-purple-700",
   Overdue: "bg-rose-100 text-rose-700",
 };
 
 // ?filter= value -> the server's campusStatus bucket (same buckets as the dashboard tiles).
-const FILTER_STATUS = { inside: "Inside", outside: "Outside", overdue: "Overdue" };
+const FILTER_STATUS = { inside: "Inside", outside: "Outside", onleave: "OnLeave", overdue: "Overdue" };
 const PAGE_SIZE = 200;
 
 // 3D tilt for roster tiles; module scope so handlers aren't recreated per render.
@@ -69,6 +70,7 @@ function SecurityStudentsContent() {
   const campusLabel = useCallback((status) => {
     if (status === "Inside") return t("inside");
     if (status === "Outside") return t("outside");
+    if (status === "OnLeave") return t("onLeave");
     if (status === "Overdue") return t("overdue");
     return t("inside");
   }, [t]);
@@ -218,6 +220,7 @@ function SecurityStudentsContent() {
               { key: "", label: t("all") || "All" },
               { key: "inside", label: t("inside") },
               { key: "outside", label: t("outside") },
+              { key: "onleave", label: t("onLeave") },
               { key: "overdue", label: t("overdue") },
             ].map((f) => (
               <button
@@ -261,7 +264,9 @@ function SecurityStudentsContent() {
                       ? t("noneInsideNow")
                       : statusFilter === "outside"
                         ? t("noneOutsideNow")
-                        : statusFilter === "overdue"
+                        : statusFilter === "onleave"
+                          ? t("noneOnLeaveNow")
+                          : statusFilter === "overdue"
                           ? t("noneOverdueNow")
                           : t("studentsWillAppear")}
                 </p>
@@ -306,7 +311,8 @@ function SecurityStudentsContent() {
                       {s.campusStatus === "Overdue" && (
                         <OverdueContact row={overdueContacts.get(s._id)} t={t} />
                       )}
-                      {/* Sent only for boys who are outside; plain text, the gate PC cannot dial. */}
+                      {s.campusStatus === "OnLeave" && <LeaveContact student={s} t={t} />}
+                      {/* Sent only for boys on an outing, never for anyone on leave; plain text, the gate PC cannot dial. */}
                       {s.campusStatus === "Outside" && s.phoneNumber && (
                         <p className="sd-lift-md mt-3 flex items-center gap-2 text-slate-700">
                           <Phone className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
@@ -385,6 +391,38 @@ function OverdueContact({ row, t }) {
       {(student.hostelName || student.roomNumber) && (
         <p className="mt-1 text-xs text-rose-700">
           {[student.hostelName, student.roomNumber && `${t("room")} ${student.roomNumber}`].filter(Boolean).join(" · ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// A student on leave, laid out like the overdue card but in leave purple. A leave is never
+// overdue. The backend sends a boy's number, hostel and room, and for a girl only her hostel,
+// so this renders whatever arrived and needs no gender check of its own.
+function LeaveContact({ student, t }) {
+  const place = [student.hostelName, student.roomNumber && `${t("room")} ${student.roomNumber}`]
+    .filter(Boolean)
+    .join(" · ");
+  if (!student.phoneNumber && !place) return null;
+
+  return (
+    <div className="sd-lift-md mt-4 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3">
+      {student.phoneNumber && (
+        <>
+          <p className="text-xs font-bold uppercase tracking-wide text-purple-700">{t("studentPhone")}</p>
+          <p className="mt-1 flex items-center gap-2 text-purple-900">
+            <Phone className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="select-all font-mono text-xl font-bold tabular-nums tracking-wide">
+              {student.phoneNumber}
+            </span>
+          </p>
+        </>
+      )}
+      {place && (
+        <p className={student.phoneNumber ? "mt-1 text-xs text-purple-700" : "text-sm font-semibold text-purple-800"}>
+          {!student.phoneNumber && <span className="font-bold">{t("hostel")}: </span>}
+          {place}
         </p>
       )}
     </div>
