@@ -9,7 +9,8 @@ const { notifyCaretakers, notifyWardensForScope } = require('../utils/pushServic
 const { saveWardenDecision } = require('../utils/claimForwarded');
 const {
   getLeaveSubmissionTimingViolation,
-  isBeforeEveningCurfew,
+  isLeaveDayOver,
+  campusDayStart,
 } = require('../utils/outingRules');
 const {
   passScope,
@@ -125,35 +126,30 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
-    const leaveDateObj = new Date(leaveDate);
+    // The departure is a day, not a time: the leave QR works at any hour of it. Whatever
+    // instant the client sent is pinned to campus midnight of its campus day, so every new
+    // row means the same thing and the dashboards can render it as a date.
+    const leaveDateObj = campusDayStart(leaveDate);
     const returnDateObj = new Date(returnDate);
 
-    if (Number.isNaN(leaveDateObj.getTime()) || Number.isNaN(returnDateObj.getTime())) {
+    if (!leaveDateObj || Number.isNaN(leaveDateObj.getTime()) || Number.isNaN(returnDateObj.getTime())) {
       return res.status(400).json({ message: 'Leave date and return date must be valid dates.' });
     }
 
     if (returnDateObj.getTime() <= leaveDateObj.getTime()) {
-      return res.status(400).json({ message: 'Return date must be after the leave date.' });
+      return res.status(400).json({ message: 'Return date cannot be before the leave date.' });
     }
 
     const timingViolation = getLeaveSubmissionTimingViolation(req.user.gender, leaveDateObj);
     if (timingViolation === 'DEPARTURE_NOT_FUTURE') {
       return res.status(400).json({
-        message: 'Leave departure must be in the future.',
+        message: 'The leave date cannot be in the past.',
       });
     }
     if (timingViolation === 'FEMALE_DEPARTURE_DAY') {
       return res.status(400).json({
         message:
           'Girls\' leave applications must be submitted before the departure day. To leave tomorrow, submit the application by the end of today.',
-      });
-    }
-
-    // Friendly guard rail — the gate re-enforces the 5:30 PM curfew at scan time.
-    if (!isBeforeEveningCurfew(leaveDateObj)) {
-      return res.status(400).json({
-        message:
-          'Leave departure must be between 6:00 AM and 5:30 PM (campus time) on the departure day. Please choose a leave time in that window.',
       });
     }
 
@@ -478,7 +474,7 @@ const updateLeaveStatus = async (req, res) => {
     if (
       application.status === 'Pending' &&
       status === 'Approved' &&
-      Date.now() > new Date(application.leaveDate).getTime()
+      isLeaveDayOver(application.leaveDate)
     ) {
       application.status = 'Expired';
       await application.save();
@@ -552,7 +548,7 @@ const forwardLeaveApplication = async (req, res) => {
     }
 
     // Don't forward a pass that's already past its leave date; expire it instead.
-    if (Date.now() > new Date(application.leaveDate).getTime()) {
+    if (isLeaveDayOver(application.leaveDate)) {
       application.status = 'Expired';
       await application.save();
       sseHub.broadcast('leave:changed', { reason: 'expired', id: application.id, status: 'Expired' });
@@ -718,7 +714,7 @@ const updateWardenLeaveStatus = async (req, res) => {
     }
 
     // Approving after the leave date passed would mint an already-expired pass.
-    if (status === 'Approved' && Date.now() > new Date(application.leaveDate).getTime()) {
+    if (status === 'Approved' && isLeaveDayOver(application.leaveDate)) {
       application.status = 'Expired';
       await application.save();
       sseHub.broadcast('leave:changed', { reason: 'expired', id: application.id, status: 'Expired' });

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Check, X, CalendarDays, History, Loader2, RefreshCcw, ArrowUpRight, MapPin, FileText } from "lucide-react";
 import DecisionHistoryList from "./DecisionHistoryList";
 import { useSignatures } from "@/app/lib/signatures";
+import { leaveDayCount } from "@/app/lib/leaveRules.mjs";
 
 const formatDate = (value) =>
   value ? new Date(value).toLocaleDateString("en-US", { day: "2-digit", month: "short" }) : "—";
@@ -13,28 +14,15 @@ const formatDateTime = (value) =>
   value ? new Date(value).toLocaleString("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
 // With year: the letter view needs an unambiguous formal date.
-const formatLetterDateTime = (value) =>
-  value
-    ? new Date(value).toLocaleString("en-US", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
-
 const formatLetterDate = (value) =>
   value ? new Date(value).toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
+// A leave is a span of dates (the leave QR works at any hour of the leave date), so its
+// length is calendar days, both ends included.
 const getDurationLabel = (leaveDate, returnDate) => {
-  const ms = new Date(returnDate).getTime() - new Date(leaveDate).getTime();
-  if (!Number.isFinite(ms) || ms <= 0) return "—";
-  const days = Math.floor(ms / (24 * 60 * 60 * 1000));
-  const hours = Math.round((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-  if (days === 0) return `${hours}h`;
-  if (hours === 0) return `${days}d`;
-  return `${days}d ${hours}h`;
+  const days = leaveDayCount(leaveDate, returnDate);
+  if (!days) return "—";
+  return `${days}d`;
 };
 
 // Warden action queue for leave applications a caretaker escalated (status 'Forwarded'),
@@ -211,7 +199,7 @@ export default function ForwardedLeaveView({
                   I, <strong>{viewing.name}</strong>
                   {viewing.roomNumber ? <>, a resident of Room {viewing.roomNumber}{viewing.hostelName ? `, ${viewing.hostelName}` : ""}</> : null}
                   {viewing.roll ? <>, Roll No. {viewing.roll}</> : null}, would like to request leave to visit{" "}
-                  <strong>{viewing.destination}</strong> from <strong>{formatLetterDateTime(viewing.leaveDate)}</strong> to{" "}
+                  <strong>{viewing.destination}</strong> from <strong>{formatLetterDate(viewing.leaveDate)}</strong> to{" "}
                   <strong>{formatLetterDate(viewing.returnDate)}</strong>.
                 </p>
                 <p className="mt-3">

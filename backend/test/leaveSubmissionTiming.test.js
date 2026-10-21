@@ -10,9 +10,16 @@ test('boys can submit a leave application on the departure day', () => {
   assert.equal(getLeaveSubmissionTimingViolation('Male', departure, now), null);
 });
 
-test('boys still cannot submit after the departure time', () => {
-  const now = new Date('2026-07-30T05:30:00.000Z');
-  const departure = new Date('2026-07-30T04:30:00.000Z');
+test('boys may submit for today until the day is over, whatever the hour', () => {
+  const now = new Date('2026-07-30T16:30:00.000Z'); // 10:00 PM IST
+  const departure = new Date('2026-07-29T18:30:00.000Z'); // campus midnight starting July 30
+
+  assert.equal(getLeaveSubmissionTimingViolation('Male', departure, now), null);
+});
+
+test('nobody can submit for a day already gone', () => {
+  const now = new Date('2026-07-30T18:30:00.000Z'); // 12:00 AM IST on July 31
+  const departure = new Date('2026-07-29T18:30:00.000Z'); // July 30
 
   assert.equal(
     getLeaveSubmissionTimingViolation('Male', departure, now),

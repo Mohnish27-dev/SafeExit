@@ -1,11 +1,12 @@
 const { Op } = require('sequelize');
 const { OutingRequest, LeaveApplication } = require('../models');
-const { isDeparturePassed } = require('./outingRules');
+const { isDeparturePassed, isLeaveDayOver } = require('./outingRules');
 
 const EXPIRABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
 
 // Lazy expiry: a pass whose departure window has passed unused becomes Expired the next
-// time anyone reads it, rather than needing a background job.
+// time anyone reads it, rather than needing a background job. A leave's window is its whole
+// departure day (utils/outingRules.isLeaveDayOver).
 //
 // The status guard in the WHERE clause is not decoration — between the read that produced
 // these rows and this write, a gate scan may have moved one of them to 'Out'. Re-asserting
@@ -39,7 +40,7 @@ const expireStaleRequests = (requests) =>
   expireStale(OutingRequest, 'outing', requests, (doc) => isDeparturePassed(doc.outTime));
 
 const expireStaleApplications = (applications) =>
-  expireStale(LeaveApplication, 'leave', applications, (doc) => Date.now() > new Date(doc.leaveDate).getTime());
+  expireStale(LeaveApplication, 'leave', applications, (doc) => isLeaveDayOver(doc.leaveDate));
 
 module.exports = {
   EXPIRABLE_STATUSES,

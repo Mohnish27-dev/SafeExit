@@ -314,6 +314,17 @@ const en = {
     leaveIn: "Leave (IN)",
     expectedReturn: "Expected return",
     hostel: "Hostel",
+
+    // Leave QR at the gate
+    leaveRefused: "Leave not allowed",
+    notAllowed: "Not allowed",
+    leaveRefusal_NO_LEAVE: "This student has no approved leave.",
+    leaveRefusal_LEAVE_NOT_APPROVED: "This student's leave is not approved yet.",
+    leaveRefusal_LEAVE_NOT_TODAY: "Leave is approved for {date}, not today.",
+    leaveRefusal_LEAVE_EXPIRED: "Leave was for {date}. It has expired.",
+    leaveRefusedNextStep: "For an outing, scan the student's Outing QR instead.",
+    nothingWillBeLogged: "Nothing will be logged. This closes by itself in a few seconds.",
+    leaveTodayOutingQr: "This student has a leave today but showed the OUTING QR. If they are going home, press Cancel and scan their Leave QR.",
   },
 
   // ─── SOS Alerts ───

@@ -13,16 +13,16 @@ export default function GateQrInstruction({ ready = false, showAction = false, c
         <p className="text-xs text-slate-600 leading-relaxed">
           <strong className="text-slate-700">Main-gate instruction:</strong>{" "}
           {ready
-            ? "Open your Student Dashboard, tap “Show QR Code,” and show your permanent student QR — or the QR on your college ID card — to security. Your exit is logged only after it is scanned at the main gate."
-            : "Wait for approval. Once approved, open your Student Dashboard, tap “Show QR Code,” and show your permanent student QR to security at the main gate to log your exit."}
+            ? "On your leave date (any time that day), open your Student Dashboard, tap “Leave QR,” and show it to security at the main gate. Your Outing QR and college ID card log an outing, not a leave."
+            : "Wait for approval. Once approved, on your leave date open your Student Dashboard, tap “Leave QR,” and show it to security at the main gate to leave on your leave."}
         </p>
         {ready && showAction && (
           <Link
-            href="/dashboard/student?showQr=1"
+            href="/dashboard/student?showQr=leave"
             className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 transition-colors"
           >
             <QrCode size={13} />
-            Open Permanent QR
+            Open Leave QR
           </Link>
         )}
       </div>

@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   ClipboardList,
   Clock3,
-  Download,
   Fingerprint,
   Home,
   IdCard,
@@ -52,6 +51,8 @@ import {
   syncStoredStudentProfile,
 } from "@/app/lib/userProfile";
 import { getTimeGreeting } from "@/app/lib/greeting";
+import { QR_PURPOSE, buildIdentityQr } from "@/app/lib/qrPayload.mjs";
+import StudentQrModal from "@/app/components/student/StudentQrModal";
 import { apiFetch } from "@/app/lib/api";
 import {
   getGeolocationPermission,
@@ -74,6 +75,7 @@ import {
   getCropSourceRect,
 } from "@/app/lib/profilePhotoCrop.mjs";
 import { OUTING_RETURN_LABEL } from "@/app/lib/outingRules.mjs";
+import { CAMPUS_TIMEZONE, campusDateKey } from "@/app/lib/leaveRules.mjs";
 
 const formatClock = (value) =>
   new Date(value).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
@@ -302,6 +304,12 @@ function ActionCard({ action, index, featured = false }) {
   );
 }
 
+// A leave's return is a date, not a time (the leave QR works all day on the leave date).
+const formatLeaveDay = (value) =>
+  value
+    ? new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: CAMPUS_TIMEZONE })
+    : "—";
+
 // Count-up stat; non-numeric values ("—", "05:30 PM") render as-is.
 function StatCard({ stat }) {
   const match = String(stat.value).match(/^(\d+)(\D*)$/);
@@ -348,7 +356,16 @@ export default function StudentDashboardPage() {
   const [now, setNow] = useState(() => new Date());
   const [mounted, setMounted] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
+  // Which of the two permanent QRs the modal opens on; the modal can switch between them.
+  const [qrPurpose, setQrPurpose] = useState(QR_PURPOSE.OUTING);
+  const openQr = (purpose = QR_PURPOSE.OUTING) => {
+    setQrPurpose(purpose);
+    setShowQrModal(true);
+  };
   const [outings, setOutings] = useState([]);
+  // The newest few leave applications: enough to know whether the student is away on one
+  // now, or has one approved for today.
+  const [leaves, setLeaves] = useState([]);
   const [outingsLoading, setOutingsLoading] = useState(true);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
 
@@ -440,14 +457,18 @@ export default function StudentDashboardPage() {
     setPushPermission(result.success ? "granted" : getNotificationPermission());
   };
 
-  // Approved outing/leave notices link here so the student lands directly on
-  // the permanent identity QR they must present at the main gate.
+  // Approved notices link here so the student lands directly on the permanent QR they
+  // must present at the main gate: ?showQr=leave for the leave QR, ?showQr=1 the outing QR.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("showQr") !== "1") return;
+    const which = params.get("showQr");
+    if (which !== "1" && which !== "leave") return;
     window.history.replaceState(null, "", window.location.pathname);
-    const openQr = window.setTimeout(() => setShowQrModal(true), 0);
-    return () => window.clearTimeout(openQr);
+    const timer = window.setTimeout(() => {
+      setQrPurpose(which === "leave" ? QR_PURPOSE.LEAVE : QR_PURPOSE.OUTING);
+      setShowQrModal(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Read the current location-permission state on first visit so we can decide
@@ -515,8 +536,13 @@ export default function StudentDashboardPage() {
     const loadOutings = async (background = false) => {
       if (!background) setOutingsLoading(true);
       try {
-        const data = await apiFetch("/outing/myrequests");
+        // A failed leave read keeps the last known leaves rather than claiming "on campus".
+        const [data, leaveRows] = await Promise.all([
+          apiFetch("/outing/myrequests"),
+          apiFetch("/leave/myrequests?limit=5").catch(() => null),
+        ]);
         if (cancelled) return;
+        if (Array.isArray(leaveRows)) setLeaves(leaveRows);
         const mapped = (data || []).map((o) => ({
           id: o._id,
           // Gate-created outings carry no destination; only old requests do.
@@ -592,6 +618,14 @@ export default function StudentDashboardPage() {
     [outings]
   );
 
+  // A leave the gate took 'Out' means the student is away on it, whatever the outings say.
+  const onLeave = useMemo(() => leaves.find((l) => l.status === "Out") || null, [leaves]);
+  // Approved for today and not used yet: the student must show the Leave QR to go home on it.
+  const leaveToday = useMemo(() => {
+    const today = campusDateKey(new Date());
+    return leaves.find((l) => l.status === "Approved" && campusDateKey(l.leaveDate) === today) || null;
+  }, [leaves]);
+
   const qrRollNo = useMemo(() => {
     const roll = profile.rollNo && profile.rollNo !== defaultStudentProfile.rollNo ? profile.rollNo : "";
     if (roll) return roll;
@@ -602,14 +636,11 @@ export default function StudentDashboardPage() {
   }, [profile]);
 
   // Identity-only QR — no outing status, so a replayed screenshot can't smuggle a stale "Approved".
-  const qrValue = useMemo(() => {
-    const data = {
-      id: qrRollNo,
-      sid: profile.sid || undefined, // Mongo _id; scanner resolves by this first
-      name: profile.name,
-    };
-    return JSON.stringify(data);
-  }, [qrRollNo, profile.sid, profile.name]);
+  // The stub shows the outing QR; the leave QR lives in the modal (StudentQrModal).
+  const qrValue = useMemo(
+    () => buildIdentityQr({ id: qrRollNo, sid: profile.sid, name: profile.name }),
+    [qrRollNo, profile.sid, profile.name]
+  );
 
   const formattedDate = useMemo(
     () => now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }),
@@ -648,17 +679,31 @@ export default function StudentDashboardPage() {
       {
         key: "return",
         label: "Next return by",
-        value: latestApproved ? formatClock(latestApproved.inTime) : "—",
-        width: latestApproved ? "80%" : "8%",
+        value: onLeave ? formatLeaveDay(onLeave.returnDate) : latestApproved ? formatClock(latestApproved.inTime) : "—",
+        width: onLeave || latestApproved ? "80%" : "8%",
         icon: Clock3,
         fill: "linear-gradient(90deg, #4338ca, #6366f1, #a855f7)",
         chip: "linear-gradient(135deg, #4338ca, #7c3aed)",
         glow: "rgba(99,102,241,0.45)",
       },
     ];
-  }, [outings, latestApproved]);
+  }, [outings, latestApproved, onLeave]);
 
   const timeline = useMemo(() => {
+    if (onLeave) {
+      return [
+        {
+          title: "Left on leave",
+          meta: onLeave.destination ? `To ${onLeave.destination}` : "Logged at the main gate",
+          tone: "bg-purple-100 text-purple-700",
+        },
+        {
+          title: "Expected back",
+          meta: formatLeaveDay(onLeave.returnDate),
+          tone: "bg-amber-100 text-amber-700",
+        },
+      ];
+    }
     if (!latestApproved) return [];
     return [
       latestApproved.status === "Out"
@@ -678,60 +723,9 @@ export default function StudentDashboardPage() {
         tone: "bg-amber-100 text-amber-700",
       },
     ];
-  }, [latestApproved]);
+  }, [latestApproved, onLeave]);
 
   const handleLogout = () => logout(router, { role: "student" });
-
-  const downloadQrPass = () => {
-    try {
-      const svg = document.querySelector("#student-gate-qr-modal svg");
-      if (!svg) return;
-      const svgData = new XMLSerializer().serializeToString(svg);
-      const canvas = document.createElement("canvas");
-      const scale = 2;
-      const qrSize = 300;
-      canvas.width = (qrSize + 80) * scale;
-      canvas.height = (qrSize + 170) * scale;
-      const ctx = canvas.getContext("2d");
-      ctx.scale(scale, scale);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, qrSize + 80, qrSize + 170);
-
-      ctx.fillStyle = "#4f46e5";
-      ctx.fillRect(0, 0, qrSize + 80, 8);
-
-      const img = new window.Image();
-      img.onload = () => {
-        ctx.drawImage(img, 40, 25, qrSize, qrSize);
-
-        ctx.font = "bold 18px sans-serif";
-        ctx.fillStyle = "#0f172a";
-        ctx.textAlign = "center";
-        ctx.fillText(profile.name || "Student Pass", (qrSize + 80) / 2, qrSize + 55);
-
-        ctx.font = "bold 14px monospace";
-        ctx.fillStyle = "#4f46e5";
-        ctx.fillText(`Roll: ${profile.rollNo || ""}`, (qrSize + 80) / 2, qrSize + 80);
-
-        ctx.font = "12px sans-serif";
-        ctx.fillStyle = "#64748b";
-        ctx.fillText(`${profile.hostel || "NIT Patna"}`, (qrSize + 80) / 2, qrSize + 102);
-
-        ctx.font = "italic 11px sans-serif";
-        ctx.fillStyle = "#94a3b8";
-        ctx.fillText("Permanent Gate Pass • Valid for Entry & Exit", (qrSize + 80) / 2, qrSize + 130);
-
-        const a = document.createElement("a");
-        a.download = `SafeExit-QR-${profile.rollNo || "pass"}.png`;
-        a.href = canvas.toDataURL("image/png");
-        a.click();
-      };
-      img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
-    } catch (err) {
-      console.error("Error downloading QR pass:", err);
-    }
-  };
 
   // Click-outside dismissal for the modals. Both the press and the release must land on
   // the overlay itself, so a crop drag that starts inside the panel and ends over the
@@ -1220,19 +1214,25 @@ export default function StudentDashboardPage() {
                     <span className="sd-name-live">{greetingName}</span>.
                   </h2>
                   <p className="sd-body mt-2 hidden max-w-md sm:block">
-                    {latestApproved
+                    {onLeave
+                      ? `You're on leave${onLeave.destination ? ` (${onLeave.destination})` : ""}, expected back by ${formatLeaveDay(onLeave.returnDate)}. Show either of your QRs at the main gate when you return.`
+                      : latestApproved
                       ? latestApproved.isOverdue
                         ? `Your expected return time of ${formatClock(latestApproved.inTime)} has passed. Please report your delay and return safely.`
                         : latestApproved.status === "Out"
                           ? `You're outside campus until ${formatClock(latestApproved.inTime)}. Show this same permanent QR at the main gate to log your entry when you return.`
                         : `Your pass is approved. Show your permanent QR at the main gate to log your exit; return by ${formatClock(latestApproved.inTime)}.`
-                      : `No outing in progress. To go out, just show your QR at the main gate — no request needed. Be back by ${OUTING_RETURN_LABEL}.`}
+                      : leaveToday
+                        ? `Your leave is approved for today. When you leave for home, show your Leave QR at the main gate — the Outing QR only logs an outing.`
+                        : `No outing in progress. To go out, just show your QR at the main gate — no request needed. Be back by ${OUTING_RETURN_LABEL}.`}
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-2 sm:mt-4 sm:gap-2.5">
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold ${
                         overdueOuting
                           ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : onLeave
+                            ? "border-purple-200 bg-purple-50 text-purple-700"
                           : latestApproved
                             ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                           : "border-amber-200 bg-amber-50 text-amber-700"
@@ -1240,10 +1240,10 @@ export default function StudentDashboardPage() {
                     >
                       <span
                         className={`inline-block h-1.5 w-1.5 rounded-full animate-pulse ${
-                          overdueOuting ? "bg-rose-500" : latestApproved ? "bg-emerald-500" : "bg-amber-500"
+                          overdueOuting ? "bg-rose-500" : onLeave ? "bg-purple-500" : latestApproved ? "bg-emerald-500" : "bg-amber-500"
                         }`}
                       />
-                      {overdueOuting ? "Return overdue" : latestApproved ? (latestApproved.status === "Out" ? "Out now" : "Pass active") : "On campus"}
+                      {overdueOuting ? "Return overdue" : onLeave ? "On leave" : latestApproved ? (latestApproved.status === "Out" ? "Out now" : "Pass active") : leaveToday ? "On campus · leave today" : "On campus"}
                     </span>
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-600">
                       <TrendingUp className="h-3.5 w-3.5 text-indigo-500" />
@@ -1288,21 +1288,33 @@ export default function StudentDashboardPage() {
                     </span>
                   </div>
                   <p className="text-[11px] sm:text-xs text-slate-500 truncate mt-0.5">
-                    Show QR to security at main gate for entry / exit
+                    Outing QR for outings · Leave QR when going home on leave
                   </p>
                 </div>
               </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
-                onClick={() => setShowQrModal(true)}
-                title="Tap to display your gate pass QR code"
+                onClick={() => openQr(QR_PURPOSE.OUTING)}
+                title="Tap to display your outing QR code"
                 className="group relative inline-flex items-center justify-center gap-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 px-5 py-3 text-xs sm:text-sm font-black uppercase tracking-wider text-white shadow-lg shadow-sky-500/30 hover:shadow-xl hover:shadow-cyan-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer ring-2 ring-white overflow-hidden"
               >
                 <span className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
                 <QrCode className="h-4 w-4 text-white animate-pulse shrink-0" />
-                <span className="relative z-10">Show My Gate QR</span>
+                <span className="relative z-10">Outing QR</span>
                 <ArrowUpRight className="h-4 w-4 relative z-10 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </button>
+              <button
+                type="button"
+                onClick={() => openQr(QR_PURPOSE.LEAVE)}
+                title="Tap to display your leave QR code"
+                className="group relative inline-flex items-center justify-center gap-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-violet-700 via-purple-600 to-fuchsia-600 px-5 py-3 text-xs sm:text-sm font-black uppercase tracking-wider text-white shadow-lg shadow-purple-500/30 hover:shadow-xl hover:shadow-fuchsia-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer ring-2 ring-white overflow-hidden"
+              >
+                <span className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+                <Home className="h-4 w-4 text-white shrink-0" />
+                <span className="relative z-10">Leave QR</span>
+              </button>
+              </div>
             </div>
           </section>
 
@@ -1491,9 +1503,9 @@ export default function StudentDashboardPage() {
                       </p>
                     </div>
                   </div>
-                  <span className={`sd-passport-chip ${latestApproved ? "" : "sd-passport-chip--idle"}`}>
+                  <span className={`sd-passport-chip ${onLeave || latestApproved ? "" : "sd-passport-chip--idle"}`}>
                     <ShieldCheck className="h-3.5 w-3.5" />
-                    {latestApproved ? "Pass Active" : "Standby"}
+                    {onLeave ? "On Leave" : latestApproved ? "Pass Active" : "Standby"}
                   </span>
                 </div>
 
@@ -1514,7 +1526,7 @@ export default function StudentDashboardPage() {
                   <div>
                     <p className="sd-passport-label">Next return by</p>
                     <p className="sd-passport-value">
-                      {latestApproved ? formatClock(latestApproved.inTime) : "—"}
+                      {onLeave ? formatLeaveDay(onLeave.returnDate) : latestApproved ? formatClock(latestApproved.inTime) : "—"}
                     </p>
                   </div>
                   <div className="min-w-0">
@@ -1523,14 +1535,24 @@ export default function StudentDashboardPage() {
                   </div>
                 </div>
 
-                <MagneticButton
-                  type="button"
-                  onClick={() => setShowQrModal(true)}
-                  className="sd-btn-glow mt-5 inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-cyan-500/25 cursor-pointer sm:mt-8"
-                >
-                  <QrCode className="h-5 w-5" />
-                  Show Permanent QR
-                </MagneticButton>
+                <div className="mt-5 flex flex-wrap gap-3 sm:mt-8">
+                  <MagneticButton
+                    type="button"
+                    onClick={() => openQr(QR_PURPOSE.OUTING)}
+                    className="sd-btn-glow inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-cyan-500/25 cursor-pointer"
+                  >
+                    <QrCode className="h-5 w-5" />
+                    Outing QR
+                  </MagneticButton>
+                  <MagneticButton
+                    type="button"
+                    onClick={() => openQr(QR_PURPOSE.LEAVE)}
+                    className="sd-btn-glow inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-500 to-fuchsia-500 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-purple-500/25 cursor-pointer"
+                  >
+                    <Home className="h-5 w-5" />
+                    Leave QR
+                  </MagneticButton>
+                </div>
               </div>
 
               {/* Torn perforation between body and QR stub */}
@@ -1541,11 +1563,11 @@ export default function StudentDashboardPage() {
               <div className="relative z-[1] flex flex-col items-center justify-center gap-3 p-4 sm:gap-4 sm:p-8 lg:w-[250px]">
                 <p className="sd-passport-eyebrow flex items-center gap-1.5">
                   <ScanLine className="h-3.5 w-3.5 text-cyan-300" />
-                  Scan permanent QR at gate
+                  Outing QR · scan at gate
                 </p>
                 <button
                   type="button"
-                  onClick={() => setShowQrModal(true)}
+                  onClick={() => openQr(QR_PURPOSE.OUTING)}
                   title="Enlarge QR pass"
                   className="sd-stub-qr sd-luxe-tilt cursor-pointer"
                 >
@@ -1712,94 +1734,12 @@ export default function StudentDashboardPage() {
         </div>
       </div>
 
-      {showQrModal && (
-        <div
-          onPointerDown={handleBackdropPointerDown}
-          onClick={backdropCloseHandler(() => setShowQrModal(false))}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in text-slate-800"
-        >
-          <div className="relative w-full max-w-sm overflow-hidden bg-white rounded-3xl p-6 text-center shadow-2xl border border-slate-100 animate-scale-in">
-            <button
-              type="button"
-              onClick={() => setShowQrModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-655 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-
-            <div className="mt-2 flex flex-col items-center">
-              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-750 border border-indigo-100 mb-4 animate-pulse">
-                <ShieldCheck size={12} className="text-indigo-500" />
-                Active Student Pass
-              </span>
-
-              <h2 className="font-sora text-xl font-bold text-slate-800 leading-snug">Your Permanent Student QR</h2>
-              <p className="text-xs text-slate-500 mt-1 leading-normal max-w-xs mx-auto">
-                Show this QR to security at the campus main gate for entry or exit.
-              </p>
-
-              <div className="relative mt-5 p-5 rounded-3xl bg-linear-to-br from-indigo-50/50 to-sky-50/50 border border-slate-100 shadow-inner flex justify-center items-center">
-                <div id="student-gate-qr-modal" className="p-4 bg-white rounded-2xl shadow-md border border-slate-100/60 relative overflow-hidden">
-                  <QRCode value={qrValue} size={190} />
-                  <div className="absolute left-0 right-0 h-0.5 bg-indigo-500/80 shadow-[0_0_8px_rgba(79,70,229,0.8)] animate-scan" style={{ top: '50%' }} />
-                </div>
-              </div>
-
-              <div className="mt-4 w-full text-left bg-slate-50 rounded-2xl p-3.5 border border-slate-100 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Name</span>
-                  <span className="text-sm font-bold text-slate-800">{profile.name}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Roll No</span>
-                  <span className="text-sm font-bold text-indigo-600 font-mono">{profile.rollNo}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Hostel</span>
-                  <span className="text-sm font-bold text-slate-700 truncate max-w-[180px]">{profile.hostel}</span>
-                </div>
-              </div>
-
-              {/* Convenience tip: save screenshot to gallery */}
-              <div className="mt-3.5 w-full flex items-start gap-2.5 rounded-2xl bg-amber-50/90 border border-amber-200/80 p-3 text-left shadow-xs">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-sm mt-0.5">
-                  <Camera className="h-3.5 w-3.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-xs font-bold text-amber-950">Save to Gallery for Quick Access</p>
-                    <span className="inline-block rounded-full bg-amber-200/80 px-1.5 py-0.2 text-[9px] font-black text-amber-900 uppercase">
-                      Tip
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-amber-900/90 leading-relaxed mt-0.5">
-                    Take a screenshot of this QR pass to save it in your photo gallery. You can show the photo directly to the guard at the gate without opening the app every time!
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 w-full flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={downloadQrPass}
-                  title="Download pass image directly to your device"
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 active:scale-98 py-2.5 text-xs font-bold text-indigo-700 transition cursor-pointer shadow-xs"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Download / Save Pass to Photos</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowQrModal(false)}
-                  className="w-full sf-btn-primary py-2.5 text-xs font-bold uppercase tracking-wider cursor-pointer"
-                >
-                  Close Pass
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <StudentQrModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        profile={profile}
+        initialPurpose={qrPurpose}
+      />
 
       {showPhotoModal && (
         <div

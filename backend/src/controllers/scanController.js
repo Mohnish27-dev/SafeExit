@@ -7,12 +7,12 @@ const { isLegacyId } = require('../utils/legacyIdGrace');
 const { UUID_RE } = require('../middlewares/validateParams');
 const { hideGirlFromGuard } = require('../config/hostels');
 const {
-  isBeforeDeparture,
   isReturnLate,
-  isAfterLeaveCurfew,
+  leaveDayRelation,
   computeOutingReturnDeadline,
   outingTypeFor,
 } = require('../utils/outingRules');
+const { EXPIRABLE_STATUSES } = require('../utils/passExpiry');
 
 // Outing rows from the old request flow that never left the gate. A gate exit replaces them
 // with the outing it creates, and a leave departure burns them, so none can be used later.
@@ -73,24 +73,44 @@ const passWindow = (passType, doc) =>
     ? { windowStart: doc.outTime, windowEnd: doc.inTime }
     : { windowStart: doc.leaveDate, windowEnd: doc.returnDate };
 
-// Leave is valid from leaveDate until 5:30 PM that day.
-const isLeaveExitOpen = (doc) =>
-  !isBeforeDeparture(doc.leaveDate) && !isAfterLeaveCurfew(doc.leaveDate);
+// A student carries two QRs, identical but for one field: the outing QR (no `p`, the same
+// payload every screenshot taken before the leave QR existed carries) and the leave QR
+// (`p: 'L'`). The gate forwards which one was scanned as `purpose`, and on an EXIT that alone
+// decides the pass: the clock no longer has to guess whether a student with a leave today is
+// going home or only into town. Entries ignore it: the student is back, whichever pass took
+// them out. The QR is still identity-only — a leave QR is refused unless the DB holds a leave
+// valid today, so a screenshot cannot grant anything. Anything unrecognised is an outing,
+// like the college ID card.
+const readPurpose = (value) => (value === 'leave' ? 'leave' : 'outing');
 
-// An exit is never refused. It leaves on the student's approved leave when that leave is
-// valid right now, and as an outing otherwise. `lapsed` is an approved leave whose day is
-// over: the caller persists it as Expired, so the dashboards stop offering it. A leave that
-// is not valid YET is left untouched, so taking an outing today cannot burn tomorrow's leave.
+// Why a leave-QR exit is refused, shown to the guard. `code` lets the gate translate it.
+const LEAVE_REFUSALS = {
+  NO_LEAVE: 'This student has no approved leave. To go out on an outing, scan their Outing QR.',
+  LEAVE_NOT_APPROVED: "This student's leave has not been approved yet.",
+  LEAVE_NOT_TODAY: "This student's leave is approved for a later day, not today.",
+  LEAVE_EXPIRED: "This student's leave day is over; the leave has expired.",
+};
+
+// The student's live, unused leave (one_active_leave_per_student allows one) and what it
+// means at the gate right now:
+//   usable  — approved, and today is its departure day: a leave-QR exit leaves on it.
+//   refusal — the code a leave-QR exit is refused with when nothing is usable.
+//   lapsed  — its day is over unused: the caller persists it as Expired, so the dashboards
+//             stop offering it. A leave for a LATER day is never touched, so taking an
+//             outing today cannot burn it.
 const resolveExitLeave = async (studentId, options = {}) => {
   const leave = await LeaveApplication.findOne({
-    where: { studentId, status: 'Approved' },
+    where: { studentId, status: { [Op.in]: EXPIRABLE_STATUSES } },
     order: [['createdAt', 'DESC']],
     ...options,
   });
-  if (!leave) return { usable: null, lapsed: null };
-  if (isLeaveExitOpen(leave)) return { usable: leave, lapsed: null };
-  if (isAfterLeaveCurfew(leave.leaveDate)) return { usable: null, lapsed: leave };
-  return { usable: null, lapsed: null };
+  if (!leave) return { usable: null, lapsed: null, refusal: 'NO_LEAVE', leave: null };
+
+  const day = leaveDayRelation(leave.leaveDate);
+  if (day === 'OVER') return { usable: null, lapsed: leave, refusal: 'LEAVE_EXPIRED', leave };
+  if (leave.status !== 'Approved') return { usable: null, lapsed: null, refusal: 'LEAVE_NOT_APPROVED', leave };
+  if (day === 'AHEAD') return { usable: null, lapsed: null, refusal: 'LEAVE_NOT_TODAY', leave };
+  return { usable: leave, lapsed: null, refusal: null, leave };
 };
 
 const resolveOutPass = async (studentId, options = {}) => {
@@ -132,6 +152,7 @@ const modelFor = (passType) => (passType === 'Outing' ? OutingRequest : LeaveApp
 const createScanLog = async (req, res) => {
   // punctuality is decided server-side; never read from the body.
   const { studentId, student, direction: requestedDirection, gate } = req.body;
+  const purpose = readPurpose(req.body.purpose);
 
   // 'AUTO' lets a single-scanner gate station omit the direction entirely.
   if (!requestedDirection || !['IN', 'OUT', 'AUTO'].includes(requestedDirection)) {
@@ -152,21 +173,34 @@ const createScanLog = async (req, res) => {
     const direction =
       requestedDirection === 'AUTO' ? deriveDirection(studentDoc.campusStatus) : requestedDirection;
 
-    // ---- Which pass the exit uses (never a refusal) ----
+    // ---- Which pass the exit uses ----
     //
-    // Resolved before the transaction. An approved leave whose day is over is persisted as
-    // Expired here, outside the transaction, so it stays expired even if the scan itself
-    // then loses a race and rolls back.
+    // The scanned QR decides (readPurpose). An outing exit is never refused. A leave exit
+    // is refused unless a leave is valid today, BEFORE anything is written, so a refused
+    // scan leaves no trace beyond the lapse below.
+    //
+    // A leave whose day is over is persisted as Expired here, outside the transaction, so
+    // it stays expired even if the scan itself is refused or then loses a race.
     let exitLeave = null;
     if (direction === 'OUT') {
-      const { usable, lapsed } = await resolveExitLeave(studentDoc.id);
-      exitLeave = usable;
+      const { usable, lapsed, refusal, leave } = await resolveExitLeave(studentDoc.id);
       if (lapsed) {
         // Guarded on status so it can never touch a leave a concurrent scan took 'Out'.
         await LeaveApplication.update(
           { status: 'Expired' },
-          { where: { id: lapsed.id, status: 'Approved' } }
+          { where: { id: lapsed.id, status: { [Op.in]: EXPIRABLE_STATUSES } } }
         );
+      }
+      if (purpose === 'leave') {
+        if (!usable) {
+          return res.status(409).json({
+            message: LEAVE_REFUSALS[refusal],
+            code: refusal,
+            leaveDate: leave?.leaveDate ?? null,
+            campusStatus: studentDoc.campusStatus,
+          });
+        }
+        exitLeave = usable;
       }
     }
 
@@ -361,18 +395,34 @@ const previewScan = async (req, res) => {
         : 'On-Time'
       : 'N/A';
 
-    // Read-only mirror of the exit createScanLog would log: on the student's leave if it is
-    // valid right now, otherwise a new outing due back by the return deadline. Never refused.
-    const { usable: exitLeave } = await resolveExitLeave(studentDoc.id);
+    // Read-only mirror of the exit createScanLog would log for the QR that was scanned.
+    // A leave QR leaves on the leave valid today or is refused with the reason; an outing QR
+    // always creates an outing due back by the return deadline. `leaveToday` flags an outing
+    // QR shown on the student's leave day, so the guard can ask for the leave QR instead
+    // before the countdown commits it.
+    const purpose = readPurpose(req.query.purpose);
+    const { usable: exitLeave, refusal, leave } = await resolveExitLeave(studentDoc.id);
     const exitAt = new Date();
-    const exit = exitLeave
-      ? { allowed: true, reason: null, passType: 'Leave', pass: passWindow('Leave', exitLeave) }
-      : {
-          allowed: true,
-          reason: null,
-          passType: 'Outing',
-          pass: { windowStart: exitAt, windowEnd: computeOutingReturnDeadline(exitAt) },
-        };
+    let exit;
+    if (purpose === 'leave') {
+      exit = exitLeave
+        ? { allowed: true, reason: null, passType: 'Leave', pass: passWindow('Leave', exitLeave) }
+        : {
+            allowed: false,
+            reason: refusal,
+            message: LEAVE_REFUSALS[refusal],
+            passType: 'Leave',
+            leaveDate: leave?.leaveDate ?? null,
+          };
+    } else {
+      exit = {
+        allowed: true,
+        reason: null,
+        passType: 'Outing',
+        pass: { windowStart: exitAt, windowEnd: computeOutingReturnDeadline(exitAt) },
+        leaveToday: exitLeave ? passWindow('Leave', exitLeave) : null,
+      };
+    }
 
     res.json({
       student: {
@@ -390,6 +440,7 @@ const previewScan = async (req, res) => {
           }
         : null,
       punctuality,
+      purpose,
       exit,
     });
   } catch (error) {

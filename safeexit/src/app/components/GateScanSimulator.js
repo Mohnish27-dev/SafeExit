@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { FlaskConical, IdCard, QrCode, ScanLine, X, Check, Ban } from "lucide-react";
 import { SCAN_CONTROL } from "@/app/lib/gateFlow.mjs";
+import { QR_PURPOSE, buildIdentityQr } from "@/app/lib/qrPayload.mjs";
 
 // Dev-only stand-in for a USB HID barcode scanner. A real scanner is indistinguishable
 // from fast keyboard input, so dispatching synthetic keydown events reproduces it
@@ -62,9 +63,12 @@ function SimulatorPanel() {
     }
   };
 
-  // Byte-identical to the student dashboard's QR (see dashboard/student/page.js).
+  // Byte-identical to the student's two QRs (lib/qrPayload.buildIdentityQr), minus the
+  // sid: the roll number resolves the student just the same.
   const sendStudentQr = () =>
-    emit(JSON.stringify({ id: rollNo.trim(), name: name.trim() }), "SafeExit QR");
+    emit(buildIdentityQr({ id: rollNo.trim(), name: name.trim() }), "Outing QR");
+  const sendLeaveQr = () =>
+    emit(buildIdentityQr({ id: rollNo.trim(), name: name.trim() }, QR_PURPOSE.LEAVE), "Leave QR");
 
   // Tab-separated label/value stream, the format the college ID card encodes.
   const sendIdCard = () => {
@@ -146,7 +150,16 @@ function SimulatorPanel() {
           className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-2 py-2.5 text-[0.7rem] font-bold text-white transition hover:bg-slate-800 disabled:opacity-40"
         >
           <QrCode className="h-3.5 w-3.5" />
-          SafeExit QR
+          Outing QR
+        </button>
+        <button
+          type="button"
+          onClick={sendLeaveQr}
+          disabled={disabled}
+          className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-purple-700 px-2 py-2.5 text-[0.7rem] font-bold text-white transition hover:bg-purple-600 disabled:opacity-40"
+        >
+          <QrCode className="h-3.5 w-3.5" />
+          Leave QR
         </button>
         <button
           type="button"

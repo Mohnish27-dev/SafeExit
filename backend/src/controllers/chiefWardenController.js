@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { User, OutingRequest, LeaveApplication, SOSAlert } = require('../models');
 const { HOSTELS } = require('../config/hostels');
 const { getOverdueStudentIds } = require('../utils/overdue');
+const { campusDayStart } = require('../utils/outingRules');
 
 const makeHostelSummary = (hostel) => ({
   name: hostel.name,
@@ -42,8 +43,9 @@ const getOverview = async (req, res) => {
       // sweep performed by their full-list endpoints.
       OutingRequest.findAll({ where: { status: 'Pending', outTime: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
       OutingRequest.findAll({ where: { status: 'Forwarded', outTime: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
-      LeaveApplication.findAll({ where: { status: 'Pending', leaveDate: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
-      LeaveApplication.findAll({ where: { status: 'Forwarded', leaveDate: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
+      // A leave stays live through its whole departure day (utils/outingRules.isLeaveDayOver).
+      LeaveApplication.findAll({ where: { status: 'Pending', leaveDate: { [Op.gte]: campusDayStart(now) } }, attributes: ['studentId'], raw: true }),
+      LeaveApplication.findAll({ where: { status: 'Forwarded', leaveDate: { [Op.gte]: campusDayStart(now) } }, attributes: ['studentId'], raw: true }),
       getOverdueStudentIds(),
     ]);
 

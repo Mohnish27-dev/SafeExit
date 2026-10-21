@@ -40,9 +40,9 @@ import { isSignatureRequiredError } from "@/app/lib/signatureImage";
 import {
   CAMPUS_TIMEZONE,
   getLeaveSubmissionTimingViolation,
-  getMinimumLeaveInputValue,
-  isWithinLeaveDepartureWindow,
-  parseCampusDateTime,
+  getMinimumLeaveDateValue,
+  leaveDayCount,
+  parseCampusDate,
   parseCampusReturnDate,
 } from "@/app/lib/leaveRules.mjs";
 
@@ -70,19 +70,8 @@ const filters = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
-const formatDateTime = (date) =>
-  `${date.toLocaleDateString("en-US", {
-    timeZone: CAMPUS_TIMEZONE,
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })} at ${date.toLocaleTimeString("en-US", {
-    timeZone: CAMPUS_TIMEZONE,
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
-
-// Return is a date only — no time is collected or shown.
+// Leave and return are dates only: no time is collected or shown. The leave QR works at
+// any hour of the leave date.
 const formatDate = (date) =>
   date.toLocaleDateString("en-US", {
     timeZone: CAMPUS_TIMEZONE,
@@ -93,11 +82,9 @@ const formatDate = (date) =>
 
 const getDuration = (leave, ret) => {
   if (!leave || !ret) return null;
-  const ms = ret.getTime() - leave.getTime();
-  if (ms <= 0) return null;
-  const days = Math.floor(ms / 86400000);
-  const hours = Math.floor((ms % 86400000) / 3600000);
-  return { days, hours, label: `${days}d ${hours}h` };
+  const days = leaveDayCount(leave, ret);
+  if (!days) return null;
+  return { days, label: `${days} ${days === 1 ? "day" : "days"}` };
 };
 
 const describeSubmitError = (error) => {
@@ -202,20 +189,20 @@ export default function LeaveApplicationPage() {
   const activeLeaveStatus = (activeLeave?.status || "").toLowerCase();
 
   const isFemale = display.gender === "Female";
-  const leaveDateObj = parseCampusDateTime(form.leaveDate);
+  const leaveDateObj = parseCampusDate(form.leaveDate);
   const returnDateObj = parseCampusReturnDate(form.returnDate);
   const duration = useMemo(
-    () => getDuration(parseCampusDateTime(form.leaveDate), parseCampusReturnDate(form.returnDate)),
+    () => getDuration(parseCampusDate(form.leaveDate), parseCampusReturnDate(form.returnDate)),
     [form.leaveDate, form.returnDate]
   );
 
-  const minLeaveInputValue = useMemo(
-    () => getMinimumLeaveInputValue(display.gender),
+  const minLeaveDateValue = useMemo(
+    () => getMinimumLeaveDateValue(display.gender),
     [display.gender]
   );
   const timingGuidance = isFemale
     ? "Girls must submit before the departure day. To leave tomorrow, apply by the end of today."
-    : "Boys can submit at any time before departure; no 24-hour advance notice is required.";
+    : "Boys can apply for any day from today onwards; no advance notice is required.";
 
   const validate = () => {
     const nextErrors = {};
@@ -227,16 +214,14 @@ export default function LeaveApplicationPage() {
       nextErrors.reason = "Please describe the reason for leave in at least 10 characters";
     }
     if (!form.leaveDate) {
-      nextErrors.leaveDate = "Leave date & time is required";
+      nextErrors.leaveDate = "Leave date is required";
     } else if (!leaveDateObj) {
-      nextErrors.leaveDate = "Leave date & time must be valid";
+      nextErrors.leaveDate = "Leave date must be valid";
     } else if (timingViolation === "DEPARTURE_NOT_FUTURE") {
-      nextErrors.leaveDate = "Leave departure must be in the future";
+      nextErrors.leaveDate = "The leave date cannot be in the past";
     } else if (timingViolation === "FEMALE_DEPARTURE_DAY") {
       nextErrors.leaveDate =
         "Girls cannot submit a leave application on the departure day. To leave tomorrow, submit by the end of today.";
-    } else if (!isWithinLeaveDepartureWindow(leaveDateObj)) {
-      nextErrors.leaveDate = "Leave departure must be between 6:00 AM and 5:30 PM on the departure day.";
     }
     if (!form.returnDate) {
       nextErrors.returnDate = "Return date is required";
@@ -354,7 +339,7 @@ export default function LeaveApplicationPage() {
             {[
               { label: "Application ID", value: applicationId, highlight: true },
               { label: "Destination", value: created.destination },
-              { label: "Leave Window", value: formatDateTime(new Date(created.leaveDate)) },
+              { label: "Leave Date", value: formatDate(new Date(created.leaveDate)) },
               { label: "Return By", value: formatDate(new Date(created.returnDate)) },
               ...(duration ? [{ label: "Duration", value: duration.label }] : []),
             ].map(({ label, value, highlight }) => (
@@ -434,7 +419,7 @@ export default function LeaveApplicationPage() {
               I, <strong>{display.name}</strong>, a resident of Room {display.room}, {display.hostel}
               {display.subtitle ? ` (${display.subtitle})` : ""}, Roll No. {display.rollNo}, would like to
               request leave to visit <strong>{form.destination}</strong> from{" "}
-              <strong>{leaveDateObj ? formatDateTime(leaveDateObj) : "—"}</strong> to{" "}
+              <strong>{leaveDateObj ? formatDate(leaveDateObj) : "—"}</strong> to{" "}
               <strong>{returnDateObj ? formatDate(returnDateObj) : "—"}</strong>.
             </p>
             <p className="mt-3">
@@ -467,7 +452,7 @@ export default function LeaveApplicationPage() {
             </span>
           )}
           <span className="flex items-center gap-1.5 text-xs font-bold rounded-full px-3 py-1.5 shadow-xs border bg-sky-100 text-sky-700 border-sky-200">
-            <CalendarDays size={12} /> Departs {leaveDateObj ? formatDateTime(leaveDateObj) : "—"}
+            <CalendarDays size={12} /> Departs {leaveDateObj ? formatDate(leaveDateObj) : "—"}
           </span>
         </div>
 
@@ -642,23 +627,23 @@ export default function LeaveApplicationPage() {
 
           <StudentFeaturePanel className="p-6 sm:p-7" delay={100}>
             <p className="sf-section-label mb-4">Schedule</p>
-            <div className="sf-notice sf-notice--danger mb-4">
-              <ShieldAlert size={14} className="text-rose-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-rose-700 leading-relaxed">
-                Your leave pass is valid <strong>only until 5:30 PM</strong> on the departure day. You must
-                leave at your approved time and on or before <strong>5:30 PM</strong> — after 5:30 PM the pass
-                expires and you can no longer leave on it. Please choose a departure time on or before 5:30 PM.
+            <div className="sf-notice sf-notice--warn mb-4">
+              <ShieldAlert size={14} className="text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-900 leading-relaxed">
+                Once approved, your leave works <strong>only on the leave date</strong>, at any time that day.
+                At the main gate, show your <strong>Leave QR</strong> (not the Outing QR). If you do not leave
+                on that date, the leave expires at midnight and you must apply again.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1.5">
                   <Calendar size={11} className="inline mr-1 text-violet-500" />
-                  Leave Date & Time *
+                  Leave Date *
                 </label>
                 <input
-                  type="datetime-local"
-                  min={minLeaveInputValue}
+                  type="date"
+                  min={minLeaveDateValue}
                   value={form.leaveDate}
                   onChange={set("leaveDate")}
                   className={`sf-input ${errors.leaveDate ? "sf-input--error" : ""}`}
@@ -672,7 +657,7 @@ export default function LeaveApplicationPage() {
                 </label>
                 <input
                   type="date"
-                  min={(form.leaveDate || minLeaveInputValue).slice(0, 10)}
+                  min={form.leaveDate || minLeaveDateValue}
                   value={form.returnDate}
                   onChange={set("returnDate")}
                   className={`sf-input ${errors.returnDate ? "sf-input--error" : ""}`}
@@ -811,7 +796,7 @@ export default function LeaveApplicationPage() {
                       <div className="flex items-center gap-5 mt-4.5 pt-4 border-t border-slate-100/90 flex-wrap">
                         <div className="flex items-center gap-2">
                           <Calendar size={13} className="text-slate-400" />
-                          <span className="text-xs font-semibold text-slate-650">{formatDateTime(leave)}</span>
+                          <span className="text-xs font-semibold text-slate-650">{formatDate(leave)}</span>
                         </div>
                         {dur && (
                           <div className="flex items-center gap-2">
@@ -827,7 +812,7 @@ export default function LeaveApplicationPage() {
                         <div className="rounded-2xl p-5 space-y-3.5 bg-linear-to-br from-slate-50 to-violet-50/40 border border-slate-100/80 shadow-inner">
                           {[
                             { label: "Reason", value: a.reason },
-                            { label: "Departure", value: formatDateTime(leave) },
+                            { label: "Departure", value: formatDate(leave) },
                             { label: "Expected Return", value: formatDate(ret) },
                           ].map(({ label, value }) => (
                             <div key={label} className="flex justify-between items-start gap-3 py-0.5">

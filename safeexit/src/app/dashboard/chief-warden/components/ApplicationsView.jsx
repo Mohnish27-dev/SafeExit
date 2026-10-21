@@ -22,6 +22,12 @@ const formatDate = (value) => value
   ? new Date(value).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
   : "—";
 
+// A leave is a span of dates (the leave QR works at any hour of the leave date), so its ends
+// show no time.
+const formatDay = (value) => value
+  ? new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+  : "—";
+
 export default function ApplicationsView({ type }) {
   const isLeave = type === "leave";
   const [rows, setRows] = useState([]);
@@ -124,8 +130,8 @@ export default function ApplicationsView({ type }) {
                   {row.destination && (
                     <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Destination:</b> {row.destination}</span></p>
                   )}
-                  <p className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">From:</b> {formatDate(start)}</span></p>
-                  <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Return:</b> {formatDate(end)}</span></p>
+                  <p className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">From:</b> {(isLeave ? formatDay : formatDate)(start)}</span></p>
+                  <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Return:</b> {(isLeave ? formatDay : formatDate)(end)}</span></p>
                   <p><b className="text-slate-800">Hostel / Room:</b> {[student.hostelName, student.roomNumber && `Room ${student.roomNumber}`].filter(Boolean).join(" · ") || "—"}</p>
                 </div>
 

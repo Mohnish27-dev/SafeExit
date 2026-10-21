@@ -30,7 +30,7 @@ import {
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
 import { parseScannedQr } from "@/app/lib/qrPayload.mjs";
-import { canAutoCommit, deriveGateDirection, readControlBarcode } from "@/app/lib/gateFlow.mjs";
+import { canAutoCommit, deriveGateDirection, exitRefusal, readControlBarcode } from "@/app/lib/gateFlow.mjs";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
@@ -56,6 +56,10 @@ const AUTO_COMMIT_TICK_MS = 200;
 
 const PENDING_SCAN_TIMEOUT_MS = 25000;
 
+// A refused leave scan has nothing to log, so its card clears on the same beat as the
+// auto-commit countdown instead of waiting out the idle timeout.
+const REFUSAL_DISMISS_MS = AUTO_COMMIT_MS || 5000;
+
 // Just long enough for the guard to register the result before the screen returns to idle.
 const SUCCESS_FLASH_MS = 2200;
 
@@ -64,6 +68,15 @@ const formatClock = (value) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "N/A";
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+};
+
+// A leave is a day, not a time: its departure is the whole leave date and its return date is
+// only the student's expectation, so both are shown as dates.
+const formatDay = (value) => {
+  if (!value) return "N/A";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "N/A";
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 };
 
 // One palette per kind of movement, so the guard reads it from across the cabin: blue for
@@ -96,6 +109,16 @@ const GATE_TONES = {
     button: "bg-purple-600 shadow-purple-500/30 hover:bg-purple-700",
     wash: "bg-purple-500",
     toast: "bg-purple-600",
+  },
+  // A leave QR with no leave valid today: nothing will be logged.
+  refused: {
+    backdrop: "bg-rose-950/85 ring-inset ring-8 ring-rose-500/70",
+    card: "ring-4 ring-rose-500 shadow-[0_0_60px_rgba(244,63,94,0.6)] border-2 border-rose-400",
+    header: "from-rose-500 via-red-600 to-rose-700",
+    pill: "bg-rose-600 shadow-rose-500/40",
+    button: "bg-rose-600 shadow-rose-500/30 hover:bg-rose-700",
+    wash: "bg-rose-500",
+    toast: "bg-rose-600",
   },
 };
 
@@ -226,21 +249,26 @@ export default function SecurityDashboardPage() {
 
 
   // Exit and entry get their own full-screen colour so the guard can read the direction
-  // from across the cabin. There is no refusal state: every scan logs the one movement the
-  // student's status allows, and whether it is a sensible hour is the guard's call. Neutral
-  // while the preview is loading, since derivedMode falls back to "exit" until the student's
-  // campus status arrives.
+  // from across the cabin. Every scan logs the one movement the student's status allows,
+  // and whether it is a sensible hour is the guard's call. Neutral while the preview is
+  // loading, since derivedMode falls back to "exit" until the student's campus status arrives.
   //
-  // A movement on an approved leave is purple in both directions instead: the exit takes
-  // the leave, the entry closes it. Read off the same preview the server mirrors.
+  // Leaving on an approved leave is purple instead. A return is always green, whichever pass
+  // it closes: the guard only needs to see "coming in". Read off the preview the server mirrors.
+  //
+  // The one refusal is red: the student's LEAVE QR with no leave approved for today. The
+  // server refuses it too, so nothing is logged whatever the guard presses.
+  const refusal = exitRefusal(scanPreview);
   const isLeaveMove =
     derivedMode === "exit"
       ? scanPreview?.exit?.passType === "Leave"
       : scanPreview?.activePass?.passType === "Leave";
-  const moveTone = GATE_TONES[isLeaveMove ? "leave" : derivedMode];
-  const moveLabel = isLeaveMove
-    ? derivedMode === "exit" ? t("goingOnLeave") : t("returningFromLeave")
-    : derivedMode === "exit" ? t("goingOut") : t("comingIn");
+  const moveTone = GATE_TONES[refusal ? "refused" : isLeaveMove && derivedMode === "exit" ? "leave" : derivedMode];
+  const moveLabel = refusal
+    ? t("leaveRefused")
+    : isLeaveMove
+      ? derivedMode === "exit" ? t("goingOnLeave") : t("returningFromLeave")
+      : derivedMode === "exit" ? t("goingOut") : t("comingIn");
   const gateTone = previewLoading ? null : moveTone;
 
 
@@ -261,7 +289,7 @@ export default function SecurityDashboardPage() {
 
 
   const commitScan = useCallback(async (payload, { detached = false } = {}) => {
-    const { sid, id, name, mode = "exit", leave = false } = payload || {};
+    const { sid, id, name, mode = "exit", leave = false, purpose = "outing" } = payload || {};
     if (confirmInFlightRef.current) return;
     if (!sid && !id) return;
 
@@ -281,6 +309,8 @@ export default function SecurityDashboardPage() {
           student: sid,
           studentId: id,
           direction: "AUTO",
+          // Which of the student's two QRs was scanned; on an exit it decides the pass.
+          purpose,
         }),
       });
       if (!detached) {
@@ -338,7 +368,8 @@ export default function SecurityDashboardPage() {
           meta: st.studentId || "—",
           tag: leave ? (inward ? t("leaveIn") : t("leaveOut")) : inward ? t("entryIn") : t("exitOut"),
           time: new Date(log.createdAt).toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" }),
-          type: leave ? "leave" : inward ? "in" : "out",
+          // Returns are green whichever pass they close; only a leave departure is purple.
+          type: inward ? "in" : leave ? "leave" : "out",
         };
       }),
     [scans, t, dateLocale]
@@ -394,6 +425,7 @@ export default function SecurityDashboardPage() {
       const params = new URLSearchParams();
       if (parsed.sid) params.set("sid", parsed.sid);
       if (parsed.id) params.set("studentId", parsed.id);
+      params.set("purpose", parsed.purpose);
       // Authenticated (Guard/Admin) — also carries the student's face photo.
       const preview = await apiFetch(`/scan/preview?${params.toString()}`);
       setScanPreview(preview);
@@ -415,6 +447,7 @@ export default function SecurityDashboardPage() {
           sid: preview.student._id || parsed.sid,
           id: preview.student.studentId || parsed.id,
           name: preview.student.name || parsed.name,
+          purpose: parsed.purpose,
           mode,
           // Only colours the confirmation flash; the server decides which pass is used.
           leave: (mode === "exit" ? preview.exit?.passType : preview.activePass?.passType) === "Leave",
@@ -426,7 +459,9 @@ export default function SecurityDashboardPage() {
           Date.now() - lastCommitRef.current.at < RECOMMIT_COOLDOWN_MS;
 
         pending.armed = AUTO_COMMIT_MS > 0 && canAutoCommit(preview) && !cooling;
-        pendingRef.current = pending;
+        // A refused leave exit has nothing to commit, so neither CONFIRM, the button, nor the
+        // next student's scan can send it.
+        pendingRef.current = exitRefusal(preview) ? null : pending;
         if (pending.armed) {
           setAutoCommitAt(Date.now() + AUTO_COMMIT_MS);
           setAutoCommitLeft(Math.ceil(AUTO_COMMIT_MS / 1000));
@@ -437,7 +472,7 @@ export default function SecurityDashboardPage() {
       console.error("Failed to load scan preview:", e);
       // No verdict and no photo, so nothing arms — but the guard keeps the manual
       // commit they have always had for an unverified card.
-      pendingRef.current = { sid: parsed.sid, id: parsed.id, name: parsed.name, mode: "exit", armed: false };
+      pendingRef.current = { sid: parsed.sid, id: parsed.id, name: parsed.name, purpose: parsed.purpose, mode: "exit", armed: false };
     } finally {
       setPreviewLoading(false);
     }
@@ -456,11 +491,12 @@ export default function SecurityDashboardPage() {
 
 
 
+  const isRefused = Boolean(refusal);
   useEffect(() => {
     if (!scanResult || logging) return;
-    const timer = setTimeout(clearPendingScan, PENDING_SCAN_TIMEOUT_MS);
+    const timer = setTimeout(clearPendingScan, isRefused ? REFUSAL_DISMISS_MS : PENDING_SCAN_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [scanResult, logging, clearPendingScan]);
+  }, [scanResult, logging, clearPendingScan, isRefused]);
 
   useEffect(() => {
     if (!flash) return;
@@ -973,6 +1009,13 @@ export default function SecurityDashboardPage() {
                           </span>
                         );
                       }
+                      if (refusal) {
+                        return (
+                          <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-rose-100 text-rose-700">
+                            {t("notAllowed")}
+                          </span>
+                        );
+                      }
                       if (scanPreview?.exit) {
                         return (
                           <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-700">
@@ -995,7 +1038,7 @@ export default function SecurityDashboardPage() {
                       // student's expected return, so there is no punctuality to show.
                       if (isLeaveMove) {
                         return (
-                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
                             {t("returningFromLeave")}
                           </span>
                         );
@@ -1011,10 +1054,10 @@ export default function SecurityDashboardPage() {
                     })()
                   )}
                 </div>
-                <div className="flex items-center justify-between">
+                {!refusal && <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     {derivedMode === 'exit'
-                      ? (scanPreview?.exit?.passType === 'Leave' ? t("validWindow") : t("returnBy"))
+                      ? (scanPreview?.exit?.passType === 'Leave' ? t("expectedReturn") : t("returnBy"))
                       : t("loggedTime")}
                   </span>
                   <span className="text-sm font-semibold text-slate-800">
@@ -1022,19 +1065,19 @@ export default function SecurityDashboardPage() {
                       ? (scanPreview?.exit?.pass
                           // An outing starts at this scan, so only its return deadline matters.
                           ? scanPreview.exit.passType === 'Leave'
-                            ? `${formatClock(scanPreview.exit.pass.windowStart)} to ${formatClock(scanPreview.exit.pass.windowEnd)}`
+                            ? formatDay(scanPreview.exit.pass.windowEnd)
                             : formatClock(scanPreview.exit.pass.windowEnd)
                           : t("na"))
                       : formattedTime
                     }
                   </span>
-                </div>
+                </div>}
                 {derivedMode === 'entry' && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{isLeaveMove ? t("expectedReturn") : t("allowedReturn")}</span>
                     <span className="text-sm font-semibold text-slate-800">
                       {scanPreview?.activePass?.windowEnd
-                        ? formatClock(scanPreview.activePass.windowEnd)
+                        ? (isLeaveMove ? formatDay : formatClock)(scanPreview.activePass.windowEnd)
                         : t("na")}
                     </span>
                   </div>
@@ -1052,6 +1095,23 @@ export default function SecurityDashboardPage() {
                   </div>
                 )}
               </div>
+
+              {refusal && (
+                <div className="mb-3 w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-left">
+                  <p className="text-sm font-bold text-rose-700">
+                    {t(`leaveRefusal_${refusal.reason}`, { date: formatDay(refusal.leaveDate) })}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-rose-600">{t("leaveRefusedNextStep")}</p>
+                </div>
+              )}
+
+              {/* An outing QR on the student's leave day: logged as an outing, but the guard
+                  gets the countdown to ask whether they meant to go home on the leave. */}
+              {!refusal && derivedMode === "exit" && scanPreview?.exit?.leaveToday && (
+                <p className="mb-3 w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-left text-xs font-bold text-amber-800">
+                  {t("leaveTodayOutingQr")}
+                </p>
+              )}
 
               {logError && (
                 <p className="mb-3 w-full rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">{logError}</p>
@@ -1072,7 +1132,7 @@ export default function SecurityDashboardPage() {
                       </button>
                       <button
                         onClick={() => commitScan(pendingRef.current)}
-                        disabled={logging || previewLoading}
+                        disabled={logging || previewLoading || Boolean(refusal)}
                         className={`relative flex-1 overflow-hidden py-3.5 rounded-xl text-sm font-bold text-white shadow-lg transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${moveTone.button}`}
                       >
                         {/* Drains over exactly the window the commit is scheduled for, so
@@ -1100,6 +1160,7 @@ export default function SecurityDashboardPage() {
                     {(() => {
                       if (counting) return <p className="mt-3 text-[0.68rem] font-semibold text-slate-400">{t("scanToConfirmHint")}</p>;
                       if (previewLoading) return null;
+                      if (refusal) return <p className="mt-3 text-[0.68rem] font-semibold text-rose-600">{t("nothingWillBeLogged")}</p>;
                       if (justLogged) return <p className="mt-3 text-[0.68rem] font-semibold text-amber-600">{t("justLoggedHint")}</p>;
                       return <p className="mt-3 text-[0.68rem] font-semibold text-slate-400">{t("pressToLogHint")}</p>;
                     })()}
@@ -1116,7 +1177,7 @@ export default function SecurityDashboardPage() {
           <span
             key={flash.at}
             className={`grd-wash pointer-events-none fixed inset-0 z-54 ${
-              flash.error ? "bg-rose-500" : GATE_TONES[flash.leave ? "leave" : flash.mode].wash
+              flash.error ? "bg-rose-500" : GATE_TONES[flash.leave && flash.mode === "exit" ? "leave" : flash.mode].wash
             }`}
             aria-hidden="true"
           />
@@ -1129,7 +1190,7 @@ export default function SecurityDashboardPage() {
           >
             <div
               className={`sd-enter flex items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-2xl ${
-                flash.error ? "bg-rose-600" : GATE_TONES[flash.leave ? "leave" : flash.mode].toast
+                flash.error ? "bg-rose-600" : GATE_TONES[flash.leave && flash.mode === "exit" ? "leave" : flash.mode].toast
               }`}
             >
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">

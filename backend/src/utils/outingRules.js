@@ -11,18 +11,6 @@ const campusDateKey = (date) =>
     day: '2-digit',
   }).format(new Date(date));
 
-const minutesOfDayInTimeZone = (date, timeZone) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: 'numeric',
-    minute: 'numeric',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-  const hour = Number(parts.find((part) => part.type === 'hour').value);
-  const minute = Number(parts.find((part) => part.type === 'minute').value);
-  return hour * 60 + minute;
-};
-
 // True once `outTime` is behind us. Only rows written by the old request flow still use this
 // for outings (their outTime was an exit-by deadline, so an unused one lapses lazily, see
 // utils/passExpiry.js); a gate-created outing is born 'Out'. `at` injectable for tests.
@@ -32,13 +20,6 @@ const isDeparturePassed = (outTime, at = Date.now()) => {
   return at > departure.getTime();
 };
 
-// Pass can't be used before its approved departure (e.g. leave approved days ahead).
-const isBeforeDeparture = (outTime, at = Date.now()) => {
-  const departure = new Date(outTime);
-  if (Number.isNaN(departure.getTime())) return false;
-  return at < departure.getTime();
-};
-
 // Authoritative punctuality check for entry scans (never trust client values).
 const isReturnLate = (inTime, at = Date.now()) => {
   const expectedReturn = new Date(inTime);
@@ -46,42 +27,37 @@ const isReturnLate = (inTime, at = Date.now()) => {
   return at > expectedReturn.getTime();
 };
 
-// Leave departures allowed 6:00 AM – 5:30 PM campus time, all genders.
-const EVENING_CURFEW_MINUTES = 17 * 60 + 30; // 5:30 PM
-const LEAVE_DEPART_START_MINUTES = 6 * 60; // 6:00 AM
-
-const isBeforeEveningCurfew = (date) => {
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return false;
-  const mins = minutesOfDayInTimeZone(d, CAMPUS_TIMEZONE);
-  return mins >= LEAVE_DEPART_START_MINUTES && mins <= EVENING_CURFEW_MINUTES;
-};
-
-// Female students must apply before the campus-local departure day. Everyone
-// else may apply at any time before departure. The departure-window rule is
-// checked separately by isBeforeEveningCurfew.
-const getLeaveSubmissionTimingViolation = (gender, leaveDate, at = Date.now()) => {
-  const departure = new Date(leaveDate);
-  const now = new Date(at);
-  if (Number.isNaN(departure.getTime()) || Number.isNaN(now.getTime())) return 'INVALID_DATE';
-  if (departure.getTime() <= now.getTime()) return 'DEPARTURE_NOT_FUTURE';
-  if (gender === 'Female' && campusDateKey(departure) === campusDateKey(now)) {
-    return 'FEMALE_DEPARTURE_DAY';
-  }
-  return null;
-};
-
-// Leave pass dies at 5:30 PM campus time on its departure day; any later
-// calendar day counts as past-curfew regardless of clock time.
-const isAfterLeaveCurfew = (leaveDate, at = Date.now()) => {
+// A leave is a DAY, not an instant. The application carries only a departure date, and the
+// student may leave on it at any hour of that campus day (early morning and after dark
+// included); the leave QR is what says they are leaving on it, so the clock no longer has
+// to guess. Rows written before this change still carry a time of day, which these ignore.
+//
+// Compared as YYYY-MM-DD strings, which order the same way as the dates they name.
+const leaveDayRelation = (leaveDate, at = Date.now()) => {
   const dep = new Date(leaveDate);
-  if (Number.isNaN(dep.getTime())) return false;
-  const now = new Date(at);
+  if (Number.isNaN(dep.getTime())) return null;
   const depDay = campusDateKey(dep);
-  const nowDay = campusDateKey(now);
-  if (nowDay < depDay) return false;
-  if (nowDay > depDay) return true;
-  return minutesOfDayInTimeZone(now, CAMPUS_TIMEZONE) > EVENING_CURFEW_MINUTES;
+  const nowDay = campusDateKey(new Date(at));
+  if (nowDay < depDay) return 'AHEAD';
+  if (nowDay > depDay) return 'OVER';
+  return 'TODAY';
+};
+
+const isLeaveDay = (leaveDate, at = Date.now()) => leaveDayRelation(leaveDate, at) === 'TODAY';
+
+// True from campus midnight after the leave day. An unused pass is stale from then on: it can
+// no longer be used at the gate, approved, or forwarded.
+const isLeaveDayOver = (leaveDate, at = Date.now()) => leaveDayRelation(leaveDate, at) === 'OVER';
+
+// Female students must apply before the campus-local departure day. Everyone else may apply
+// up to and including the departure day itself, but never for a day already gone.
+const getLeaveSubmissionTimingViolation = (gender, leaveDate, at = Date.now()) => {
+  if (Number.isNaN(new Date(at).getTime())) return 'INVALID_DATE';
+  const relation = leaveDayRelation(leaveDate, at);
+  if (!relation) return 'INVALID_DATE';
+  if (relation === 'OVER') return 'DEPARTURE_NOT_FUTURE';
+  if (gender === 'Female' && relation === 'TODAY') return 'FEMALE_DEPARTURE_DAY';
+  return null;
 };
 
 // Outings need no request, no approval and no exit window. The gate's exit scan IS the
@@ -102,6 +78,9 @@ const campusInstantOnDayOf = (date, minutes) => {
   return new Date(`${year}-${month}-${day}T${hh}:${mm}:00.000+05:30`);
 };
 
+// Campus midnight starting `date`'s campus day: how a date-only leave departure is stored.
+const campusDayStart = (date) => campusInstantOnDayOf(date, 0);
+
 // Return deadline for an outing that began at `exitAt`: 8:00 PM that campus day. If the
 // guard let the student out at or after 8:00 PM there is no later deadline that day, so it
 // is one second after the exit — the trip reads as overdue straight away instead of quietly
@@ -119,12 +98,14 @@ const computeOutingReturnDeadline = (exitAt) => {
 const outingTypeFor = (gender) => (gender === 'Female' ? 'Nearby' : 'General');
 
 module.exports = {
+  campusDateKey,
   isDeparturePassed,
-  isBeforeDeparture,
   isReturnLate,
-  isBeforeEveningCurfew,
+  leaveDayRelation,
+  isLeaveDay,
+  isLeaveDayOver,
   getLeaveSubmissionTimingViolation,
-  isAfterLeaveCurfew,
+  campusDayStart,
   OUTING_RETURN_MINUTES,
   computeOutingReturnDeadline,
   outingTypeFor,

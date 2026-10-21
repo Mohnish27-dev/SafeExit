@@ -314,6 +314,17 @@ const hi = {
     leaveIn: "लीव (IN)",
     expectedReturn: "अपेक्षित वापसी",
     hostel: "हॉस्टल",
+
+    // Leave QR at the gate
+    leaveRefused: "लीव की अनुमति नहीं",
+    notAllowed: "अनुमति नहीं",
+    leaveRefusal_NO_LEAVE: "इस छात्र की कोई अप्रूव्ड लीव नहीं है।",
+    leaveRefusal_LEAVE_NOT_APPROVED: "इस छात्र की लीव अभी अप्रूव नहीं हुई है।",
+    leaveRefusal_LEAVE_NOT_TODAY: "लीव {date} के लिए अप्रूव्ड है, आज के लिए नहीं।",
+    leaveRefusal_LEAVE_EXPIRED: "लीव {date} की थी। यह एक्सपायर हो चुकी है।",
+    leaveRefusedNextStep: "आउटिंग के लिए छात्र का आउटिंग QR स्कैन करें।",
+    nothingWillBeLogged: "कुछ भी लॉग नहीं होगा। यह कुछ सेकंड में अपने आप बंद हो जाएगा।",
+    leaveTodayOutingQr: "इस छात्र की आज लीव है, पर इन्होंने आउटिंग QR दिखाया है। अगर घर जा रहे हैं, तो कैंसल दबाकर इनका लीव QR स्कैन करें।",
   },
 
   // ─── SOS Alerts ───
