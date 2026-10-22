@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { parseScannedQr } from "../src/app/lib/qrPayload.mjs";
+import { buildIdentityQr, parseScannedQr } from "../src/app/lib/qrPayload.mjs";
 
 // The real NITP ID card payload: one line, tab-separated label/value pairs.
 const ID_CARD =
@@ -17,6 +17,7 @@ test("the app's own identity QR still parses", () => {
     id: "2101CS42",
     sid: "66f3a1c0e4b2f81234abcd12",
     name: "Ananya Verma",
+    purpose: "outing",
   });
 });
 
@@ -25,13 +26,14 @@ test("a college ID card QR yields only the roll number and name", () => {
     id: "2101CS42",
     sid: "",
     name: "Ananya Verma",
+    purpose: "outing",
   });
 });
 
 test("no ID card field other than roll number and name survives the parse", () => {
   const parsed = parseScannedQr(ID_CARD);
 
-  assert.deepEqual(Object.keys(parsed).sort(), ["id", "name", "sid"]);
+  assert.deepEqual(Object.keys(parsed).sort(), ["id", "name", "purpose", "sid"]);
   const serialized = JSON.stringify(parsed);
   for (const secret of ["27-10-2005", "Rajesh", "B+", "8318693892", "MG Road", "nitp.ac.in", "Female"]) {
     assert.equal(serialized.includes(secret), false, `leaked ${secret}`);
@@ -57,7 +59,7 @@ test("a blank card field cannot shift a label into the next field's value", () =
 test("quoted values and zero-width characters are stripped", () => {
   const raw = 'Name\t"Ananya Verma"\tRollNo\t​2101CS42⁠';
 
-  assert.deepEqual(parseScannedQr(raw), { id: "2101CS42", sid: "", name: "Ananya Verma" });
+  assert.deepEqual(parseScannedQr(raw), { id: "2101CS42", sid: "", name: "Ananya Verma", purpose: "outing" });
 });
 
 test("RollNo wins when a card also carries a separate student id", () => {
@@ -87,5 +89,21 @@ test("a sid-only identity QR is accepted so pre-roll-sync renders still scan", (
     id: "",
     sid: "66f3a1c0e4b2f81234abcd12",
     name: "Ananya Verma",
+    purpose: "outing",
   });
+});
+
+test("the leave QR is the identity QR plus p:L, and an old screenshot stays an outing QR", () => {
+  const who = { id: "2101CS42", sid: "0f7c2a1e-6c1b-4d1a-9b8e-1f2a3b4c5d6e", name: "Ananya Verma" };
+
+  const outing = buildIdentityQr(who);
+  const leave = buildIdentityQr(who, "leave");
+  // Byte-for-byte the payload students have been screenshotting.
+  assert.equal(outing, JSON.stringify({ id: who.id, sid: who.sid, name: who.name }));
+  assert.equal(leave, JSON.stringify({ ...who, p: "L" }));
+
+  assert.equal(parseScannedQr(outing).purpose, "outing");
+  assert.equal(parseScannedQr(leave).purpose, "leave");
+  assert.equal(parseScannedQr(JSON.stringify({ ...who, p: "l" })).purpose, "leave");
+  assert.equal(parseScannedQr(JSON.stringify({ ...who, p: "X" })).purpose, "outing");
 });

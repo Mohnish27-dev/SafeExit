@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { SCAN_CONTROL, canAutoCommit, deriveGateDirection, readControlBarcode } from "../src/app/lib/gateFlow.mjs";
+import { SCAN_CONTROL, canAutoCommit, deriveGateDirection, exitRefusal, readControlBarcode } from "../src/app/lib/gateFlow.mjs";
 import { parseScannedQr } from "../src/app/lib/qrPayload.mjs";
 
 // --- Direction derivation ------------------------------------------------------
@@ -67,7 +67,7 @@ test("a control barcode is not a parseable student, and vice versa", () => {
 
 const previewFor = (campusStatus, exit) => ({ student: { _id: "s1", campusStatus }, exit });
 
-test("every resolved student arms, exit or entry — the gate never refuses", () => {
+test("every resolved student arms, exit or entry, unless a leave exit is refused", () => {
   // Outings need no approval: the exit scan creates the outing. There is no denied state.
   for (const status of ["Inside", "Outside", "Overdue", "", undefined]) {
     assert.equal(canAutoCommit(previewFor(status, { allowed: true, reason: null })), true, `status ${String(status)}`);
@@ -80,4 +80,21 @@ test("a missing or unusable preview never arms", () => {
   for (const preview of [null, undefined, {}, { student: null }, { exit: { allowed: true } }]) {
     assert.equal(canAutoCommit(preview), false, `armed on ${JSON.stringify(preview) ?? "nullish"}`);
   }
+});
+
+test("a leave QR with no leave valid today never arms on an exit, and blocks nothing on an entry", () => {
+  const refused = { allowed: false, reason: "LEAVE_NOT_TODAY", passType: "Leave" };
+
+  assert.equal(canAutoCommit(previewFor("Inside", refused)), false);
+  assert.deepEqual(exitRefusal(previewFor("Inside", refused)), refused);
+
+  // Coming back: the student is returning whichever QR they showed.
+  for (const status of ["Outside", "Overdue"]) {
+    assert.equal(exitRefusal(previewFor(status, refused)), null);
+    assert.equal(canAutoCommit(previewFor(status, refused)), true);
+  }
+
+  // An outing QR on the leave day is allowed, only flagged.
+  const flagged = { allowed: true, passType: "Outing", leaveToday: { windowStart: "x", windowEnd: "y" } };
+  assert.equal(canAutoCommit(previewFor("Inside", flagged)), true);
 });

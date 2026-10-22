@@ -20,7 +20,10 @@ import {
   FileSignature,
   Home,
   PenLine,
-  ArrowUpRight,
+  Phone,
+  Paperclip,
+  Siren,
+  Trash2,
 } from "lucide-react";
 import StudentFeatureShell, {
   StudentFeaturePanel,
@@ -37,19 +40,24 @@ import GateQrInstruction from "@/app/components/student/GateQrInstruction";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import ApprovalSignature from "@/app/components/ApprovalSignature";
 import { isSignatureRequiredError } from "@/app/lib/signatureImage";
+import { prepareTicketFile } from "@/app/lib/leaveTicket";
+import { formatDepartureTime } from "@/app/lib/leaveDesk";
+import { LeaveTicketButton } from "@/app/components/LeaveTicketViewer";
 import {
   CAMPUS_TIMEZONE,
   getLeaveSubmissionTimingViolation,
-  getMinimumLeaveInputValue,
-  isWithinLeaveDepartureWindow,
-  parseCampusDateTime,
+  getMinimumLeaveDateValue,
+  isEmergencyLeave,
+  LATEST_DEPARTURE_TIME,
+  leaveDayCount,
+  parseCampusDate,
   parseCampusReturnDate,
 } from "@/app/lib/leaveRules.mjs";
 
 const statusConfig = {
   pending: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
-  // Caretaker escalated it — the hostel warden decides this one.
-  forwarded: { label: "With warden", color: "text-teal-700", bg: "bg-teal-100", icon: ArrowUpRight },
+  // Only on applications filed under the old caretaker-forwards-to-warden flow.
+  forwarded: { label: "Pending", color: "text-amber-700", bg: "bg-amber-100", icon: Loader2 },
   approved: { label: "Approved", color: "text-emerald-700", bg: "bg-emerald-100", icon: CheckCircle2 },
   out: { label: "On Leave", color: "text-sky-700", bg: "bg-sky-100", icon: MapPin },
   rejected: { label: "Rejected", color: "text-rose-700", bg: "bg-rose-100", icon: XCircle },
@@ -61,7 +69,6 @@ const statusConfig = {
 const filters = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
-  { key: "forwarded", label: "With warden" },
   { key: "approved", label: "Approved" },
   { key: "out", label: "On Leave" },
   { key: "rejected", label: "Rejected" },
@@ -70,19 +77,8 @@ const filters = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
-const formatDateTime = (date) =>
-  `${date.toLocaleDateString("en-US", {
-    timeZone: CAMPUS_TIMEZONE,
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })} at ${date.toLocaleTimeString("en-US", {
-    timeZone: CAMPUS_TIMEZONE,
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
-
-// Return is a date only — no time is collected or shown.
+// Leave and return are dates only: no time is collected or shown. The leave QR works at
+// any hour of the leave date.
 const formatDate = (date) =>
   date.toLocaleDateString("en-US", {
     timeZone: CAMPUS_TIMEZONE,
@@ -91,14 +87,26 @@ const formatDate = (date) =>
     year: "numeric",
   });
 
+// The actual gate scans carry a time of day, unlike the planned leave and return dates.
+const formatDateTime = (value) =>
+  new Date(value).toLocaleString("en-US", {
+    timeZone: CAMPUS_TIMEZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
 const getDuration = (leave, ret) => {
   if (!leave || !ret) return null;
-  const ms = ret.getTime() - leave.getTime();
-  if (ms <= 0) return null;
-  const days = Math.floor(ms / 86400000);
-  const hours = Math.floor((ms % 86400000) / 3600000);
-  return { days, hours, label: `${days}d ${hours}h` };
+  const days = leaveDayCount(leave, ret);
+  if (!days) return null;
+  return { days, label: `${days} ${days === 1 ? "day" : "days"}` };
 };
+
+// Who decided (or revoked) an application, as the student reads it.
+const ROLE_NAME = { Caretaker: "Caretaker", Warden: "Warden", ChiefWarden: "Chief Warden" };
 
 const describeSubmitError = (error) => {
   if (error instanceof TypeError) {
@@ -106,6 +114,11 @@ const describeSubmitError = (error) => {
   }
   if (error instanceof SyntaxError) {
     return "The server sent back an unexpected response. Please try again.";
+  }
+  // A proxy in front of the server refused the request for its size. Only an attached
+  // ticket can make it that large, so say so plainly.
+  if (error.status === 413) {
+    return "Your ticket file is too large to send. Remove it, or attach a smaller file or a screenshot, and submit again.";
   }
   return error.message || "Something went wrong while submitting your application. Please try again.";
 };
@@ -118,7 +131,17 @@ export default function LeaveApplicationPage() {
   const [tab, setTab] = useState("new");
   const [step, setStep] = useState("form");
 
-  const [form, setForm] = useState({ destination: "", reason: "", leaveDate: "", returnDate: "" });
+  const [form, setForm] = useState({
+    destination: "",
+    reason: "",
+    parentPhone: "",
+    leaveDate: "",
+    expectedDepartureTime: "",
+    returnDate: "",
+  });
+  // Optional: { dataUrl, name, isPdf } once a file is picked and prepared.
+  const [ticket, setTicket] = useState(null);
+  const [preparingTicket, setPreparingTicket] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   // Captured once (onboarding or profile) and stamped by the server; these only drive
   // the letter's rendered signature and the one-time setup fallback for older accounts.
@@ -138,6 +161,8 @@ export default function LeaveApplicationPage() {
   const [expanded, setExpanded] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  // Why the last cancel failed, e.g. the gate took the student Out a moment earlier.
+  const [cancelError, setCancelError] = useState("");
 
   // Pull the saved signature when the letter step opens, so it renders in the letter.
   // Also pre-opens the setup modal for accounts that never captured one, rather than
@@ -192,6 +217,22 @@ export default function LeaveApplicationPage() {
   }, []);
 
   const set = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }));
+  // Digits only, at most ten: pasted "+91 98765-43210" keeps its last ten digits.
+  const setParentPhone = (event) => {
+    const digits = event.target.value.replace(/\D/g, "");
+    setForm((prev) => ({ ...prev, parentPhone: digits.slice(-10) }));
+  };
+
+  const handleTicket = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // picking the same file again should still fire onChange
+    if (!file) return;
+    setPreparingTicket(true);
+    const result = await prepareTicketFile(file);
+    setPreparingTicket(false);
+    setErrors((prev) => ({ ...prev, ticket: result.error || undefined }));
+    if (!result.error) setTicket(result);
+  };
 
   // Mirrors the backend rule: one live leave at a time (Pending/Forwarded/Approved/Out).
   // A student must finish the current trip (Returned) or let it end before applying again.
@@ -202,20 +243,20 @@ export default function LeaveApplicationPage() {
   const activeLeaveStatus = (activeLeave?.status || "").toLowerCase();
 
   const isFemale = display.gender === "Female";
-  const leaveDateObj = parseCampusDateTime(form.leaveDate);
+  const leaveDateObj = parseCampusDate(form.leaveDate);
+  // A girl applying on the departure day itself: accepted, but flagged for every approver.
+  const isEmergency = Boolean(leaveDateObj) && isEmergencyLeave(display.gender, leaveDateObj);
+  const departureLabel = formatDepartureTime(form.expectedDepartureTime);
   const returnDateObj = parseCampusReturnDate(form.returnDate);
   const duration = useMemo(
-    () => getDuration(parseCampusDateTime(form.leaveDate), parseCampusReturnDate(form.returnDate)),
+    () => getDuration(parseCampusDate(form.leaveDate), parseCampusReturnDate(form.returnDate)),
     [form.leaveDate, form.returnDate]
   );
 
-  const minLeaveInputValue = useMemo(
-    () => getMinimumLeaveInputValue(display.gender),
-    [display.gender]
-  );
+  const minLeaveDateValue = getMinimumLeaveDateValue();
   const timingGuidance = isFemale
-    ? "Girls must submit before the departure day. To leave tomorrow, apply by the end of today."
-    : "Boys can submit at any time before departure; no 24-hour advance notice is required.";
+    ? "Apply by the day before you leave. An application on the leave day itself is treated as an emergency."
+    : "You can apply any time up to and including the leave day; your leave is approved as soon as you submit.";
 
   const validate = () => {
     const nextErrors = {};
@@ -226,17 +267,20 @@ export default function LeaveApplicationPage() {
     if (!form.reason.trim() || form.reason.trim().length < 10) {
       nextErrors.reason = "Please describe the reason for leave in at least 10 characters";
     }
+    if (!/^[0-9]{10}$/.test(form.parentPhone)) {
+      nextErrors.parentPhone = "Enter your parent's 10-digit mobile number";
+    }
     if (!form.leaveDate) {
-      nextErrors.leaveDate = "Leave date & time is required";
+      nextErrors.leaveDate = "Leave date is required";
     } else if (!leaveDateObj) {
-      nextErrors.leaveDate = "Leave date & time must be valid";
+      nextErrors.leaveDate = "Leave date must be valid";
     } else if (timingViolation === "DEPARTURE_NOT_FUTURE") {
-      nextErrors.leaveDate = "Leave departure must be in the future";
-    } else if (timingViolation === "FEMALE_DEPARTURE_DAY") {
-      nextErrors.leaveDate =
-        "Girls cannot submit a leave application on the departure day. To leave tomorrow, submit by the end of today.";
-    } else if (!isWithinLeaveDepartureWindow(leaveDateObj)) {
-      nextErrors.leaveDate = "Leave departure must be between 6:00 AM and 5:30 PM on the departure day.";
+      nextErrors.leaveDate = "The leave date cannot be in the past";
+    }
+    if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(form.expectedDepartureTime)) {
+      nextErrors.expectedDepartureTime = "Enter the time you expect to leave";
+    } else if (form.expectedDepartureTime > LATEST_DEPARTURE_TIME) {
+      nextErrors.expectedDepartureTime = "Choose a time of 5:30 PM or earlier";
     }
     if (!form.returnDate) {
       nextErrors.returnDate = "Return date is required";
@@ -269,7 +313,10 @@ export default function LeaveApplicationPage() {
         body: JSON.stringify({
           destination: form.destination.trim(),
           reason: form.reason.trim(),
+          parentPhone: form.parentPhone,
           leaveDate: leaveDateObj.toISOString(),
+          expectedDepartureTime: form.expectedDepartureTime,
+          ...(ticket ? { ticket: ticket.dataUrl } : {}),
           returnDate: returnDateObj.toISOString(),
           acknowledgement: true,
           // No signature in the body — the server stamps the student's saved one.
@@ -295,7 +342,8 @@ export default function LeaveApplicationPage() {
 
   const resetForm = () => {
     setCreated(null);
-    setForm({ destination: "", reason: "", leaveDate: "", returnDate: "" });
+    setForm({ destination: "", reason: "", parentPhone: "", leaveDate: "", expectedDepartureTime: "", returnDate: "" });
+    setTicket(null);
     setAcknowledged(false);
     setTargetCaretakerId("");
     setErrors({});
@@ -305,6 +353,7 @@ export default function LeaveApplicationPage() {
   const handleCancel = async (id) => {
     if (!id || cancelling) return false;
     setCancelling(true);
+    setCancelError("");
     try {
       const cancelledApplication = await apiFetch(`/leave/${id}/cancel`, { method: "PATCH" });
       setApplications((prev) =>
@@ -313,7 +362,12 @@ export default function LeaveApplicationPage() {
       setConfirmCancel(null);
       return true;
     } catch (err) {
-      console.error("Failed to cancel leave application:", err);
+      setCancelError(describeSubmitError(err));
+      // The row may have moved on (rejected, or the gate took the student Out): show it as
+      // it is now rather than leaving a Cancel button that can only fail again.
+      apiFetch("/leave/myrequests")
+        .then((data) => setApplications(data || []))
+        .catch(() => {});
       return false;
     } finally {
       setCancelling(false);
@@ -333,6 +387,7 @@ export default function LeaveApplicationPage() {
   const applicationId = created ? `LV-${String(created._id).slice(-6).toUpperCase()}` : "";
 
   if (created && step === "success") {
+    const autoApproved = created.status === "Approved";
     return (
       <StudentFeatureCentered>
         <StudentFeaturePanel className="p-8 text-center animate-scale-in">
@@ -344,19 +399,36 @@ export default function LeaveApplicationPage() {
               <CalendarDays size={12} className="text-white" />
             </div>
           </div>
-          <p className="sf-eyebrow mb-1">Application Submitted</p>
-          <h2 className="font-sora text-2xl font-bold text-slate-800 mb-1">Sent to your caretaker</h2>
+          <p className="sf-eyebrow mb-1">{autoApproved ? "Leave Approved" : "Application Submitted"}</p>
+          <h2 className="font-sora text-2xl font-bold text-slate-800 mb-1">
+            {autoApproved ? "You're all set" : "Sent for approval"}
+          </h2>
           <p className="text-slate-500 text-sm mb-6">
-            Your leave application has been sent for approval. Please wait for confirmation before making travel plans.
+            {autoApproved
+              ? "Your leave was approved automatically. Your caretaker, hostel wardens, the chief warden and the admin have been informed. Staff can still revoke it with a reason before you leave, so check this page before you travel."
+              : "Your application has gone to your caretaker, your hostel wardens and the chief warden together. Your caretaker may call your parent before approving. Please wait for approval before making travel plans."}
           </p>
+          {created.isEmergency && (
+            <div className="sf-notice sf-notice--danger mb-6 text-left">
+              <Siren size={14} className="text-rose-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-rose-700 leading-relaxed">
+                You applied on the leave day itself, so this is marked as an <strong>emergency</strong> for the staff.
+              </p>
+            </div>
+          )}
 
           <div className="rounded-2xl p-6 mb-6 text-left space-y-3 bg-linear-to-br from-slate-50 to-violet-50/50 border border-slate-100 shadow-sm">
             {[
               { label: "Application ID", value: applicationId, highlight: true },
               { label: "Destination", value: created.destination },
-              { label: "Leave Window", value: formatDateTime(new Date(created.leaveDate)) },
+              { label: "Parent's Mobile", value: created.parentPhone || "—" },
+              { label: "Leave Date", value: formatDate(new Date(created.leaveDate)) },
+              ...(created.expectedDepartureTime
+                ? [{ label: "Leaving Around", value: formatDepartureTime(created.expectedDepartureTime) }]
+                : []),
               { label: "Return By", value: formatDate(new Date(created.returnDate)) },
               ...(duration ? [{ label: "Duration", value: duration.label }] : []),
+              ...(created.ticketMime ? [{ label: "Ticket", value: "Attached" }] : []),
             ].map(({ label, value, highlight }) => (
               <div key={label} className="flex justify-between items-center gap-3">
                 <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">{label}</span>
@@ -367,13 +439,19 @@ export default function LeaveApplicationPage() {
             ))}
             <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
-              <span className="text-xs font-bold text-amber-800 bg-linear-to-r from-amber-100 to-amber-50 rounded-full px-3.5 py-1.5 border border-amber-200 shadow-xs">
-                Pending Approval
-              </span>
+              {autoApproved ? (
+                <span className="text-xs font-bold text-emerald-800 bg-linear-to-r from-emerald-100 to-emerald-50 rounded-full px-3.5 py-1.5 border border-emerald-200 shadow-xs">
+                  Approved
+                </span>
+              ) : (
+                <span className="text-xs font-bold text-amber-800 bg-linear-to-r from-amber-100 to-amber-50 rounded-full px-3.5 py-1.5 border border-amber-200 shadow-xs">
+                  Pending Approval
+                </span>
+              )}
             </div>
           </div>
 
-          <GateQrInstruction className="mb-6" />
+          <GateQrInstruction ready={autoApproved} showAction={autoApproved} className="mb-6" />
 
           <div className="flex flex-col gap-2.5">
             <button
@@ -395,6 +473,7 @@ export default function LeaveApplicationPage() {
               {cancelling ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
               {cancelling ? "Cancelling…" : "Cancel Leave"}
             </button>
+            {cancelError && <p role="alert" className="text-xs font-semibold text-rose-600">{cancelError}</p>}
             <button type="button" onClick={() => router.push("/dashboard/student")} className="sf-btn-primary w-full">
               Back to Dashboard
             </button>
@@ -434,11 +513,16 @@ export default function LeaveApplicationPage() {
               I, <strong>{display.name}</strong>, a resident of Room {display.room}, {display.hostel}
               {display.subtitle ? ` (${display.subtitle})` : ""}, Roll No. {display.rollNo}, would like to
               request leave to visit <strong>{form.destination}</strong> from{" "}
-              <strong>{leaveDateObj ? formatDateTime(leaveDateObj) : "—"}</strong> to{" "}
+              <strong>{leaveDateObj ? formatDate(leaveDateObj) : "—"}</strong> to{" "}
               <strong>{returnDateObj ? formatDate(returnDateObj) : "—"}</strong>.
+              {departureLabel && <> I expect to leave at around <strong>{departureLabel}</strong> on the leave date.</>}
             </p>
             <p className="mt-3">
               <strong>Reason:</strong> {form.reason}
+            </p>
+            {ticket && <p className="mt-3">A copy of my travel ticket is attached.</p>}
+            <p className="mt-3">
+              My parent can be reached at <strong>{form.parentPhone}</strong> during this leave.
             </p>
             <p className="mt-3">
               I hereby acknowledge that the college/hostel administration shall not be responsible for my
@@ -467,8 +551,14 @@ export default function LeaveApplicationPage() {
             </span>
           )}
           <span className="flex items-center gap-1.5 text-xs font-bold rounded-full px-3 py-1.5 shadow-xs border bg-sky-100 text-sky-700 border-sky-200">
-            <CalendarDays size={12} /> Departs {leaveDateObj ? formatDateTime(leaveDateObj) : "—"}
+            <CalendarDays size={12} /> Departs {leaveDateObj ? formatDate(leaveDateObj) : "—"}
+            {departureLabel ? ` · ~${departureLabel}` : ""}
           </span>
+          {isEmergency && (
+            <span className="flex items-center gap-1.5 text-xs font-bold rounded-full px-3 py-1.5 shadow-xs border bg-rose-600 text-white border-rose-600">
+              <Siren size={12} /> Emergency
+            </span>
+          )}
         </div>
 
         {errors.submit && (
@@ -490,8 +580,10 @@ export default function LeaveApplicationPage() {
               <>
                 <Loader2 size={16} className="animate-spin" /> Submitting...
               </>
-            ) : (
+            ) : isFemale ? (
               "Submit Application"
+            ) : (
+              "Submit & Get Approved"
             )}
           </button>
         </div>
@@ -566,9 +658,7 @@ export default function LeaveApplicationPage() {
               ? "You're currently on leave. Once you return and get scanned back in at the gate, you can apply for new leave."
               : activeLeave.status === "Approved"
               ? "Your leave pass is approved. Complete that trip and return to campus — or cancel it — before applying again."
-              : activeLeave.status === "Forwarded"
-              ? "Your leave application is with the warden for a decision. Wait for the outcome, or cancel it, before applying again."
-              : "Your leave application is awaiting your caretaker's decision. Wait for the outcome, or cancel it, before applying again."}
+              : "Your leave application is awaiting approval from your caretaker, warden or chief warden. Wait for the outcome, or cancel it, before applying again."}
           </p>
           <div className="rounded-2xl p-4 mb-5 text-left bg-slate-50 border border-slate-100 space-y-1.5">
             <div className="flex justify-between gap-3">
@@ -588,6 +678,9 @@ export default function LeaveApplicationPage() {
           <button type="button" onClick={() => setTab("mine")} className="sf-btn-primary w-full">
             View My Applications
           </button>
+          {cancelError && (
+            <p role="alert" className="mt-3 text-xs font-semibold text-rose-600">{cancelError}</p>
+          )}
           {activeLeaveStatus !== "out" && (
             <button
               type="button"
@@ -636,29 +729,48 @@ export default function LeaveApplicationPage() {
                 {errors.reason && <p className="text-xs text-rose-500 mt-1">{errors.reason}</p>}
               </div>
 
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+                  <Phone size={11} className="inline mr-1 text-violet-500" />
+                  Parent&apos;s Mobile Number *
+                </label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel-national"
+                  maxLength={10}
+                  placeholder="10-digit number, e.g. 9876543210"
+                  value={form.parentPhone}
+                  onChange={setParentPhone}
+                  className={`sf-input ${errors.parentPhone ? "sf-input--error" : ""}`}
+                />
+                {errors.parentPhone && <p className="text-xs text-rose-500 mt-1">{errors.parentPhone}</p>}
+              </div>
+
               <CaretakerSelect value={targetCaretakerId} onChange={setTargetCaretakerId} />
             </div>
           </StudentFeaturePanel>
 
           <StudentFeaturePanel className="p-6 sm:p-7" delay={100}>
             <p className="sf-section-label mb-4">Schedule</p>
-            <div className="sf-notice sf-notice--danger mb-4">
-              <ShieldAlert size={14} className="text-rose-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-rose-700 leading-relaxed">
-                Your leave pass is valid <strong>only until 5:30 PM</strong> on the departure day. You must
-                leave at your approved time and on or before <strong>5:30 PM</strong> — after 5:30 PM the pass
-                expires and you can no longer leave on it. Please choose a departure time on or before 5:30 PM.
+            <div className="sf-notice sf-notice--warn mb-4">
+              <ShieldAlert size={14} className="text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-900 leading-relaxed">
+                Once approved, your leave works <strong>only on the leave date</strong>, at any time that day —
+                the departure time below is only an estimate for the staff. At the main gate, show your{" "}
+                <strong>Leave QR</strong> (not the Outing QR). If you do not leave on that date, the leave
+                expires at midnight and you must apply again.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1.5">
                   <Calendar size={11} className="inline mr-1 text-violet-500" />
-                  Leave Date & Time *
+                  Leave Date *
                 </label>
                 <input
-                  type="datetime-local"
-                  min={minLeaveInputValue}
+                  type="date"
+                  min={minLeaveDateValue}
                   value={form.leaveDate}
                   onChange={set("leaveDate")}
                   className={`sf-input ${errors.leaveDate ? "sf-input--error" : ""}`}
@@ -667,12 +779,32 @@ export default function LeaveApplicationPage() {
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+                  <Clock size={11} className="inline mr-1 text-violet-500" />
+                  Expected Departure Time *
+                </label>
+                <input
+                  type="time"
+                  max={LATEST_DEPARTURE_TIME}
+                  value={form.expectedDepartureTime}
+                  onChange={set("expectedDepartureTime")}
+                  className={`sf-input ${errors.expectedDepartureTime ? "sf-input--error" : ""}`}
+                />
+                {errors.expectedDepartureTime ? (
+                  <p className="text-xs text-rose-500 mt-1">{errors.expectedDepartureTime}</p>
+                ) : (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Up to 5:30 PM. Only an estimate — your Leave QR works at the gate all day.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">
                   <Calendar size={11} className="inline mr-1 text-violet-500" />
                   Return Date *
                 </label>
                 <input
                   type="date"
-                  min={(form.leaveDate || minLeaveInputValue).slice(0, 10)}
+                  min={form.leaveDate || minLeaveDateValue}
                   value={form.returnDate}
                   onChange={set("returnDate")}
                   className={`sf-input ${errors.returnDate ? "sf-input--error" : ""}`}
@@ -687,7 +819,55 @@ export default function LeaveApplicationPage() {
                 </span>
               </div>
             )}
+            {isEmergency && (
+              <div className="sf-notice sf-notice--danger mt-4">
+                <Siren size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-rose-700 leading-relaxed">
+                  You are applying on the leave day itself, so this will be marked as an <strong>emergency</strong>.
+                  Girls are expected to apply by the day before.
+                </p>
+              </div>
+            )}
             <p className="text-xs text-slate-400 mt-3">{timingGuidance}</p>
+          </StudentFeaturePanel>
+
+          <StudentFeaturePanel className="p-6 sm:p-7" delay={120}>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="sf-section-label">Travel Ticket</p>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                Optional
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mb-4"> If you have one,
+              attach your train/bus/flight ticket as proof of travel (photo, screenshot or PDF up to 700 KB).
+            </p>
+            {ticket ? (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-700">
+                  <Paperclip size={14} className="text-violet-500 shrink-0" />
+                  <span className="truncate">{ticket.name || (ticket.isPdf ? "Ticket.pdf" : "Ticket photo")}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTicket(null)}
+                  className="flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700"
+                >
+                  <Trash2 size={13} /> Remove
+                </button>
+              </div>
+            ) : (
+              <label className={`sf-btn-secondary w-full cursor-pointer ${preparingTicket ? "opacity-60 pointer-events-none" : ""}`}>
+                {preparingTicket ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+                {preparingTicket ? "Preparing…" : "Attach ticket"}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={handleTicket}
+                  className="hidden"
+                />
+              </label>
+            )}
+            {errors.ticket && <p className="text-xs text-rose-500 mt-2">{errors.ticket}</p>}
           </StudentFeaturePanel>
 
           <StudentFeaturePanel className="p-5" delay={140}>
@@ -711,8 +891,9 @@ export default function LeaveApplicationPage() {
           <div className="sf-notice sf-rise sf-stagger-3">
             <ShieldAlert size={15} className="text-violet-600 shrink-0 mt-0.5" />
             <p className="text-xs text-slate-600 leading-relaxed">
-              This application is reviewed by your caretaker and never auto-approved — submit early so there is
-              time to review it.
+              {isFemale
+                ? "Your application goes to your caretaker, your hostel wardens and the chief warden together, and any of them can approve it. Your caretaker may call your parent first — submit early so there is time."
+                : "Your leave is approved as soon as you submit. Your caretaker, hostel wardens, the chief warden and the admin are informed, and staff can revoke it with a reason before you leave."}
             </p>
           </div>
 
@@ -763,7 +944,11 @@ export default function LeaveApplicationPage() {
             <div className="space-y-3">
               {filteredApplications.map((a, index) => {
                 const statusKey = (a.status || "Pending").toLowerCase();
-                const sc = statusConfig[statusKey] || statusConfig.pending;
+                const sc = a.revokedAt
+                  ? { ...statusConfig.rejected, label: "Revoked", icon: Ban }
+                  : statusConfig[statusKey] || statusConfig.pending;
+                const decidedBy = ROLE_NAME[a.decidedByRole] || "";
+                const autoApproved = a.decidedByRole === "System";
                 const StatusIcon = sc.icon;
                 const isExpanded = expanded === a._id;
                 const leave = new Date(a.leaveDate);
@@ -799,7 +984,7 @@ export default function LeaveApplicationPage() {
                           <span
                             className={`flex items-center gap-1.5 text-xs font-bold rounded-full px-3 py-1.5 shadow-xs border ${sc.bg} ${sc.color} border-current/20`}
                           >
-                            <StatusIcon size={12} className={statusKey === "pending" ? "animate-spin" : ""} />
+                            <StatusIcon size={12} className={sc.icon === Loader2 ? "animate-spin" : ""} />
                             {sc.label}
                           </span>
                           <Eye
@@ -811,8 +996,13 @@ export default function LeaveApplicationPage() {
                       <div className="flex items-center gap-5 mt-4.5 pt-4 border-t border-slate-100/90 flex-wrap">
                         <div className="flex items-center gap-2">
                           <Calendar size={13} className="text-slate-400" />
-                          <span className="text-xs font-semibold text-slate-650">{formatDateTime(leave)}</span>
+                          <span className="text-xs font-semibold text-slate-650">{formatDate(leave)}</span>
                         </div>
+                        {a.isEmergency && (
+                          <span className="flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-700">
+                            <Siren size={11} /> Emergency
+                          </span>
+                        )}
                         {dur && (
                           <div className="flex items-center gap-2">
                             <Clock size={13} className="text-slate-400" />
@@ -827,42 +1017,66 @@ export default function LeaveApplicationPage() {
                         <div className="rounded-2xl p-5 space-y-3.5 bg-linear-to-br from-slate-50 to-violet-50/40 border border-slate-100/80 shadow-inner">
                           {[
                             { label: "Reason", value: a.reason },
-                            { label: "Departure", value: formatDateTime(leave) },
+                            ...(a.parentPhone ? [{ label: "Parent's Mobile", value: a.parentPhone }] : []),
+                            {
+                              label: "Departure",
+                              value: a.expectedDepartureTime
+                                ? `${formatDate(leave)} · ~${formatDepartureTime(a.expectedDepartureTime)}`
+                                : formatDate(leave),
+                            },
                             { label: "Expected Return", value: formatDate(ret) },
+                            // From the gate scans: when they really left and came back.
+                            ...(a.actualOutTime ? [{ label: "Left Campus", value: formatDateTime(a.actualOutTime) }] : []),
+                            ...(a.actualInTime
+                              ? [{ label: "Returned to Campus", value: formatDateTime(a.actualInTime) }]
+                              : a.actualOutTime && statusKey === "out"
+                              ? [{ label: "Returned to Campus", value: "Not yet" }]
+                              : []),
                           ].map(({ label, value }) => (
                             <div key={label} className="flex justify-between items-start gap-3 py-0.5">
                               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider shrink-0">{label}</span>
                               <span className="text-sm font-bold text-slate-700 text-right">{value}</span>
                             </div>
                           ))}
+                          {a.ticketMime && (
+                            <div className="flex justify-between items-center gap-3 py-0.5">
+                              <span className="text-xs text-slate-400 font-bold uppercase tracking-wider shrink-0">Ticket</span>
+                              <LeaveTicketButton id={a._id} ticketMime={a.ticketMime} />
+                            </div>
+                          )}
                           {a.remarks && (
                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-start gap-2.5">
                               <AlertCircle size={14} className="text-slate-500 shrink-0 mt-0.5" />
                               <p className="text-xs text-slate-600">
                                 <span className="font-bold text-slate-700">
-                                  {a.forwardedTo ? "Warden" : "Caretaker"}&rsquo;s note:{" "}
+                                  {a.revokedAt ? `Revoked by the ${decidedBy || "staff"}:` : `${decidedBy || "Staff"}’s note:`}{" "}
                                 </span>
                                 {a.remarks}
                               </p>
                             </div>
                           )}
-                   
-                          <ApprovalSignature
-                            kind="leave"
-                            id={a._id}
-                            hasWarden={a.hasWardenSignature}
-                            hasCaretaker={a.hasCaretakerSignature}
-                          />
-                          {statusKey === "pending" && (
+
+                          {autoApproved ? (
+                            <div className="pt-3 mt-1 border-t border-emerald-100">
+                              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
+                                <CheckCircle2 size={12} /> Auto-approved on submission
+                              </p>
+                            </div>
+                          ) : (
+                            <ApprovalSignature
+                              kind="leave"
+                              id={a._id}
+                              hasWarden={a.hasWardenSignature}
+                              hasCaretaker={a.hasCaretakerSignature}
+                              signer={a.decidedByRole === "ChiefWarden" ? "chief warden" : undefined}
+                            />
+                          )}
+                          {(statusKey === "pending" || statusKey === "forwarded") && (
                             <div className="mt-3 pt-3 border-t border-amber-100 flex items-start gap-2.5">
                               <Loader2 size={15} className="text-amber-500 shrink-0 mt-0.5 animate-spin" />
-                              <p className="text-xs font-semibold text-amber-705">Awaiting caretaker approval. You will be notified.</p>
-                            </div>
-                          )}
-                          {statusKey === "forwarded" && (
-                            <div className="mt-3 pt-3 border-t border-teal-100 flex items-start gap-2.5">
-                              <ArrowUpRight size={15} className="text-teal-600 shrink-0 mt-0.5" />
-                              <p className="text-xs font-semibold text-teal-700">Escalated to the warden for a decision. You will be notified.</p>
+                              <p className="text-xs font-semibold text-amber-700">
+                                Awaiting approval from your caretaker, warden or chief warden. You will be notified.
+                              </p>
                             </div>
                           )}
                           {statusKey === "approved" && (
@@ -871,7 +1085,11 @@ export default function LeaveApplicationPage() {
                           {statusKey === "expired" && (
                             <div className="mt-3 pt-3 border-t border-rose-100 flex items-start gap-2.5">
                               <TimerOff size={15} className="text-rose-500 shrink-0 mt-0.5" />
-                              <p className="text-xs font-semibold text-rose-600">Leave date passed before this application was acted on. File a new one if still needed.</p>
+                              <p className="text-xs font-semibold text-rose-600">
+                                {a.decision === "Approved"
+                                  ? "You did not leave on the leave date, so this leave expired at midnight. File a new one if you still need to go."
+                                  : "Leave date passed before this application was acted on. File a new one if still needed."}
+                              </p>
                             </div>
                           )}
                           {statusKey === "cancelled" && (
@@ -885,6 +1103,9 @@ export default function LeaveApplicationPage() {
                               {confirmCancel === a._id ? (
                                 <div className="flex flex-col gap-2">
                                   <p className="text-xs font-semibold text-slate-600">Are you sure you want to cancel this application?</p>
+                                  {cancelError && (
+                                    <p role="alert" className="text-xs font-semibold text-rose-600">{cancelError}</p>
+                                  )}
                                   <div className="flex gap-2">
                                     <button
                                       type="button"

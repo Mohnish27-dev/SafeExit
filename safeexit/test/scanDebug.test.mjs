@@ -155,7 +155,7 @@ test("a college ID card is labelled as an ID card and reduced to two fields", ()
   const result = classifyScan(card);
   assert.equal(result.kind, "student");
   assert.equal(result.format, "ID card");
-  assert.deepEqual(result.student, { id: "2101CS42", sid: "", name: "Ananya Verma" });
+  assert.deepEqual(result.student, { id: "2101CS42", sid: "", name: "Ananya Verma", purpose: "outing" });
 
   // The privacy claim the page prints under the verdict, asserted rather than trusted.
   const kept = JSON.stringify(result.student);

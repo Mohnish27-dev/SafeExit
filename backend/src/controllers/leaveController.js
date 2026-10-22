@@ -1,24 +1,38 @@
 const { Op } = require('sequelize');
-const { LeaveApplication, OutingRequest } = require('../models');
+const { LeaveApplication, OutingRequest, ScanLog } = require('../models');
 const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { expireStaleApplications } = require('../utils/passExpiry');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
+const {
+  PARENT_PHONE_RE,
+  DEPARTURE_TIME_RE,
+  LATEST_DEPARTURE_TIME,
+  MAX_TICKET_BYTES,
+  TICKET_MIME_TYPES,
+} = require('../utils/leaveSchema');
+const { parseDataUrl } = require('../models/_shared');
 const { estimatedRowCount } = require('../utils/rowCount');
-const { notifyCaretakers, notifyWardensForScope } = require('../utils/pushService');
-const { saveWardenDecision } = require('../utils/claimForwarded');
+const {
+  notifyCaretakers,
+  notifyWardensForScope,
+  notifyChiefWardens,
+  notifyAdmins,
+  notifyStudent,
+} = require('../utils/pushService');
+const { saveClaimedDecision } = require('../utils/claimForwarded');
 const {
   getLeaveSubmissionTimingViolation,
-  isBeforeEveningCurfew,
+  isEmergencyLeave,
+  isLeaveDayOver,
+  campusDayStart,
 } = require('../utils/outingRules');
 const {
   passScope,
   mergeWhere,
-  forwardedQueueScope,
   requestInScope,
   canReadSignatures,
   resolveTargetCaretaker,
-  resolveWardensForHostel,
 } = require('../utils/hostelScope');
 const {
   fetchOwnSignature,
@@ -64,9 +78,51 @@ const blockingLeaveMessage = (status) =>
     ? 'You are currently on leave. Return to campus and get scanned back in at the gate before applying for new leave.'
     : status === 'Approved'
     ? 'You already have an approved leave pass. Complete or cancel that leave before applying again.'
-    : status === 'Forwarded'
-    ? 'Your leave application is with the warden for a decision. Wait for the outcome or cancel it before applying again.'
     : 'You already have a leave application awaiting approval. Wait for a decision or cancel it before applying again.';
+
+// Girls' leave waits for a decision; boys' is approved on submit. 'Other' follows the boys'
+// rule, as it does everywhere else (hostelScope.scopeGenders).
+const needsApproval = (student) => student.gender === 'Female';
+
+// A girl's application is open in these statuses. 'Forwarded' only exists on rows filed
+// under the old caretaker-forwards-to-warden flow; those are decided like any other.
+const UNDECIDED_STATUSES = ['Pending', 'Forwarded'];
+
+// What a student may still cancel: anything not yet used at the gate or decided against.
+const CANCELLABLE_STATUSES = ['Pending', 'Approved', 'Forwarded'];
+
+// The roles that decide a girl's leave and may revoke a boy's.
+const DECIDER_ROLES = ['Caretaker', 'Warden', 'ChiefWarden'];
+
+// The marker on a boy's auto-approved leave, and what the boys' feed filters on.
+const SYSTEM_ROLE = 'System';
+const NOT_AUTO_APPROVED = {
+  [Op.or]: [{ decidedByRole: null }, { decidedByRole: { [Op.ne]: SYSTEM_ROLE } }],
+};
+
+const fmtDay = (date) =>
+  new Date(date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' });
+
+// The ticket's bytes never ride in a response that also lists the row: they come from
+// GET /:id/ticket. `ticketMime` stays, so the client knows a ticket exists.
+const withoutTicketBytes = (application) => {
+  const json = application.toJSON();
+  delete json.ticket;
+  return json;
+};
+
+// Validates the optional ticket data URL. Returns { ticket } or { error }.
+const readTicket = (value) => {
+  if (value === undefined || value === null || value === '') return { ticket: null };
+  const parsed = parseDataUrl(value);
+  if (!parsed || !TICKET_MIME_TYPES.includes(parsed.mime)) {
+    return { error: 'The ticket must be a photo (JPEG, PNG or WebP) or a PDF.' };
+  }
+  if (parsed.buffer.length > MAX_TICKET_BYTES) {
+    return { error: 'The ticket file is too large. Upload one under 700 KB, or a screenshot of the ticket.' };
+  }
+  return { ticket: value };
+};
 
 // A row counts as "decided" if it carries a frozen verdict, or — for rows written before
 // `decision` existed — if its status still happens to be the verdict. The second clause is
@@ -98,12 +154,35 @@ const OUTING_IN_PROGRESS_MESSAGE =
 
 
 // POST /api/leave — private (Student)
+//
+// Boys: approved on submit (decidedByRole 'System'); the caretaker, wardens, chief warden
+// and admins are told, and any of the first three may revoke it until he is Out.
+// Girls: Pending, and sent to her caretaker, her hostel's wardens and the chief warden at
+// once; whichever of them acts first decides it (decideLeaveApplication).
 const createLeaveApplication = async (req, res) => {
   const { destination, reason, leaveDate, returnDate, acknowledgement, targetCaretakerId } = req.body;
+  const parentPhone = typeof req.body.parentPhone === 'string' ? req.body.parentPhone.trim() : '';
+  const expectedDepartureTime =
+    typeof req.body.expectedDepartureTime === 'string' ? req.body.expectedDepartureTime.trim() : '';
 
   try {
     if (!destination || !reason || !leaveDate || !returnDate) {
       return res.status(400).json({ message: 'Destination, reason, leave date and return date are all required.' });
+    }
+    // Boys and girls alike, so the caretaker and warden can call home about this leave.
+    if (!PARENT_PHONE_RE.test(parentPhone)) {
+      return res.status(400).json({ message: "Enter your parent's 10-digit mobile number (digits only)." });
+    }
+    // Only the expected hour, for the staff: the leave QR still works at any time that day.
+    if (!DEPARTURE_TIME_RE.test(expectedDepartureTime)) {
+      return res.status(400).json({ message: 'Enter the time you expect to leave on the leave date.' });
+    }
+    if (expectedDepartureTime > LATEST_DEPARTURE_TIME) {
+      return res.status(400).json({ message: 'The expected departure time must be 5:30 PM or earlier.' });
+    }
+    const { ticket, error: ticketError } = readTicket(req.body.ticket);
+    if (ticketError) {
+      return res.status(400).json({ message: ticketError });
     }
 
     // Stamped from the student's saved profile signature — never accepted from the body.
@@ -125,35 +204,23 @@ const createLeaveApplication = async (req, res) => {
       });
     }
 
-    const leaveDateObj = new Date(leaveDate);
+    // The departure is a day, not a time: the leave QR works at any hour of it. Whatever
+    // instant the client sent is pinned to campus midnight of its campus day, so every new
+    // row means the same thing and the dashboards can render it as a date.
+    const leaveDateObj = campusDayStart(leaveDate);
     const returnDateObj = new Date(returnDate);
 
-    if (Number.isNaN(leaveDateObj.getTime()) || Number.isNaN(returnDateObj.getTime())) {
+    if (!leaveDateObj || Number.isNaN(leaveDateObj.getTime()) || Number.isNaN(returnDateObj.getTime())) {
       return res.status(400).json({ message: 'Leave date and return date must be valid dates.' });
     }
 
     if (returnDateObj.getTime() <= leaveDateObj.getTime()) {
-      return res.status(400).json({ message: 'Return date must be after the leave date.' });
+      return res.status(400).json({ message: 'Return date cannot be before the leave date.' });
     }
 
-    const timingViolation = getLeaveSubmissionTimingViolation(req.user.gender, leaveDateObj);
-    if (timingViolation === 'DEPARTURE_NOT_FUTURE') {
+    if (getLeaveSubmissionTimingViolation(req.user.gender, leaveDateObj)) {
       return res.status(400).json({
-        message: 'Leave departure must be in the future.',
-      });
-    }
-    if (timingViolation === 'FEMALE_DEPARTURE_DAY') {
-      return res.status(400).json({
-        message:
-          'Girls\' leave applications must be submitted before the departure day. To leave tomorrow, submit the application by the end of today.',
-      });
-    }
-
-    // Friendly guard rail — the gate re-enforces the 5:30 PM curfew at scan time.
-    if (!isBeforeEveningCurfew(leaveDateObj)) {
-      return res.status(400).json({
-        message:
-          'Leave departure must be between 6:00 AM and 5:30 PM (campus time) on the departure day. Please choose a leave time in that window.',
+        message: 'The leave date cannot be in the past.',
       });
     }
 
@@ -196,16 +263,25 @@ const createLeaveApplication = async (req, res) => {
       return res.status(err.statusCode || 400).json({ message: err.message });
     }
 
+    const autoApprove = !needsApproval(req.user);
+    const isEmergency = isEmergencyLeave(req.user.gender, leaveDateObj);
+
     const application = await LeaveApplication.create({
       studentId: req.user._id,
       destination,
       reason,
       leaveDate: leaveDateObj,
       returnDate: returnDateObj,
+      parentPhone,
+      expectedDepartureTime,
+      isEmergency,
+      ticket,
       acknowledgement: true,
-      status: 'Pending',
       studentSignature,
       targetCaretaker: targetCaretaker ? targetCaretaker.id : null,
+      ...(autoApprove
+        ? { status: 'Approved', decision: 'Approved', decidedAt: new Date(), decidedByRole: SYSTEM_ROLE }
+        : { status: 'Pending' }),
     });
 
     sseHub.broadcast('leave:changed', {
@@ -214,16 +290,32 @@ const createLeaveApplication = async (req, res) => {
       status: application.status,
     });
 
-    const scope = targetCaretaker
+    const caretakerScope = targetCaretaker
       ? { caretakerId: targetCaretaker.id }
       : { hostelName: req.user.hostelName, gender: req.user.gender };
-    notifyCaretakers(scope, {
-      title: '📋 New Leave Application',
-      body: `${req.user.name} has applied for leave from ${leaveDateObj.toLocaleDateString()} to ${returnDateObj.toLocaleDateString()}.`,
-      url: '/dashboard/caretaker?view=leave',
-    });
+    const wardenScope = { hostelName: req.user.hostelName };
+    const span = `${fmtDay(leaveDateObj)} to ${fmtDay(returnDateObj)}, leaving around ${expectedDepartureTime}`;
 
-    res.status(201).json(application);
+    if (autoApprove) {
+      const payload = {
+        title: '🏠 Leave Auto-Approved',
+        body: `${req.user.name} (${req.user.hostelName || 'no hostel'}) is on leave ${span}.`,
+      };
+      notifyCaretakers(caretakerScope, { ...payload, url: '/dashboard/caretaker?view=leave' });
+      notifyWardensForScope(wardenScope, { ...payload, url: '/dashboard/warden?view=leave' });
+      notifyChiefWardens({ ...payload, url: '/dashboard/chief-warden?view=leaves' });
+      notifyAdmins({ ...payload, url: '/dashboard/admin?view=leave' });
+    } else {
+      const payload = {
+        title: isEmergency ? '🚨 Emergency Leave Application' : '📋 New Leave Application',
+        body: `${req.user.name} has applied for leave ${span}.${isEmergency ? ' She wants to leave today.' : ''}`,
+      };
+      notifyCaretakers(caretakerScope, { ...payload, url: '/dashboard/caretaker?view=leave' });
+      notifyWardensForScope(wardenScope, { ...payload, url: '/dashboard/warden?view=leave' });
+      notifyChiefWardens({ ...payload, url: '/dashboard/chief-warden?view=leaves' });
+    }
+
+    res.status(201).json(withoutTicketBytes(application));
   } catch (error) {
     // Lost the insert race — a concurrent POST from the same student committed first and
     // one_active_leave_per_student rejected this one. Answer with the same 409 the
@@ -247,6 +339,27 @@ const createLeaveApplication = async (req, res) => {
   }
 };
 
+// When the student actually left and came back, from the gate scans logged against each
+// leave. The leave row stores only the planned dates; the gate's OUT and IN scans carry
+// leave_id. Filtered on student_id too, so the read runs on scan_logs_student_created.
+const actualGateTimes = async (studentId, leaveIds) => {
+  const times = new Map();
+  if (!leaveIds.length) return times;
+  const logs = await ScanLog.findAll({
+    where: { studentId, leaveId: { [Op.in]: leaveIds } },
+    attributes: ['leaveId', 'direction', 'createdAt'],
+    order: [['createdAt', 'ASC']],
+    raw: true,
+  });
+  for (const log of logs) {
+    const entry = times.get(log.leaveId) || { actualOutTime: null, actualInTime: null };
+    if (log.direction === 'OUT' && !entry.actualOutTime) entry.actualOutTime = log.createdAt;
+    if (log.direction === 'IN') entry.actualInTime = log.createdAt;
+    times.set(log.leaveId, entry);
+  }
+  return times;
+};
+
 // GET /api/leave/myrequests — private (Student)
 const getMyLeaveApplications = async (req, res) => {
   try {
@@ -265,8 +378,14 @@ const getMyLeaveApplications = async (req, res) => {
       applications.map((a) => a.id),
       ['caretakerSignature', 'wardenSignature']
     );
+    const gateTimes = await actualGateTimes(req.user._id, applications.map((a) => a.id));
 
-    return sendPage(res, applications.map((a) => withSignatureFlags(a.toJSON(), presence)), {
+    const rows = applications.map((a) => ({
+      ...withSignatureFlags(a.toJSON(), presence),
+      ...(gateTimes.get(a.id) || { actualOutTime: null, actualInTime: null }),
+    }));
+
+    return sendPage(res, rows, {
       limit,
       skip,
       label: 'leave/myrequests',
@@ -304,7 +423,34 @@ const getLeaveSignatures = async (req, res) => {
   }
 };
 
-// GET /api/leave/all — private (ChiefWarden). Campus-wide, read-only oversight.
+// GET /api/leave/:id/ticket — private (owner student / staff in scope)
+//
+// The optional travel ticket, fetched only when someone opens it. Same read scope as the
+// signatures: the owner, staff of the student's hostel, the chief warden and admins.
+const getLeaveTicket = async (req, res) => {
+  try {
+    const application = await LeaveApplication.findByPk(req.params.id, {
+      attributes: ['id', 'studentId', 'targetCaretaker', 'forwardedTo', 'ticket', 'ticketMime'],
+      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+    });
+
+    if (!application) {
+      return res.status(404).json({ message: 'Leave application not found' });
+    }
+    if (!canReadSignatures(req.user, application, application.student)) {
+      return res.status(403).json({ message: 'This application is not in your scope.' });
+    }
+    if (!application.ticket) {
+      return res.status(404).json({ message: 'No ticket was attached to this application.' });
+    }
+
+    res.json({ ticket: application.ticket });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/leave/all — private (ChiefWarden, Admin). Campus-wide oversight.
 // Unfiltered and grows with every application the campus has ever filed, so it is
 // bounded hard — see utils/pagination.js.
 const getAllLeaveApplications = async (req, res) => {
@@ -337,36 +483,42 @@ const getAllLeaveApplications = async (req, res) => {
   }
 };
 
-// GET /api/leave/pending — private (Caretaker)
+// GET /api/leave/pending — private (Caretaker, Warden, ChiefWarden)
+//
+// The decision queue: girls' applications still open, in the caller's scope. The same row
+// sits in the caretaker's, every hostel warden's and the chief warden's queue at once;
+// whoever acts first decides it. Emergencies (filed on the departure day) come first.
 const getPendingLeaveApplications = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
     const scope = passScope(LeaveApplication, req.user, QUEUE_STUDENT_FIELDS);
-    const where = mergeWhere(scope.where, { status: 'Pending' });
+    const where = mergeWhere(scope.where, { status: { [Op.in]: UNDECIDED_STATUSES } });
 
     const applications = await LeaveApplication.findAll({
       where,
-      include: scope.include,
-      order: [['leaveDate', 'ASC']],
+      include: [
+        ...scope.include,
+        { association: 'targetCaretakerUser', attributes: ['id', 'name'] },
+      ],
+      order: [['isEmergency', 'DESC'], ['leaveDate', 'ASC'], ['createdAt', 'ASC']],
       offset: skip,
       limit,
       subQuery: false,
     });
 
     await expireStaleApplications(applications);
-    const stillPending = applications.filter((a) => a.status === 'Pending');
+    const stillOpen = applications.filter((a) => UNDECIDED_STATUSES.includes(a.status));
 
-    // The letter viewer renders the student's signature, and the decided-state block the
-    // caretaker's or warden's.
+    // The letter viewer renders the student's signature.
     const presence = await signaturePresence(
       LeaveApplication,
-      stillPending.map((a) => a.id),
+      stillOpen.map((a) => a.id),
       ['studentSignature', 'caretakerSignature', 'wardenSignature']
     );
 
-    // `fetched` is the window, not stillPending.length — expiry above can drop rows, and a
+    // `fetched` is the window, not stillOpen.length — expiry above can drop rows, and a
     // short *result* from a full window must not read as "nothing more to fetch".
-    return sendPage(res, stillPending.map((a) => withSignatureFlags(a.toJSON(), presence)), {
+    return sendPage(res, stillOpen.map((a) => withSignatureFlags(a.toJSON(), presence)), {
       limit,
       skip,
       fetched: applications.length,
@@ -378,24 +530,71 @@ const getPendingLeaveApplications = async (req, res) => {
   }
 };
 
+// GET /api/leave/auto-approved — private (Caretaker, Warden, ChiefWarden, Admin)
+//
+// Boys' leave, approved on submit. Newest first, every status, so the feed doubles as the
+// record: a row still 'Approved' can be revoked; one revoked shows who did it and why.
+const getAutoApprovedLeaves = async (req, res) => {
+  try {
+    const { limit, skip } = readPageParams(req);
+    const scope = passScope(LeaveApplication, req.user, WIDE_STUDENT_FIELDS);
+    const where = mergeWhere(scope.where, { decidedByRole: SYSTEM_ROLE });
+    // A revoked row's decidedByRole moved on to the revoker, so it is matched by revokedAt.
+    const revokedWhere = mergeWhere(scope.where, { revokedAt: { [Op.ne]: null } });
+    const feedWhere = { [Op.or]: [where, revokedWhere] };
 
-// GET /api/leave/history — private (Caretaker); every decided application in their scope,
-// whoever signed it (them or the warden they escalated to), plus anything still sitting with
-// the warden. Keyed off the frozen `decision`, not `status`, so a later cancel/expire/gate
-// scan can't erase the record of what was approved.
+    const applications = await LeaveApplication.findAll({
+      where: feedWhere,
+      include: [
+        ...scope.include,
+        { association: 'targetCaretakerUser', attributes: ['id', 'name'] },
+        { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
+      ],
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit,
+      subQuery: false,
+    });
+
+    await expireStaleApplications(applications);
+
+    const presence = await signaturePresence(
+      LeaveApplication,
+      applications.map((a) => a.id),
+      ['studentSignature']
+    );
+
+    return sendPage(
+      res,
+      applications.map((a) => withSignatureFlags(withDecisionMeta(a), presence)),
+      {
+        limit,
+        skip,
+        label: 'leave/auto-approved',
+        count: () => LeaveApplication.count({ where: feedWhere, include: scope.include, distinct: true }),
+      }
+    );
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/leave/history — private (Caretaker, Warden, ChiefWarden)
+//
+// Every girl's application someone decided, in the caller's scope, whoever decided it.
+// Keyed off the frozen `decision`, not `status`, so a later cancel/expire/gate scan can't
+// erase the record of what was approved. Boys' auto-approved leave lives in its own feed.
 const getLeaveHistory = async (req, res) => {
   try {
     const { limit, skip } = readPageParams(req);
     const scope = passScope(LeaveApplication, req.user, QUEUE_STUDENT_FIELDS);
-    const where = mergeWhere(scope.where, {
-      [Op.or]: [DECIDED_FILTER, { status: 'Forwarded' }],
-    });
+    const where = mergeWhere(scope.where, DECIDED_FILTER, NOT_AUTO_APPROVED, { revokedAt: null });
 
     const applications = await LeaveApplication.findAll({
       where,
       include: [
         ...scope.include,
-        { association: 'forwardedToUser', attributes: ['id', 'name'] },
+        { association: 'forwardedByUser', attributes: ['id', 'name'] },
         { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
       ],
       order: NEWEST_DECISION_FIRST,
@@ -404,7 +603,6 @@ const getLeaveHistory = async (req, res) => {
       subQuery: false,
     });
 
-    // Same viewer as /leave/pending — mapLeaveHistory spreads mapLeavePending.
     const presence = await signaturePresence(
       LeaveApplication,
       applications.map((a) => a.id),
@@ -426,24 +624,26 @@ const getLeaveHistory = async (req, res) => {
   }
 };
 
-// PATCH /api/leave/:id/status — private (Caretaker)
-const updateLeaveStatus = async (req, res) => {
-  const { status, remarks } = req.body;
+// PATCH /api/leave/:id/status — private (Caretaker, Warden, ChiefWarden)
+//
+// Decides a girl's open application. The caretaker it is routed to, any warden of her
+// hostel, or the chief warden may act; the first decision wins (saveClaimedDecision) and
+// the rest get a 409 naming the outcome.
+const decideLeaveApplication = async (req, res) => {
+  const { status } = req.body;
+  const remarks = typeof req.body.remarks === 'string' ? req.body.remarks.trim() : '';
 
-  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow and must not be settable by a caretaker.
+  // Only Approved/Rejected here — trip-lifecycle statuses belong to the gate scan flow.
   if (!['Approved', 'Rejected'].includes(status)) {
-    return res.status(400).json({
-      message: 'Status can only be set to Approved or Rejected.',
-    });
+    return res.status(400).json({ message: 'Status can only be set to Approved or Rejected.' });
   }
 
-  // Approving mints a pass, so it carries the caretaker's saved signature. (Rejection
-  // needs none.) Inside the try: this is a DB read now, so a failure belongs on the
-  // same 500 path as every other query in this handler.
+  // Approving mints a pass, so it carries the decider's saved signature. (Rejection
+  // needs none.) Inside the try: this is a DB read, so a failure belongs on the same 500
+  // path as every other query in this handler.
   try {
-    const caretakerSignature =
-      status === 'Approved' ? await fetchOwnSignature(req.user) : null;
-    if (status === 'Approved' && !caretakerSignature) {
+    const signature = status === 'Approved' ? await fetchOwnSignature(req.user) : null;
+    if (status === 'Approved' && !signature) {
       return sendSignatureRequired(
         res,
         'Add your signature in your profile before approving applications.'
@@ -451,23 +651,19 @@ const updateLeaveStatus = async (req, res) => {
     }
 
     const application = await LeaveApplication.findByPk(req.params.id, {
-      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
+      include: [{ association: 'student', attributes: ['id', 'name', 'gender', 'hostelName'] }],
     });
 
     if (!application) {
       return res.status(404).json({ message: 'Leave application not found' });
     }
 
-    // Server-side scope re-check: the caretaker must be the routed target (or, for
-    // legacy untargeted applications, own this student's hostel).
     if (!requestInScope(req.user, application, application.student)) {
-      return res.status(403).json({
-        message: 'This application is not routed to you.',
-      });
+      return res.status(403).json({ message: 'This application is not in your scope.' });
     }
 
-    // Only a still-Pending application can be decided; live/terminal passes can't be flipped back.
-    if (application.status !== 'Pending') {
+    // Only an open application can be decided; live/terminal passes can't be flipped back.
+    if (!UNDECIDED_STATUSES.includes(application.status)) {
       return res.status(409).json({
         message: `This application has already been ${application.status.toLowerCase()} and can no longer be changed.`,
         status: application.status,
@@ -475,250 +671,7 @@ const updateLeaveStatus = async (req, res) => {
     }
 
     // Approving after the leave date passed would mint an already-expired pass.
-    if (
-      application.status === 'Pending' &&
-      status === 'Approved' &&
-      Date.now() > new Date(application.leaveDate).getTime()
-    ) {
-      application.status = 'Expired';
-      await application.save();
-
-      sseHub.broadcast('leave:changed', {
-        reason: 'expired',
-        id: application.id,
-        status: 'Expired',
-      });
-
-      return res.status(409).json({
-        message: 'This application has expired — the leave date has already passed. It can no longer be approved.',
-        status: 'Expired',
-      });
-    }
-
-    application.status = status;
-    if (remarks) application.remarks = remarks;
-
-    if (['Approved', 'Rejected'].includes(status)) {
-      application.approvedBy = req.user._id;
-      // Immutable audit verdict — `status` moves on from here (Out/Returned/Cancelled/
-      // Expired), `decision` does not, so history stays complete.
-      application.decision = status;
-      application.decidedAt = new Date();
-      application.decidedByRole = 'Caretaker';
-    }
-
-    if (status === 'Approved') {
-      application.caretakerSignature = caretakerSignature;
-    }
-
-    await application.save();
-
-    sseHub.broadcast('leave:changed', {
-      reason: 'status',
-      id: application.id,
-      status: application.status,
-    });
-
-    res.json(application);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-
-// PATCH /api/leave/:id/forward — private (Caretaker)
-const forwardLeaveApplication = async (req, res) => {
-  const { note } = req.body;
-
-  try {
-    const application = await LeaveApplication.findByPk(req.params.id, {
-      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName', 'name'] }],
-    });
-
-    if (!application) {
-      return res.status(404).json({ message: 'Leave application not found' });
-    }
-
-    // Only the caretaker this application is routed to may forward it.
-    if (!requestInScope(req.user, application, application.student)) {
-      return res.status(403).json({ message: 'This application is not routed to you.' });
-    }
-
-    if (application.status !== 'Pending') {
-      return res.status(409).json({
-        message: `Only a pending application can be forwarded — this one is already ${application.status.toLowerCase()}.`,
-        status: application.status,
-      });
-    }
-
-    // Don't forward a pass that's already past its leave date; expire it instead.
-    if (Date.now() > new Date(application.leaveDate).getTime()) {
-      application.status = 'Expired';
-      await application.save();
-      sseHub.broadcast('leave:changed', { reason: 'expired', id: application.id, status: 'Expired' });
-      return res.status(409).json({
-        message: 'This application has expired — the leave date has already passed. It can no longer be forwarded.',
-        status: 'Expired',
-      });
-    }
-
-    // Resolve the warden of the student's hostel. No warden assigned -> actionable error.
-    // Every warden of the student's hostel; any one of them may decide it.
-    const wardens = await resolveWardensForHostel(application.student.hostelName);
-    if (wardens.length === 0) {
-      return res.status(409).json({
-        message:
-          'No warden is assigned to this hostel yet, so this application can\'t be forwarded. Decide it yourself or ask an admin to assign a warden.',
-      });
-    }
-
-    application.status = 'Forwarded';
-    // Left empty on purpose: it goes to the hostel's wardens, not one of them. The
-    // warden who decides it is recorded here at decision time.
-    application.forwardedTo = null;
-    application.forwardedBy = req.user._id;
-    application.forwardedNote = note || null;
-    application.forwardedAt = new Date();
-
-    await application.save();
-
-    sseHub.broadcast('leave:changed', { reason: 'forwarded', id: application.id, status: 'Forwarded' });
-
-    notifyWardensForScope({ hostelName: application.student.hostelName }, {
-      title: '⬆️ Leave Forwarded to Wardens',
-      body: `${req.user.name} forwarded ${application.student.name}'s leave application for your decision.`,
-      url: '/dashboard/warden?view=leave',
-    });
-
-    res.json(application);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// GET /api/leave/forwarded — private (Warden); the warden's action queue.
-const getForwardedLeaveApplications = async (req, res) => {
-  try {
-    const { limit, skip } = readPageParams(req);
-    const { where, include: scopeInclude } = forwardedQueueScope(LeaveApplication, req.user, QUEUE_STUDENT_FIELDS);
-    const applications = await LeaveApplication.findAll({
-      where,
-      include: [
-        ...scopeInclude,
-        { association: 'forwardedByUser', attributes: ['id', 'name'] },
-      ],
-      order: [['forwardedAt', 'ASC']],
-      offset: skip,
-      limit,
-      subQuery: false,
-    });
-
-    // A forwarded pass can still go stale while it waits on the warden.
-    await expireStaleApplications(applications);
-    const stillForwarded = applications.filter((a) => a.status === 'Forwarded');
-
-    // ForwardedLeaveView renders the student's signature in the letter.
-    const presence = await signaturePresence(
-      LeaveApplication,
-      stillForwarded.map((a) => a.id),
-      ['studentSignature']
-    );
-
-    return sendPage(res, stillForwarded.map((a) => withSignatureFlags(a.toJSON(), presence)), {
-      limit,
-      skip,
-      fetched: applications.length,
-      label: 'leave/forwarded',
-      count: () => LeaveApplication.count({ where, include: scopeInclude, distinct: true }),
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// GET /api/leave/warden-history — private (Warden); every decided application in their
-// hostel, not just the escalations they personally ruled on, so the warden and the caretaker
-// see the same record. passScope's Warden branch joins on managedHostel, and matches
-// nothing for an unassigned warden.
-const getWardenLeaveHistory = async (req, res) => {
-  try {
-    const { limit, skip } = readPageParams(req);
-    const scope = passScope(LeaveApplication, req.user, QUEUE_STUDENT_FIELDS);
-    const where = mergeWhere(scope.where, DECIDED_FILTER);
-
-    const applications = await LeaveApplication.findAll({
-      where,
-      include: [
-        ...scope.include,
-        { association: 'forwardedByUser', attributes: ['id', 'name'] },
-        { association: 'approvedByUser', attributes: ['id', 'name', 'role'] },
-      ],
-      order: NEWEST_DECISION_FIRST,
-      offset: skip,
-      limit,
-      subQuery: false,
-    });
-
-    return sendPage(res, applications.map(withDecisionMeta), {
-      limit,
-      skip,
-      label: 'leave/warden-history',
-      count: () => LeaveApplication.count({ where, include: scope.include, distinct: true }),
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// PATCH /api/leave/:id/warden-status — private (Warden). Final decision on a forwarded
-// application. Warden approves (with their own signature) -> Approved and the pass is
-// live; warden rejects (with reason) -> Rejected.
-const updateWardenLeaveStatus = async (req, res) => {
-  const { status, remarks } = req.body;
-
-  if (!['Approved', 'Rejected'].includes(status)) {
-    return res.status(400).json({ message: 'Status can only be set to Approved or Rejected.' });
-  }
-
-  if (status === 'Rejected' && !remarks) {
-    return res.status(400).json({ message: 'A reason is required when rejecting a leave application.' });
-  }
-
-  // See updateLeaveStatus: the signature read moved inside the try with the queries.
-  // It only fires on 'Approved' and the remarks check only on 'Rejected', so the two
-  // are mutually exclusive and reordering them changes no response.
-  try {
-    const wardenSignature =
-      status === 'Approved' ? await fetchOwnSignature(req.user) : null;
-    if (status === 'Approved' && !wardenSignature) {
-      return sendSignatureRequired(
-        res,
-        'Add your signature in your profile before approving applications.'
-      );
-    }
-
-    const application = await LeaveApplication.findByPk(req.params.id, {
-      include: [{ association: 'student', attributes: ['id', 'gender', 'hostelName'] }],
-    });
-
-    if (!application) {
-      return res.status(404).json({ message: 'Leave application not found' });
-    }
-
-    // Any warden of the student's hostel may decide a forwarded application.
-    if (!requestInScope(req.user, application, application.student)) {
-      return res.status(403).json({ message: 'This application is not from a student of your hostel.' });
-    }
-
-    if (application.status !== 'Forwarded') {
-      return res.status(409).json({
-        message: `This application is ${application.status.toLowerCase()} and can no longer be decided.`,
-        status: application.status,
-      });
-    }
-
-    // Approving after the leave date passed would mint an already-expired pass.
-    if (status === 'Approved' && Date.now() > new Date(application.leaveDate).getTime()) {
+    if (status === 'Approved' && isLeaveDayOver(application.leaveDate)) {
       application.status = 'Expired';
       await application.save();
       sseHub.broadcast('leave:changed', { reason: 'expired', id: application.id, status: 'Expired' });
@@ -731,40 +684,118 @@ const updateWardenLeaveStatus = async (req, res) => {
     application.status = status;
     if (remarks) application.remarks = remarks;
     application.approvedBy = req.user._id;
-    // Immutable audit verdict; see the note in updateLeaveStatus.
+    // Immutable audit verdict — `status` moves on from here (Out/Returned/Cancelled/
+    // Expired), `decision` does not, so history stays complete.
     application.decision = status;
     application.decidedAt = new Date();
-    application.decidedByRole = 'Warden';
-    application.forwardedTo = req.user._id; // the warden who actually decided it
+    application.decidedByRole = req.user.role;
     if (status === 'Approved') {
-      application.wardenSignature = wardenSignature;
-      // Mirror into caretakerSignature too: the student's leave view reads
-      // caretakerSignature as "the signed pass", so a warden-approved pass must carry
-      // it there to render like a caretaker-signed one.
-      application.caretakerSignature = wardenSignature;
+      if (req.user.role === 'Caretaker') {
+        application.caretakerSignature = signature;
+      } else {
+        application.wardenSignature = signature;
+        // Mirror into caretakerSignature too: the student's leave view reads
+        // caretakerSignature as "the signed pass", so a warden- or chief-warden-approved
+        // pass must carry it there to render like a caretaker-signed one.
+        application.caretakerSignature = signature;
+      }
     }
 
-    if (!(await saveWardenDecision(LeaveApplication, application))) {
+    if (!(await saveClaimedDecision(LeaveApplication, application, UNDECIDED_STATUSES))) {
+      const current = await LeaveApplication.findByPk(application.id, { attributes: ['id', 'status'] });
       return res.status(409).json({
-        message: 'Another warden of this hostel has already decided this application.',
+        message: `Someone else has already acted on this application — it is now ${String(current?.status || 'decided').toLowerCase()}.`,
+        status: current?.status,
       });
     }
 
-    sseHub.broadcast('leave:changed', { reason: 'warden-status', id: application.id, status: application.status });
+    sseHub.broadcast('leave:changed', { reason: 'status', id: application.id, status: application.status });
 
-    // Let the caretaker who forwarded it know the outcome (their view is read-only now).
-    if (application.forwardedBy) {
-      notifyCaretakers(
-        { caretakerId: application.forwardedBy },
-        {
-          title: status === 'Approved' ? '✅ Warden Approved Leave' : '❌ Warden Rejected Leave',
-          body: `The warden ${status.toLowerCase()} a leave application you forwarded.`,
-          url: '/dashboard/caretaker?view=leave',
-        }
-      );
+    notifyStudent(application.studentId, {
+      title: status === 'Approved' ? '✅ Leave Approved' : '❌ Leave Rejected',
+      body:
+        status === 'Approved'
+          ? `Your leave from ${fmtDay(application.leaveDate)} is approved. Show your Leave QR at the gate.`
+          : `Your leave application was rejected.${remarks ? ` ${remarks}` : ''}`,
+      url: '/dashboard/student/leave-application',
+    });
+
+    res.json(withoutTicketBytes(application));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// PATCH /api/leave/:id/revoke — private (Caretaker, Warden, ChiefWarden)
+//
+// Withdraws a boy's auto-approved leave, with a reason, any time before the gate takes him
+// Out. The row reads as Rejected afterwards (so the gate refuses the leave QR), and
+// revokedAt records that it was a revocation rather than an original rejection.
+const revokeLeaveApplication = async (req, res) => {
+  const remarks = typeof req.body.remarks === 'string' ? req.body.remarks.trim() : '';
+  if (!remarks) {
+    return res.status(400).json({ message: 'A reason is required to revoke a leave.' });
+  }
+
+  try {
+    const application = await LeaveApplication.findByPk(req.params.id, {
+      include: [{ association: 'student', attributes: ['id', 'name', 'gender', 'hostelName'] }],
+    });
+
+    if (!application) {
+      return res.status(404).json({ message: 'Leave application not found' });
     }
 
-    res.json(application);
+    if (!requestInScope(req.user, application, application.student)) {
+      return res.status(403).json({ message: 'This application is not in your scope.' });
+    }
+
+    if (application.decidedByRole !== SYSTEM_ROLE) {
+      return res.status(409).json({
+        message: 'Only an auto-approved leave can be revoked.',
+        status: application.status,
+      });
+    }
+
+    if (application.status !== 'Approved') {
+      return res.status(409).json({
+        message:
+          application.status === 'Out'
+            ? 'The student has already left campus on this leave, so it can no longer be revoked.'
+            : `This leave is already ${application.status.toLowerCase()} and can no longer be revoked.`,
+        status: application.status,
+      });
+    }
+
+    application.status = 'Rejected';
+    application.decision = 'Rejected';
+    application.decidedAt = new Date();
+    application.decidedByRole = req.user.role;
+    application.approvedBy = req.user._id;
+    application.remarks = remarks;
+    application.revokedAt = new Date();
+
+    // Loses cleanly to a gate scan that took him Out a moment earlier.
+    if (!(await saveClaimedDecision(LeaveApplication, application, ['Approved']))) {
+      const current = await LeaveApplication.findByPk(application.id, { attributes: ['id', 'status'] });
+      return res.status(409).json({
+        message:
+          current?.status === 'Out'
+            ? 'The student has just left campus on this leave, so it can no longer be revoked.'
+            : 'This leave changed before it could be revoked. Refresh and try again.',
+        status: current?.status,
+      });
+    }
+
+    sseHub.broadcast('leave:changed', { reason: 'revoked', id: application.id, status: application.status });
+
+    notifyStudent(application.studentId, {
+      title: '⛔ Leave Revoked',
+      body: `Your leave from ${fmtDay(application.leaveDate)} was revoked by the ${req.user.role === 'ChiefWarden' ? 'chief warden' : req.user.role.toLowerCase()}: ${remarks}`,
+      url: '/dashboard/student/leave-application',
+    });
+
+    res.json(withoutTicketBytes(application));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -783,11 +814,10 @@ const cancelLeaveApplication = async (req, res) => {
       return res.status(403).json({ message: 'You can only cancel your own leave applications.' });
     }
 
-    // Forwarded is cancellable too — it's still undecided, and since it now blocks new
-    // applications the student needs a way out while the warden holds it. The warden's
-    // decision endpoint re-checks for 'Forwarded', so a cancel won during the race just
-    // turns their action into a 409.
-    if (!['Pending', 'Approved', 'Forwarded'].includes(application.status)) {
+    // Forwarded (a row from the old flow) is cancellable too — it's still undecided. The
+    // decision endpoint claims the row conditionally, so a cancel won during the race just
+    // turns a staff member's action into a 409.
+    if (!CANCELLABLE_STATUSES.includes(application.status)) {
       return res.status(409).json({
         message: `Cannot cancel an application that is already ${application.status.toLowerCase()}.`,
         status: application.status,
@@ -795,7 +825,21 @@ const cancelLeaveApplication = async (req, res) => {
     }
 
     application.status = 'Cancelled';
-    await application.save();
+
+    // Claimed conditionally, like a decision: a plain save would overwrite a gate scan that
+    // took the student Out (or a rejection) landing between the read above and this write,
+    // leaving a student off campus on a leave that reads as Cancelled.
+    if (!(await saveClaimedDecision(LeaveApplication, application, CANCELLABLE_STATUSES))) {
+      const current = await LeaveApplication.findByPk(application.id, { attributes: ['id', 'status'] });
+      const now = String(current?.status || 'changed').toLowerCase();
+      return res.status(409).json({
+        message:
+          current?.status === 'Out'
+            ? 'You have already left campus on this leave, so it can no longer be cancelled.'
+            : `This application was just ${now} and can no longer be cancelled.`,
+        status: current?.status,
+      });
+    }
 
     sseHub.broadcast('leave:changed', {
       reason: 'cancelled',
@@ -818,14 +862,14 @@ module.exports = {
   createLeaveApplication,
   getMyLeaveApplications,
   getLeaveSignatures,
+  getLeaveTicket,
   getAllLeaveApplications,
   getPendingLeaveApplications,
+  getAutoApprovedLeaves,
   getLeaveHistory,
-  updateLeaveStatus,
-  forwardLeaveApplication,
-  getForwardedLeaveApplications,
-  getWardenLeaveHistory,
-  updateWardenLeaveStatus,
+  decideLeaveApplication,
+  revokeLeaveApplication,
   cancelLeaveApplication,
   streamLeaveEvents,
+  DECIDER_ROLES,
 };

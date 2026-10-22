@@ -56,7 +56,6 @@ export default function SecurityLoginPage() {
 
 	const [loginPin, setLoginPin] = useState("");
 	const [showLoginPin, setShowLoginPin] = useState(false);
-	const [quickLabel, setQuickLabel] = useState("");
 
 	useEffect(() => {
 		const profileRaw = localStorage.getItem("safeexit_guard_profile");
@@ -66,7 +65,6 @@ export default function SecurityLoginPage() {
 			} catch {
 				setStoredProfile(null);
 			}
-			setQuickLabel(quick.getQuickLabel());
 			setAppState("RETURNING_USER");
 		} else {
 			setAppState("ONBOARDING");
@@ -295,17 +293,7 @@ export default function SecurityLoginPage() {
 								{storedProfile?.fullName?.split(" ")[0]} 👋
 							</h1>
 							<p className="text-sm text-slate-500 mb-6">
-								Enter your 4-digit login PIN
-								{quickLabel ? (
-									<>
-										{" "}
-										for{" "}
-										<span className="font-semibold text-slate-700">
-											{quickLabel}
-										</span>
-									</>
-								) : null}
-								.
+								Enter your 4-digit login PIN.
 							</p>
 
 							{errorMsg && (

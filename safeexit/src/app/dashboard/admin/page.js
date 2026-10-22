@@ -21,6 +21,7 @@ import {
   RefreshCw,
   DoorOpen,
   ChartNoAxesCombined,
+  FileText,
 } from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
 import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
@@ -34,6 +35,8 @@ import AnalyticsView from "./components/AnalyticsView";
 import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
 import DelayNoticesView from "../caretaker/components/DelayNoticesView";
 import DelayNoticeToast from "../caretaker/components/DelayNoticeToast";
+import StaffLeaveDesk from "@/app/components/staff/StaffLeaveDesk";
+import { useLeaveDesk } from "@/app/lib/leaveDesk";
 
 // `short` keeps every tab on one line in the 4-across phone nav.
 const NAV = [
@@ -42,6 +45,7 @@ const NAV = [
   { key: "sos", label: "SOS Alerts", short: "SOS", icon: Siren },
   { key: "overdue", label: "Overdue", short: "Overdue", icon: Clock3 },
   { key: "delays", label: "Delays", short: "Delays", icon: MessageSquareText },
+  { key: "leave", label: "Leave", short: "Leave", icon: FileText },
   { key: "logs", label: "Movement Logs", short: "Logs", icon: ScrollText },
   { key: "people", label: "People", short: "People", icon: Users },
 ];
@@ -75,6 +79,9 @@ export default function AdminDashboardPage() {
   // Pending delay notices. Kept out of /admin/overview because a notice filed
   // before the return time passes never shows up in the overdue figure.
   const [delayCount, setDelayCount] = useState(0);
+  // Read-only: boys' auto-approved leave and every application campus-wide. Loaded only
+  // while the tab is open — an admin has no badge to keep live and nothing to decide.
+  const leaveDesk = useLeaveDesk(view === "leave" ? "Admin" : null);
 
   const loadDelayCount = useCallback(async () => {
     try {
@@ -228,8 +235,8 @@ export default function AdminDashboardPage() {
           </button>
         </div>
 
-        {/* Nav tabs — 4 across on phones so all seven stay visible without a scroll */}
-        <nav className="mt-3 grid grid-cols-4 gap-1.5 rounded-2xl border border-white/70 bg-white/80 p-1.5 shadow-sm backdrop-blur sm:mt-4 sm:grid-cols-3 sm:gap-2 sm:rounded-3xl sm:p-2 lg:grid-cols-7">
+        {/* Nav tabs — 4 across on phones so all eight fit in two rows without a scroll */}
+        <nav className="mt-3 grid grid-cols-4 gap-1.5 rounded-2xl border border-white/70 bg-white/80 p-1.5 shadow-sm backdrop-blur sm:mt-4 sm:gap-2 sm:rounded-3xl sm:p-2 lg:grid-cols-8">
           {NAV.map((item) => {
             const active = view === item.key;
             const badge = item.key === "sos"
@@ -316,6 +323,7 @@ export default function AdminDashboardPage() {
           {view === "overdue" && <OverdueStudentsView />}
           {view === "delays" && <DelayNoticesView onCountChange={setDelayCount} />}
           {view === "analytics" && <AnalyticsView />}
+          {view === "leave" && <StaffLeaveDesk desk={leaveDesk} />}
           {view === "logs" && <MovementLogsView />}
           {view === "people" && <PeopleView />}
         </div>

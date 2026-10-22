@@ -436,7 +436,7 @@ const makeLeave = async (attrs) => {
   return row;
 };
 
-maybe('every warden of the hostel sees a forwarded leave, and only one can decide it', async () => {
+maybe('the hostel wardens and the chief warden all see a pending leave, and only one can decide it', async () => {
   const { kautilyaStudent: student, warden } = fixtures;
   const assistant = await makeUser({
     name: 'ITEST Assistant Warden', role: 'Warden', managedHostel: 'Kautilya', managedGender: 'Male',
@@ -447,28 +447,33 @@ maybe('every warden of the hostel sees a forwarded leave, and only one can decid
   });
 
   await releaseActivePasses(student.id);
-  const pass = await makeLeave({ studentId: student.id, status: 'Forwarded', forwardedAt: new Date() });
+  const chief = await makeUser({
+    name: 'ITEST Chief Warden', role: 'ChiefWarden',
+    email: `itest-chief-${crypto.randomUUID()}@nitp.ac.in`,
+  });
+  const pass = await makeLeave({ studentId: student.id, status: 'Pending' });
 
   const queueIds = async (user) => {
     const res = recorder();
-    await leaveController.getForwardedLeaveApplications({ user, query: {} }, res);
+    await leaveController.getPendingLeaveApplications({ user, query: {} }, res);
     assert.equal(res.statusCode ?? 200, 200, JSON.stringify(res.body));
     return res.body.map((r) => r.id || r._id);
   };
   assert.ok((await queueIds(warden)).includes(pass.id), 'the warden sees it');
   assert.ok((await queueIds(assistant)).includes(pass.id), 'the assistant warden sees it too');
+  assert.ok((await queueIds(chief)).includes(pass.id), 'the chief warden sees it too');
   assert.ok(!(await queueIds(otherHostelWarden)).includes(pass.id), 'another hostel does not');
 
-  // Both press Reject at the same moment: exactly one verdict lands.
+  // The warden and the chief warden press Reject at the same moment: exactly one verdict lands.
   const decide = async (user) => {
     const res = recorder();
-    await leaveController.updateWardenLeaveStatus(
+    await leaveController.decideLeaveApplication(
       { user, params: { id: pass.id }, body: { status: 'Rejected', remarks: `by ${user.name}` } },
       res
     );
     return res;
   };
-  const results = await Promise.all([decide(warden), decide(assistant)]);
+  const results = await Promise.all([decide(warden), decide(chief)]);
   const codes = results.map((r) => r.statusCode ?? 200).sort();
   assert.deepEqual(codes, [200, 409], JSON.stringify(results.map((r) => r.body)));
 

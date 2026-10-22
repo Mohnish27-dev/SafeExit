@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { User, OutingRequest, LeaveApplication, SOSAlert } = require('../models');
 const { HOSTELS } = require('../config/hostels');
 const { getOverdueStudentIds } = require('../utils/overdue');
+const { campusDayStart } = require('../utils/outingRules');
 
 const makeHostelSummary = (hostel) => ({
   name: hostel.name,
@@ -9,7 +10,9 @@ const makeHostelSummary = (hostel) => ({
   students: { total: 0, inside: 0, outside: 0, overdue: 0 },
   activeSOS: 0,
   outings: { pending: 0, forwarded: 0 },
-  leaves: { pending: 0, forwarded: 0 },
+  // pending: girls' applications awaiting anyone's decision. autoApproved: boys' leave,
+  // approved on submit, not yet used at the gate.
+  leaves: { pending: 0, autoApproved: 0 },
   caretaker: null,
   // A hostel has a warden and one or two assistant wardens, all equal in the app.
   wardens: [],
@@ -28,7 +31,7 @@ const getOverview = async (req, res) => {
       pendingOutings,
       forwardedOutings,
       pendingLeaves,
-      forwardedLeaves,
+      autoApprovedLeaves,
       overdueIds,
     ] = await Promise.all([
       User.findAll({ where: { role: 'Student' }, attributes: ['id', 'hostelName', 'campusStatus'], raw: true }),
@@ -42,8 +45,10 @@ const getOverview = async (req, res) => {
       // sweep performed by their full-list endpoints.
       OutingRequest.findAll({ where: { status: 'Pending', outTime: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
       OutingRequest.findAll({ where: { status: 'Forwarded', outTime: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
-      LeaveApplication.findAll({ where: { status: 'Pending', leaveDate: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
-      LeaveApplication.findAll({ where: { status: 'Forwarded', leaveDate: { [Op.gte]: now } }, attributes: ['studentId'], raw: true }),
+      // A leave stays live through its whole departure day (utils/outingRules.isLeaveDayOver).
+      // 'Forwarded' only survives on rows from the old caretaker-forwards-to-warden flow.
+      LeaveApplication.findAll({ where: { status: { [Op.in]: ['Pending', 'Forwarded'] }, leaveDate: { [Op.gte]: campusDayStart(now) } }, attributes: ['studentId'], raw: true }),
+      LeaveApplication.findAll({ where: { status: 'Approved', decidedByRole: 'System', leaveDate: { [Op.gte]: campusDayStart(now) } }, attributes: ['studentId'], raw: true }),
       getOverdueStudentIds(),
     ]);
 
@@ -85,13 +90,13 @@ const getOverview = async (req, res) => {
     addRowsToHostel(pendingOutings, (hostel) => { hostel.outings.pending += 1; });
     addRowsToHostel(forwardedOutings, (hostel) => { hostel.outings.forwarded += 1; });
     addRowsToHostel(pendingLeaves, (hostel) => { hostel.leaves.pending += 1; });
-    addRowsToHostel(forwardedLeaves, (hostel) => { hostel.leaves.forwarded += 1; });
+    addRowsToHostel(autoApprovedLeaves, (hostel) => { hostel.leaves.autoApproved += 1; });
 
     res.json({
       students: studentsSummary,
       activeSOS: activeAlerts.length,
       outings: { pending: pendingOutings.length, forwarded: forwardedOutings.length },
-      leaves: { pending: pendingLeaves.length, forwarded: forwardedLeaves.length },
+      leaves: { pending: pendingLeaves.length, autoApproved: autoApprovedLeaves.length },
       hostels,
       updatedAt: new Date().toISOString(),
     });

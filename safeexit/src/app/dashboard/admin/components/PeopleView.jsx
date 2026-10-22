@@ -66,6 +66,7 @@ const ROLE_PLURALS = {
 const CAMPUS_TONE = {
   Inside: "bg-emerald-100 text-emerald-700",
   Outside: "bg-amber-100 text-amber-700",
+  OnLeave: "bg-purple-100 text-purple-700",
   Overdue: "bg-rose-100 text-rose-700",
 };
 
@@ -106,7 +107,9 @@ const DEPARTMENTS = [
 const CAMPUS_STATUS_OPTIONS = [
   { value: "ALL", label: "All Statuses" },
   { value: "Inside", label: "Inside" },
-  { value: "Outside", label: "Outside / Overdue" },
+  { value: "Outside", label: "Outside (outing)" },
+  { value: "OnLeave", label: "On leave" },
+  { value: "Overdue", label: "Overdue" },
 ];
 
 export default function PeopleView() {
@@ -680,7 +683,7 @@ export default function PeopleView() {
                 {role === "Student" && (
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${CAMPUS_TONE[p.campusStatus] || CAMPUS_TONE.Inside}`}>
-                      {p.campusStatus || "Inside"}
+                      {p.campusStatus === "OnLeave" ? "On leave" : p.campusStatus || "Inside"}
                     </span>
                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
                       p.profileUnlocked ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-slate-100 text-slate-500"

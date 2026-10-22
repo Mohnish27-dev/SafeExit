@@ -312,7 +312,7 @@ CREATE TABLE IF NOT EXISTS leave_applications (
 
   decision                  text CHECK (decision IN ('Approved','Rejected')),
   decided_at                timestamptz,
-  decided_by_role           text CHECK (decided_by_role IN ('Caretaker','Warden')),
+  decided_by_role           text CHECK (decided_by_role IN ('Caretaker','Warden','ChiefWarden','System')),
   remarks                   text,
 
   student_signature         bytea,

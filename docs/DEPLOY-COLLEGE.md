@@ -126,6 +126,15 @@ locked student locked until the next 1 July). Look for
 `Profile window: kept N locked student profile(s) locked…` in the first boot's log. Running
 `pg:schema` as well is harmless, since every step in it is idempotent.
 
+The leave workflow columns (parent's phone, expected departure time, emergency flag,
+ticket, revocation) are added on start the same way. Run their files once anyway, for the
+format CHECKs the boot step leaves out:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm backend npm run pg:leave-parent-phone   # 006
+docker compose -f docker-compose.prod.yml run --rm backend npm run pg:leave-workflow       # 007
+```
+
 ### What you get for free
 
 `001_schema.sql` seeds the five hostels — Kautilya, Aryabhatta and Nagarjuna for men,

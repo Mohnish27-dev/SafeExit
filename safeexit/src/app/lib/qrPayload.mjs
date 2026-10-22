@@ -10,6 +10,22 @@
 
 const MAX_RAW_LENGTH = 4096;
 
+// A student has two QRs that differ only in this. The outing QR carries no `p` at all, so
+// every screenshot taken before the leave QR existed stays an outing QR; the leave QR adds
+// `p: "L"`. It is the student saying what this exit is, never a permission: the backend
+// still refuses a leave exit unless a leave approved for today is on record.
+export const QR_PURPOSE = { OUTING: "outing", LEAVE: "leave" };
+const LEAVE_MARK = "L";
+
+/** The JSON a student's QR encodes. `purpose` is QR_PURPOSE.OUTING (default) or .LEAVE. */
+export const buildIdentityQr = ({ id, sid, name }, purpose = QR_PURPOSE.OUTING) =>
+  JSON.stringify({
+    id,
+    sid: sid || undefined, // the user's UUID; the scanner resolves by this first
+    name,
+    ...(purpose === QR_PURPOSE.LEAVE ? { p: LEAVE_MARK } : {}),
+  });
+
 // trim() misses the Cf-category invisibles that ID-card generators leak.
 const ZERO_WIDTH = new RegExp("[\\u200B-\\u200D\\u2060\\uFEFF]", "g");
 
@@ -77,7 +93,8 @@ const parseIdentityJson = (raw) => {
   const id = asText(data.id);
   const sid = asText(data.sid);
   if (!id && !sid) return null;
-  return { id, sid, name: asText(data.name) };
+  const purpose = asText(data.p).toUpperCase() === LEAVE_MARK ? QR_PURPOSE.LEAVE : QR_PURPOSE.OUTING;
+  return { id, sid, name: asText(data.name), purpose };
 };
 
 // Label-driven rather than positional: a value holding a stray tab shifts the
@@ -101,10 +118,11 @@ const parseIdCard = (raw) => {
   // The roll is passed through verbatim. Repairing it (stripping spaces/dashes)
   // could match a different student, and the backend match is anchored — a
   // visible "student not found" beats a silent wrong-student gate log.
-  return { id, sid: "", name: fields.get(NAME_LABEL) || "" };
+  // A college ID card only ever identifies, so it is an outing QR.
+  return { id, sid: "", name: fields.get(NAME_LABEL) || "", purpose: QR_PURPOSE.OUTING };
 };
 
-// Returns { id, sid, name } — always exactly those keys — or null if the QR is
+// Returns { id, sid, name, purpose } — always exactly those keys — or null if the QR is
 // neither format. `sid` is "" for ID cards, which resolve by roll number alone.
 export const parseScannedQr = (rawValue) => {
   if (typeof rawValue !== "string") return null;

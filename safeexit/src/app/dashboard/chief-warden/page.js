@@ -26,6 +26,8 @@ import { getFirstName, getInitials, getStoredUser } from "@/app/lib/userProfile"
 import AuthLoading from "@/app/components/AuthGate";
 import SOSAlertsView from "../caretaker/components/SOSAlertsView";
 import ApplicationsView from "./components/ApplicationsView";
+import StaffLeaveDesk from "@/app/components/staff/StaffLeaveDesk";
+import { useLeaveDesk } from "@/app/lib/leaveDesk";
 import MovementLogsView from "./components/MovementLogsView";
 import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
 import DelayNoticesView from "../caretaker/components/DelayNoticesView";
@@ -73,7 +75,7 @@ function HostelCard({ hostel }) {
 
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs font-semibold text-slate-600">
         <span>Pending leave <b className="float-right text-slate-900">{hostel.leaves.pending}</b></span>
-        <span>Leave forwarded <b className="float-right text-slate-900">{hostel.leaves.forwarded}</b></span>
+        <span>Boys&apos; leave approved <b className="float-right text-slate-900">{hostel.leaves.autoApproved}</b></span>
         <span>Active SOS <b className="float-right text-rose-600">{hostel.activeSOS}</b></span>
       </div>
 
@@ -98,6 +100,9 @@ export default function ChiefWardenDashboardPage() {
   // count because a notice can be filed *before* the deadline passes — those
   // students are not overdue yet, so the overdue figure would never show them.
   const [delayCount, setDelayCount] = useState(0);
+  // Girls' leave reaches the chief warden with the caretaker and the hostel wardens, and
+  // any of them decides it; boys' leave arrives auto-approved and can be revoked.
+  const leaveDesk = useLeaveDesk("ChiefWarden");
 
   const loadDelayCount = useCallback(async () => {
     try {
@@ -175,7 +180,7 @@ export default function ChiefWardenDashboardPage() {
     { icon: UserRound, label: "Outside", value: students.outside ?? "—", note: "Students out on an outing or leave", tone: "border-amber-200 bg-amber-50 text-amber-700" },
     { icon: Clock3, label: "Overdue", value: students.overdue ?? "—", note: "Students past their return time", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: Siren, label: "Active SOS", value: overview?.activeSOS ?? "—", note: "Across boys' and girls' hostels", tone: "border-rose-200 bg-rose-50 text-rose-700" },
-    { icon: FileText, label: "Pending Leave", value: overview?.leaves?.pending ?? "—", note: `${overview?.leaves?.forwarded ?? 0} currently with wardens`, tone: "border-violet-200 bg-violet-50 text-violet-700" },
+    { icon: FileText, label: "Pending Leave", value: overview?.leaves?.pending ?? "—", note: `Girls awaiting a decision · ${overview?.leaves?.autoApproved ?? 0} boys' leave approved`, tone: "border-violet-200 bg-violet-50 text-violet-700" },
     { icon: Building2, label: "All Students", value: students.total ?? "—", note: `${overview?.hostels?.length ?? 0} campus hostels`, tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];
 
@@ -185,7 +190,7 @@ export default function ChiefWardenDashboardPage() {
         <header className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/80 bg-white/90 px-5 py-4 shadow-xl backdrop-blur">
           <div className="flex items-center gap-4">
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-700 to-cyan-500 text-white shadow-lg"><Crown className="h-7 w-7" /></span>
-            <div><p className="text-xs font-bold uppercase tracking-[0.3em] text-indigo-500">All Hostel Command</p><h1 className="text-2xl font-black tracking-tight sm:text-3xl">Chief Warden Dashboard</h1><p className="text-sm font-medium text-slate-500">Welcome, {getFirstName(profile.name) || profile.name} · campus-wide read-only oversight</p></div>
+            <div><p className="text-xs font-bold uppercase tracking-[0.3em] text-indigo-500">All Hostel Command</p><h1 className="text-2xl font-black tracking-tight sm:text-3xl">Chief Warden Dashboard</h1><p className="text-sm font-medium text-slate-500">Welcome, {getFirstName(profile.name) || profile.name} · campus-wide oversight · decides girls&apos; leave</p></div>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 sm:flex"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white">{getInitials(profile.name)}</span><div><p className="text-sm font-extrabold">{profile.name}</p><p className="text-xs font-semibold text-slate-500">All hostels · Boys &amp; Girls</p></div></div>
@@ -201,7 +206,7 @@ export default function ChiefWardenDashboardPage() {
         {/* Tabs grow to fill their row, so an odd count never leaves a gap: two per row on
             phones, three on tablets, all on one line from lg up. */}
         <nav className="mt-4 flex flex-wrap gap-2 rounded-3xl border border-white/80 bg-white/90 p-2 shadow-sm">
-          {NAV.map((item) => <button key={item.key} onClick={() => setView(item.key)} className={`flex grow basis-[45%] items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold transition sm:basis-[28%] lg:basis-0 ${view === item.key ? "bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow" : "text-slate-500 hover:bg-slate-100"}`}><item.icon className="h-4 w-4" /> {item.label}{item.key === "delays" && delayCount > 0 && <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-black text-white">{delayCount}</span>}</button>)}
+          {NAV.map((item) => <button key={item.key} onClick={() => setView(item.key)} className={`flex grow basis-[45%] items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold transition sm:basis-[28%] lg:basis-0 ${view === item.key ? "bg-gradient-to-r from-slate-900 to-indigo-600 text-white shadow" : "text-slate-500 hover:bg-slate-100"}`}><item.icon className="h-4 w-4" /> {item.label}{item.key === "delays" && delayCount > 0 && <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-black text-white">{delayCount}</span>}{item.key === "leaves" && leaveDesk.pending.length > 0 && <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{leaveDesk.pending.length}</span>}</button>)}
         </nav>
 
         {error && <p className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700"><AlertTriangle className="h-4 w-4" /> {error}</p>}
@@ -214,8 +219,8 @@ export default function ChiefWardenDashboardPage() {
               <div><div className="mb-4"><h2 className="text-xl font-black text-slate-900">Every Campus Hostel</h2><p className="text-sm font-medium text-slate-500">Operational status, responsible staff, requests, and safety alerts in one view.</p></div>{loading && !overview ? <div className="py-16 text-center font-semibold text-slate-500">Loading hostel details…</div> : <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{overview?.hostels?.map((hostel) => <HostelCard key={hostel.name} hostel={hostel} />)}</div>}</div>
             </section>
           )}
-          {view === "outings" && <ApplicationsView type="outing" />}
-          {view === "leaves" && <ApplicationsView type="leave" />}
+          {view === "outings" && <ApplicationsView />}
+          {view === "leaves" && <StaffLeaveDesk desk={leaveDesk} />}
           {view === "movements" && <MovementLogsView />}
           {view === "sos" && <SOSAlertsView readOnly />}
           {view === "overdue" && <OverdueStudentsView />}

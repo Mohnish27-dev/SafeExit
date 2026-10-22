@@ -22,8 +22,9 @@ const formatDate = (value) => value
   ? new Date(value).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
   : "—";
 
-export default function ApplicationsView({ type }) {
-  const isLeave = type === "leave";
+// Campus-wide outing records. Leave lives in components/staff/StaffLeaveDesk, where the
+// chief warden also decides girls' applications.
+export default function ApplicationsView() {
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState("");
   const [hostel, setHostel] = useState("");
@@ -34,17 +35,17 @@ export default function ApplicationsView({ type }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await apiFetch(isLeave ? "/leave/all" : "/outing/all"));
+      setRows(await apiFetch("/outing/all"));
       setError("");
     } catch (err) {
-      setError(err.message || `Could not load ${isLeave ? "leave applications" : "outings"}.`);
+      setError(err.message || "Could not load outings.");
     } finally {
       setLoading(false);
     }
-  }, [isLeave]);
+  }, []);
 
   useEffect(() => {
-    // Data is synchronized from the API when this view mounts or changes type.
+    // Data is synchronized from the API when this view mounts.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
@@ -56,10 +57,10 @@ export default function ApplicationsView({ type }) {
       if (status && row.status !== status) return false;
       if (hostel && student.hostelName !== hostel) return false;
       if (!query) return true;
-      return [student.name, student.studentId, student.roomNumber, student.hostelName, row.destination, isLeave ? row.reason : row.purpose]
+      return [student.name, student.studentId, student.roomNumber, student.hostelName, row.destination, row.purpose]
         .some((value) => String(value || "").toLowerCase().includes(query));
     });
-  }, [hostel, isLeave, rows, search, status]);
+  }, [hostel, rows, search, status]);
 
   return (
     <section className="space-y-5">
@@ -68,7 +69,7 @@ export default function ApplicationsView({ type }) {
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700"><FileText className="h-6 w-6" /></span>
             <div>
-              <h2 className="text-xl font-extrabold text-slate-900">{isLeave ? "Leave Applications" : "Outings"}</h2>
+              <h2 className="text-xl font-extrabold text-slate-900">Outings</h2>
               <p className="text-sm font-medium text-slate-500">{visible.length} records across all hostels · view only</p>
             </div>
           </div>
@@ -80,7 +81,7 @@ export default function ApplicationsView({ type }) {
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <div className="relative sm:col-span-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isLeave ? "Search student, room, destination" : "Search student or room"} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search student or room" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-indigo-400 focus:bg-white" />
           </div>
           <select value={hostel} onChange={(event) => setHostel(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-400">
             <option value="">All hostels</option>
@@ -104,8 +105,8 @@ export default function ApplicationsView({ type }) {
           {visible.map((row) => {
             const student = row.student || {};
             // Outings: the gate-scan departure, else the day the pass was for.
-            const start = isLeave ? row.leaveDate : row.actualOutTime || row.createdAt || row.outTime;
-            const end = isLeave ? row.returnDate : row.inTime;
+            const start = row.actualOutTime || row.createdAt || row.outTime;
+            const end = row.inTime;
             return (
               <article key={row._id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -116,11 +117,11 @@ export default function ApplicationsView({ type }) {
                     </div>
                     <p className="mt-1 text-xs font-semibold text-slate-500">{[student.studentId, student.department, student.year].filter(Boolean).join(" · ") || "—"}</p>
                   </div>
-                  <p className="text-xs font-semibold text-slate-400">{isLeave ? "Submitted" : "Logged"} {formatDate(row.createdAt)}</p>
+                  <p className="text-xs font-semibold text-slate-400">Logged {formatDate(row.createdAt)}</p>
                 </div>
 
                 <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-                  {/* Outings logged at the gate have no destination; only leave and old requests do. */}
+                  {/* Outings logged at the gate have no destination; only old requests do. */}
                   {row.destination && (
                     <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Destination:</b> {row.destination}</span></p>
                   )}
@@ -128,12 +129,6 @@ export default function ApplicationsView({ type }) {
                   <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-indigo-500" /><span><b className="text-slate-800">Return:</b> {formatDate(end)}</span></p>
                   <p><b className="text-slate-800">Hostel / Room:</b> {[student.hostelName, student.roomNumber && `Room ${student.roomNumber}`].filter(Boolean).join(" · ") || "—"}</p>
                 </div>
-
-                {isLeave && (
-                  <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                    <b className="text-slate-800">Reason:</b> {row.reason}
-                  </div>
-                )}
 
                 {(row.forwardedBy?.name || row.approvedBy?.name || row.remarks) && (
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-semibold text-slate-500">

@@ -37,13 +37,18 @@ const recorder = () => {
 // Stubs the two tables getOverdueStudentIds reads. adminController destructures that
 // helper at require time, so patching utils/overdue would not be seen — the honest seam is
 // the queries it actually makes.
-const stubOverdue = (t, outStudentIds = []) => {
+// `onLeave` are leaves still 'Out' and not yet due; `lateLeave` are leaves past their return.
+const stubOverdue = (t, outStudentIds = [], { onLeave = [], lateLeave = [] } = {}) => {
   const originalOuting = OutingRequest.findAll;
   const originalLeave = LeaveApplication.findAll;
   const past = new Date(Date.now() - 60 * 60 * 1000);
+  const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
 
   OutingRequest.findAll = async () => outStudentIds.map((id) => ({ studentId: id, inTime: past }));
-  LeaveApplication.findAll = async () => [];
+  LeaveApplication.findAll = async () => [
+    ...onLeave.map((id) => ({ studentId: id, returnDate: future })),
+    ...lateLeave.map((id) => ({ studentId: id, returnDate: past })),
+  ];
 
   t.after(() => {
     OutingRequest.findAll = originalOuting;
@@ -337,4 +342,74 @@ test('the overlay only marks outside students overdue, and clears stale stored O
 
   assert.equal(res.body[0].campusStatus, 'Inside');
   assert.equal(res.body[1].campusStatus, 'Outside');
+});
+
+// ---- On Leave: the fourth tile. A leave still 'Out' and not yet due is its own bucket,
+// carved out of Outside exactly the way Overdue is.
+
+test('student counts carve on-leave students out of the outside tile', async (t) => {
+  stubOverdue(t, ['stu-9'], { onLeave: ['stu-5', 'stu-6', 'stu-7'] });
+  const original = User.count;
+  User.count = async ({ where }) => {
+    if (where.campusStatus === 'Inside') return 30;
+    if (where.id) return opValues(where.id).length;
+    if (where.campusStatus && typeof where.campusStatus === 'object') return 12;
+    return 42;
+  };
+  t.after(() => { User.count = original; });
+
+  const res = recorder();
+  await getStudentCounts({ user: { role: 'Guard' } }, res);
+
+  assert.equal(res.body.overdue, 1);
+  assert.equal(res.body.onLeave, 3);
+  assert.equal(res.body.outside, 8);
+  assert.equal(res.body.inside + res.body.outside + res.body.onLeave + res.body.overdue, res.body.total);
+});
+
+test('a leave past its expected return date is still on leave, never overdue', async (t) => {
+  stubOverdue(t, [], { lateLeave: ['stu-1'] });
+  stubRoster(t, [{ id: 'stu-1', name: 'A', campusStatus: 'Outside' }]);
+  const res = recorder();
+
+  await getUsers({ user: { role: 'Guard' }, query: {} }, res);
+
+  assert.equal(res.body[0].campusStatus, 'OnLeave');
+});
+
+test('the OnLeave filter lists students holding an open leave; Outside excludes them', async (t) => {
+  stubOverdue(t, ['stu-9'], { onLeave: ['stu-5'] });
+  const leave = stubRoster(t, []);
+  await getUsers({ user: { role: 'Guard' }, query: { campusStatus: 'OnLeave' } }, recorder());
+  assert.deepEqual(opValues(leave.page.where.campusStatus), ['Outside', 'Overdue']);
+  assert.deepEqual(opValues(leave.page.where.id), ['stu-5']);
+
+  const outside = stubRoster(t, []);
+  await getUsers({ user: { role: 'Guard' }, query: { campusStatus: 'Outside' } }, recorder());
+  assert.deepEqual(opValues(outside.page.where.id), ['stu-9', 'stu-5']);
+});
+
+test("on leave, a guard gets a boy's number, hostel and room, and only a girl's hostel", async (t) => {
+  stubOverdue(t, [], { onLeave: ['boy-leave', 'girl-leave'] });
+  stubRoster(t, [
+    { id: 'boy-leave', campusStatus: 'Outside', gender: 'Male', hostelName: 'Kautilya', roomNumber: 'B-12', phoneNumber: '9000000011' },
+    { id: 'girl-leave', campusStatus: 'Outside', gender: 'Female', hostelName: 'Sarojini', roomNumber: 'G-7', phoneNumber: '9000000012' },
+    { id: 'boy-out', campusStatus: 'Outside', gender: 'Male', hostelName: 'Kautilya', roomNumber: 'B-3', phoneNumber: '9000000013' },
+  ]);
+  const res = recorder();
+  await getUsers({ user: { role: 'Guard' }, query: {} }, res);
+
+  const byId = Object.fromEntries(res.body.map((u) => [u.id, u]));
+  assert.equal(byId['boy-leave'].campusStatus, 'OnLeave');
+  assert.equal(byId['boy-leave'].phoneNumber, '9000000011');
+  assert.equal(byId['boy-leave'].hostelName, 'Kautilya');
+  assert.equal(byId['boy-leave'].roomNumber, 'B-12');
+  assert.equal(byId['girl-leave'].campusStatus, 'OnLeave');
+  assert.equal(byId['girl-leave'].hostelName, 'Sarojini');
+  assert.equal('phoneNumber' in byId['girl-leave'], false);
+  assert.equal('roomNumber' in byId['girl-leave'], false);
+  // Off leave, hostel and room stay hidden as before.
+  assert.equal('hostelName' in byId['boy-out'], false);
+  assert.equal('roomNumber' in byId['boy-out'], false);
+  for (const u of res.body) assert.equal('gender' in u, false);
 });

@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const { Op } = require('sequelize');
 
 const { sequelize, User, OutingRequest, LeaveApplication, ScanLog } = require('../src/models');
 const { createOutingRequest } = require('../src/controllers/outingController');
@@ -13,8 +14,10 @@ const { computeOutingReturnDeadline, outingTypeFor } = require('../src/utils/out
 //   - an exit is never refused: no "no approved pass", no window, no red alert. Whether it is
 //     a sensible hour is the guard's call.
 //   - boys and girls (nearby or market) are all due back by 8:00 PM campus time.
-//   - an approved leave valid right now is used instead, and a leave for a later day is NOT
-//     burnt by an outing taken today.
+//   - the QR decides the exit: the outing QR always makes an outing, even on the student's
+//     leave day, and the leave QR leaves on a leave approved for today (at any hour of it)
+//     or is refused with the reason, before anything is written.
+//   - a leave for a later day is NOT burnt by an outing taken today.
 //   - requests left open by the old flow cannot block the new outing on the unique index.
 
 const ist = (hh, mm = 0, ss = 0, day = '2026-10-15') =>
@@ -101,6 +104,10 @@ test('creating an outing request answers 410 and tells the student to use the ga
 // Gate scan
 // ---------------------------------------------------------------------------
 
+// The leave lookups ask for one status ('Out') or a set of them ({ [Op.in]: [...] }).
+const statusMatches = (cond, status) =>
+  typeof cond === 'string' ? cond === status : Boolean(cond?.[Op.in]?.includes(status));
+
 const gateFixture = (t, { gender = 'Male', campusStatus = 'Inside', leave = null, outPass = null } = {}) => {
   const student = {
     id: crypto.randomUUID(),
@@ -131,7 +138,7 @@ const gateFixture = (t, { gender = 'Male', campusStatus = 'Inside', leave = null
     },
   });
   stub(t, LeaveApplication, {
-    findOne: async ({ where }) => (leave && where.status === leave.status ? leave : null),
+    findOne: async ({ where }) => (leave && statusMatches(where.status, leave.status) ? leave : null),
     update: async (values, options) => {
       writes.leaveUpdates.push({ values, where: options.where });
       return [1];
@@ -149,15 +156,17 @@ const gateFixture = (t, { gender = 'Male', campusStatus = 'Inside', leave = null
   return { student, writes };
 };
 
+const LEAVE_QR = { studentId: 'STU12345', direction: 'AUTO', purpose: 'leave' };
+
 const scan = async (body = { studentId: 'STU12345', direction: 'AUTO' }) => {
   const res = responseRecorder();
   await createScanLog({ user: { _id: crypto.randomUUID() }, body }, res);
   return res;
 };
 
-const preview = async () => {
+const preview = async (purpose) => {
   const res = responseRecorder();
-  await previewScan({ query: { studentId: 'STU12345' } }, res);
+  await previewScan({ query: { studentId: 'STU12345', ...(purpose ? { purpose } : {}) } }, res);
   return res;
 };
 
@@ -236,40 +245,72 @@ test('gate: requests left open by the old flow are retired first, in the same tr
   assert.equal(writes.outingCreates.length, 1);
 });
 
-test('gate: a valid approved leave is used for the exit instead of an outing', async (t) => {
-  t.mock.timers.enable({ apis: ['Date'], now: ist(10, 0) });
-  const leave = withSetter({
+const approvedLeave = (leaveDay, status = 'Approved') =>
+  withSetter({
     id: crypto.randomUUID(),
-    status: 'Approved',
-    leaveDate: ist(9, 0),
-    returnDate: ist(12, 0, 0, '2026-10-18'),
+    status,
+    // Date-only applications are stored at campus midnight of the departure day.
+    leaveDate: ist(0, 0, 0, leaveDay),
+    returnDate: ist(23, 59, 59, '2026-10-20'),
   });
+
+// A refused scan must leave no trace: no campus-status flip, no pass, no log.
+const assertNothingLogged = (writes) => {
+  assert.equal(writes.user.length, 0, 'campusStatus is not flipped');
+  assert.equal(writes.outingCreates.length, 0, 'no outing is created');
+  assert.equal(writes.logs.length, 0, 'no scan log is written');
+  assert.equal(writes.leaveUpdates.filter((w) => w.values.status === 'Out').length, 0);
+};
+
+test('gate: the leave QR leaves on a leave approved for today, at any hour of that day', async (t) => {
+  // Before the old 6:00 AM opening, mid-afternoon, and after the old 5:30 PM curfew.
+  for (const now of [ist(0, 5), ist(5, 36), ist(15, 0), ist(17, 45), ist(23, 50)]) {
+    await t.test(now.toISOString(), async (st) => {
+      st.mock.timers.enable({ apis: ['Date'], now });
+      const leave = approvedLeave('2026-10-15');
+      const { writes } = gateFixture(st, { leave });
+
+      const p = await preview('leave');
+      assert.equal(p.body.purpose, 'leave');
+      assert.equal(p.body.exit.allowed, true);
+      assert.equal(p.body.exit.passType, 'Leave');
+
+      const res = await scan(LEAVE_QR);
+      assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+      assert.equal(writes.outingCreates.length, 0, 'no outing is created for a leave departure');
+      assert.equal(writes.leaveUpdates[0].values.status, 'Out');
+      assert.equal(writes.logs[0].passType, 'Leave');
+      assert.equal(writes.logs[0].leaveId, leave.id);
+    });
+  }
+});
+
+test('gate: the outing QR makes an outing even on the leave day, and leaves the leave alone', async (t) => {
+  // The case the leave QR exists for: leave today, but out into town at noon first.
+  t.mock.timers.enable({ apis: ['Date'], now: ist(12, 0) });
+  const leave = approvedLeave('2026-10-15');
   const { writes } = gateFixture(t, { leave });
 
   const p = await preview();
-  assert.equal(p.body.exit.allowed, true);
-  assert.equal(p.body.exit.passType, 'Leave');
+  assert.equal(p.body.purpose, 'outing');
+  assert.equal(p.body.exit.passType, 'Outing');
+  assert.ok(p.body.exit.leaveToday, 'the guard is told this student has a leave today');
 
   const res = await scan();
   assert.equal(res.statusCode, 201, JSON.stringify(res.body));
-  assert.equal(writes.outingCreates.length, 0, 'no outing is created for a leave departure');
-  assert.equal(writes.leaveUpdates[0].values.status, 'Out');
-  assert.equal(writes.logs[0].passType, 'Leave');
-  assert.equal(writes.logs[0].leaveId, leave.id);
+  assert.equal(writes.outingCreates.length, 1);
+  assert.equal(writes.leaveUpdates.length, 0, 'the leave stays Approved for later today');
+  assert.equal(writes.logs[0].passType, 'Outing');
 });
 
 test('gate: an outing today does not burn a leave approved for a later day', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: ist(10, 0) });
-  const leave = withSetter({
-    id: crypto.randomUUID(),
-    status: 'Approved',
-    leaveDate: ist(9, 0, 0, '2026-10-17'),
-    returnDate: ist(12, 0, 0, '2026-10-20'),
-  });
+  const leave = approvedLeave('2026-10-17');
   const { writes } = gateFixture(t, { leave });
 
   const p = await preview();
   assert.equal(p.body.exit.passType, 'Outing');
+  assert.equal(p.body.exit.leaveToday, null);
 
   const res = await scan();
   assert.equal(res.statusCode, 201, JSON.stringify(res.body));
@@ -277,21 +318,79 @@ test('gate: an outing today does not burn a leave approved for a later day', asy
   assert.equal(writes.leaveUpdates.length, 0, 'the future leave is left untouched');
 });
 
-test('gate: an approved leave whose day is over lapses, and the student still goes out', async (t) => {
-  t.mock.timers.enable({ apis: ['Date'], now: ist(18, 0) });
-  const leave = withSetter({
-    id: crypto.randomUUID(),
-    status: 'Approved',
-    leaveDate: ist(9, 0),
-    returnDate: ist(12, 0, 0, '2026-10-18'),
-  });
-  const { writes } = gateFixture(t, { leave });
+test('gate: the leave QR is refused, with the reason, when no leave is valid today', async (t) => {
+  const cases = [
+    ['no leave at all', null, 'NO_LEAVE'],
+    ['leave still pending', approvedLeave('2026-10-15', 'Pending'), 'LEAVE_NOT_APPROVED'],
+    ['leave with the warden', approvedLeave('2026-10-15', 'Forwarded'), 'LEAVE_NOT_APPROVED'],
+    ['leave approved for a later day', approvedLeave('2026-10-16'), 'LEAVE_NOT_TODAY'],
+  ];
+  for (const [name, leave, code] of cases) {
+    await t.test(name, async (st) => {
+      st.mock.timers.enable({ apis: ['Date'], now: ist(15, 0) });
+      const { writes } = gateFixture(st, { leave });
 
-  const res = await scan();
-  assert.equal(res.statusCode, 201, JSON.stringify(res.body));
-  assert.deepEqual(writes.leaveUpdates[0].values, { status: 'Expired' });
-  assert.equal(writes.leaveUpdates[0].where.status, 'Approved', 'never lapses a leave already Out');
-  assert.equal(writes.outingCreates.length, 1);
+      const p = await preview('leave');
+      assert.equal(p.body.exit.allowed, false);
+      assert.equal(p.body.exit.reason, code);
+
+      const res = await scan(LEAVE_QR);
+      assert.equal(res.statusCode, 409);
+      assert.equal(res.body.code, code);
+      assertNothingLogged(writes);
+      assert.equal(writes.leaveUpdates.length, 0, 'a live leave is never touched by a refusal');
+    });
+  }
+});
+
+test('gate: a leave whose day is over lapses; refused on the leave QR, outing on the outing QR', async (t) => {
+  await t.test('leave QR', async (st) => {
+    st.mock.timers.enable({ apis: ['Date'], now: ist(0, 10, 0, '2026-10-16') });
+    const { writes } = gateFixture(st, { leave: approvedLeave('2026-10-15') });
+
+    const res = await scan(LEAVE_QR);
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.code, 'LEAVE_EXPIRED');
+    assert.deepEqual(writes.leaveUpdates[0].values, { status: 'Expired' });
+    assertNothingLogged(writes);
+  });
+
+  await t.test('outing QR', async (st) => {
+    st.mock.timers.enable({ apis: ['Date'], now: ist(18, 0, 0, '2026-10-16') });
+    const { writes } = gateFixture(st, { leave: approvedLeave('2026-10-15') });
+
+    const res = await scan();
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    assert.deepEqual(writes.leaveUpdates[0].values, { status: 'Expired' });
+    const guarded = writes.leaveUpdates[0].where.status[Op.in];
+    assert.ok(guarded.includes('Approved') && !guarded.includes('Out'), 'never lapses a leave already Out');
+    assert.equal(writes.outingCreates.length, 1);
+  });
+});
+
+test('gate: on return either QR closes whichever pass took the student out', async (t) => {
+  await t.test('leave QR closes an outing', async (st) => {
+    st.mock.timers.enable({ apis: ['Date'], now: ist(19, 0) });
+    const outPass = withSetter({ id: crypto.randomUUID(), status: 'Out', outTime: ist(15, 0), inTime: ist(20, 0) });
+    const { writes } = gateFixture(st, { campusStatus: 'Outside', outPass });
+
+    const res = await scan(LEAVE_QR);
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    assert.equal(writes.logs[0].direction, 'IN');
+    assert.equal(writes.logs[0].passType, 'Outing');
+  });
+
+  await t.test('outing QR closes a leave', async (st) => {
+    st.mock.timers.enable({ apis: ['Date'], now: ist(11, 0, 0, '2026-10-20') });
+    const leave = approvedLeave('2026-10-15', 'Out');
+    const { writes } = gateFixture(st, { campusStatus: 'Outside', leave });
+
+    const res = await scan();
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    assert.equal(writes.logs[0].direction, 'IN');
+    assert.equal(writes.logs[0].passType, 'Leave');
+    assert.equal(writes.leaveUpdates[0].values.status, 'Returned');
+  });
 });
 
 test('gate: the entry scan closes the outing and judges punctuality against 8:00 PM', async (t) => {
