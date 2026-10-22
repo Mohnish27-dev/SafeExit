@@ -5,7 +5,6 @@ import {
   Bell,
   BellOff,
   CalendarDays,
-  Check,
   Clock,
   Home,
   MessageSquare,
@@ -14,7 +13,6 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowRight,
-  ArrowUpRight,
   ShieldAlert,
   Siren,
   Sparkles,
@@ -22,7 +20,6 @@ import {
   Armchair,
   ScrollText,
   AlarmClock,
-  Lock,
 } from "lucide-react";
 import ProfileView from "./components/ProfileView";
 import MovementLogsView from "./components/MovementLogsView";
@@ -30,10 +27,9 @@ import SOSAlertsView from "./components/SOSAlertsView";
 import OverdueStudentsView from "./components/OverdueStudentsView";
 import DelayNoticesView from "./components/DelayNoticesView";
 import DelayNoticeToast from "./components/DelayNoticeToast";
-import LeaveApplicationsView from "./components/LeaveApplicationsView";
-import SignatureCapture from "@/app/components/SignatureCapture";
-import { isSignatureRequiredError } from "@/app/lib/signatureImage";
-import { useSignatures } from "@/app/lib/signatures";
+import StaffLeaveDesk from "@/app/components/staff/StaffLeaveDesk";
+import { useLeaveDesk } from "@/app/lib/leaveDesk";
+import { genderForHostel } from "@/app/lib/hostels";
 import { apiFetch } from "@/app/lib/api";
 import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
@@ -62,41 +58,6 @@ const initials = (name = "") =>
 // managedGender maps to the hostel the caretaker oversees.
 const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
 
-const mapLeavePending = (l) => ({
-  id: l._id,
-  name: l.student?.name || "Unknown Student",
-  roll: l.student?.studentId || "",
-  room: [l.student?.hostelName, l.student?.roomNumber].filter(Boolean).join(", ") || "—",
-  hostelName: l.student?.hostelName || "",
-  roomNumber: l.student?.roomNumber || "",
-  destination: l.destination || "",
-  reason: l.reason || "",
-  parentPhone: l.parentPhone || "",
-  leaveDate: l.leaveDate,
-  returnDate: l.returnDate,
-  submittedAt: l.createdAt,
-  hasStudentSignature: Boolean(l.hasStudentSignature),
-  hasCaretakerSignature: Boolean(l.hasCaretakerSignature),
-  // Set only when a warden decided the escalation — it's what distinguishes a
-  // warden-signed pass from a caretaker-signed one in the viewer.
-  hasWardenSignature: Boolean(l.hasWardenSignature),
-  initials: initials(l.student?.name),
-});
-
-const mapLeaveHistory = (l) => ({
-  ...mapLeavePending(l),
-  status: l.status || "",
-  // The frozen verdict. `status` moves on (Out/Returned/Cancelled/Expired) but this doesn't,
-  // so a cancelled-after-approval pass still files under Approved.
-  decision: l.decision || "",
-  // Set when the pass never played out as decided — "Cancelled" or "Expired".
-  lapsed: l.lapsed || "",
-  decidedByName: l.approvedBy?.name || "",
-  decidedByRole: l.decidedByRole || l.approvedBy?.role || "",
-  remarks: l.remarks || "",
-  decidedAt: l.decidedAt || l.updatedAt,
-});
-
 // Module scope so these aren't recreated every render.
 const handleTilePointerMove = (e) => {
   const el = e.currentTarget;
@@ -112,20 +73,6 @@ const handleTilePointerMove = (e) => {
 const handleTilePointerLeave = (e) => {
   e.currentTarget.style.setProperty("--rx", "0deg");
   e.currentTarget.style.setProperty("--ry", "0deg");
-};
-
-const handleMagneticMove = (e) => {
-  const el = e.currentTarget;
-  const rect = el.getBoundingClientRect();
-  const dx = e.clientX - (rect.left + rect.width / 2);
-  const dy = e.clientY - (rect.top + rect.height / 2);
-  el.style.setProperty("--mag-x", `${dx * 0.2}px`);
-  el.style.setProperty("--mag-y", `${dy * 0.2}px`);
-};
-
-const handleMagneticLeave = (e) => {
-  e.currentTarget.style.setProperty("--mag-x", "0px");
-  e.currentTarget.style.setProperty("--mag-y", "0px");
 };
 
 function CaretakerStat({ label, value, fill, glow }) {
@@ -187,12 +134,10 @@ export default function CaretakerDashboardPage() {
   const formattedDate = now ? now.toLocaleDateString(dateLocale, { weekday: "short", day: "2-digit", month: "short" }) : tc("loading");
   const formattedTime = now ? now.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : tc("loading");
 
-  const [leavePending, setLeavePending] = useState([]);
-  const [loadingLeave, setLoadingLeave] = useState(true);
-  const [leaveError, setLeaveError] = useState("");
-
-  const [leaveHistory, setLeaveHistory] = useState([]);
-  const [loadingLeaveHistory, setLoadingLeaveHistory] = useState(true);
+  // Girls' applications to decide and boys' auto-approved leave, shared with the hostel's
+  // wardens and the chief warden (lib/leaveDesk.js). Owned here so the badges stay live.
+  const leaveDesk = useLeaveDesk("Caretaker");
+  const leavePending = leaveDesk.pending;
 
   // Kept live independently of the SOS view so the badge shows on every tab.
   const [sosCount, setSosCount] = useState(0);
@@ -284,36 +229,6 @@ export default function CaretakerDashboardPage() {
     });
   }, [loadSosCount]);
 
-  const loadLeaveApplications = useCallback(async () => {
-    setLoadingLeave(true);
-    setLeaveError("");
-    try {
-      const data = await apiFetch("/leave/pending");
-      setLeavePending(data.map(mapLeavePending));
-    } catch (err) {
-      setLeaveError(err.message || t("couldNotLoadLeave"));
-    } finally {
-      setLoadingLeave(false);
-    }
-  }, [t]);
-
-  const loadLeaveHistory = useCallback(async () => {
-    setLoadingLeaveHistory(true);
-    try {
-      const data = await apiFetch("/leave/history");
-      setLeaveHistory(data.map(mapLeaveHistory));
-    } catch {
-      // Best-effort; the history tab just shows its empty state.
-    } finally {
-      setLoadingLeaveHistory(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadLeaveApplications();
-    loadLeaveHistory();
-  }, [loadLeaveApplications, loadLeaveHistory]);
-
   // Outings need no approval — the gate scan creates them — so the outing channel only
   // moves the overdue badge and the "Out Now" counter.
   useEffect(() => {
@@ -324,23 +239,6 @@ export default function CaretakerDashboardPage() {
       },
     });
   }, [loadOverdueCount, loadLiveStats]);
-
-  useEffect(() => {
-    return subscribeToStaffEvents({
-      "leave:changed": () => {
-        loadLeaveApplications();
-        loadLeaveHistory();
-      },
-    });
-  }, [loadLeaveApplications, loadLeaveHistory]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadLeaveApplications();
-      loadLeaveHistory();
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [loadLeaveApplications, loadLeaveHistory]);
 
   const [view, setView] = useState("home");
 
@@ -353,161 +251,6 @@ export default function CaretakerDashboardPage() {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
-
-  // Approving mints a signed pass, so it routes through a modal that captures the
-  // caretaker's drawn signature. { kind: 'leave', id, name } while open — leave is the only
-  // thing a caretaker approves now; outings need no approval.
-  const [approvalTarget, setApprovalTarget] = useState(null);
-  const [approving, setApproving] = useState(false);
-  // Only used by the fallback capture for caretakers who have not set up a signature yet.
-  // A saved one is locked; changing it is an administrator reset.
-  const [savingSignature, setSavingSignature] = useState(false);
-  const [signatureError, setSignatureError] = useState("");
-  // Hydrated by the /auth/profile call this dashboard already makes on mount.
-  const mySignature = user?.signature || null;
-
-  // The student's signature is fetched when the approval dialog opens, not carried by the
-  // pending list (see lib/signatures.js).
-  const { signatures: approvalSignatures, error: approvalSignatureError } = useSignatures(
-    "leave",
-    approvalTarget?.id,
-    Boolean(approvalTarget?.hasStudentSignature)
-  );
-  const approvalStudentSignature = approvalSignatures?.studentSignature || null;
-
-  const openLeaveApproval = (id) => {
-    const req = leavePending.find((l) => l.id === id);
-    setApprovalTarget({
-      kind: "leave",
-      id,
-      name: req?.name || "",
-      hasStudentSignature: Boolean(req?.hasStudentSignature),
-    });
-  };
-
-  const closeApproval = () => {
-    setApprovalTarget(null);
-    setSignatureError("");
-  };
-
-  // Persist the caretaker's signature to their profile, then reuse it for every later
-  // approval. Reached only when they had none saved.
-  const saveMySignature = async (signature) => {
-    setSavingSignature(true);
-    setSignatureError("");
-    try {
-      const updated = await apiFetch("/auth/profile", {
-        method: "PATCH",
-        body: JSON.stringify({ signature }),
-      });
-      setUser((u) => ({ ...(u || {}), signature: updated.signature || signature }));
-    } catch (err) {
-      setSignatureError(err?.message || "Couldn't save your signature. Please try again.");
-    } finally {
-      setSavingSignature(false);
-    }
-  };
-
-  const [forwardTarget, setForwardTarget] = useState(null);
-  const [forwardNote, setForwardNote] = useState("");
-  const [forwarding, setForwarding] = useState(false);
-
-  const openLeaveForward = (id) => {
-    const req = leavePending.find((l) => l.id === id);
-    setForwardNote("");
-    setForwardTarget({ kind: "leave", id, name: req?.name || "" });
-  };
-
-  const closeForward = () => {
-    setForwardTarget(null);
-    setForwardNote("");
-  };
-
-  async function confirmForward() {
-    if (!forwardTarget) return;
-    setForwarding(true);
-    try {
-      await forwardLeave(forwardTarget.id, forwardNote);
-      closeForward();
-    } finally {
-      setForwarding(false);
-    }
-  }
-
-  async function forwardLeave(id, note) {
-    const req = leavePending.find((l) => l.id === id);
-    if (!req) return;
-    setLeavePending((l) => l.filter((r) => r.id !== id));
-    try {
-      await apiFetch(`/leave/${id}/forward`, {
-        method: "PATCH",
-        body: JSON.stringify({ note: note?.trim() || undefined }),
-      });
-    } catch (err) {
-      setLeavePending((l) => [req, ...l]);
-      setLeaveError(err.message || t("couldNotForwardLeave"));
-    }
-  }
-
-  async function confirmApproval() {
-    if (!approvalTarget) return;
-    setApproving(true);
-    setSignatureError("");
-    try {
-      await approveLeave(approvalTarget.id);
-      closeApproval();
-    } catch (err) {
-      // Only a missing signature reaches here (the approve fns handle everything else
-      // themselves). Keep the modal open so the capture below can fix it in place.
-      setSignatureError(err?.message || "Add your signature before approving.");
-    } finally {
-      setApproving(false);
-    }
-  }
-
-  async function approveLeave(id) {
-    const req = leavePending.find((l) => l.id === id);
-    if (!req) return;
-    setLeavePending((l) => l.filter((r) => r.id !== id));
-    try {
-      await apiFetch(`/leave/${id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "Approved" }),
-      });
-    } catch (err) {
-      // Before the 409 branch: 409 means "already expired" on this dashboard.
-      if (isSignatureRequiredError(err)) {
-        setLeavePending((l) => [req, ...l]);
-        setUser((u) => ({ ...(u || {}), signature: undefined }));
-        throw err;
-      }
-      if (err?.status === 409) {
-        setLeaveError(t("leaveExpired"));
-        return;
-      }
-      setLeavePending((l) => [req, ...l]);
-      setLeaveError(err.message || t("couldNotApproveLeave"));
-    }
-  }
-
-  async function rejectLeave(id, remarks) {
-    const req = leavePending.find((l) => l.id === id);
-    if (!req) return;
-    setLeavePending((l) => l.filter((r) => r.id !== id));
-    try {
-      await apiFetch(`/leave/${id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "Rejected", remarks }),
-      });
-    } catch (err) {
-      if (err?.status === 409) {
-        setLeaveError(t("leaveExpired"));
-        return;
-      }
-      setLeavePending((l) => [req, ...l]);
-      setLeaveError(err.message || t("couldNotRejectLeave"));
-    }
-  }
 
   const displayName = (user && (user.name || user.displayName)) || t("chiefCaretaker");
 
@@ -918,10 +661,10 @@ export default function CaretakerDashboardPage() {
               </div>
               <p className="sd-micro mt-1 text-slate-500">{t("leaveOnlyNote")}</p>
               <div className="mt-6 space-y-3">
-                {loadingLeave ? (
+                {leaveDesk.loading ? (
                   <p className="text-sm text-slate-500">{t("loadingLeave")}</p>
-                ) : leaveError ? (
-                  <p className="text-sm font-semibold text-rose-600">{leaveError}</p>
+                ) : leaveDesk.error ? (
+                  <p className="text-sm font-semibold text-rose-600">{leaveDesk.error}</p>
                 ) : leavePending.length === 0 ? (
                   <div className="flex flex-col items-center gap-2 py-8 text-slate-500">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
@@ -936,20 +679,22 @@ export default function CaretakerDashboardPage() {
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-fuchsia-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
                       <div className="min-w-0">
-                        <p className="sd-card-title text-slate-900 text-base">{req.name}</p>
+                        <p className="sd-card-title text-slate-900 text-base">
+                          {req.name}
+                          {req.isEmergency && (
+                            <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-white">
+                              <Siren className="h-3 w-3" /> {t("emergency")}
+                            </span>
+                          )}
+                        </p>
                         <p className="sd-micro mt-0.5">{req.room}{req.roll ? <> • <span className="font-mono">{req.roll}</span></> : null}</p>
                         <p className="sd-micro mt-0.5 text-slate-500">{t("destination")} {req.destination}</p>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                      <button onClick={() => openLeaveApproval(req.id)} className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-sm text-white font-bold shadow hover:-translate-y-0.5 transition-transform sm:px-4 sm:py-2">
-                        <Check className="h-4 w-4 shrink-0" /> {tc("approve")}
-                      </button>
-                      <button onClick={() => setView('leave')} className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 border border-slate-300 text-sm text-slate-600 font-bold hover:bg-slate-50 transition-colors sm:px-4 sm:py-2">
-                        <ArrowRight className="h-4 w-4 shrink-0" /> {t("reviewInLeave")}
-                      </button>
-                    </div>
+                    <button onClick={() => setView('leave')} className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-sm text-white font-bold shadow hover:-translate-y-0.5 transition-transform sm:px-4 sm:py-2">
+                      <ArrowRight className="h-4 w-4 shrink-0" /> {t("reviewInLeave")}
+                    </button>
                   </div>
                   ))
                 )}
@@ -990,16 +735,11 @@ export default function CaretakerDashboardPage() {
             />
           )}
           {view === 'leave' && (
-            <LeaveApplicationsView
-              pending={leavePending}
-              history={leaveHistory}
-              approveLeave={openLeaveApproval}
-              rejectLeave={rejectLeave}
-              forwardLeave={openLeaveForward}
-              loading={loadingLeave}
-              loadingHistory={loadingLeaveHistory}
-              error={leaveError}
-              onRefresh={() => { loadLeaveApplications(); loadLeaveHistory(); }}
+            <StaffLeaveDesk
+              desk={leaveDesk}
+              scope={genderForHostel(user?.managedHostel) || user?.managedGender}
+              mySignature={user?.signature || null}
+              onSignatureSaved={(signature) => setUser((u) => ({ ...(u || {}), signature }))}
             />
           )}
 
@@ -1032,160 +772,6 @@ export default function CaretakerDashboardPage() {
           </nav>
         </div>
       </div>
-
-      {approvalTarget && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <p className="sd-kicker">{t("leaveApplications")}</p>
-                <h3 className="sd-title sd-title-sm mt-0.5">{tc("approve")}{approvalTarget.name ? ` — ${approvalTarget.name}` : ""}</h3>
-              </div>
-              <button
-                onClick={closeApproval}
-                disabled={approving}
-                className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <p className="mt-4 text-sm text-slate-600">
-              {mySignature
-                ? "Your saved signature will be attached to this leave application."
-                : "Add your signature once — it will be attached to every application you approve from now on."}
-            </p>
-
-            {approvalTarget.hasStudentSignature && (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student signature</p>
-                {approvalStudentSignature ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={approvalStudentSignature}
-                    alt="Student signature"
-                    className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
-                  />
-                ) : approvalSignatureError ? (
-                  // Say so rather than leaving a skeleton spinning — the caretaker is about
-                  // to sign off and should know the evidence didn't load.
-                  <p className="mt-1.5 text-xs font-semibold text-amber-600">
-                    Could not load the student&rsquo;s signature. Reopen this dialog to retry.
-                  </p>
-                ) : (
-                  <div className="mt-1.5 h-14 w-32 rounded-lg border border-slate-200 bg-white animate-pulse" />
-                )}
-              </div>
-            )}
-
-            {mySignature ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Your signature</p>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400">
-                    <Lock className="h-3 w-3" /> Locked
-                  </span>
-                </div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={mySignature}
-                  alt="Your signature"
-                  className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1"
-                />
-              </div>
-            ) : (
-              // Fallback capture: a caretaker with no saved signature is never hard-blocked,
-              // they set it up here and the approval continues in the same modal.
-              <div className="mt-4">
-                <SignatureCapture
-                  currentSignature={null}
-                  onSave={saveMySignature}
-                  saving={savingSignature}
-                  error={signatureError}
-                  disabled={approving}
-                  saveLabel="Save signature"
-                />
-              </div>
-            )}
-
-            {signatureError && mySignature && (
-              <p className="mt-2 text-xs font-semibold text-rose-600">{signatureError}</p>
-            )}
-
-            <div className="mt-5 flex gap-3">
-              <button
-                onClick={closeApproval}
-                disabled={approving}
-                className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50"
-              >
-                {tc("cancel")}
-              </button>
-              <button
-                onClick={confirmApproval}
-                disabled={approving || !mySignature}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Check className="h-4 w-4" />
-                {approving ? tc("loading") : tc("approve")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {forwardTarget && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <p className="sd-kicker">{t("leaveApplications")}</p>
-                <h3 className="sd-title sd-title-sm mt-0.5">{t("forwardToWarden")}{forwardTarget.name ? ` — ${forwardTarget.name}` : ""}</h3>
-              </div>
-              <button
-                onClick={closeForward}
-                disabled={forwarding}
-                className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <p className="mt-4 rounded-2xl border border-teal-200 bg-teal-50/70 px-4 py-3 text-sm font-medium text-teal-800">
-              {t("forwardHint")}
-            </p>
-
-            <div className="mt-4">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-600">{t("forwardNote")}</label>
-              <textarea
-                value={forwardNote}
-                onChange={(e) => setForwardNote(e.target.value)}
-                rows={3}
-                maxLength={500}
-                placeholder={t("forwardNotePlaceholder")}
-                className="mt-1.5 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-400 focus:bg-white focus:outline-none"
-              />
-            </div>
-
-            <div className="mt-5 flex gap-3">
-              <button
-                onClick={closeForward}
-                disabled={forwarding}
-                className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50"
-              >
-                {tc("cancel")}
-              </button>
-              <button
-                onClick={confirmForward}
-                disabled={forwarding}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-teal-700 via-teal-600 to-emerald-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ArrowUpRight className="h-4 w-4" />
-                {forwarding ? tc("loading") : t("confirmForward")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Mobile bar — the same tabs as the desktop one, from the same `navTabs` list, so
           Delay Notices, Movement Logs and Profile are reachable on a phone too. Seven

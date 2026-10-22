@@ -406,7 +406,14 @@ const previewScan = async (req, res) => {
     let exit;
     if (purpose === 'leave') {
       exit = exitLeave
-        ? { allowed: true, reason: null, passType: 'Leave', pass: passWindow('Leave', exitLeave) }
+        // The destination goes with an approved leave so the guard can see where the student
+        // is headed before letting them out.
+        ? {
+            allowed: true,
+            reason: null,
+            passType: 'Leave',
+            pass: { ...passWindow('Leave', exitLeave), destination: exitLeave.destination },
+          }
         : {
             allowed: false,
             reason: refusal,

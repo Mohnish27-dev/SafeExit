@@ -59,6 +59,7 @@ const leaveRequest = (studentId) => {
       leaveDate: tomorrow.toISOString(),
       returnDate: returnDate.toISOString(),
       parentPhone: '9876543210',
+      expectedDepartureTime: '10:30',
       acknowledgement: true,
     },
   };

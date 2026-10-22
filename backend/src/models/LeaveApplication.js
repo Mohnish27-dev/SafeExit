@@ -14,6 +14,10 @@ const { uuidPk, legacyId, timestampFields, blobAttribute, blobColumns } = requir
 
 const SIGNATURE_ATTRIBUTES = ['studentSignature', 'caretakerSignature', 'wardenSignature'];
 
+// The ticket bytes are excluded from every list like the signatures, but ticketMime is
+// not: it is what tells a dashboard there is a ticket at all, and whether it is a PDF.
+const LIST_EXCLUDED_ATTRIBUTES = [...SIGNATURE_ATTRIBUTES.flatMap(blobColumns), 'ticket'];
+
 const LeaveApplication = getSequelize().define(
   'LeaveApplication',
   {
@@ -29,6 +33,13 @@ const LeaveApplication = getSequelize().define(
     // Parent's 10-digit mobile, given on the form so staff can call home. Null only on
     // applications filed before db/postgres/006_leave_parent_phone.sql.
     parentPhone: { type: DataTypes.TEXT, field: 'parent_phone' },
+    // 'HH:MM' the student expects to leave. Informational: the leave QR works all day.
+    // Null only on applications filed before db/postgres/007_leave_workflow.sql.
+    expectedDepartureTime: { type: DataTypes.TEXT, field: 'expected_departure_time' },
+    // A girl's application filed on the departure day itself.
+    isEmergency: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: 'is_emergency' },
+    // Optional travel ticket (photo or PDF), attached at submit only.
+    ...blobAttribute('ticket', 'ticket', 'application/octet-stream'),
 
     // Audit trail of what the student agreed to — not a security boundary.
     acknowledgement: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
@@ -41,6 +52,9 @@ const LeaveApplication = getSequelize().define(
     decidedAt: { type: DataTypes.DATE, field: 'decided_at' },
     decidedByRole: { type: DataTypes.TEXT, field: 'decided_by_role' },
     remarks: { type: DataTypes.TEXT },
+    // Set when staff revoked a boy's auto-approved leave. The row then reads as Rejected
+    // (status and decision), and this is what tells the dashboards it was a revocation.
+    revokedAt: { type: DataTypes.DATE, field: 'revoked_at' },
 
     ...blobAttribute('studentSignature', 'student_signature', 'image/png'),
     ...blobAttribute('caretakerSignature', 'caretaker_signature', 'image/png'),
@@ -58,7 +72,7 @@ const LeaveApplication = getSequelize().define(
   {
     tableName: 'leave_applications',
     defaultScope: {
-      attributes: { exclude: SIGNATURE_ATTRIBUTES.flatMap(blobColumns) },
+      attributes: { exclude: LIST_EXCLUDED_ATTRIBUTES },
     },
     scopes: {
       withSignatures: {},

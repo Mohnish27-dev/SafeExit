@@ -12,7 +12,6 @@ import {
   Sparkles,
   Clock,
   ArrowRight,
-  Check,
   X,
   AlertTriangle,
   Bell,
@@ -22,23 +21,22 @@ import {
   Phone,
   ShieldCheck,
   ScrollText,
-  Lock,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/app/lib/api";
 import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
-import SignatureCapture from "@/app/components/SignatureCapture";
 import SignatureCard from "@/app/components/SignatureCard";
-import { isSignatureRequiredError } from "@/app/lib/signatureImage";
+import StaffLeaveDesk from "@/app/components/staff/StaffLeaveDesk";
+import { useLeaveDesk } from "@/app/lib/leaveDesk";
+import { genderForHostel } from "@/app/lib/hostels";
 import {
   isPushSupported,
   getNotificationPermission,
   subscribePush,
   autoSubscribeIfGranted,
 } from "@/app/lib/pushManager";
-import ForwardedLeaveView from "./components/ForwardedLeaveView";
 import SOSAlertsView from "../caretaker/components/SOSAlertsView";
 // Wardens get the same read-only movement log as caretakers; /scan already scopes by managedHostel.
 import MovementLogsView from "../caretaker/components/MovementLogsView";
@@ -48,45 +46,6 @@ import DelayNoticeToast from "../caretaker/components/DelayNoticeToast";
 
 const initials = (name = "") =>
   name.split(" ").map((n) => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
-
-const room = (s) => [s?.hostelName, s?.roomNumber].filter(Boolean).join(", ") || "—";
-
-const mapForwardedLeave = (l) => ({
-  id: l._id,
-  name: l.student?.name || "Unknown Student",
-  roll: l.student?.studentId || "",
-  room: room(l.student),
-  // Split out too: the full-application letter addresses the hostel and room separately.
-  hostelName: l.student?.hostelName || "",
-  roomNumber: l.student?.roomNumber || "",
-  destination: l.destination || "",
-  reason: l.reason || "",
-  parentPhone: l.parentPhone || "",
-  leaveDate: l.leaveDate,
-  returnDate: l.returnDate,
-  submittedAt: l.createdAt,
-  hasStudentSignature: Boolean(l.hasStudentSignature),
-  forwardedBy: l.forwardedBy?.name || "",
-  forwardedNote: l.forwardedNote || "",
-  initials: initials(l.student?.name),
-});
-
-// History rows render off `decision` — the frozen verdict — not `status`. `status` keeps
-// moving after the call is made (Out, Returned, Cancelled, Expired); the verdict doesn't,
-// so a pass the student later cancelled still shows as the Approved it was.
-const mapLeaveHistory = (l) => ({
-  id: l._id,
-  name: l.student?.name || "Unknown Student",
-  destination: l.destination || "",
-  leaveDate: l.leaveDate,
-  returnDate: l.returnDate,
-  decision: l.decision || "",
-  lapsed: l.lapsed || "",
-  decidedByName: l.approvedBy?.name || "",
-  decidedByRole: l.decidedByRole || l.approvedBy?.role || "",
-  remarks: l.remarks || "",
-  decidedAt: l.decidedAt || l.updatedAt,
-});
 
 export default function WardenDashboardPage() {
   const router = useRouter();
@@ -134,42 +93,16 @@ export default function WardenDashboardPage() {
     }
   }, []);
 
-  // Outings need no approval any more (the gate scan creates them), so leave is the only
-  // thing escalated to a warden.
-  const [leavePending, setLeavePending] = useState([]);
-  const [leaveHistory, setLeaveHistory] = useState([]);
+  // Outings need no approval (the gate scan creates them). Girls' leave reaches the
+  // wardens at the same moment it reaches the caretaker and the chief warden, and boys'
+  // leave arrives auto-approved (lib/leaveDesk.js).
+  const leaveDesk = useLeaveDesk("Warden");
+  const leavePending = leaveDesk.pending;
   const [sosCount, setSosCount] = useState(0);
   const [overdueCount, setOverdueCount] = useState(0);
   // Students who reported they'll be late. Separate from overdueCount because a
   // student can file *before* their deadline passes — they aren't overdue yet.
   const [delayCount, setDelayCount] = useState(0);
-
-  const [loadingLeave, setLoadingLeave] = useState(true);
-  const [loadingHistory, setLoadingHistory] = useState(true);
-  const [leaveError, setLeaveError] = useState("");
-
-  const loadLeave = useCallback(async () => {
-    setLoadingLeave(true);
-    setLeaveError("");
-    try {
-      const data = await apiFetch("/leave/forwarded");
-      setLeavePending(data.map(mapForwardedLeave));
-    } catch (err) {
-      setLeaveError(err.message || "Could not load forwarded applications.");
-    } finally {
-      setLoadingLeave(false);
-    }
-  }, []);
-
-  const loadHistory = useCallback(async () => {
-    setLoadingHistory(true);
-    try {
-      const l = await apiFetch("/leave/warden-history").catch(() => []);
-      setLeaveHistory(l.map(mapLeaveHistory));
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, []);
 
   const loadSosCount = useCallback(async () => {
     try {
@@ -199,12 +132,10 @@ export default function WardenDashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadLeave();
-    loadHistory();
     loadSosCount();
     loadOverdueCount();
     loadDelayCount();
-  }, [loadLeave, loadHistory, loadSosCount, loadOverdueCount, loadDelayCount]);
+  }, [loadSosCount, loadOverdueCount, loadDelayCount]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -222,12 +153,6 @@ export default function WardenDashboardPage() {
 
   useEffect(() => {
     return subscribeToStaffEvents({
-      "leave:changed": () => { loadLeave(); loadHistory(); },
-    });
-  }, [loadLeave, loadHistory]);
-
-  useEffect(() => {
-    return subscribeToStaffEvents({
       "sos:created": loadSosCount,
       "sos:updated": loadSosCount,
     });
@@ -235,105 +160,12 @@ export default function WardenDashboardPage() {
 
   // Poll as a safety net in case an SSE connection is silently dropped.
   useEffect(() => {
-    const id = setInterval(() => { loadLeave(); loadSosCount(); loadOverdueCount(); }, 30000);
+    const id = setInterval(() => { loadSosCount(); loadOverdueCount(); }, 30000);
     return () => clearInterval(id);
-  }, [loadLeave, loadSosCount, loadOverdueCount]);
+  }, [loadSosCount, loadOverdueCount]);
 
-  // ---- Approve (signature modal) / Reject (leave needs remarks) ----
-  const [approvalTarget, setApprovalTarget] = useState(null); // { kind, id, name }
-  const [approving, setApproving] = useState(false);
-  // Fallback capture, for a warden with no saved signature yet (a saved one is locked;
-  // changing it is an administrator reset).
-  const [savingSignature, setSavingSignature] = useState(false);
-  const [signatureError, setSignatureError] = useState("");
   // Hydrated by the /auth/profile refresh this dashboard already runs on mount.
   const mySignature = user?.signature || null;
-
-  const [rejectTarget, setRejectTarget] = useState(null); // { kind, id, name }
-  const [rejectRemarks, setRejectRemarks] = useState("");
-  const [rejecting, setRejecting] = useState(false);
-
-  const openApproval = (kind, id) => {
-    const req = leavePending.find((r) => r.id === id);
-    setApprovalTarget({ kind, id, name: req?.name || "" });
-  };
-  const closeApproval = () => {
-    setApprovalTarget(null);
-    setSignatureError("");
-  };
-
-  // Persist the warden's signature to their profile so every later approval reuses it.
-  const saveMySignature = async (signature) => {
-    setSavingSignature(true);
-    setSignatureError("");
-    try {
-      const updated = await apiFetch("/auth/profile", {
-        method: "PATCH",
-        body: JSON.stringify({ signature }),
-      });
-      setUser((u) => ({ ...(u || {}), signature: updated.signature || signature }));
-    } catch (err) {
-      setSignatureError(err?.message || "Couldn't save your signature. Please try again.");
-    } finally {
-      setSavingSignature(false);
-    }
-  };
-
-  async function confirmApproval() {
-    if (!approvalTarget) return;
-    setApproving(true);
-    setSignatureError("");
-    const { id } = approvalTarget;
-    try {
-      // The server stamps our saved profile signature; nothing to send.
-      await apiFetch(`/leave/${id}/warden-status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "Approved" }),
-      });
-      setLeavePending((l) => l.filter((r) => r.id !== id));
-      loadHistory();
-      closeApproval();
-    } catch (err) {
-      // Keep the modal open so the capture below can fix it in place — closing here would
-      // discard the approval the warden already intended to make.
-      if (isSignatureRequiredError(err)) {
-        setUser((u) => ({ ...(u || {}), signature: undefined }));
-        setSignatureError(err?.message || "Add your signature before approving.");
-        return;
-      }
-      setLeaveError(err.message || "Could not approve application.");
-      closeApproval();
-    } finally {
-      setApproving(false);
-    }
-  }
-
-  const openReject = (kind, id) => {
-    const req = leavePending.find((r) => r.id === id);
-    setRejectRemarks("");
-    setRejectTarget({ kind, id, name: req?.name || "" });
-  };
-  const closeReject = () => { setRejectTarget(null); setRejectRemarks(""); };
-
-  async function confirmReject() {
-    if (!rejectTarget) return;
-    const { id } = rejectTarget;
-    // Leave rejections require a remark server-side.
-    if (!rejectRemarks.trim()) return;
-    setRejecting(true);
-    const body = { status: "Rejected", remarks: rejectRemarks.trim() };
-    try {
-      await apiFetch(`/leave/${id}/warden-status`, { method: "PATCH", body: JSON.stringify(body) });
-      setLeavePending((l) => l.filter((r) => r.id !== id));
-      loadHistory();
-      closeReject();
-    } catch (err) {
-      setLeaveError(err.message || "Could not reject application.");
-      closeReject();
-    } finally {
-      setRejecting(false);
-    }
-  }
 
   // ---- Push notifications ----
   const [pushPermission, setPushPermission] = useState(null);
@@ -395,7 +227,7 @@ export default function WardenDashboardPage() {
               <div className="min-w-0">
                 <p className="sd-eyebrow flex items-center gap-2"><Sparkles className="h-3.5 w-3.5 text-indigo-400" /> Warden Hub</p>
                 <h1 className="sd-title sd-reveal sd-stagger-1 truncate"><span className="sd-gradient-text text-gradient-primary">Warden Dashboard</span></h1>
-                <p className="sd-subtitle hidden sm:block">Decide escalated requests and oversee your hostel.</p>
+                <p className="sd-subtitle hidden sm:block">Decide leave applications and oversee your hostel.</p>
               </div>
             </div>
 
@@ -436,7 +268,7 @@ export default function WardenDashboardPage() {
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div>
                 <p className="font-bold">Your hostel isn&apos;t configured yet</p>
-                <p className="text-sm">Until an admin assigns you to a hostel, you won&apos;t see any escalated requests, applications, or alerts. Please contact the admin.</p>
+                <p className="text-sm">Until an admin assigns you to a hostel, you won&apos;t see any leave applications or alerts. Please contact the admin.</p>
               </div>
             </div>
           )}
@@ -446,7 +278,7 @@ export default function WardenDashboardPage() {
               <Bell className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500 animate-bounce" />
               <div className="min-w-0 flex-1">
                 <p className="font-bold">Enable push notifications</p>
-                <p className="text-sm text-indigo-700">Get alerted the moment a caretaker escalates a leave application to you — even when this app is closed.</p>
+                <p className="text-sm text-indigo-700">Get alerted the moment a student of your hostel applies for leave — even when this app is closed.</p>
               </div>
               <button onClick={handleEnablePush} disabled={pushEnabling} className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700 active:scale-95 disabled:opacity-60">
                 {pushEnabling ? "Enabling…" : "Enable"}
@@ -462,7 +294,7 @@ export default function WardenDashboardPage() {
               <BellOff className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" />
               <div className="min-w-0 flex-1">
                 <p className="font-bold">Notifications blocked</p>
-                <p className="text-sm text-rose-700">You won&apos;t receive alerts for escalated requests. Open your browser settings and allow notifications for this site.</p>
+                <p className="text-sm text-rose-700">You won&apos;t receive alerts for leave applications. Open your browser settings and allow notifications for this site.</p>
               </div>
               <button onClick={() => setPushBannerDismissed(true)} className="shrink-0 rounded-xl p-2 text-rose-400 transition hover:bg-rose-100" title="Dismiss">
                 <X className="h-4 w-4" />
@@ -477,7 +309,7 @@ export default function WardenDashboardPage() {
                   sosCount > 0 && { key: "sos", label: "Safety Alerts", count: sosCount, icon: Siren, onClick: () => setView("sos") },
                   overdueCount > 0 && { key: "overdue", label: "Overdue Students", count: overdueCount, icon: Clock, onClick: () => setView("overdue") },
                   delayCount > 0 && { key: "delays", label: "Delay Notices", count: delayCount, icon: MessageSquare, onClick: () => setView("delays") },
-                  leavePending.length > 0 && { key: "leave", label: "Forwarded Leave", count: leavePending.length, icon: CalendarDays, onClick: () => setView("leave") },
+                  leavePending.length > 0 && { key: "leave", label: "Leave to Decide", count: leavePending.length, icon: CalendarDays, onClick: () => setView("leave") },
                 ].filter(Boolean);
                 if (attention.length === 0) return null;
                 return (
@@ -516,7 +348,7 @@ export default function WardenDashboardPage() {
                     <div className="min-w-0">
                       <p className="sd-kicker">Daily pulse</p>
                       <h2 className="sd-title sd-title-md mt-1 sm:mt-2">Welcome, <span className="sd-name-live">Warden</span>.</h2>
-                      <p className="sd-body mt-2 hidden max-w-md sm:block">You decide the leave applications caretakers escalate, and keep an eye on overdue returns and your hostel&apos;s safety alerts. Outings need no approval — the gate logs them.</p>
+                      <p className="sd-body mt-2 hidden max-w-md sm:block">Girls&apos; leave applications reach you, the caretaker and the chief warden together — whoever acts first decides. Boys&apos; leave is auto-approved and you can revoke it. Outings need no approval — the gate logs them.</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
@@ -535,7 +367,7 @@ export default function WardenDashboardPage() {
                   odd slot on tablets instead of leaving a gap. */}
               <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {[
-                  { label: "Forwarded Leave", value: leavePending.length, icon: CalendarDays, onClick: () => setView("leave"), fill: "from-violet-500 to-fuchsia-400" },
+                  { label: "Leave to Decide", value: leavePending.length, icon: CalendarDays, onClick: () => setView("leave"), fill: "from-violet-500 to-fuchsia-400" },
                   { label: "Overdue Students", value: overdueCount, icon: Clock, onClick: () => setView("overdue"), fill: "from-amber-500 to-orange-400" },
                   { label: "Active Alerts", value: sosCount, icon: Siren, onClick: () => setView("sos"), fill: "from-rose-500 to-orange-400" },
                 ].map((s, i, arr) => (
@@ -577,16 +409,11 @@ export default function WardenDashboardPage() {
           )}
 
           {view === "leave" && (
-            <ForwardedLeaveView
-              pending={leavePending}
-              history={leaveHistory}
-              approve={(id) => openApproval("leave", id)}
-              reject={(id) => openReject("leave", id)}
-              loading={loadingLeave}
-              loadingHistory={loadingHistory}
-              error={leaveError}
-              onRefresh={loadLeave}
-              onRefreshHistory={loadHistory}
+            <StaffLeaveDesk
+              desk={leaveDesk}
+              scope={genderForHostel(managedHostel)}
+              mySignature={mySignature}
+              onSignatureSaved={(signature) => setUser((u) => ({ ...(u || {}), signature }))}
             />
           )}
 
@@ -652,105 +479,6 @@ export default function WardenDashboardPage() {
           </nav>
         </div>
       </div>
-
-      {/* Approve modal — signature required */}
-      {approvalTarget && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="sd-enter relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <p className="sd-kicker">Leave Application</p>
-                <h3 className="sd-title sd-title-sm mt-0.5">Approve{approvalTarget.name ? ` — ${approvalTarget.name}` : ""}</h3>
-              </div>
-              <button onClick={closeApproval} disabled={approving} className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="mt-4 text-sm text-slate-600">
-              {mySignature
-                ? "Your saved signature will be attached to this leave application."
-                : "Add your signature once — it will be attached to every application you approve from now on."}
-            </p>
-            {mySignature ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Your signature</p>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400">
-                    <Lock className="h-3 w-3" /> Locked
-                  </span>
-                </div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={mySignature} alt="Your signature" className="mt-1.5 h-14 w-auto rounded-lg border border-slate-200 bg-white p-1" />
-              </div>
-            ) : (
-              // Fallback capture: a warden with no saved signature is never hard-blocked,
-              // they set it up here and the approval continues in the same modal.
-              <div className="mt-4">
-                <SignatureCapture
-                  currentSignature={null}
-                  onSave={saveMySignature}
-                  saving={savingSignature}
-                  error={signatureError}
-                  disabled={approving}
-                  saveLabel="Save signature"
-                />
-              </div>
-            )}
-            {signatureError && mySignature && (
-              <p className="mt-2 text-xs font-semibold text-rose-600">{signatureError}</p>
-            )}
-            <div className="mt-5 flex gap-3">
-              <button onClick={closeApproval} disabled={approving} className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={confirmApproval} disabled={approving || !mySignature} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-indigo-700 via-indigo-600 to-cyan-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
-                <Check className="h-4 w-4" />
-                {approving ? "Approving…" : "Approve"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reject modal — leave rejections need a remark */}
-      {rejectTarget && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="sd-enter relative w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl sm:p-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <p className="sd-kicker">Leave Application</p>
-                <h3 className="sd-title sd-title-sm mt-0.5">Reject{rejectTarget.name ? ` — ${rejectTarget.name}` : ""}</h3>
-              </div>
-              <button onClick={closeReject} disabled={rejecting} className="flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="mt-4 text-sm text-slate-600">
-              Add a reason for rejecting this leave application — the student will see it.
-            </p>
-            <textarea
-              value={rejectRemarks}
-              onChange={(e) => setRejectRemarks(e.target.value)}
-              rows={3}
-              placeholder="Reason (required)"
-              className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-rose-400 focus:bg-white transition-colors"
-            />
-            <div className="mt-5 flex gap-3">
-              <button onClick={closeReject} disabled={rejecting} className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50">
-                Cancel
-              </button>
-              <button
-                onClick={confirmReject}
-                disabled={rejecting || !rejectRemarks.trim()}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-rose-600 to-orange-500 py-3 text-sm font-bold text-white shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <X className="h-4 w-4" />
-                {rejecting ? "Rejecting…" : "Reject"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Mobile nav — one column per mobileNavItems entry; Profile lives behind the header avatar */}
       <nav className="sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-60 grid grid-cols-5 gap-0.5 rounded-[1.75rem] p-1.5 md:hidden">

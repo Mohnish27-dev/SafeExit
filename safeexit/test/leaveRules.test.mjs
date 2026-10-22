@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   getLeaveSubmissionTimingViolation,
   getMinimumLeaveDateValue,
+  isEmergencyLeave,
   leaveDayCount,
   parseCampusDate,
 } from "../src/app/lib/leaveRules.mjs";
@@ -16,7 +17,7 @@ test("a leave date is pinned to campus midnight on every device", () => {
 test("boys may apply for today, at any hour of it", () => {
   const lateEvening = new Date("2026-07-30T16:30:00.000Z"); // 10:00 PM IST
 
-  assert.equal(getMinimumLeaveDateValue("Male", lateEvening), "2026-07-30");
+  assert.equal(getMinimumLeaveDateValue(lateEvening), "2026-07-30");
   assert.equal(getLeaveSubmissionTimingViolation("Male", parseCampusDate("2026-07-30"), lateEvening), null);
 });
 
@@ -29,20 +30,24 @@ test("nobody can apply for a day already gone", () => {
   );
 });
 
-test("girls receive a next-day minimum and cannot apply for today", () => {
+test("girls may apply for today, but only as an emergency", () => {
   const now = new Date("2026-07-30T04:30:00.000Z"); // 10:00 AM IST
 
-  assert.equal(getMinimumLeaveDateValue("Female", now), "2026-07-31");
-  assert.equal(
-    getLeaveSubmissionTimingViolation("Female", parseCampusDate("2026-07-30"), now),
-    "FEMALE_DEPARTURE_DAY"
-  );
+  assert.equal(getMinimumLeaveDateValue(now), "2026-07-30");
+  assert.equal(getLeaveSubmissionTimingViolation("Female", parseCampusDate("2026-07-30"), now), null);
+  assert.equal(isEmergencyLeave("Female", parseCampusDate("2026-07-30"), now), true);
 });
 
-test("girls may apply at the end of today for tomorrow", () => {
+test("girls applying by the end of today for tomorrow is no emergency", () => {
   const now = new Date("2026-07-30T18:29:59.000Z"); // 11:59:59 PM IST
 
   assert.equal(getLeaveSubmissionTimingViolation("Female", parseCampusDate("2026-07-31"), now), null);
+  assert.equal(isEmergencyLeave("Female", parseCampusDate("2026-07-31"), now), false);
+});
+
+test("a boy's same-day leave is never an emergency", () => {
+  const now = new Date("2026-07-30T04:30:00.000Z");
+  assert.equal(isEmergencyLeave("Male", parseCampusDate("2026-07-30"), now), false);
 });
 
 test("leave length counts calendar days, both ends included", () => {

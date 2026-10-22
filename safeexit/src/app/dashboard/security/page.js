@@ -1072,6 +1072,12 @@ export default function SecurityDashboardPage() {
                     }
                   </span>
                 </div>}
+                {!refusal && derivedMode === 'exit' && scanPreview?.exit?.passType === 'Leave' && scanPreview.exit.pass?.destination && (
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400 shrink-0">{t("leaveDestination")}</span>
+                    <span className="text-sm font-semibold text-slate-800 text-right break-words">{scanPreview.exit.pass.destination}</span>
+                  </div>
+                )}
                 {derivedMode === 'entry' && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{isLeaveMove ? t("expectedReturn") : t("allowedReturn")}</span>

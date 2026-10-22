@@ -9,16 +9,16 @@ const {
   createLeaveApplication,
   getMyLeaveApplications,
   getLeaveSignatures,
+  getLeaveTicket,
   getAllLeaveApplications,
   getPendingLeaveApplications,
+  getAutoApprovedLeaves,
   getLeaveHistory,
-  updateLeaveStatus,
-  forwardLeaveApplication,
-  getForwardedLeaveApplications,
-  getWardenLeaveHistory,
-  updateWardenLeaveStatus,
+  decideLeaveApplication,
+  revokeLeaveApplication,
   cancelLeaveApplication,
-  streamLeaveEvents
+  streamLeaveEvents,
+  DECIDER_ROLES,
 } = require('../controllers/leaveController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authorizeRoles } = require('../middlewares/roleMiddleware');
@@ -29,16 +29,16 @@ router.route('/')
 
 router.get('/myrequests', protect, authorizeRoles('Student'), getMyLeaveApplications);
 
-router.get('/all', protect, authorizeRoles('ChiefWarden'), getAllLeaveApplications);
+router.get('/all', protect, authorizeRoles('ChiefWarden', 'Admin'), getAllLeaveApplications);
 
-router.get('/pending', protect, authorizeRoles('Caretaker'), getPendingLeaveApplications);
+// Girls' open applications: the same row sits in the caretaker's, the hostel wardens' and
+// the chief warden's queue at once, and whoever acts first decides it.
+router.get('/pending', protect, authorizeRoles(...DECIDER_ROLES), getPendingLeaveApplications);
 
-router.get('/history', protect, authorizeRoles('Caretaker'), getLeaveHistory);
+router.get('/history', protect, authorizeRoles(...DECIDER_ROLES), getLeaveHistory);
 
-// Warden action queue + their own decision history.
-router.get('/forwarded', protect, authorizeRoles('Warden'), getForwardedLeaveApplications);
-
-router.get('/warden-history', protect, authorizeRoles('Warden'), getWardenLeaveHistory);
+// Boys' leave, approved on submit; admins see it too.
+router.get('/auto-approved', protect, authorizeRoles(...DECIDER_ROLES, 'Admin'), getAutoApprovedLeaves);
 
 // Stream is shared by both staff dashboards (caretaker + warden).
 router.get('/stream', protect, authorizeRoles('Caretaker', 'Warden'), streamLeaveEvents);
@@ -53,11 +53,16 @@ router.get(
   getLeaveSignatures
 );
 
-router.patch('/:id/status', protect, authorizeRoles('Caretaker'), updateLeaveStatus);
+// The optional ticket; same per-row scope as the signatures.
+router.get(
+  '/:id/ticket',
+  protect,
+  authorizeRoles('Student', 'Caretaker', 'Warden', 'ChiefWarden', 'Admin'),
+  getLeaveTicket
+);
 
-// Caretaker escalates up; warden decides.
-router.patch('/:id/forward', protect, authorizeRoles('Caretaker'), forwardLeaveApplication);
+router.patch('/:id/status', protect, authorizeRoles(...DECIDER_ROLES), decideLeaveApplication);
 
-router.patch('/:id/warden-status', protect, authorizeRoles('Warden'), updateWardenLeaveStatus);
+router.patch('/:id/revoke', protect, authorizeRoles(...DECIDER_ROLES), revokeLeaveApplication);
 
 module.exports = router;

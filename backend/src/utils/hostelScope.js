@@ -146,17 +146,6 @@ const genderScopedPassScope = (user, studentAttributes) => {
   };
 };
 
-// The warden action queue: every Forwarded row whose student lives in the warden's hostel.
-//
-// It used to be `forwardedTo: me`, which was only correct while a hostel had exactly one
-// warden. A hostel now has two or three (warden + assistant wardens), and a forwarded
-// request belongs to all of them: whichever warden is free decides it. passScope already
-// expresses "students of my hostel" for a Warden, so this is that plus the status.
-const forwardedQueueScope = (Model, user, studentAttributes) => {
-  const scope = passScope(Model, user, studentAttributes);
-  return { where: mergeWhere(scope.where, { status: 'Forwarded' }), include: scope.include };
-};
-
 // ---------------------------------------------------------------------------
 // Per-row authorisation. These read objects already loaded, make no query, and are
 // unchanged by the migration beyond the identity comparisons — which still work because
@@ -166,6 +155,8 @@ const forwardedQueueScope = (Model, user, studentAttributes) => {
 function requestInScope(user, request, student) {
   if (!user) return false;
   if (user.role === 'Admin') return true;
+  // The chief warden decides girls' leave and revokes boys' leave campus-wide.
+  if (user.role === 'ChiefWarden') return true;
   if (!isHostelScoped(user)) return false; // Guard/Student have no decision authority
 
   // Any warden of the student's hostel may decide; the handlers separately require the
@@ -253,26 +244,15 @@ async function resolveTargetCaretaker(student, requestedCaretakerId) {
   return null;
 }
 
-// Every warden (and assistant warden) of a hostel. Empty means nobody to forward to.
-async function resolveWardensForHostel(hostelName) {
-  if (!hostelName) return [];
-  return User.findAll({
-    where: { role: 'Warden', [Op.and]: [ciEquals('managed_hostel', hostelName)] },
-    attributes: STAFF_ROUTING_ATTRIBUTES,
-  });
-}
-
 module.exports = {
   HOSTEL_SCOPED_ROLES,
   MATCH_NOTHING,
   mergeWhere,
   passScope,
   genderScopedPassScope,
-  forwardedQueueScope,
   studentInScope,
   requestInScope,
   resolveTargetCaretaker,
-  resolveWardensForHostel,
   studentInGenderScope,
   canReadSignatures,
   isHostelScoped,

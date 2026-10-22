@@ -56,6 +56,14 @@ const describeLeave = (leaves) => {
   const live = (Array.isArray(leaves) ? leaves : []).find((l) =>
     ["Approved", "Pending", "Forwarded", "Out"].includes(l.status)
   );
+  // Rows come newest first. A boy whose leave staff revoked should hear that, not "no leave".
+  const newest = Array.isArray(leaves) ? leaves[0] : null;
+  if (!live && newest?.revokedAt) {
+    return {
+      tone: "slate",
+      text: `Your leave for ${formatLeaveDay(newest.leaveDate)} was revoked${newest.remarks ? `: ${newest.remarks}` : ""}. This QR will not work for it.`,
+    };
+  }
   if (!live) {
     return { tone: "slate", text: "You have no approved leave. Apply for a leave first; this QR only works on the date of an approved leave." };
   }

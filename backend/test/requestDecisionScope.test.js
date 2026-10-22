@@ -27,9 +27,10 @@ test('Student has NO decision authority over requests', () => {
   assert.equal(requestInScope(stu, baseRequest, student), false);
 });
 
-test('ChiefWarden has oversight but no direct request decision scope', () => {
+test("ChiefWarden decides campus-wide (girls' leave, and revoking boys' leave)", () => {
   const chief = { _id: 'chief-1', role: 'ChiefWarden' };
-  assert.equal(requestInScope(chief, baseRequest, student), false);
+  assert.equal(requestInScope(chief, baseRequest, student), true);
+  assert.equal(requestInScope(chief, { ...baseRequest, targetCaretaker: 'ct-9' }, student), true);
 });
 
 test('Every warden of the student hostel may decide; wardens of other hostels may not', () => {

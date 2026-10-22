@@ -49,16 +49,22 @@ const isLeaveDay = (leaveDate, at = Date.now()) => leaveDayRelation(leaveDate, a
 // no longer be used at the gate, approved, or forwarded.
 const isLeaveDayOver = (leaveDate, at = Date.now()) => leaveDayRelation(leaveDate, at) === 'OVER';
 
-// Female students must apply before the campus-local departure day. Everyone else may apply
-// up to and including the departure day itself, but never for a day already gone.
+// Anyone may apply up to and including the departure day itself, but never for a day
+// already gone. (A girl applying ON the departure day is allowed, as an emergency — see
+// isEmergencyLeave.)
 const getLeaveSubmissionTimingViolation = (gender, leaveDate, at = Date.now()) => {
   if (Number.isNaN(new Date(at).getTime())) return 'INVALID_DATE';
   const relation = leaveDayRelation(leaveDate, at);
   if (!relation) return 'INVALID_DATE';
   if (relation === 'OVER') return 'DEPARTURE_NOT_FUTURE';
-  if (gender === 'Female' && relation === 'TODAY') return 'FEMALE_DEPARTURE_DAY';
   return null;
 };
+
+// Girls are expected to apply by the day before they leave. One filed on the departure day
+// itself is still accepted, but flagged so every dashboard shows it as an emergency. Boys'
+// same-day leave is ordinary.
+const isEmergencyLeave = (gender, leaveDate, at = Date.now()) =>
+  gender === 'Female' && leaveDayRelation(leaveDate, at) === 'TODAY';
 
 // Outings need no request, no approval and no exit window. The gate's exit scan IS the
 // outing: scanController creates the row at that moment. Whether it is a sensible hour to
@@ -105,6 +111,7 @@ module.exports = {
   isLeaveDay,
   isLeaveDayOver,
   getLeaveSubmissionTimingViolation,
+  isEmergencyLeave,
   campusDayStart,
   OUTING_RETURN_MINUTES,
   computeOutingReturnDeadline,

@@ -30,24 +30,28 @@ export const parseCampusReturnDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-// Mirrors getLeaveSubmissionTimingViolation in backend/src/utils/outingRules.js. Boys may
-// apply up to and including the departure day; girls must apply before it. Nobody can apply
-// for a day already gone.
+// Mirrors getLeaveSubmissionTimingViolation in backend/src/utils/outingRules.js. Anyone may
+// apply up to and including the departure day, never for a day already gone.
 export const getLeaveSubmissionTimingViolation = (gender, leaveDate, at = new Date()) => {
   const departureDay = campusDateKey(leaveDate);
   const today = campusDateKey(at);
   if (!departureDay || !today) return "INVALID_DATE";
   if (departureDay < today) return "DEPARTURE_NOT_FUTURE";
-  if (gender === "Female" && departureDay === today) return "FEMALE_DEPARTURE_DAY";
   return null;
 };
 
-// The earliest date the leave-date input offers: today for boys, tomorrow for girls.
-export const getMinimumLeaveDateValue = (gender, at = new Date()) => {
-  const today = campusDateKey(at);
-  if (gender !== "Female") return today;
-  return campusDateKey(new Date(parseCampusDate(today).getTime() + DAY_MS));
-};
+// Mirrors isEmergencyLeave in backend/src/utils/outingRules.js. Girls are expected to apply
+// by the day before they leave; one filed on the departure day itself is accepted but
+// flagged as an emergency on every staff dashboard.
+export const isEmergencyLeave = (gender, leaveDate, at = new Date()) =>
+  gender === "Female" && Boolean(campusDateKey(leaveDate)) && campusDateKey(leaveDate) === campusDateKey(at);
+
+// Mirrors LATEST_DEPARTURE_TIME in backend/src/utils/leaveSchema.js. Bounds only the time a
+// student writes on the form; the leave QR works at any hour of the leave date regardless.
+export const LATEST_DEPARTURE_TIME = "17:30";
+
+// The earliest date the leave-date input offers: today, for everyone.
+export const getMinimumLeaveDateValue = (at = new Date()) => campusDateKey(at);
 
 // Calendar days the leave spans, both ends included: out on the 24th, back on the 26th is
 // 3 days. Counted on campus dates, so older rows that still carry a time of day agree.

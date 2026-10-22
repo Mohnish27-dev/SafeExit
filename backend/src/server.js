@@ -96,9 +96,9 @@ connectPostgres().then(async () => {
   try {
     await ensureLeaveSchema(getSequelize());
   } catch (err) {
-    // Same stakes as above: the LeaveApplication model selects parent_phone, so without it
-    // every leave query and every gate scan fails.
-    console.error('Could not ensure leave_applications.parent_phone — apply db/postgres/006_leave_parent_phone.sql:', err.message);
+    // Same stakes as above: the LeaveApplication model selects these columns, so without
+    // them every leave query and every gate scan fails.
+    console.error('Could not ensure the leave_applications schema — apply db/postgres/006_leave_parent_phone.sql and 007_leave_workflow.sql:', err.message);
   }
   // Idempotent; unchanged .env = no writes.
   try {

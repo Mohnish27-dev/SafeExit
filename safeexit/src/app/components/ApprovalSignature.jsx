@@ -14,6 +14,9 @@ export default function ApprovalSignature({
   id,
   hasWarden,
   hasCaretaker,
+  // Overrides the role named in the strip, e.g. "chief warden" — the chief warden's
+  // signature is stored in the warden slot.
+  signer,
   imgClassName = "mt-2 h-16 w-auto rounded-lg border border-slate-200 bg-white p-1",
 }) {
   const enabled = Boolean(hasWarden || hasCaretaker);
@@ -22,7 +25,7 @@ export default function ApprovalSignature({
   if (!enabled) return null;
 
   // A warden decision supersedes the caretaker's, matching the server's mirroring.
-  const who = hasWarden ? "warden" : "caretaker";
+  const who = signer || (hasWarden ? "warden" : "caretaker");
   const src = hasWarden ? signatures?.wardenSignature : signatures?.caretakerSignature;
 
   return (

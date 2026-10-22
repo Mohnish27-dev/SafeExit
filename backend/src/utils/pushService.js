@@ -137,6 +137,7 @@ module.exports = {
   notifyCaretakers,
   notifyWardensForScope,
   notifyChiefWardens,
+  notifyAdmins,
   notifyStudent,
   notifyHostelStaffAndAdmins,
   notifyCaretakersAndAdmins,
