@@ -66,6 +66,12 @@ const statusConfig = {
   returned: { label: "Returned", color: "text-violet-700", bg: "bg-violet-100", icon: CheckCircle2 },
 };
 
+// A boy's leave is stored as Approved (the gate needs that), but no one actually reviews it,
+// so the student sees it as Received rather than Approved.
+const isAutoApproved = (a) => a?.status === "Approved" && a?.decidedByRole === "System";
+const statusLabel = (a) =>
+  isAutoApproved(a) ? "Received" : statusConfig[(a?.status || "").toLowerCase()]?.label || a?.status;
+
 const filters = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
@@ -256,7 +262,7 @@ export default function LeaveApplicationPage() {
   const minLeaveDateValue = getMinimumLeaveDateValue();
   const timingGuidance = isFemale
     ? "Apply by the day before you leave. An application on the leave day itself is treated as an emergency."
-    : "You can apply any time up to and including the leave day; your leave is approved as soon as you submit.";
+    : "You can apply any time up to and including the leave day; your leave is recorded as soon as you submit.";
 
   const validate = () => {
     const nextErrors = {};
@@ -399,13 +405,13 @@ export default function LeaveApplicationPage() {
               <CalendarDays size={12} className="text-white" />
             </div>
           </div>
-          <p className="sf-eyebrow mb-1">{autoApproved ? "Leave Approved" : "Application Submitted"}</p>
+          <p className="sf-eyebrow mb-1">{autoApproved ? "Application Received" : "Application Submitted"}</p>
           <h2 className="font-sora text-2xl font-bold text-slate-800 mb-1">
-            {autoApproved ? "You're all set" : "Sent for approval"}
+            {autoApproved ? "Leave application received" : "Sent for approval"}
           </h2>
           <p className="text-slate-500 text-sm mb-6">
             {autoApproved
-              ? "Your leave was approved automatically. Your caretaker, hostel wardens, the chief warden and the admin have been informed. Staff can still revoke it with a reason before you leave, so check this page before you travel."
+              ? "Your leave application has been received. Your caretaker, hostel wardens, the chief warden and the admin have been informed. Staff can still revoke it with a reason before you leave, so check this page before you travel."
               : "Your application has gone to your caretaker, your hostel wardens and the chief warden together. Your caretaker may call your parent before approving. Please wait for approval before making travel plans."}
           </p>
           {created.isEmergency && (
@@ -441,7 +447,7 @@ export default function LeaveApplicationPage() {
               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
               {autoApproved ? (
                 <span className="text-xs font-bold text-emerald-800 bg-linear-to-r from-emerald-100 to-emerald-50 rounded-full px-3.5 py-1.5 border border-emerald-200 shadow-xs">
-                  Approved
+                  Received
                 </span>
               ) : (
                 <span className="text-xs font-bold text-amber-800 bg-linear-to-r from-amber-100 to-amber-50 rounded-full px-3.5 py-1.5 border border-amber-200 shadow-xs">
@@ -583,7 +589,7 @@ export default function LeaveApplicationPage() {
             ) : isFemale ? (
               "Submit Application"
             ) : (
-              "Submit & Get Approved"
+              "Submit Application"
             )}
           </button>
         </div>
@@ -656,6 +662,8 @@ export default function LeaveApplicationPage() {
           <p className="text-sm text-slate-500 mb-5">
             {activeLeave.status === "Out"
               ? "You're currently on leave. Once you return and get scanned back in at the gate, you can apply for new leave."
+              : isAutoApproved(activeLeave)
+              ? "Your leave application has been received. Complete that trip and return to campus — or cancel it — before applying again."
               : activeLeave.status === "Approved"
               ? "Your leave pass is approved. Complete that trip and return to campus — or cancel it — before applying again."
               : "Your leave application is awaiting approval from your caretaker, warden or chief warden. Wait for the outcome, or cancel it, before applying again."}
@@ -668,7 +676,7 @@ export default function LeaveApplicationPage() {
             <div className="flex justify-between gap-3">
               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
               <span className="text-sm font-bold text-violet-600 text-right">
-                {statusConfig[(activeLeave.status || "").toLowerCase()]?.label || activeLeave.status}
+                {statusLabel(activeLeave)}
               </span>
             </div>
           </div>
@@ -893,7 +901,7 @@ export default function LeaveApplicationPage() {
             <p className="text-xs text-slate-600 leading-relaxed">
               {isFemale
                 ? "Your application goes to your caretaker, your hostel wardens and the chief warden together, and any of them can approve it. Your caretaker may call your parent first — submit early so there is time."
-                : "Your leave is approved as soon as you submit. Your caretaker, hostel wardens, the chief warden and the admin are informed, and staff can revoke it with a reason before you leave."}
+                : "Your leave is recorded as soon as you submit. Your caretaker, hostel wardens, the chief warden and the admin are informed, and staff can revoke it with a reason before you leave."}
             </p>
           </div>
 
@@ -918,7 +926,7 @@ export default function LeaveApplicationPage() {
                 onClick={() => setFilter(key)}
                 className={`sf-filter-pill ${filter === key ? "sf-filter-pill--active" : "sf-filter-pill--idle"}`}
               >
-                {label}
+                {key === "approved" && !isFemale ? "Received" : label}
               </button>
             ))}
           </div>
@@ -946,6 +954,8 @@ export default function LeaveApplicationPage() {
                 const statusKey = (a.status || "Pending").toLowerCase();
                 const sc = a.revokedAt
                   ? { ...statusConfig.rejected, label: "Revoked", icon: Ban }
+                  : isAutoApproved(a)
+                  ? { ...statusConfig.approved, label: "Received" }
                   : statusConfig[statusKey] || statusConfig.pending;
                 const decidedBy = ROLE_NAME[a.decidedByRole] || "";
                 const autoApproved = a.decidedByRole === "System";
@@ -1059,7 +1069,7 @@ export default function LeaveApplicationPage() {
                           {autoApproved ? (
                             <div className="pt-3 mt-1 border-t border-emerald-100">
                               <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-                                <CheckCircle2 size={12} /> Auto-approved on submission
+                                <CheckCircle2 size={12} /> Received on submission
                               </p>
                             </div>
                           ) : (
