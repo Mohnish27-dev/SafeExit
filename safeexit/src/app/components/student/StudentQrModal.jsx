@@ -74,13 +74,15 @@ const describeLeave = (leaves) => {
   if (live.status !== "Approved") {
     return { tone: "amber", text: `Your leave for ${day} is waiting for approval. This QR will work once it is approved.` };
   }
+  // A boy's leave is auto-approved with no reviewer, so it reads as received, not approved.
+  const state = live.decidedByRole === "System" ? "received" : "approved";
   const leaveDay = campusDateKey(live.leaveDate);
   const today = campusDateKey(new Date());
   if (leaveDay === today) {
-    return { tone: "emerald", text: `Your leave is approved for today (${day}). Show this QR when you leave for home.` };
+    return { tone: "emerald", text: `Your leave is ${state} for today (${day}). Show this QR when you leave for home.` };
   }
   if (leaveDay > today) {
-    return { tone: "purple", text: `Your leave is approved for ${day}. This QR will work at the gate on that day.` };
+    return { tone: "purple", text: `Your leave is ${state} for ${day}. This QR will work at the gate on that day.` };
   }
   return { tone: "slate", text: `Your leave for ${day} has expired. Apply again for a new date.` };
 };
