@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "react-qr-code";
-import { Camera, Download, Home, ShieldCheck, Ticket, X } from "lucide-react";
+import { AlertTriangle, Camera, Download, Home, ShieldCheck, Ticket, X } from "lucide-react";
 import { defaultStudentProfile } from "@/app/lib/userProfile";
 import { QR_PURPOSE, buildIdentityQr } from "@/app/lib/qrPayload.mjs";
 import { campusDateKey } from "@/app/lib/leaveRules.mjs";
 import { apiFetch } from "@/app/lib/api";
+import { isDayScholar } from "@/app/lib/hostels";
 
 // The student's two permanent QRs. They identify the same student and differ only in what
 // the exit is for (lib/qrPayload.mjs): the outing QR always makes an outing, the leave QR
@@ -47,6 +48,17 @@ const QR_KINDS = {
   },
 };
 
+// A day scholar carries one QR. It is the outing QR's payload (the gate ignores the purpose
+// for them), described as what it is for them: an entry/exit log with no return time.
+const DAY_SCHOLAR_KIND = {
+  ...QR_KINDS[QR_PURPOSE.OUTING],
+  tab: "Gate QR",
+  title: "Your Permanent Gate QR",
+  blurb: "Show this QR at the main gate when you arrive on campus and when you leave. As a day scholar it is only logged: no return time.",
+  footer: "GATE QR • Day scholar entry & exit",
+  file: "Gate",
+};
+
 const formatLeaveDay = (value) =>
   new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 
@@ -65,7 +77,12 @@ const describeLeave = (leaves) => {
     };
   }
   if (!live) {
-    return { tone: "slate", text: "You have no approved leave. Apply for a leave first; this QR only works on the date of an approved leave." };
+    // Loud on purpose: students otherwise assume showing this QR at the gate is the whole leave process.
+    return {
+      tone: "red",
+      title: "Leave not applied",
+      text: "You have no approved leave. Apply for a leave first; this QR only works on the date of an approved leave.",
+    };
   }
   const day = formatLeaveDay(live.leaveDate);
   if (live.status === "Out") {
@@ -92,6 +109,7 @@ const STATUS_TONES = {
   amber: "bg-amber-50 border-amber-200 text-amber-900",
   emerald: "bg-emerald-50 border-emerald-200 text-emerald-800",
   purple: "bg-purple-50 border-purple-200 text-purple-800",
+  red: "bg-red-50 border-red-400 border-2 text-red-800 shadow-sm shadow-red-200",
 };
 
 // The body mounts afresh on every open, so it always lands on the QR the caller asked for
@@ -106,11 +124,12 @@ function StudentQrModalBody({
   profile = defaultStudentProfile,
   initialPurpose = QR_PURPOSE.OUTING,
 }) {
-  const [purpose, setPurpose] = useState(initialPurpose);
+  const dayScholar = isDayScholar(profile);
+  const [purpose, setPurpose] = useState(dayScholar ? QR_PURPOSE.OUTING : initialPurpose);
   const [leaveStatus, setLeaveStatus] = useState(null);
   const qrBoxRef = useRef(null);
   const backdropPressRef = useRef(false);
-  const kind = QR_KINDS[purpose] || QR_KINDS[QR_PURPOSE.OUTING];
+  const kind = dayScholar ? DAY_SCHOLAR_KIND : QR_KINDS[purpose] || QR_KINDS[QR_PURPOSE.OUTING];
 
   useEffect(() => {
     if (purpose !== QR_PURPOSE.LEAVE) return;
@@ -226,7 +245,7 @@ function StudentQrModalBody({
         </button>
 
         <div className="mt-2 flex flex-col items-center">
-          <div role="tablist" aria-label="Which QR" className="mb-4 grid w-full max-w-[16rem] grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+          {!dayScholar && <div role="tablist" aria-label="Which QR" className="mb-4 grid w-full max-w-[16rem] grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
             {[QR_PURPOSE.OUTING, QR_PURPOSE.LEAVE].map((p) => {
               const { tab, Icon, tabActive } = QR_KINDS[p];
               const active = p === purpose;
@@ -246,7 +265,7 @@ function StudentQrModalBody({
                 </button>
               );
             })}
-          </div>
+          </div>}
 
           <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold border mb-3 ${kind.badge}`}>
             <ShieldCheck size={12} className={kind.badgeIcon} />
@@ -264,9 +283,16 @@ function StudentQrModalBody({
           </div>
 
           {purpose === QR_PURPOSE.LEAVE && leaveStatus && (
-            <p className={`mt-4 w-full rounded-2xl border px-3.5 py-2.5 text-left text-xs font-semibold leading-relaxed ${STATUS_TONES[leaveStatus.tone]}`}>
-              {leaveStatus.text}
-            </p>
+            <div
+              role={leaveStatus.tone === "red" ? "alert" : undefined}
+              className={`mt-4 flex w-full items-start gap-2.5 rounded-2xl border px-3.5 py-2.5 text-left text-xs font-semibold leading-relaxed ${STATUS_TONES[leaveStatus.tone]}`}
+            >
+              {leaveStatus.tone === "red" && <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" aria-hidden="true" />}
+              <div>
+                {leaveStatus.title && <p className="text-sm font-bold uppercase tracking-wide text-red-700">{leaveStatus.title}</p>}
+                <p>{leaveStatus.text}</p>
+              </div>
+            </div>
           )}
 
           <div className="mt-4 w-full text-left bg-slate-50 rounded-2xl p-3.5 border border-slate-100 space-y-1.5">

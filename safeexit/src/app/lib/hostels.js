@@ -17,3 +17,10 @@ export const genderForHostel = (name) =>
 
 // Human labels for the two hostel genders, reused across caretaker/admin UI.
 export const HOSTEL_GENDER_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
+
+// Where a student lives. A day scholar lives at home: no hostel, no room, a gender of their
+// own (nothing implies it), no leave, and at the gate only a logged entry/exit — never an
+// outing, so never overdue. Mirrors RESIDENCY in backend/src/config/hostels.js.
+export const RESIDENCY = { HOSTEL: "Hostel", DAY_SCHOLAR: "DayScholar" };
+
+export const isDayScholar = (user) => user?.residency === RESIDENCY.DAY_SCHOLAR;

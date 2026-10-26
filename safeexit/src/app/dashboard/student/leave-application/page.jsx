@@ -36,6 +36,7 @@ import { apiFetch } from "@/app/lib/api";
 import { useRequireAuth } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import CaretakerSelect from "@/app/components/student/CaretakerSelect";
+import { isDayScholar } from "@/app/lib/hostels";
 import GateQrInstruction from "@/app/components/student/GateQrInstruction";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import ApprovalSignature from "@/app/components/ApprovalSignature";
@@ -132,7 +133,7 @@ const describeSubmitError = (error) => {
 export default function LeaveApplicationPage() {
   const router = useRouter();
   const { checked, authorized } = useRequireAuth("student");
-  const { display, hydrated } = useStudentProfile();
+  const { profile, display, hydrated } = useStudentProfile();
 
   const [tab, setTab] = useState("new");
   const [step, setStep] = useState("form");
@@ -391,6 +392,28 @@ export default function LeaveApplicationPage() {
   );
 
   const applicationId = created ? `LV-${String(created._id).slice(-6).toUpperCase()}` : "";
+
+  // Reached only by URL: the dashboard hides leave from day scholars, and the server refuses
+  // their applications. Say so instead of offering a form that cannot be submitted.
+  if (checked && authorized && isDayScholar(profile)) {
+    return (
+      <StudentFeatureShell
+        eyebrow="Multi-Day Leave"
+        title="Leave Application"
+        icon={CalendarDays}
+        iconTone="leave"
+        onBack={() => router.push("/dashboard/student")}
+      >
+        <StudentFeaturePanel className="p-6 text-center">
+          <p className="text-sm font-bold text-slate-800">Day scholars do not apply for leave.</p>
+          <p className="mt-2 text-sm text-slate-600">
+            You live at home, so the gate only logs when you arrive and leave. If you have moved
+            into a hostel, update &quot;Where do you live?&quot; in your profile during the update window.
+          </p>
+        </StudentFeaturePanel>
+      </StudentFeatureShell>
+    );
+  }
 
   if (created && step === "success") {
     const autoApproved = created.status === "Approved";

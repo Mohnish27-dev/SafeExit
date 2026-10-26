@@ -125,7 +125,7 @@ export default function MovementLogsView() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold text-slate-900">{st.name || "Unknown"}</p>
                     <p className="truncate text-xs text-slate-500">
-                      {[st.studentId, st.roomNumber && `Room ${st.roomNumber}`, st.department].filter(Boolean).join(" · ") || "—"}
+                      {[st.studentId, st.residency === "DayScholar" ? "Day scholar" : st.roomNumber && `Room ${st.roomNumber}`, st.department].filter(Boolean).join(" · ") || "—"}
                     </p>
                   </div>
                 </div>

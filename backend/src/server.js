@@ -3,6 +3,7 @@ const { connectPostgres, closePostgres, getSequelize } = require('./config/seque
 const { ensureAdmins } = require('./utils/ensureAdmins');
 const { ensureProfileWindowSchema } = require('./utils/profileWindow');
 const { ensureLeaveSchema } = require('./utils/leaveSchema');
+const { ensureResidencySchema } = require('./utils/residencySchema');
 const { startOverdueSweep } = require('./utils/overdueSweep');
 const sseHub = require('./utils/sseHub');
 const { closeMailer } = require('./utils/mailer');
@@ -99,6 +100,13 @@ connectPostgres().then(async () => {
     // Same stakes as above: the LeaveApplication model selects these columns, so without
     // them every leave query and every gate scan fails.
     console.error('Could not ensure the leave_applications schema — apply db/postgres/006_leave_parent_phone.sql and 007_leave_workflow.sql:', err.message);
+  }
+  try {
+    await ensureResidencySchema(getSequelize());
+  } catch (err) {
+    // Same stakes again: the User model selects residency, so without it every user query
+    // fails, and without the widened constraint no day scholar can register.
+    console.error('Could not ensure the users.residency schema — apply db/postgres/008_day_scholar.sql:', err.message);
   }
   // Idempotent; unchanged .env = no writes.
   try {

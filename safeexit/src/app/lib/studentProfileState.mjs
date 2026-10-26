@@ -65,6 +65,7 @@ export const studentProfileFromServer = (me) => {
     room,
     mobile: me?.phoneNumber,
     gender: me?.gender,
+    residency: me?.residency,
     hostelName,
     hostel: hostelName ? `Block ${hostelName}${room ? `, Room ${room}` : ""}` : room ? `Room ${room}` : "",
     year: me?.year,
@@ -76,5 +77,12 @@ export const studentProfileFromServer = (me) => {
   );
   if (me && "hasSignature" in me) result.hasSignature = Boolean(me.hasSignature);
   if (me && "profileUnlocked" in me) result.profileUnlocked = Boolean(me.profileUnlocked);
+  // A day scholar has no hostel or room on purpose, so here blank IS the server's answer: set
+  // it explicitly, or a student who has just moved home keeps showing their old hostel.
+  if (me?.residency === "DayScholar") {
+    result.hostelName = "";
+    result.room = "";
+    result.hostel = "Day scholar";
+  }
   return result;
 };

@@ -40,7 +40,7 @@ import {
 	verifyQuickPin,
 	clearQuickLogin,
 } from "@/app/lib/quickLogin";
-import { HOSTELS } from "@/app/lib/hostels";
+import { HOSTELS, RESIDENCY } from "@/app/lib/hostels";
 import TeamCreditLink from "@/app/components/TeamCreditLink";
 import SignatureCapture from "@/app/components/SignatureCapture";
 import {
@@ -72,6 +72,7 @@ export default function StudentLoginPage() {
 		branch: "",
 		yearLevel: "",
 		gender: "",
+		residency: RESIDENCY.HOSTEL,
 		hostelBlock: "",
 		roomNumber: "",
 		phoneNumber: "",
@@ -179,6 +180,16 @@ export default function StudentLoginPage() {
 		setFormData((prev) => ({ ...prev, [name]: nextValue }));
 	};
 
+	// Hostel resident or day scholar. Switching clears what the other answer filled in: a
+	// day scholar has no hostel or room, and their gender is asked for, not implied.
+	const handleResidencyChange = (residency) => {
+		setFormData((prev) =>
+			prev.residency === residency
+				? prev
+				: { ...prev, residency, hostelBlock: "", roomNumber: "", gender: "" },
+		);
+	};
+
 	// Picking a hostel also fixes the student's gender (boys' vs girls' hostel).
 	const handleHostelChange = (e) => {
 		const hostelBlock = e.target.value;
@@ -229,7 +240,9 @@ export default function StudentLoginPage() {
 			id: p.rollNumber,
 			rollNo: p.rollNumber,
 			email: p.email,
-			hostel: p.hostelBlock
+			hostel: p.residency === RESIDENCY.DAY_SCHOLAR
+				? "Day scholar"
+				: p.hostelBlock
 				? `Block ${p.hostelBlock}, Room ${p.roomNumber}`
 				: p.roomNumber
 					? `Room ${p.roomNumber}`
@@ -239,6 +252,7 @@ export default function StudentLoginPage() {
 			mobile: p.phoneNumber,
 			photo: p.photo,
 			gender: p.gender,
+			residency: p.residency || RESIDENCY.HOSTEL,
 			// Flag only — the bytes live on the server and are fetched where they are needed.
 			hasSignature: Boolean(p.signature),
 		});
@@ -262,8 +276,11 @@ export default function StudentLoginPage() {
 				department: profile.branch,
 				year: profile.yearLevel,
 				gender: profile.gender,
-				roomNumber: profile.roomNumber,
-				hostelName: profile.hostelBlock,
+				residency: profile.residency || RESIDENCY.HOSTEL,
+				// A day scholar has neither; the server refuses them on one.
+				...(profile.residency === RESIDENCY.DAY_SCHOLAR
+					? {}
+					: { roomNumber: profile.roomNumber, hostelName: profile.hostelBlock }),
 				phoneNumber: profile.phoneNumber,
 				guardianPhoneNumber: profile.emergencyContact,
 				closeContacts: profile.closeContacts,
@@ -561,8 +578,10 @@ export default function StudentLoginPage() {
 			"branch",
 			"yearLevel",
 			"gender",
-			"hostelBlock",
-			"roomNumber",
+			// A day scholar answers gender instead of hostel, and has no room.
+			...(formData.residency === RESIDENCY.DAY_SCHOLAR
+				? []
+				: ["hostelBlock", "roomNumber"]),
 			"phoneNumber",
 			"emergencyContact",
 			"password",
@@ -752,16 +771,20 @@ export default function StudentLoginPage() {
 			mobileNumber: contact.mobileNumber.trim(),
 			roomNumber: contact.roomNumber.trim(),
 		}));
+		// A day scholar's friends may live at home too, so for them the room is optional.
+		const roomOptional = formData.residency === RESIDENCY.DAY_SCHOLAR;
 		if (
 			normalized.some(
 				(contact) =>
 					!contact.name ||
 					!contact.mobileNumber ||
-					!contact.roomNumber,
+					(!contact.roomNumber && !roomOptional),
 			)
 		) {
 			setErrorMsg(
-				"Please complete the name, mobile number, and room/cabin number for each person.",
+				roomOptional
+					? "Please complete the name and mobile number for each person."
+					: "Please complete the name, mobile number, and room/cabin number for each person.",
 			);
 			return;
 		}
@@ -960,6 +983,7 @@ export default function StudentLoginPage() {
 			branch: profileData.department || "",
 			yearLevel: profileData.year || "",
 			hostelBlock: profileData.hostelName || "",
+			residency: profileData.residency || RESIDENCY.HOSTEL,
 			roomNumber: profileData.roomNumber || "",
 			phoneNumber: profileData.phoneNumber || "",
 			closeContacts: profileData.closeContacts || [],
@@ -1166,6 +1190,7 @@ export default function StudentLoginPage() {
 			branch: "",
 			yearLevel: "",
 			gender: "",
+			residency: RESIDENCY.HOSTEL,
 			hostelBlock: "",
 			roomNumber: "",
 			phoneNumber: "",
@@ -2040,80 +2065,176 @@ export default function StudentLoginPage() {
 											</div>
 										</div>
 
-										{/* Hostel Name (also determines gender) */}
+										{/* Where the student lives. A day scholar lives at home: no hostel or room,
+										    and their gender is asked here because no hostel implies it. */}
 										<div className="sm:col-span-2">
 											<label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-												Hostel Name
+												Where do you live?
 											</label>
-											<div className="relative">
-												<div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-													<Building className="w-4 h-4" />
-												</div>
-												<select
-													name="hostelBlock"
-													value={formData.hostelBlock}
-													onChange={
-														handleHostelChange
-													}
-													className="w-full appearance-none pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
-												>
-													<option value="">
-														Select Hostel
-													</option>
-													<optgroup label="Boys' Hostels">
-														{HOSTELS.filter(
-															(h) =>
-																h.gender ===
-																"Male",
-														).map((h) => (
-															<option
-																key={h.name}
-																value={h.name}
-															>
-																{h.name}
-															</option>
-														))}
-													</optgroup>
-													<optgroup label="Girls' Hostels">
-														{HOSTELS.filter(
-															(h) =>
-																h.gender ===
-																"Female",
-														).map((h) => (
-															<option
-																key={h.name}
-																value={h.name}
-															>
-																{h.name}
-															</option>
-														))}
-													</optgroup>
-												</select>
-												<div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-													<ChevronDown className="w-4 h-4" />
-												</div>
+											<div
+												role="radiogroup"
+												aria-label="Where do you live?"
+												className="grid grid-cols-2 gap-2"
+											>
+												{[
+													{
+														value: RESIDENCY.HOSTEL,
+														title: "Hostel",
+														hint: "I stay in a campus hostel",
+													},
+													{
+														value: RESIDENCY.DAY_SCHOLAR,
+														title: "Day scholar",
+														hint: "I live at home",
+													},
+												].map((opt) => {
+													const active =
+														formData.residency ===
+														opt.value;
+													return (
+														<button
+															key={opt.value}
+															type="button"
+															role="radio"
+															aria-checked={active}
+															onClick={() =>
+																handleResidencyChange(
+																	opt.value,
+																)
+															}
+															className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
+																active
+																	? "border-indigo-500 bg-indigo-50 text-indigo-900"
+																	: "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+															}`}
+														>
+															<span className="block text-sm font-semibold">
+																{opt.title}
+															</span>
+															<span className="block text-xs text-slate-500">
+																{opt.hint}
+															</span>
+														</button>
+													);
+												})}
 											</div>
 										</div>
 
-										{/* Room No */}
-										<div>
-											<label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-												Room No.
-											</label>
-											<div className="relative">
-												<div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-													<MapPin className="w-4 h-4" />
+										{formData.residency ===
+										RESIDENCY.DAY_SCHOLAR ? (
+											<div className="sm:col-span-2">
+												<label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+													Gender
+												</label>
+												<div className="relative">
+													<div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+														<User className="w-4 h-4" />
+													</div>
+													<select
+														name="gender"
+														value={formData.gender}
+														onChange={handleInputChange}
+														className="w-full appearance-none pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+													>
+														<option value="">
+															Select Gender
+														</option>
+														<option value="Male">
+															Male
+														</option>
+														<option value="Female">
+															Female
+														</option>
+													</select>
+													<div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+														<ChevronDown className="w-4 h-4" />
+													</div>
 												</div>
-												<input
-													type="text"
-													name="roomNumber"
-													value={formData.roomNumber}
-													onChange={handleInputChange}
-													placeholder="E.g. 204"
-													className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
-												/>
+												<p className="mt-1 text-xs text-slate-500">
+													Day scholars only log their
+													entry and exit at the gate:
+													no outing, no return time,
+													and no leave application.
+												</p>
 											</div>
-										</div>
+										) : (
+											<>
+											{/* Hostel Name (also determines gender) */}
+											<div className="sm:col-span-2">
+												<label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+													Hostel Name
+												</label>
+												<div className="relative">
+													<div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+														<Building className="w-4 h-4" />
+													</div>
+													<select
+														name="hostelBlock"
+														value={formData.hostelBlock}
+														onChange={
+															handleHostelChange
+														}
+														className="w-full appearance-none pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+													>
+														<option value="">
+															Select Hostel
+														</option>
+														<optgroup label="Boys' Hostels">
+															{HOSTELS.filter(
+																(h) =>
+																	h.gender ===
+																	"Male",
+															).map((h) => (
+																<option
+																	key={h.name}
+																	value={h.name}
+																>
+																	{h.name}
+																</option>
+															))}
+														</optgroup>
+														<optgroup label="Girls' Hostels">
+															{HOSTELS.filter(
+																(h) =>
+																	h.gender ===
+																	"Female",
+															).map((h) => (
+																<option
+																	key={h.name}
+																	value={h.name}
+																>
+																	{h.name}
+																</option>
+															))}
+														</optgroup>
+													</select>
+													<div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+														<ChevronDown className="w-4 h-4" />
+													</div>
+												</div>
+											</div>
+
+											{/* Room No */}
+											<div>
+												<label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+													Room No.
+												</label>
+												<div className="relative">
+													<div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+														<MapPin className="w-4 h-4" />
+													</div>
+													<input
+														type="text"
+														name="roomNumber"
+														value={formData.roomNumber}
+														onChange={handleInputChange}
+														placeholder="E.g. 204"
+														className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+													/>
+												</div>
+											</div>
+											</>
+										)}
 
 										{/* Phone */}
 										<div className="sm:col-span-2">
@@ -2803,7 +2924,10 @@ export default function StudentLoginPage() {
 																htmlFor={`close-contact-room-${index}`}
 																className="mb-1 block text-xs font-semibold text-slate-700"
 															>
-																Room / Cabin number
+																{formData.residency ===
+																RESIDENCY.DAY_SCHOLAR
+																	? "Room / hostel (optional)"
+																	: "Room / Cabin number"}
 															</label>
 															<div className="relative">
 																<MapPin className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

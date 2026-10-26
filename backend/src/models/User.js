@@ -64,6 +64,10 @@ const User = sequelize.define(
     year: { type: DataTypes.TEXT },
     roomNumber: { type: DataTypes.TEXT, field: 'room_number' },
     hostelName: { type: DataTypes.TEXT, field: 'hostel_name' },
+    // 'Hostel' or 'DayScholar'. A day scholar lives at home: no hostel, no room, a gender of
+    // their own (nothing implies it), and at the gate only a movement log — never an outing,
+    // so never Outside or overdue. users_student_has_hostel (008) holds all of that.
+    residency: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'Hostel' },
     phoneNumber: { type: DataTypes.TEXT, field: 'phone_number' },
     // 002_post_etl_constraints.sql rejects the empty string where it allows NULL, because
     // '' is not a phone number and 16 legacy users stored one. Normalise here so no

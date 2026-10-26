@@ -93,7 +93,7 @@ export default function MovementLogsView() {
               <article key={log._id} className={`flex flex-wrap items-center justify-between gap-4 px-5 py-4 ${index ? "border-t border-slate-100" : ""}`}>
                 <div>
                   <p className="font-extrabold text-slate-900">{student.name || "Unknown student"}</p>
-                  <p className="mt-0.5 text-xs font-semibold text-slate-500">{[student.studentId, student.hostelName, student.roomNumber && `Room ${student.roomNumber}`, student.department].filter(Boolean).join(" · ") || "—"}</p>
+                  <p className="mt-0.5 text-xs font-semibold text-slate-500">{[student.studentId, student.hostelName || (student.residency === "DayScholar" ? "Day scholar" : null), student.roomNumber && `Room ${student.roomNumber}`, student.department].filter(Boolean).join(" · ") || "—"}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${isOut ? "bg-sky-100 text-sky-700" : "bg-emerald-100 text-emerald-700"}`}>

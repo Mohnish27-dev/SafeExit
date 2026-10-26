@@ -13,7 +13,7 @@ import { markSignatureSaved } from "@/app/lib/userProfile";
 // into console.error — an unsaved signature blocks real work.
 //
 // A saved signature is locked (the server refuses to replace it), so with one present this
-// only shows it and says who can change it: an administrator reset clears it, and the
+// only shows it and says it is locked: an administrator reset clears it, and the
 // owner then captures a new one here.
 export default function SignatureSetupModal({
   open,
@@ -89,14 +89,14 @@ export default function SignatureSetupModal({
             <div className="mt-3 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
               <p className="text-xs leading-relaxed text-slate-600">
-                Your signature is locked. To change it, contact the SafeExit administrator.
+                Your signature is locked.
               </p>
             </div>
           </div>
         ) : (
           <div className="mt-4">
             <p className="mb-3 text-[11px] font-semibold text-amber-700">
-              Once saved, your signature is locked. Only the administrator can change it.
+              Once saved, your signature is locked.
             </p>
             <SignatureCapture
               currentSignature={null}

@@ -24,7 +24,12 @@ const CAMPUS_TONE = {
   Outside: "bg-amber-100 text-amber-700",
   OnLeave: "bg-purple-100 text-purple-700",
   Overdue: "bg-rose-100 text-rose-700",
+  DayScholar: "bg-sky-100 text-sky-700",
 };
+
+// A day scholar's campusStatus is never written (the gate only logs their movements), so
+// their pill says what they are rather than a stale "Inside".
+const pillStatus = (s) => (s.residency === "DayScholar" ? "DayScholar" : s.campusStatus || "Inside");
 
 // ?filter= value -> the server's campusStatus bucket (same buckets as the dashboard tiles).
 const FILTER_STATUS = { inside: "Inside", outside: "Outside", onleave: "OnLeave", overdue: "Overdue" };
@@ -72,6 +77,7 @@ function SecurityStudentsContent() {
     if (status === "Outside") return t("outside");
     if (status === "OnLeave") return t("onLeave");
     if (status === "Overdue") return t("overdue");
+    if (status === "DayScholar") return t("dayScholar");
     return t("inside");
   }, [t]);
 
@@ -301,10 +307,10 @@ function SecurityStudentsContent() {
                         </div>
                         <span
                           className={`sd-lift-md shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                            CAMPUS_TONE[s.campusStatus] || CAMPUS_TONE.Inside
+                            CAMPUS_TONE[pillStatus(s)] || CAMPUS_TONE.Inside
                           }`}
                         >
-                          {campusLabel(s.campusStatus || "Inside")}
+                          {campusLabel(pillStatus(s))}
                         </span>
                       </div>
 

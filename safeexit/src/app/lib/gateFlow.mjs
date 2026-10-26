@@ -33,6 +33,16 @@ export const readControlBarcode = (rawValue) => {
 export const deriveGateDirection = (campusStatus) =>
   campusStatus === "Outside" || campusStatus === "Overdue" ? "IN" : "OUT";
 
+// The direction the scan would log, as the preview states it. The server sends it because a
+// day scholar's is not read off campusStatus at all (their first scan of a campus day is an
+// entry, then each scan alternates); for everyone else it is deriveGateDirection, which is
+// also the fallback for a preview from a server that predates the field.
+export const previewDirection = (preview) => {
+  if (!preview?.student) return "OUT";
+  if (preview.direction === "IN" || preview.direction === "OUT") return preview.direction;
+  return deriveGateDirection(preview.student.campusStatus);
+};
+
 // The one refusal the gate has: an EXIT on the student's leave QR with no leave approved for
 // today (backend scanController's LEAVE_REFUSALS). Returns the preview's exit verdict when
 // that is what this scan would be, else null. An entry is never refused — either QR closes
@@ -40,7 +50,7 @@ export const deriveGateDirection = (campusStatus) =>
 // outside means nothing.
 export const exitRefusal = (preview) => {
   if (!preview?.student) return null;
-  if (deriveGateDirection(preview.student.campusStatus) !== "OUT") return null;
+  if (previewDirection(preview) !== "OUT") return null;
   return preview.exit?.allowed === false ? preview.exit : null;
 };
 

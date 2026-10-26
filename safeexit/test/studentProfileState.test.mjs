@@ -90,3 +90,19 @@ test("a cached profile carrying the placeholder name counts as incomplete", () =
   assert.equal(isIncompleteStudentProfile(null), true);
   assert.equal(isIncompleteStudentProfile({ name: "Aarav Kumar", rollNo: "2406058" }), false);
 });
+
+test("a day scholar's blank hostel and room overwrite a cached hostel", () => {
+  const p = studentProfileFromServer({
+    name: "Ravi",
+    studentId: "DS1",
+    residency: "DayScholar",
+    hostelName: null,
+    roomNumber: null,
+  });
+  assert.equal(p.residency, "DayScholar");
+  assert.equal(p.hostelName, "");
+  assert.equal(p.room, "");
+  assert.equal(p.hostel, "Day scholar");
+  const merged = { ...{ hostelName: "Kautilya", room: "101" }, ...p };
+  assert.equal(merged.hostelName, "");
+});

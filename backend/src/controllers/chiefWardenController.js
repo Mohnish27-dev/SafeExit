@@ -34,7 +34,7 @@ const getOverview = async (req, res) => {
       autoApprovedLeaves,
       overdueIds,
     ] = await Promise.all([
-      User.findAll({ where: { role: 'Student' }, attributes: ['id', 'hostelName', 'campusStatus'], raw: true }),
+      User.findAll({ where: { role: 'Student' }, attributes: ['id', 'hostelName', 'campusStatus', 'residency'], raw: true }),
       User.findAll({
         where: { role: { [Op.in]: ['Caretaker', 'Warden'] } },
         attributes: ['id', 'name', 'role', 'managedHostel'],
@@ -56,8 +56,15 @@ const getOverview = async (req, res) => {
     const hostelByName = new Map(hostels.map((hostel) => [hostel.name.toLowerCase(), hostel]));
     const hostelForStudent = new Map();
 
-    const studentsSummary = { total: students.length, inside: 0, outside: 0, overdue: 0 };
+    // Day scholars are counted apart: their campusStatus is never written by the gate, so
+    // they would otherwise all read as inside.
+    const studentsSummary = { total: 0, inside: 0, outside: 0, overdue: 0, dayScholars: 0 };
     for (const student of students) {
+      if (student.residency === 'DayScholar') {
+        studentsSummary.dayScholars += 1;
+        continue;
+      }
+      studentsSummary.total += 1;
       const hostel = hostelByName.get(String(student.hostelName || '').trim().toLowerCase());
       if (hostel) {
         hostel.students.total += 1;

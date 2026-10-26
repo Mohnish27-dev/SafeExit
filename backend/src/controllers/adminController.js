@@ -1,8 +1,13 @@
 const { Op } = require('sequelize');
-const { sequelize, User, UserPhoto, UserSignature, WebauthnCredential, OutingRequest, SOSAlert } = require('../models');
+const {
+  sequelize, User, UserPhoto, UserSignature, WebauthnCredential, OutingRequest, LeaveApplication, SOSAlert,
+} = require('../models');
+const { ACTIVE_PASS_STATUSES } = require('../config/passStatuses');
 const { getOverdueStudentIds, getAwayStudentIds } = require('../utils/overdue');
 const { readPageParams, sendPage } = require('../utils/pagination');
-const { isValidHostel, genderForHostel, canonicalHostelName, isGirlStudent, hideGirlFromGuard } = require('../config/hostels');
+const {
+  isValidHostel, genderForHostel, canonicalHostelName, isGirlStudent, hideGirlFromGuard, RESIDENCY, RESIDENCIES,
+} = require('../config/hostels');
 const { ciEquals } = require('../utils/ciCompare');
 const { isCollegeEmail, normalizeEmail } = require('../config/emailPolicy');
 const { GOOGLE_SIGNIN_ROLES } = require('../utils/googleIdToken');
@@ -20,6 +25,12 @@ const {
 // it, so "not inside" is the union of both. Counting bare 'Outside' would leave such a row
 // in `total` and in none of the three tiles. Matches caretakerController's occupancy query.
 const OUTSIDE_STATUSES = ['Outside', 'Overdue'];
+
+// The occupancy tiles count hostel residents only. A day scholar's campusStatus is never
+// written (the gate only logs their movements, see scanController), so counting them would
+// put every day scholar in "inside" all night. They are reported as their own number.
+const HOSTEL_STUDENT = { role: 'Student', residency: 'Hostel' };
+const DAY_SCHOLAR = { role: 'Student', residency: 'DayScholar' };
 
 // The one definition of "overdue" shared by the counts and the roster: stored outside AND
 // holding a pass past its return window. A late pass alone is not enough — a stale 'Out'
@@ -47,11 +58,12 @@ const getOverview = async (req, res) => {
       totalWardens,
       activeSOS,
       pendingOutings,
-      studentsOut
+      studentsOut,
+      dayScholars,
     ] = await Promise.all([
-      User.count({ where: { role: 'Student' } }),
-      User.count({ where: { role: 'Student', campusStatus: 'Inside' } }),
-      User.count({ where: { role: 'Student', campusStatus: { [Op.in]: OUTSIDE_STATUSES } } }),
+      User.count({ where: HOSTEL_STUDENT }),
+      User.count({ where: { ...HOSTEL_STUDENT, campusStatus: 'Inside' } }),
+      User.count({ where: { ...HOSTEL_STUDENT, campusStatus: { [Op.in]: OUTSIDE_STATUSES } } }),
       // 'Overdue' is never stored — derived live from passes still 'Out' past their return window.
       getOverdueStudentIds(),
       User.count({ where: { role: 'Guard' } }),
@@ -60,7 +72,8 @@ const getOverview = async (req, res) => {
       User.count({ where: { role: 'Warden' } }),
       SOSAlert.count({ where: { status: 'Active' } }),
       OutingRequest.count({ where: { status: 'Pending' } }),
-      OutingRequest.count({ where: { status: 'Out' } })
+      OutingRequest.count({ where: { status: 'Out' } }),
+      User.count({ where: DAY_SCHOLAR }),
     ]);
 
     // Overdue students are still stored 'Outside' — subtract so the tiles are disjoint.
@@ -72,7 +85,8 @@ const getOverview = async (req, res) => {
         total: totalStudents,
         inside: studentsInside,
         outside: onTimeOutside,
-        overdue: studentsOverdue
+        overdue: studentsOverdue,
+        dayScholars,
       },
       guards: { total: totalGuards, onDuty: guardsOnDuty },
       caretakers: { total: totalCaretakers },
@@ -87,7 +101,7 @@ const getOverview = async (req, res) => {
 };
 
 // Guards may only browse students, and only non-confidential fields.
-const GUARD_FIELDS = ['id', 'name', 'studentId', 'campusStatus', 'lastSeenAt'];
+const GUARD_FIELDS = ['id', 'name', 'studentId', 'campusStatus', 'residency', 'lastSeenAt'];
 // Read for a guard but not all returned: the gate phones boys who are outside, so a boy's
 // number goes out only while he is Outside/Overdue. Girls are phoned by their caretaker
 // (see outingController.getOverdueOutings), so a girl's number never goes to a guard.
@@ -97,8 +111,8 @@ const GUARD_FIELDS = ['id', 'name', 'studentId', 'campusStatus', 'lastSeenAt'];
 const GUARD_QUERY_FIELDS = [...GUARD_FIELDS, 'phoneNumber', 'gender', 'hostelName', 'roomNumber'];
 const ALL_FIELDS = [
   'id', 'name', 'email', 'role', 'studentId', 'department', 'year', 'roomNumber', 'hostelName',
-  'phoneNumber', 'guardianPhoneNumber', 'gender', 'managedGender', 'managedHostel', 'campusStatus', 'lastSeenAt',
-  'onDuty', 'lastActiveAt', 'webAuthnRegistered', 'profileConfirmedAt', 'createdAt',
+  'phoneNumber', 'guardianPhoneNumber', 'gender', 'managedGender', 'managedHostel', 'campusStatus', 'residency',
+  'lastSeenAt', 'onDuty', 'lastActiveAt', 'webAuthnRegistered', 'profileConfirmedAt', 'createdAt',
 ];
 
 // GET /api/admin/users?role= — private (Admin/Guard)
@@ -159,7 +173,12 @@ const getUsers = async (req, res) => {
     // both of those are derived.
     const campusFilter = String(req.query.campusStatus || '').trim();
     if (campusFilter && campusFilter !== 'ALL') {
-      if (campusFilter === 'Outside') {
+      // A day scholar's campusStatus is never written, so every status bucket is hostel
+      // residents only and day scholars are a bucket of their own (as in the counts).
+      where.residency = campusFilter === 'DayScholar' ? RESIDENCY.DAY_SCHOLAR : RESIDENCY.HOSTEL;
+      if (campusFilter === 'DayScholar') {
+        // residency alone is the filter
+      } else if (campusFilter === 'Outside') {
         where.campusStatus = { [Op.in]: OUTSIDE_STATUSES };
         const notOuting = [...overdueList, ...onLeaveIds];
         if (notOuting.length) where.id = { [Op.notIn]: notOuting };
@@ -304,11 +323,12 @@ const getUserPhoto = async (req, res) => {
 // These are index-served counts, so the answer costs the same at 40 students or 4000.
 const getStudentCounts = async (req, res) => {
   try {
-    const [total, inside, outside, { overdueIds, onLeaveIds }] = await Promise.all([
-      User.count({ where: { role: 'Student' } }),
-      User.count({ where: { role: 'Student', campusStatus: 'Inside' } }),
-      User.count({ where: { role: 'Student', campusStatus: { [Op.in]: OUTSIDE_STATUSES } } }),
+    const [total, inside, outside, { overdueIds, onLeaveIds }, dayScholars] = await Promise.all([
+      User.count({ where: HOSTEL_STUDENT }),
+      User.count({ where: { ...HOSTEL_STUDENT, campusStatus: 'Inside' } }),
+      User.count({ where: { ...HOSTEL_STUDENT, campusStatus: { [Op.in]: OUTSIDE_STATUSES } } }),
       getAwayStudentIds(),
+      User.count({ where: DAY_SCHOLAR }),
     ]);
 
     // Same disjoint-tiles rule as getOverview: overdue students and students on leave are
@@ -324,6 +344,7 @@ const getStudentCounts = async (req, res) => {
       outside: Math.max(0, outside - overdue - onLeave),
       onLeave,
       overdue,
+      dayScholars,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -598,10 +619,16 @@ const updateStudent = async (req, res) => {
       year,
       roomNumber,
       hostelName,
+      residency,
+      gender,
       phoneNumber,
       guardianPhoneNumber,
       email,
     } = req.body;
+
+    if (residency !== undefined && !RESIDENCIES.includes(residency)) {
+      return res.status(400).json({ message: 'Residency must be Hostel or DayScholar.' });
+    }
 
     if (name !== undefined) {
       if (!name || !String(name).trim()) {
@@ -675,6 +702,40 @@ const updateStudent = async (req, res) => {
       }
     }
 
+    // Hostel resident <-> day scholar. The admin may do this at any time of year, but not
+    // while a pass is live: a student out on an outing who became a day scholar would leave
+    // that outing open, and overdue, for ever.
+    const nextResidency = residency ?? student.residency;
+    if (nextResidency !== student.residency) {
+      const activeWhere = { studentId: student.id, status: { [Op.in]: ACTIVE_PASS_STATUSES } };
+      const [liveOutings, liveLeaves] = await Promise.all([
+        OutingRequest.count({ where: activeWhere }),
+        LeaveApplication.count({ where: activeWhere }),
+      ]);
+      if (liveOutings || liveLeaves) {
+        return res.status(409).json({
+          message: 'This student has an outing or leave in progress. It must be completed or cancelled before changing their residency.',
+        });
+      }
+      student.residency = nextResidency;
+      // Means nothing for a day scholar; restarts at the default whichever way they move.
+      student.campusStatus = 'Inside';
+    }
+    if (nextResidency === RESIDENCY.DAY_SCHOLAR) {
+      if (String(hostelName || '').trim()) {
+        return res.status(400).json({ message: 'A day scholar has no hostel. Set residency to Hostel to assign one.' });
+      }
+      student.hostelName = null;
+      student.roomNumber = null;
+      // Nothing implies a day scholar's gender, so it is theirs to state and the admin's to fix.
+      if (gender !== undefined) student.gender = gender;
+      if (!['Male', 'Female'].includes(student.gender)) {
+        return res.status(400).json({ message: "Please set the day scholar's gender (Male or Female)." });
+      }
+    } else if (!student.hostelName) {
+      return res.status(400).json({ message: 'Please select a valid campus hostel.' });
+    }
+
     if (email !== undefined) {
       const mail = String(email || '').trim().toLowerCase();
       if (mail) {
@@ -708,6 +769,7 @@ const updateStudent = async (req, res) => {
         year: student.year,
         roomNumber: student.roomNumber,
         hostelName: student.hostelName,
+        residency: student.residency,
         gender: student.gender,
         phoneNumber: student.phoneNumber,
         guardianPhoneNumber: student.guardianPhoneNumber,

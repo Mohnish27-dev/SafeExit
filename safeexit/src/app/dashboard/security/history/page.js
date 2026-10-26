@@ -172,7 +172,10 @@ export default function SecurityHistoryPage() {
                         </span>
                         <div className="min-w-0">
                           <p className="sd-card-title truncate text-[0.88rem]">{st.name || t("unknownStudent")}</p>
-                          <p className="sd-micro truncate">{st.studentId || "—"}</p>
+                          <p className="sd-micro truncate">
+                            {st.studentId || "—"}
+                            {st.residency === "DayScholar" && ` · ${t("dayScholar")}`}
+                          </p>
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
