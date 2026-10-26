@@ -5,12 +5,13 @@ const { ciEquals } = require('../utils/ciCompare');
 const { passScope, mergeWhere } = require('../utils/hostelScope');
 const { isLegacyId } = require('../utils/legacyIdGrace');
 const { UUID_RE } = require('../middlewares/validateParams');
-const { hideGirlFromGuard } = require('../config/hostels');
+const { hideGirlFromGuard, isDayScholar } = require('../config/hostels');
 const {
   isReturnLate,
   leaveDayRelation,
   computeOutingReturnDeadline,
   outingTypeFor,
+  campusDayStart,
 } = require('../utils/outingRules');
 const { EXPIRABLE_STATUSES } = require('../utils/passExpiry');
 
@@ -133,6 +134,88 @@ const resolveOutPass = async (studentId, options = {}) => {
 
 const modelFor = (passType) => (passType === 'Outing' ? OutingRequest : LeaveApplication);
 
+// ---- Day scholars ----
+//
+// A day scholar lives at home, so their leaving campus in the evening is the end of the day,
+// not an outing: the gate logs the movement and creates nothing, so they are never 'Outside',
+// never overdue, and never on the guard's call list. campusStatus is a hostel-occupancy
+// field and is left alone.
+//
+// Their direction comes from their own log instead: the first scan of a campus day is an
+// entry, and each scan after it alternates. A day scholar who walks out without scanning is
+// therefore set right by the next morning, rather than being stuck "inside" and having
+// their arrival logged as an exit.
+const dayScholarDirection = async (studentId, options = {}) => {
+  const last = await ScanLog.findOne({
+    where: { studentId, createdAt: { [Op.gte]: campusDayStart(new Date()) } },
+    order: [['createdAt', 'DESC']],
+    attributes: ['direction', 'createdAt'],
+    ...options,
+  });
+  return { direction: last?.direction === 'IN' ? 'OUT' : 'IN', last };
+};
+
+// With no status flip to make a second scan conflict, the same card shown twice would log
+// an entry and an exit seconds apart. The gate station has its own cooldown; this is the
+// server's, and it also covers two stations.
+const DAY_SCHOLAR_RESCAN_MS = 30 * 1000;
+
+const logDayScholarMovement = async (req, res, studentDoc, requestedDirection, gate) => {
+  let logId = null;
+  let direction = null;
+  try {
+    await sequelize.transaction(async (tx) => {
+      // The row lock is what the conditional flip is for everyone else: a concurrent scan
+      // of the same day scholar waits here, then reads the log this one wrote.
+      await User.findByPk(studentDoc.id, { attributes: ['id'], lock: tx.LOCK.UPDATE, transaction: tx });
+      const derived = await dayScholarDirection(studentDoc.id, { transaction: tx });
+      if (derived.last && Date.now() - new Date(derived.last.createdAt).getTime() < DAY_SCHOLAR_RESCAN_MS) {
+        throw new ScanConflict({
+          message: 'This day scholar was logged a moment ago. Nothing was logged again.',
+          code: 'DAY_SCHOLAR_RESCAN',
+          campusStatus: studentDoc.campusStatus,
+        });
+      }
+      direction = requestedDirection === 'AUTO' ? derived.direction : requestedDirection;
+
+      const log = await ScanLog.create(
+        {
+          studentId: studentDoc.id,
+          guardId: req.user._id,
+          direction,
+          punctuality: 'N/A',
+          gate: gate || 'Main Gate',
+        },
+        { transaction: tx }
+      );
+      logId = log.id;
+
+      await User.update({ lastSeenAt: new Date() }, { where: { id: studentDoc.id }, transaction: tx });
+      await User.update(
+        { onDuty: true, lastActiveAt: new Date() },
+        { where: { id: req.user._id }, transaction: tx }
+      );
+    });
+  } catch (error) {
+    if (error instanceof ScanConflict) return res.status(409).json(error.payload);
+    return res.status(500).json({ message: error.message });
+  }
+
+  // Only the movement logs care; no caretaker counter moves.
+  sseHub.broadcast('outing:changed', {
+    reason: 'scan',
+    direction,
+    student: String(studentDoc.id),
+    passType: null,
+    status: null,
+  });
+
+  const populated = await ScanLog.findByPk(logId, {
+    include: [{ association: 'student', attributes: ['id', 'name', 'studentId'] }],
+  });
+  return res.status(201).json(populated);
+};
+
 // POST /api/scan — private (Guard/Admin)
 //
 // ---------------------------------------------------------------------------
@@ -164,6 +247,11 @@ const createScanLog = async (req, res) => {
 
     if (!studentDoc) {
       return res.status(404).json({ message: 'Student not found for this QR code' });
+    }
+
+    // Either QR, or the ID card: a day scholar has no pass for any of them to choose.
+    if (isDayScholar(studentDoc)) {
+      return logDayScholarMovement(req, res, studentDoc, requestedDirection, gate);
     }
 
     // Derived here rather than trusted from the client, which may be acting on a
@@ -387,6 +475,30 @@ const previewScan = async (req, res) => {
       return res.status(404).json({ message: 'Student not found for this QR code' });
     }
 
+    const purpose = readPurpose(req.query.purpose);
+    const studentCard = {
+      _id: studentDoc.id,
+      name: studentDoc.name,
+      studentId: studentDoc.studentId,
+      campusStatus: studentDoc.campusStatus,
+      photo: studentDoc.photo,
+      residency: studentDoc.residency,
+    };
+
+    // Mirrors logDayScholarMovement: a movement with no pass, never refused, never late.
+    if (isDayScholar(studentDoc)) {
+      const { direction } = await dayScholarDirection(studentDoc.id);
+      return res.json({
+        student: studentCard,
+        direction,
+        dayScholar: true,
+        activePass: null,
+        punctuality: 'N/A',
+        purpose,
+        exit: { allowed: true, reason: null, passType: null, pass: null },
+      });
+    }
+
     const activePass = await resolveOutPass(studentDoc.id);
     // Mirrors createScanLog: only an outing return can be late.
     const punctuality = activePass?.passType === 'Outing'
@@ -400,7 +512,6 @@ const previewScan = async (req, res) => {
     // always creates an outing due back by the return deadline. `leaveToday` flags an outing
     // QR shown on the student's leave day, so the guard can ask for the leave QR instead
     // before the countdown commits it.
-    const purpose = readPurpose(req.query.purpose);
     const { usable: exitLeave, refusal, leave } = await resolveExitLeave(studentDoc.id);
     const exitAt = new Date();
     let exit;
@@ -432,13 +543,10 @@ const previewScan = async (req, res) => {
     }
 
     res.json({
-      student: {
-        _id: studentDoc.id,
-        name: studentDoc.name,
-        studentId: studentDoc.studentId,
-        campusStatus: studentDoc.campusStatus,
-        photo: studentDoc.photo,
-      },
+      student: studentCard,
+      // The same derivation createScanLog makes, so the gate never has to repeat it.
+      direction: deriveDirection(studentDoc.campusStatus),
+      dayScholar: false,
       activePass: activePass
         ? {
             passType: activePass.passType,
@@ -465,7 +573,7 @@ const getScanLogs = async (req, res) => {
     const isGuard = req.user.role === 'Guard';
     const scope = passScope(ScanLog, req.user, [
       // roomNumber/department are rendered and searched by the movement log view.
-      'id', 'name', 'studentId', 'campusStatus', 'roomNumber', 'hostelName', 'department',
+      'id', 'name', 'studentId', 'campusStatus', 'roomNumber', 'hostelName', 'department', 'residency',
       // Read for a guard only to spot girls below; stripped before the response.
       ...(isGuard ? ['gender'] : []),
     ]);

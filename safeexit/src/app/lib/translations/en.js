@@ -259,6 +259,8 @@ const en = {
     status: "Status",
     checking: "Checking…",
     exitAllowed: "Allowed",
+    dayScholar: "Day Scholar",
+    dayScholarNote: "Lives at home — entry/exit is only logged. No return time, never overdue.",
     unverified: "Unverified",
     onTimeIn: "On-Time IN",
     validWindow: "Valid Window",

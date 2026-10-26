@@ -1,7 +1,9 @@
 const normalizeComparisonPhoneNumber = (value) =>
   typeof value === 'string' ? value.trim() : '';
 
-const normalizeCloseContacts = (contacts, studentPhoneNumber) => {
+// A day scholar's friends may live at home too, so for them the room is optional and an
+// empty one is stored as '' (close_contacts.room_number is NOT NULL).
+const normalizeCloseContacts = (contacts, studentPhoneNumber, { roomOptional = false } = {}) => {
   const normalizedStudentPhoneNumber = normalizeComparisonPhoneNumber(studentPhoneNumber);
 
   if (!Array.isArray(contacts) || contacts.length < 1 || contacts.length > 2) {
@@ -27,7 +29,7 @@ const normalizeCloseContacts = (contacts, studentPhoneNumber) => {
     if (normalizedStudentPhoneNumber && mobileNumber === normalizedStudentPhoneNumber) {
       return { error: "A trusted contact's mobile number must be different from the student's mobile number." };
     }
-    if (!roomNumber || roomNumber.length > 30) {
+    if ((!roomNumber && !roomOptional) || roomNumber.length > 30) {
       return { error: 'Each roommate/close friend must have a valid room number.' };
     }
 

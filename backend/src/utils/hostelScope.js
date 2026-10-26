@@ -1,6 +1,6 @@
 const { Op, literal } = require('sequelize');
 const { User } = require('../models');
-const { genderForHostel } = require('../config/hostels');
+const { genderForHostel, isDayScholar, RESIDENCY } = require('../config/hostels');
 const { ciEquals } = require('./ciCompare');
 
 // ---------------------------------------------------------------------------
@@ -121,12 +121,14 @@ const passScope = (Model, user, studentAttributes) => {
     };
   }
 
-  // A caretaker with no hostel assigned yet keeps the legacy gender fallback.
+  // A caretaker with no hostel assigned yet keeps the legacy gender fallback — over hostel
+  // students only. A day scholar's gender is their own, not a hostel's, and no caretaker
+  // is theirs (the admin and chief warden oversee them).
   const genders = scopeGenders(user.managedGender);
   if (genders.length === 0) return { where: MATCH_NOTHING, include: studentInclude() };
   return {
     where: {},
-    include: studentInclude({ required: true, where: { role: 'Student', gender: { [Op.in]: genders } } }),
+    include: studentInclude({ required: true, where: { role: 'Student', residency: RESIDENCY.HOSTEL, gender: { [Op.in]: genders } } }),
   };
 };
 
@@ -140,9 +142,10 @@ const genderScopedPassScope = (user, studentAttributes) => {
   if (!isHostelScoped(user)) return { where: {}, include: studentInclude() };
   const genders = scopeGenders(user.managedGender);
   if (genders.length === 0) return { where: MATCH_NOTHING, include: studentInclude() };
+  // A day scholar's SOS goes to the admin and chief warden (sosController), not by gender.
   return {
     where: {},
-    include: studentInclude({ required: true, where: { role: 'Student', gender: { [Op.in]: genders } } }),
+    include: studentInclude({ required: true, where: { role: 'Student', residency: RESIDENCY.HOSTEL, gender: { [Op.in]: genders } } }),
   };
 };
 
@@ -180,12 +183,14 @@ function studentInScope(user, student) {
   // A warden with no hostel is unassigned and sees nothing; only caretakers keep the
   // legacy gender fallback.
   if (user.role === 'Warden') return false;
+  if (isDayScholar(student)) return false;
   return scopeGenders(user.managedGender).includes(student.gender);
 }
 
 function studentInGenderScope(user, student) {
   if (!isHostelScoped(user)) return true; // Admin/Guard unrestricted
   if (!student) return false;
+  if (isDayScholar(student)) return false;
   return scopeGenders(user.managedGender).includes(student.gender);
 }
 

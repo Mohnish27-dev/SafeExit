@@ -30,7 +30,7 @@ import {
 import { getFirstName, getStoredUser } from "@/app/lib/userProfile";
 import { apiFetch } from "@/app/lib/api";
 import { parseScannedQr } from "@/app/lib/qrPayload.mjs";
-import { canAutoCommit, deriveGateDirection, exitRefusal, readControlBarcode } from "@/app/lib/gateFlow.mjs";
+import { canAutoCommit, exitRefusal, previewDirection, readControlBarcode } from "@/app/lib/gateFlow.mjs";
 import { useRequireAuth, logout } from "@/app/lib/auth";
 import AuthLoading from "@/app/components/AuthGate";
 import SecurityBottomNav from "./components/SecurityBottomNav";
@@ -241,11 +241,12 @@ export default function SecurityDashboardPage() {
   // The gate runs one scanner and no exit/entry switch: a student's live campusStatus
   // admits exactly one legal move, so the direction is read off the preview rather than
   // chosen by the guard. Until the preview lands this reads 'exit', matching the User
-  // schema default of 'Inside'.
-  const derivedMode =
-    scanPreview?.student && deriveGateDirection(scanPreview.student.campusStatus) === "IN"
-      ? "entry"
-      : "exit";
+  // schema default of 'Inside'. A day scholar's comes from their own log instead, which is
+  // why the preview states it (gateFlow.previewDirection).
+  const derivedMode = previewDirection(scanPreview) === "IN" ? "entry" : "exit";
+  // Lives at home: the scan only logs the movement, so there is no pass, return time or
+  // punctuality to show.
+  const isDayScholarScan = Boolean(scanPreview?.dayScholar);
 
 
   // Exit and entry get their own full-screen colour so the guard can read the direction
@@ -442,7 +443,7 @@ export default function SecurityDashboardPage() {
             : prev
         );
 
-        const mode = deriveGateDirection(preview.student.campusStatus) === "IN" ? "entry" : "exit";
+        const mode = previewDirection(preview) === "IN" ? "entry" : "exit";
         const pending = {
           sid: preview.student._id || parsed.sid,
           id: preview.student.studentId || parsed.id,
@@ -1016,6 +1017,13 @@ export default function SecurityDashboardPage() {
                           </span>
                         );
                       }
+                      if (isDayScholarScan) {
+                        return (
+                          <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-sky-100 text-sky-700">
+                            {t("dayScholar")}
+                          </span>
+                        );
+                      }
                       if (scanPreview?.exit) {
                         return (
                           <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-700">
@@ -1034,6 +1042,13 @@ export default function SecurityDashboardPage() {
                     })()
                   ) : (
                     (() => {
+                      if (isDayScholarScan) {
+                        return (
+                          <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-sky-100 text-sky-700">
+                            {t("dayScholar")}
+                          </span>
+                        );
+                      }
                       // A leave return is never late: its return date is only the
                       // student's expected return, so there is no punctuality to show.
                       if (isLeaveMove) {
@@ -1056,12 +1071,12 @@ export default function SecurityDashboardPage() {
                 </div>
                 {!refusal && <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    {derivedMode === 'exit'
+                    {derivedMode === 'exit' && !isDayScholarScan
                       ? (scanPreview?.exit?.passType === 'Leave' ? t("expectedReturn") : t("returnBy"))
                       : t("loggedTime")}
                   </span>
                   <span className="text-sm font-semibold text-slate-800">
-                    {derivedMode === 'exit'
+                    {derivedMode === 'exit' && !isDayScholarScan
                       ? (scanPreview?.exit?.pass
                           // An outing starts at this scan, so only its return deadline matters.
                           ? scanPreview.exit.passType === 'Leave'
@@ -1078,7 +1093,7 @@ export default function SecurityDashboardPage() {
                     <span className="text-sm font-semibold text-slate-800 text-right break-words">{scanPreview.exit.pass.destination}</span>
                   </div>
                 )}
-                {derivedMode === 'entry' && (
+                {derivedMode === 'entry' && !isDayScholarScan && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{isLeaveMove ? t("expectedReturn") : t("allowedReturn")}</span>
                     <span className="text-sm font-semibold text-slate-800">
@@ -1087,6 +1102,9 @@ export default function SecurityDashboardPage() {
                         : t("na")}
                     </span>
                   </div>
+                )}
+                {isDayScholarScan && (
+                  <p className="text-xs font-medium text-sky-700">{t("dayScholarNote")}</p>
                 )}
                 {((derivedMode === 'exit' && scanPreview?.exit?.passType) || (derivedMode === 'entry' && scanPreview?.activePass?.passType)) && (
                   <div className="flex items-center justify-between">

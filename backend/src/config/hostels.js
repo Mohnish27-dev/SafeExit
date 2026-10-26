@@ -33,6 +33,12 @@ const hostelNames = () => HOSTELS.map((h) => h.name);
 // hostels in admin pickers grouped by boys'/girls'.
 const hostelsForGender = (gender) => HOSTELS.filter((h) => h.gender === gender);
 
+// Where a student lives. A day scholar has no hostel, so nothing above applies to them:
+// their gender is asked for, not implied, and no caretaker or warden is theirs.
+const RESIDENCY = { HOSTEL: 'Hostel', DAY_SCHOLAR: 'DayScholar' };
+const RESIDENCIES = Object.values(RESIDENCY);
+const isDayScholar = (student) => !!student && student.residency === RESIDENCY.DAY_SCHOLAR;
+
 // A girl counts as one if either her own gender or her hostel says so, so a row with a
 // missing or stale gender still errs towards hiding her number from the gate.
 const isGirlStudent = (student) =>
@@ -56,6 +62,9 @@ module.exports = {
   canonicalHostelName,
   hostelNames,
   hostelsForGender,
+  RESIDENCY,
+  RESIDENCIES,
+  isDayScholar,
   isGirlStudent,
   hideGirlFromGuard,
 };

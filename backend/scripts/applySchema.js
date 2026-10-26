@@ -6,6 +6,7 @@
 //   node scripts/applySchema.js validate      # apply 003_validate_constraints.sql
 //   node scripts/applySchema.js drop-legacy   # apply 004_drop_legacy_ids.sql (post-cutover)
 //   node scripts/applySchema.js leave-workflow  # apply 007_leave_workflow.sql
+//   node scripts/applySchema.js day-scholar     # apply 008_day_scholar.sql
 //   node scripts/applySchema.js check         # verify, change nothing
 //
 // Reads DATABASE_URL. Nothing here writes application data, so it is safe to run against
@@ -28,6 +29,7 @@ const STEPS = {
   'profile-window': '005_profile_window.sql',
   'leave-parent-phone': '006_leave_parent_phone.sql',
   'leave-workflow': '007_leave_workflow.sql',
+  'day-scholar': '008_day_scholar.sql',
 };
 
 // What `check` expects to find. Kept as data rather than prose so it fails loudly if the

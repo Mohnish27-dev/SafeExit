@@ -1,7 +1,8 @@
 const { SOSAlert } = require('../models');
 const sseHub = require('../utils/sseHub');
 const { readPageParams, sendPage } = require('../utils/pagination');
-const { notifyCaretakersAndAdmins } = require('../utils/pushService');
+const { notifyCaretakersAndAdmins, notifyAdmins, notifyChiefWardens } = require('../utils/pushService');
+const { isDayScholar } = require('../config/hostels');
 const { genderScopedPassScope, mergeWhere, studentInGenderScope } = require('../utils/hostelScope');
 
 const SOS_STUDENT_FIELDS = ['id', 'name', 'studentId', 'roomNumber', 'hostelName', 'department', 'year'];
@@ -87,13 +88,22 @@ const createSOSAlert = async (req, res) => {
 
     // SOS is never fenced to one hostel — broadcast to EVERY caretaker of the student's
     // gender scope, plus all admins, so an away hostel caretaker can never bottleneck it.
-    notifyCaretakersAndAdmins(req.user.gender, {
+    // A day scholar has no hostel staff at all: theirs goes to the admins and chief wardens.
+    const sosPayload = {
       title: '🚨 SOS ALERT',
-      body: `${req.user.name} has raised an emergency (${safeType})!${safeCoords ? ' 📍 Location attached' : ''}`,
+      body: `${req.user.name}${isDayScholar(req.user) ? ' (day scholar)' : ''} has raised an emergency (${safeType})!${safeCoords ? ' 📍 Location attached' : ''}`,
       url: '/dashboard/caretaker?view=sos',
       adminUrl: '/dashboard/admin?view=sos',
       urgency: 'high',
-    });
+    };
+    if (isDayScholar(req.user)) {
+      Promise.allSettled([
+        notifyAdmins({ ...sosPayload, url: sosPayload.adminUrl }),
+        notifyChiefWardens({ ...sosPayload, url: '/dashboard/chief-warden?view=sos' }),
+      ]);
+    } else {
+      notifyCaretakersAndAdmins(req.user.gender, sosPayload);
+    }
 
     res.status(201).json(populated);
   } catch (error) {

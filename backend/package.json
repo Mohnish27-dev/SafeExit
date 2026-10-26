@@ -23,6 +23,7 @@
     "pg:profile-window": "node scripts/applySchema.js profile-window",
     "pg:leave-parent-phone": "node scripts/applySchema.js leave-parent-phone",
     "pg:leave-workflow": "node scripts/applySchema.js leave-workflow",
+    "pg:day-scholar": "node scripts/applySchema.js day-scholar",
     "pg:inventory": "node scripts/mongoInventory.js",
     "pg:etl": "node scripts/etl.js",
     "pg:etl:dry": "node scripts/etl.js --dry-run",

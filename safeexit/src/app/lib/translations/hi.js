@@ -259,6 +259,8 @@ const hi = {
     status: "स्टेटस",
     checking: "चेक हो रहा है…",
     exitAllowed: "अनुमति है",
+    dayScholar: "डे स्कॉलर",
+    dayScholarNote: "घर पर रहते हैं — केवल प्रवेश/निकास दर्ज होता है। कोई वापसी समय नहीं, कभी ओवरड्यू नहीं।",
     unverified: "अनवेरीफ़ाइड",
     onTimeIn: "समय पर IN",
     validWindow: "वैलिड समय",

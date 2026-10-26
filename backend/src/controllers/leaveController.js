@@ -12,6 +12,7 @@ const {
   TICKET_MIME_TYPES,
 } = require('../utils/leaveSchema');
 const { parseDataUrl } = require('../models/_shared');
+const { isDayScholar } = require('../config/hostels');
 const { estimatedRowCount } = require('../utils/rowCount');
 const {
   notifyCaretakers,
@@ -166,6 +167,11 @@ const createLeaveApplication = async (req, res) => {
     typeof req.body.expectedDepartureTime === 'string' ? req.body.expectedDepartureTime.trim() : '';
 
   try {
+    // Leave is leaving the hostel; a day scholar goes home every evening and has no
+    // caretaker or warden to decide one.
+    if (isDayScholar(req.user)) {
+      return res.status(403).json({ code: 'DAY_SCHOLAR', message: 'Day scholars do not apply for leave.' });
+    }
     if (!destination || !reason || !leaveDate || !returnDate) {
       return res.status(400).json({ message: 'Destination, reason, leave date and return date are all required.' });
     }

@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { apiFetch, apiFetchWithHeaders } from "@/app/lib/api";
 import { getInitials } from "@/app/lib/userProfile";
-import { HOSTELS, HOSTEL_GENDER_LABEL } from "@/app/lib/hostels";
+import { HOSTELS, HOSTEL_GENDER_LABEL, RESIDENCY, isDayScholar } from "@/app/lib/hostels";
 
 const TABS = [
   { key: "Student", label: "Students", icon: GraduationCap },
@@ -68,6 +68,7 @@ const CAMPUS_TONE = {
   Outside: "bg-amber-100 text-amber-700",
   OnLeave: "bg-purple-100 text-purple-700",
   Overdue: "bg-rose-100 text-rose-700",
+  DayScholar: "bg-sky-100 text-sky-700",
 };
 
 const formatDay = (iso) =>
@@ -110,6 +111,8 @@ const CAMPUS_STATUS_OPTIONS = [
   { value: "Outside", label: "Outside (outing)" },
   { value: "OnLeave", label: "On leave" },
   { value: "Overdue", label: "Overdue" },
+  // Not a campus status: day scholars are never inside/outside, so they are their own bucket.
+  { value: "DayScholar", label: "Day scholars" },
 ];
 
 export default function PeopleView() {
@@ -137,6 +140,8 @@ export default function PeopleView() {
     year: "",
     roomNumber: "",
     hostelName: "",
+    residency: RESIDENCY.HOSTEL,
+    gender: "",
     phoneNumber: "",
     guardianPhoneNumber: "",
     email: "",
@@ -227,6 +232,8 @@ export default function PeopleView() {
       year: student.year || "",
       roomNumber: student.roomNumber || "",
       hostelName: student.hostelName || "",
+      residency: student.residency || RESIDENCY.HOSTEL,
+      gender: student.gender || "",
       phoneNumber: student.phoneNumber || "",
       guardianPhoneNumber: student.guardianPhoneNumber || "",
       email: student.email || "",
@@ -240,9 +247,15 @@ export default function PeopleView() {
     setEditStudentSaving(true);
     setEditStudentError("");
     try {
+      // A day scholar's gender is their own; a hostel student's comes from the hostel, so
+      // it is only sent for a day scholar. Hostel and room go blank for one.
+      const { gender, ...rest } = editStudentForm;
+      const body = rest.residency === RESIDENCY.DAY_SCHOLAR
+        ? { ...rest, gender, hostelName: "", roomNumber: "" }
+        : rest;
       await apiFetch(`/admin/students/${editStudentTarget._id}`, {
         method: "PATCH",
-        body: JSON.stringify(editStudentForm),
+        body: JSON.stringify(body),
       });
       setSuccessMsg(`Details updated for ${editStudentForm.name}.`);
       setEditStudentTarget(null);
@@ -682,8 +695,8 @@ export default function PeopleView() {
                 </div>
                 {role === "Student" && (
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${CAMPUS_TONE[p.campusStatus] || CAMPUS_TONE.Inside}`}>
-                      {p.campusStatus === "OnLeave" ? "On leave" : p.campusStatus || "Inside"}
+                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${CAMPUS_TONE[isDayScholar(p) ? "DayScholar" : p.campusStatus] || CAMPUS_TONE.Inside}`}>
+                      {isDayScholar(p) ? "Day scholar" : p.campusStatus === "OnLeave" ? "On leave" : p.campusStatus || "Inside"}
                     </span>
                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
                       p.profileUnlocked ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-slate-100 text-slate-500"
@@ -1225,6 +1238,35 @@ export default function PeopleView() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Residency</label>
+                  <select
+                    value={editStudentForm.residency}
+                    onChange={(e) => setEditStudentForm((f) => ({ ...f, residency: e.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:bg-white focus:outline-none cursor-pointer"
+                  >
+                    <option value={RESIDENCY.HOSTEL}>Hostel resident</option>
+                    <option value={RESIDENCY.DAY_SCHOLAR}>Day scholar (lives at home)</option>
+                  </select>
+                </div>
+                {editStudentForm.residency === RESIDENCY.DAY_SCHOLAR && (
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Gender</label>
+                    <select
+                      value={editStudentForm.gender}
+                      onChange={(e) => setEditStudentForm((f) => ({ ...f, gender: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:bg-white focus:outline-none cursor-pointer"
+                    >
+                      <option value="">Select...</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {editStudentForm.residency !== RESIDENCY.DAY_SCHOLAR && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600">Hostel</label>
                   <select
                     value={editStudentForm.hostelName}
@@ -1251,6 +1293,7 @@ export default function PeopleView() {
                   />
                 </div>
               </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>

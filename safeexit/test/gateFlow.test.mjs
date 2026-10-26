@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { SCAN_CONTROL, canAutoCommit, deriveGateDirection, exitRefusal, readControlBarcode } from "../src/app/lib/gateFlow.mjs";
+import {
+  SCAN_CONTROL, canAutoCommit, deriveGateDirection, exitRefusal, previewDirection, readControlBarcode,
+} from "../src/app/lib/gateFlow.mjs";
 import { parseScannedQr } from "../src/app/lib/qrPayload.mjs";
 
 // --- Direction derivation ------------------------------------------------------
@@ -97,4 +99,24 @@ test("a leave QR with no leave valid today never arms on an exit, and blocks not
   // An outing QR on the leave day is allowed, only flagged.
   const flagged = { allowed: true, passType: "Outing", leaveToday: { windowStart: "x", windowEnd: "y" } };
   assert.equal(canAutoCommit(previewFor("Inside", flagged)), true);
+});
+
+test("a day scholar's direction comes from the preview, not their campusStatus", () => {
+  // Never written for a day scholar, so it stays at the 'Inside' default all day.
+  const dayScholar = (direction) => ({
+    student: { campusStatus: "Inside", residency: "DayScholar" },
+    dayScholar: true,
+    direction,
+    exit: { allowed: true, passType: null },
+  });
+  assert.equal(previewDirection(dayScholar("IN")), "IN");
+  assert.equal(previewDirection(dayScholar("OUT")), "OUT");
+  assert.equal(exitRefusal(dayScholar("IN")), null);
+  assert.equal(canAutoCommit(dayScholar("IN")), true);
+});
+
+test("a preview without a direction still falls back to campusStatus", () => {
+  assert.equal(previewDirection({ student: { campusStatus: "Outside" } }), "IN");
+  assert.equal(previewDirection({ student: { campusStatus: "Inside" } }), "OUT");
+  assert.equal(previewDirection(null), "OUT");
 });

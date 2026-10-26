@@ -68,7 +68,7 @@ import {
 import AuthLoading from "@/app/components/AuthGate";
 import SignatureSetupModal from "@/app/components/SignatureSetupModal";
 import useCountUp from "@/app/hooks/useCountUp";
-import { HOSTELS } from "@/app/lib/hostels";
+import { HOSTELS, RESIDENCY, isDayScholar } from "@/app/lib/hostels";
 import {
   clampCropOffset,
   cropCoverScale,
@@ -199,6 +199,14 @@ const actions = [
     border: "rgba(45,212,191,0.55)",
   },
 ];
+
+// A day scholar lives at home: the gate only logs their entry and exit, so there are no
+// outings to list or report late, and no leave to apply for.
+const DAY_SCHOLAR_HIDDEN = new Set([
+  "/dashboard/student/my-outings",
+  "/dashboard/student/leave-application",
+  "/dashboard/student/delay-notice",
+]);
 
 const navItems = [
   { label: "Home", icon: Home, href: "/dashboard/student", active: true },
@@ -399,6 +407,7 @@ export default function StudentDashboardPage() {
     phoneNumber: "",
     guardianPhoneNumber: "",
     hostelName: "",
+    residency: RESIDENCY.HOSTEL,
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaveError, setProfileSaveError] = useState("");
@@ -620,6 +629,19 @@ export default function StudentDashboardPage() {
 
   // A leave the gate took 'Out' means the student is away on it, whatever the outings say.
   const onLeave = useMemo(() => leaves.find((l) => l.status === "Out") || null, [leaves]);
+  const dayScholar = isDayScholar(profile);
+  const visibleActions = dayScholar
+    ? actions
+        .filter((a) => !DAY_SCHOLAR_HIDDEN.has(a.href))
+        .map((a) =>
+          a.href === "/dashboard/student/generate-ticket"
+            ? { ...a, title: "Gate QR", description: "Show it at the gate when you arrive and when you leave." }
+            : a,
+        )
+    : actions;
+  const visibleNavItems = dayScholar
+    ? navItems.filter((n) => !DAY_SCHOLAR_HIDDEN.has(n.href))
+    : navItems;
   // Approved for today and not used yet: the student must show the Leave QR to go home on it.
   const leaveToday = useMemo(() => {
     const today = campusDateKey(new Date());
@@ -897,6 +919,7 @@ export default function StudentDashboardPage() {
       phoneNumber: profile.mobile || profile.phoneNumber || "",
       guardianPhoneNumber: profile.guardianPhoneNumber || "",
       hostelName: profile.hostelName || "",
+      residency: profile.residency || RESIDENCY.HOSTEL,
     });
     setProfileSaveError("");
     setProfileSaveSuccess("");
@@ -941,6 +964,12 @@ export default function StudentDashboardPage() {
       setSavingProfile(false);
       return;
     }
+    const toDayScholar = editForm.residency === RESIDENCY.DAY_SCHOLAR;
+    if (!toDayScholar && !editForm.hostelName) {
+      setProfileSaveError("Please select your hostel");
+      setSavingProfile(false);
+      return;
+    }
 
     try {
       const updated = await apiFetch("/auth/profile", {
@@ -948,11 +977,16 @@ export default function StudentDashboardPage() {
         body: JSON.stringify({
           department: editForm.department ? editForm.department.trim() : "",
           year: editForm.year ? editForm.year.trim() : "",
-          roomNumber: editForm.roomNumber ? editForm.roomNumber.trim() : "",
           phoneNumber: cleanPhone,
           guardianPhoneNumber: cleanGuardian,
-          // Omitted when blank: "" is not a valid hostel and would fail the whole save.
-          ...(editForm.hostelName ? { hostelName: editForm.hostelName.trim() } : {}),
+          residency: editForm.residency,
+          // A day scholar has no hostel or room; the server refuses one.
+          ...(toDayScholar
+            ? {}
+            : {
+                roomNumber: editForm.roomNumber ? editForm.roomNumber.trim() : "",
+                hostelName: editForm.hostelName.trim(),
+              }),
         }),
       });
 
@@ -1124,7 +1158,7 @@ export default function StudentDashboardPage() {
                     <h3 className="text-base font-bold text-slate-900">Upload your profile photo</h3>
                     <p className="text-xs text-slate-600 mt-0.5">
                       Your account has no photo, so the gate guard cannot verify your identity. Add a clear,
-                      recent photo of your face. It locks once saved; only the administrator can change it later.
+                      recent photo of your face. It locks once saved.
                     </p>
                   </div>
                 </div>
@@ -1142,7 +1176,7 @@ export default function StudentDashboardPage() {
 
           {/* Not dismissable: until a hostel is on record the caretaker's roster and Out Now
               board can't see this student, so skipping it would silently break gate oversight. */}
-          {mounted && hostelSynced && !profile.hostelName && (
+          {mounted && hostelSynced && !profile.hostelName && !dayScholar && (
             <section className="sd-luxe-panel sd-luxe-rise mt-4 rounded-4xl p-4 shadow-xl border border-amber-200 sm:mt-6 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-4 min-w-0">
@@ -1214,7 +1248,9 @@ export default function StudentDashboardPage() {
                     <span className="sd-name-live">{greetingName}</span>.
                   </h2>
                   <p className="sd-body mt-2 hidden max-w-md sm:block">
-                    {onLeave
+                    {dayScholar
+                      ? "You're registered as a day scholar. Show your Gate QR at the main gate when you arrive and when you leave — it is only logged, with no return time."
+                      : onLeave
                       ? `You're on leave${onLeave.destination ? ` (${onLeave.destination})` : ""}, expected back by ${formatLeaveDay(onLeave.returnDate)}. Show either of your QRs at the main gate when you return.`
                       : latestApproved
                       ? latestApproved.isOverdue
@@ -1243,12 +1279,12 @@ export default function StudentDashboardPage() {
                           overdueOuting ? "bg-rose-500" : onLeave ? "bg-purple-500" : latestApproved ? "bg-emerald-500" : "bg-amber-500"
                         }`}
                       />
-                      {overdueOuting ? "Return overdue" : onLeave ? "On leave" : latestApproved ? (latestApproved.status === "Out" ? "Out now" : "Pass active") : leaveToday ? "On campus · leave today" : "On campus"}
+                      {dayScholar ? "Day scholar" : overdueOuting ? "Return overdue" : onLeave ? "On leave" : latestApproved ? (latestApproved.status === "Out" ? "Out now" : "Pass active") : leaveToday ? "On campus · leave today" : "On campus"}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-600">
+                    {!dayScholar && <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-xs font-bold text-slate-600">
                       <TrendingUp className="h-3.5 w-3.5 text-indigo-500" />
                       {outings.length} total {outings.length === 1 ? "outing" : "outings"}
-                    </span>
+                    </span>}
                   </div>
                 </div>
               </div>
@@ -1288,7 +1324,9 @@ export default function StudentDashboardPage() {
                     </span>
                   </div>
                   <p className="text-[11px] sm:text-xs text-slate-500 truncate mt-0.5">
-                    Outing QR for outings · Leave QR when going home on leave
+                    {dayScholar
+                      ? "Show it at the gate when you arrive and when you leave"
+                      : "Outing QR for outings · Leave QR when going home on leave"}
                   </p>
                 </div>
               </div>
@@ -1301,10 +1339,10 @@ export default function StudentDashboardPage() {
               >
                 <span className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
                 <QrCode className="h-4 w-4 text-white animate-pulse shrink-0" />
-                <span className="relative z-10">Outing QR</span>
+                <span className="relative z-10">{dayScholar ? "Gate QR" : "Outing QR"}</span>
                 <ArrowUpRight className="h-4 w-4 relative z-10 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </button>
-              <button
+              {!dayScholar && <button
                 type="button"
                 onClick={() => openQr(QR_PURPOSE.LEAVE)}
                 title="Tap to display your leave QR code"
@@ -1313,7 +1351,7 @@ export default function StudentDashboardPage() {
                 <span className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
                 <Home className="h-4 w-4 text-white shrink-0" />
                 <span className="relative z-10">Leave QR</span>
-              </button>
+              </button>}
               </div>
             </div>
           </section>
@@ -1478,7 +1516,7 @@ export default function StudentDashboardPage() {
                 alone in the left column. From sm the lead tile spans both columns so
                 there's no orphan; from lg it's 5-across. */}
             <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-5 lg:grid-cols-5">
-              {actions.map((action, index) => (
+              {visibleActions.map((action, index) => (
                 <ActionCard key={action.title} action={action} index={index} featured={index === 0} />
               ))}
             </div>
@@ -1542,16 +1580,16 @@ export default function StudentDashboardPage() {
                     className="sd-btn-glow inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-cyan-500/25 cursor-pointer"
                   >
                     <QrCode className="h-5 w-5" />
-                    Outing QR
+                    {dayScholar ? "Gate QR" : "Outing QR"}
                   </MagneticButton>
-                  <MagneticButton
+                  {!dayScholar && <MagneticButton
                     type="button"
                     onClick={() => openQr(QR_PURPOSE.LEAVE)}
                     className="sd-btn-glow inline-flex w-fit items-center gap-2.5 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-500 to-fuchsia-500 px-6 py-3.5 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-purple-500/25 cursor-pointer"
                   >
                     <Home className="h-5 w-5" />
                     Leave QR
-                  </MagneticButton>
+                  </MagneticButton>}
                 </div>
               </div>
 
@@ -1563,7 +1601,7 @@ export default function StudentDashboardPage() {
               <div className="relative z-[1] flex flex-col items-center justify-center gap-3 p-4 sm:gap-4 sm:p-8 lg:w-[250px]">
                 <p className="sd-passport-eyebrow flex items-center gap-1.5">
                   <ScanLine className="h-3.5 w-3.5 text-cyan-300" />
-                  Outing QR · scan at gate
+                  {dayScholar ? "Gate QR · scan at gate" : "Outing QR · scan at gate"}
                 </p>
                 <button
                   type="button"
@@ -1718,7 +1756,7 @@ export default function StudentDashboardPage() {
           {/* Bottom bar: floating on phones, inline panel on desktop.
               Column count tracks navItems.length so no track is left empty. */}
           <nav className="sd-luxe-panel sd-luxe-rise fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 gap-0.5 rounded-3xl p-1.5 backdrop-blur md:static md:inset-x-auto md:mt-6 md:gap-1 md:rounded-4xl md:p-3">
-            {navItems.map((item) => (
+            {visibleNavItems.map((item) => (
               <Link
                 key={item.label}
                 href={item.href}
@@ -1781,7 +1819,7 @@ export default function StudentDashboardPage() {
                   <div className="mt-5 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left">
                     <Lock className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" />
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Your photo is locked. To change it, contact the SafeExit administrator.
+                      Your photo is locked.
                     </p>
                   </div>
                   <button
@@ -1880,7 +1918,7 @@ export default function StudentDashboardPage() {
                   )}
 
                   <p className="mt-4 text-[11px] font-semibold text-amber-700 leading-snug">
-                    Once saved, your photo is locked. Only the administrator can change it.
+                    Once saved, your photo is locked.
                   </p>
 
                   {photoError && <p className="text-xs text-rose-500 mt-3">{photoError}</p>}
@@ -2044,6 +2082,35 @@ export default function StudentDashboardPage() {
                       />
                     </div>
 
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Where do you live? <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={editForm.residency}
+                        onChange={(e) =>
+                          setEditForm((prev) => ({
+                            ...prev,
+                            residency: e.target.value,
+                            // Choosing a hostel again starts from a clean pick.
+                            ...(e.target.value === RESIDENCY.DAY_SCHOLAR ? { hostelName: "", roomNumber: "" } : {}),
+                          }))
+                        }
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value={RESIDENCY.HOSTEL}>In a campus hostel</option>
+                        <option value={RESIDENCY.DAY_SCHOLAR}>Day scholar (I live at home)</option>
+                      </select>
+                      {editForm.residency !== (profile.residency || RESIDENCY.HOSTEL) && (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {editForm.residency === RESIDENCY.DAY_SCHOLAR
+                            ? "As a day scholar the gate only logs your entry and exit: no outings, no return time and no leave applications."
+                            : "Pick your hostel and room. Outings and leave work as for every hostel student."}
+                        </p>
+                      )}
+                    </div>
+
+                    {editForm.residency !== RESIDENCY.DAY_SCHOLAR && <>
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                         Hostel Block
@@ -2074,6 +2141,7 @@ export default function StudentDashboardPage() {
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                       />
                     </div>
+                    </>}
 
                     <div>
                       <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">

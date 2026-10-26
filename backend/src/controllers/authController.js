@@ -8,7 +8,9 @@ const generateToken = require('../utils/generateToken');
 const { isAdminEmail } = require('../config/adminAllowlist');
 const { isValidStudentEmail } = require('../config/emailPolicy');
 const { GOOGLE_SIGNIN_ROLES, verifyGoogleCredential, googleClientId } = require('../utils/googleIdToken');
-const { isValidHostel, genderForHostel, canonicalHostelName } = require('../config/hostels');
+const {
+  isValidHostel, genderForHostel, canonicalHostelName, RESIDENCY, RESIDENCIES, isDayScholar,
+} = require('../config/hostels');
 const { isEmailVerificationValid } = require('./otpController');
 const { isSignatureDataUrl } = require('../utils/signature');
 const { ciEquals } = require('../utils/ciCompare');
@@ -65,6 +67,7 @@ const profilePayload = (user, extra = {}) => ({
     .map((c) => c.toJSON()),
   gender: user.gender,
   hostelName: user.hostelName,
+  residency: user.residency,
   managedGender: user.managedGender,
   managedHostel: user.managedHostel,
   webAuthnRegistered: user.webAuthnRegistered,
@@ -84,6 +87,8 @@ const registerUser = async (req, res) => {
     year,
     phoneNumber,
     hostelName,
+    residency,
+    gender,
     emailVerificationToken,
     closeContacts,
     guardianPhoneNumber,
@@ -122,19 +127,40 @@ const registerUser = async (req, res) => {
     if (photo.length > 1_500_000) {
       return res.status(413).json({ message: 'Photo is too large.' });
     }
-    // Hostel is the source of truth: it's required, must be a known campus hostel,
-    // and the student's gender is DERIVED from it (the form has no separate gender
-    // question, and deriving server-side stops a spoofed body from mismatching).
-    if (!isValidHostel(hostelName)) {
-      return res.status(400).json({ message: 'Please select your hostel.' });
+    // A missing residency is a hostel student: every client deployed before day scholars
+    // existed sends none.
+    if (residency !== undefined && !RESIDENCIES.includes(residency)) {
+      return res.status(400).json({ message: 'Please choose whether you live in a hostel or are a day scholar.' });
     }
-    // Canonical spelling matters more than it used to: users.hostel_name is a real foreign
-    // key to hostels(name), so "kautilya" would now be rejected by the database rather than
-    // quietly stored as a second spelling.
-    const resolvedHostel = canonicalHostelName(hostelName);
-    const resolvedGender = genderForHostel(hostelName);
+    const resolvedResidency = residency || RESIDENCY.HOSTEL;
+    let resolvedHostel = null;
+    let resolvedGender = null;
+    let resolvedRoom = null;
+    if (resolvedResidency === RESIDENCY.DAY_SCHOLAR) {
+      // No hostel to imply it, so a day scholar says their gender. Only the two the gate's
+      // rule for girls can act on: users_student_has_hostel requires one of them.
+      if (!['Male', 'Female'].includes(gender)) {
+        return res.status(400).json({ message: 'Please select your gender.' });
+      }
+      resolvedGender = gender;
+    } else {
+      // Hostel is the source of truth: it's required, must be a known campus hostel,
+      // and the student's gender is DERIVED from it (the form has no separate gender
+      // question, and deriving server-side stops a spoofed body from mismatching).
+      if (!isValidHostel(hostelName)) {
+        return res.status(400).json({ message: 'Please select your hostel.' });
+      }
+      // Canonical spelling matters more than it used to: users.hostel_name is a real foreign
+      // key to hostels(name), so "kautilya" would now be rejected by the database rather than
+      // quietly stored as a second spelling.
+      resolvedHostel = canonicalHostelName(hostelName);
+      resolvedGender = genderForHostel(hostelName);
+      resolvedRoom = roomNumber;
+    }
 
-    const closeContactResult = normalizeCloseContacts(closeContacts, phoneNumber);
+    const closeContactResult = normalizeCloseContacts(closeContacts, phoneNumber, {
+      roomOptional: resolvedResidency === RESIDENCY.DAY_SCHOLAR,
+    });
     if (closeContactResult.error) {
       return res.status(400).json({ message: closeContactResult.error });
     }
@@ -171,8 +197,8 @@ const registerUser = async (req, res) => {
       const created = await User.create(
         {
           name, loginId, email: realEmail, password, role: resolvedRole,
-          studentId, roomNumber, department, year, phoneNumber,
-          gender: resolvedGender, hostelName: resolvedHostel,
+          studentId, roomNumber: resolvedRoom, department, year, phoneNumber,
+          gender: resolvedGender, hostelName: resolvedHostel, residency: resolvedResidency,
           // The registration form IS this year's confirmation: a student who signs up in
           // August has just entered everything, so they stay locked until next 1 July.
           profileConfirmedAt: new Date(),
@@ -193,6 +219,7 @@ const registerUser = async (req, res) => {
         loginId: user.loginId,
         email: user.email,
         role: user.role,
+        residency: user.residency,
         webAuthnRegistered: user.webAuthnRegistered,
         token
       });
@@ -235,6 +262,7 @@ const authUser = async (req, res) => {
         email: user.email,
         role: user.role,
         studentId: user.studentId,
+        residency: user.residency,
         managedGender: user.managedGender,
         managedHostel: user.managedHostel,
         // Flag only, never the bytes: this response is cached into sessionStorage per tab,
@@ -370,6 +398,7 @@ const updateUserProfile = async (req, res) => {
   const {
     gender,
     hostelName,
+    residency,
     photo,
     signature,
     department,
@@ -404,7 +433,8 @@ const updateUserProfile = async (req, res) => {
     phoneNumber !== undefined ||
     guardianPhoneNumber !== undefined ||
     closeContacts !== undefined ||
-    hostelName !== undefined;
+    hostelName !== undefined ||
+    residency !== undefined;
 
   // At least one supported field must be present.
   if (
@@ -420,8 +450,14 @@ const updateUserProfile = async (req, res) => {
     return res.status(400).json({ message: 'Please select a valid gender.' });
   }
 
-  if (hostelName !== undefined && !isValidHostel(hostelName)) {
+  // null is allowed through to the residency rules below, which is how a student moving
+  // out to live at home clears it; any other value must be a real hostel.
+  if (hostelName !== undefined && hostelName !== null && !isValidHostel(hostelName)) {
     return res.status(400).json({ message: 'Please select a valid hostel.' });
+  }
+
+  if (residency !== undefined && !RESIDENCIES.includes(residency)) {
+    return res.status(400).json({ message: 'Please choose whether you live in a hostel or are a day scholar.' });
   }
 
   try {
@@ -450,10 +486,14 @@ const updateUserProfile = async (req, res) => {
     let isWindowEdit = false;
 
     if (isProtectedFieldAttempt) {
-      // Legacy backfill: student setting hostel for the very first time without unlocking
+      // Legacy backfill: student setting hostel for the very first time without unlocking.
+      // A day scholar has no hostel by design, so for them picking one is a residency switch,
+      // which only the window allows.
       const isInitialHostelBackfill =
         hostelName !== undefined &&
         !user.hostelName &&
+        !isDayScholar(user) &&
+        residency === undefined &&
         department === undefined &&
         year === undefined &&
         roomNumber === undefined &&
@@ -504,7 +544,53 @@ const updateUserProfile = async (req, res) => {
         user.guardianPhoneNumber = gPhoneRes.phoneNumber;
       }
 
-      if (hostelName !== undefined) {
+      // Hostel resident <-> day scholar. Inside the window only (checked above), and only
+      // with nothing in progress: a student who is out on an outing must come back through
+      // the gate as the hostel student who left.
+      const nextResidency = residency ?? user.residency;
+      if (residency !== undefined && residency !== user.residency) {
+        if (user.role !== 'Student') {
+          return res.status(403).json({ message: 'Only students can be day scholars.' });
+        }
+        const activeWhere = { studentId: user.id, status: { [Op.in]: ACTIVE_PASS_STATUSES } };
+        const [liveOutings, liveLeaves] = await Promise.all([
+          OutingRequest.count({ where: activeWhere }),
+          LeaveApplication.count({ where: activeWhere }),
+        ]);
+        if (liveOutings || liveLeaves) {
+          return res.status(409).json({
+            message: 'You have an outing or leave in progress. Complete or cancel it before changing where you live — your profile stays open until you save.',
+          });
+        }
+        if (nextResidency === RESIDENCY.DAY_SCHOLAR) {
+          // Every hostel student's gender came from their hostel, so it is normally already
+          // set; only a legacy row without one has to say it here.
+          const keptGender = ['Male', 'Female'].includes(user.gender) ? user.gender : gender;
+          if (!['Male', 'Female'].includes(keptGender)) {
+            return res.status(400).json({ message: 'Please select your gender.' });
+          }
+          user.gender = keptGender;
+          user.hostelName = null;
+        } else if (!hostelName) {
+          return res.status(400).json({ message: 'Please select your hostel.' });
+        }
+        user.residency = nextResidency;
+        // campusStatus means nothing for a day scholar, so whichever way they switch it
+        // restarts at the column default rather than carrying a stale value across.
+        user.campusStatus = 'Inside';
+      }
+
+      if (nextResidency === RESIDENCY.DAY_SCHOLAR) {
+        if (hostelName) {
+          return res.status(400).json({ message: 'Day scholars have no hostel. Choose "I live in a hostel" to pick one.' });
+        }
+        // No room either; users_student_has_hostel refuses one.
+        user.roomNumber = null;
+      } else if (hostelName === null) {
+        return res.status(400).json({ message: 'Please select your hostel.' });
+      }
+
+      if (hostelName) {
         if (user.role !== 'Student') {
           return res.status(403).json({ message: 'Only students can set a hostel.' });
         }
@@ -539,7 +625,9 @@ const updateUserProfile = async (req, res) => {
       }
 
       if (closeContacts !== undefined) {
-        const cResult = normalizeCloseContacts(closeContacts, user.phoneNumber);
+        const cResult = normalizeCloseContacts(closeContacts, user.phoneNumber, {
+          roomOptional: isDayScholar(user),
+        });
         if (cResult.error) {
           return res.status(400).json({ message: cResult.error });
         }
@@ -547,7 +635,8 @@ const updateUserProfile = async (req, res) => {
       }
     }
 
-    if (gender !== undefined && hostelName === undefined) {
+    // A residency switch has already read `gender` (a day scholar's is their own).
+    if (gender !== undefined && hostelName === undefined && residency === undefined) {
       // One-time backfill only, even while unlocked: gender decides caretaker routing, and
       // the unlock window is for year/room/contact details, not for this.
       if (user.gender) {
