@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { getApiBase } from "./api";
 import { getStoredUser, setStoredUser, syncStoredStudentProfile } from "./userProfile";
 import { autoSubscribeIfGranted } from "./pushManager";
+import { withBasePath } from "./basePath";
 
 // Logout deliberately keeps each role's device-local Quick Login PIN
 const ROLE_CONFIG = {
@@ -114,7 +115,7 @@ export const useRequireAuth = (expectedRole) => {
       }
       setState({ checked: true, authorized: false });
       // Replace (not push) so Back can't return to the unauthorized URL
-      window.location.replace(loginPathFor(expectedRole));
+      window.location.replace(withBasePath(loginPathFor(expectedRole)));
     })();
     return () => { cancelled = true; };
   }, [expectedRole]);
@@ -146,5 +147,5 @@ export const logout = async (router, { role } = {}) => {
 
   const dest = loginPathFor(role);
   if (router?.push) router.push(dest);
-  else if (typeof window !== "undefined") window.location.assign(dest);
+  else if (typeof window !== "undefined") window.location.assign(withBasePath(dest));
 };

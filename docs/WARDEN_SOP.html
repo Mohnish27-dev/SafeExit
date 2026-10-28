@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NITP-SafeExit - Warden Standard Operating Procedure (SOP)</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 8mm 9mm 6mm 9mm;
+  }
+
+  :root {
+    --ink: #0f172a;
+    --body: #334155;
+    --muted: #64748b;
+    --line: #cbd5e1;
+    --brand: #3730a3;
+    --brand-light: #4f46e5;
+    --brand-soft: #eef2ff;
+    --accent: #0284c7;
+    --accent-soft: #f0f9ff;
+    --warn: #b45309;
+    --warn-soft: #fffbeb;
+    --danger: #b91c1c;
+    --danger-soft: #fef2f2;
+    --success: #15803d;
+    --success-soft: #f0fdf4;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0;
+    background: #f1f5f9;
+    color: var(--body);
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+    font-size: 8.35pt;
+    line-height: 1.25;
+  }
+  .sheet {
+    width: 210mm;
+    margin: 0 auto;
+    padding: 8mm 9mm 6mm 9mm;
+    background: #fff;
+  }
+  .printbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4mm;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 8.2pt;
+  }
+  .printbar button {
+    margin-left: auto;
+    border: 0;
+    border-radius: 999px;
+    padding: 5px 14px;
+    background: #6366f1;
+    color: #fff;
+    font-weight: 700;
+    font-size: 8.2pt;
+    cursor: pointer;
+  }
+
+  /* Header */
+  header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 5mm;
+    align-items: center;
+    padding-bottom: 2mm;
+    border-bottom: 2.5px solid var(--brand);
+  }
+  .eyebrow {
+    margin: 0 0 0.5mm;
+    color: var(--brand);
+    font-size: 6.8pt;
+    font-weight: 800;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 15.5pt;
+    line-height: 1.08;
+    letter-spacing: -.3px;
+    font-weight: 800;
+  }
+  .subtitle {
+    margin: 0.8mm 0 0;
+    color: var(--muted);
+    font-size: 8.2pt;
+    font-weight: 500;
+  }
+  .logo-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 15.5mm;
+    height: 15.5mm;
+    border-radius: 3.5mm;
+    background: linear-gradient(135deg, #1e1b4b 0%, #3730a3 55%, #0284c7 100%);
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(55,48,163,0.22);
+  }
+  .logo-badge .title {
+    font-size: 12pt;
+    font-weight: 900;
+    letter-spacing: .5px;
+    line-height: 1;
+  }
+  .logo-badge .sub {
+    font-size: 4.8pt;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    opacity: .9;
+    margin-top: 1px;
+  }
+
+  /* URL & QR Hero Banner */
+  .portal-banner {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 4mm;
+    align-items: center;
+    margin: 2.2mm 0 2.4mm;
+    padding: 2.2mm 3.2mm;
+    border-radius: 6px;
+    background: linear-gradient(to right, #eef2ff, #f8fafc);
+    border: 1px solid #c7d2fe;
+  }
+  .qr-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #fff;
+    padding: 1.2mm;
+    border-radius: 5px;
+    border: 1px solid #c7d2fe;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .qr-box svg {
+    width: 18.5mm;
+    height: 18.5mm;
+    display: block;
+  }
+  .qr-box span {
+    font-size: 5.2pt;
+    font-weight: 800;
+    color: var(--brand);
+    letter-spacing: .08em;
+    margin-top: 0.8mm;
+    text-transform: uppercase;
+  }
+  .portal-info h2 {
+    margin: 0 0 0.8mm;
+    font-size: 9.2pt;
+    color: var(--ink);
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .url-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5mm 3.5mm;
+    align-items: baseline;
+    margin-bottom: 0.8mm;
+  }
+  .url-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 1.2mm;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    padding: 0.8mm 2mm;
+    border-radius: 4px;
+    font-size: 7.7pt;
+  }
+  .url-pill strong { color: var(--brand); font-size: 7pt; text-transform: uppercase; letter-spacing: .06em; }
+  .url-pill code {
+    font-family: Consolas, "Courier New", monospace;
+    font-weight: 700;
+    color: var(--ink);
+    font-size: 8.3pt;
+  }
+  .pwa-note {
+    margin: 0;
+    font-size: 7.5pt;
+    color: #475569;
+    line-height: 1.22;
+  }
+  .pwa-note strong { color: #0f172a; }
+  .badge-pwa {
+    align-self: center;
+    background: var(--brand);
+    color: #fff;
+    padding: 1.6mm 2.8mm;
+    border-radius: 5px;
+    text-align: center;
+    font-size: 6.6pt;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: .03em;
+  }
+
+  /* Two Column Layout */
+  .columns {
+    display: grid;
+    grid-template-columns: 0.98fr 1.32fr;
+    gap: 3mm;
+    align-items: start;
+  }
+
+  /* Card Sections */
+  section {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    break-inside: avoid;
+    background: #fff;
+  }
+  section + section { margin-top: 2.2mm; }
+  
+  .sec-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.5mm 2.8mm;
+    background: var(--ink);
+    color: #fff;
+  }
+  .sec-header h3 {
+    margin: 0;
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: .02em;
+    display: flex;
+    align-items: center;
+    gap: 1.8mm;
+  }
+  .sec-header .tag {
+    font-size: 6.2pt;
+    background: rgba(255,255,255,0.18);
+    padding: 0.5mm 1.8mm;
+    border-radius: 3px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  .inside { padding: 2mm 2.6mm; }
+  
+  /* Compact Lists & Blocks */
+  .sub-block + .sub-block {
+    margin-top: 1.6mm;
+    padding-top: 1.6mm;
+    border-top: 1px solid #e2e8f0;
+  }
+  .sub-title {
+    margin: 0 0 0.8mm;
+    font-size: 7.9pt;
+    font-weight: 800;
+    color: var(--brand);
+    display: flex;
+    align-items: center;
+    gap: 1.2mm;
+  }
+  ol, ul { margin: 0; padding-left: 3.8mm; }
+  li { margin-bottom: 0.8mm; font-size: 7.8pt; color: #334155; }
+  li:last-child { margin-bottom: 0; }
+  strong { color: var(--ink); }
+
+  /* Callout boxes */
+  .callout {
+    margin-top: 1.5mm;
+    padding: 1.4mm 2.2mm;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+    background: var(--accent-soft);
+    font-size: 7.4pt;
+    line-height: 1.22;
+    color: #0369a1;
+  }
+  .callout.danger {
+    border-left-color: var(--danger);
+    background: var(--danger-soft);
+    color: #991b1b;
+  }
+  .callout.success {
+    border-left-color: var(--success);
+    background: var(--success-soft);
+    color: #166534;
+  }
+  .callout.warn {
+    border-left-color: var(--warn);
+    background: var(--warn-soft);
+    color: #92400e;
+  }
+
+  /* Step numbered list */
+  .ops-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.6mm;
+  }
+  .op-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 1.5mm 2mm;
+  }
+  .op-card.full {
+    grid-column: span 2;
+  }
+  .op-card h4 {
+    margin: 0 0 0.6mm;
+    font-size: 7.8pt;
+    font-weight: 800;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 1.2mm;
+  }
+  .op-card h4 .dot {
+    width: 1.8mm;
+    height: 1.8mm;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot.purple { background: #7c3aed; }
+  .dot.amber { background: #d97706; }
+  .dot.rose { background: #e11d48; }
+  .dot.teal { background: #0d9488; }
+  .op-card p {
+    margin: 0;
+    font-size: 7.4pt;
+    line-height: 1.22;
+    color: #475569;
+  }
+
+  .step-flow { counter-reset: stepnum; }
+  .step-item {
+    position: relative;
+    padding: 0 0 1.4mm 5.2mm;
+    border-bottom: 1px dashed #e2e8f0;
+    margin-bottom: 1.4mm;
+  }
+  .step-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+  .step-item::before {
+    counter-increment: stepnum;
+    content: counter(stepnum);
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: grid;
+    width: 4mm;
+    height: 4mm;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--brand);
+    color: #fff;
+    font-size: 6.4pt;
+    font-weight: 800;
+  }
+  .step-item h4 {
+    margin: 0 0 0.5mm;
+    font-size: 7.9pt;
+    color: var(--ink);
+    font-weight: 800;
+  }
+  .step-item p {
+    margin: 0;
+    font-size: 7.6pt;
+    color: #334155;
+    line-height: 1.22;
+  }
+
+  /* Footer */
+  footer {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 3mm;
+    align-items: center;
+    margin-top: 2.2mm;
+    padding-top: 1.6mm;
+    border-top: 1.5px solid var(--line);
+    color: var(--muted);
+    font-size: 7.2pt;
+  }
+  footer strong { color: var(--ink); }
+  .pill-badge {
+    padding: 1mm 2.4mm;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 800;
+    font-size: 7pt;
+    white-space: nowrap;
+    letter-spacing: .04em;
+  }
+
+  @media print {
+    body { background: #fff; }
+    .sheet { width: auto; margin: 0; padding: 0; }
+    .printbar { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <div class="printbar">
+    Official NIT Patna SafeExit Warden SOP. Single-Page A4 Sheet. Press Ctrl + P and choose "Save as PDF".
+    <button type="button" onclick="window.print()">Print / Save PDF</button>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div>
+      <p class="eyebrow">National Institute of Technology Patna &bull; Hostel Administration</p>
+      <h1>NITP-SafeExit &mdash; Warden Operating Procedure (SOP)</h1>
+      <p class="subtitle">Official setup, device installation, and daily operational reference for Wardens &amp; Asst. Wardens.</p>
+    </div>
+    <div class="logo-badge" aria-hidden="true">
+      <span class="title">SE</span>
+      <span class="sub">Warden</span>
+    </div>
+  </header>
+
+  <!-- Portal & Download Banner with Scannable QR -->
+  <div class="portal-banner">
+    <div class="qr-box">
+      <!-- Embedded Vector QR code for https://erp.nitp.ac.in/safeexit -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 33 33" shape-rendering="crispEdges">
+        <rect width="33" height="33" fill="#ffffff"/>
+        <path d="M0,0h1v1h-1z M1,0h1v1h-1z M2,0h1v1h-1z M3,0h1v1h-1z M4,0h1v1h-1z M5,0h1v1h-1z M6,0h1v1h-1z M9,0h1v1h-1z M11,0h1v1h-1z M13,0h1v1h-1z M14,0h1v1h-1z M15,0h1v1h-1z M16,0h1v1h-1z M17,0h1v1h-1z M18,0h1v1h-1z M19,0h1v1h-1z M21,0h1v1h-1z M22,0h1v1h-1z M24,0h1v1h-1z M26,0h1v1h-1z M27,0h1v1h-1z M28,0h1v1h-1z M29,0h1v1h-1z M30,0h1v1h-1z M31,0h1v1h-1z M32,0h1v1h-1z M0,1h1v1h-1z M6,1h1v1h-1z M10,1h1v1h-1z M11,1h1v1h-1z M12,1h1v1h-1z M13,1h1v1h-1z M14,1h1v1h-1z M15,1h1v1h-1z M17,1h1v1h-1z M18,1h1v1h-1z M19,1h1v1h-1z M20,1h1v1h-1z M22,1h1v1h-1z M24,1h1v1h-1z M26,1h1v1h-1z M32,1h1v1h-1z M0,2h1v1h-1z M2,2h1v1h-1z M3,2h1v1h-1z M4,2h1v1h-1z M6,2h1v1h-1z M8,2h1v1h-1z M9,2h1v1h-1z M14,2h1v1h-1z M15,2h1v1h-1z M19,2h1v1h-1z M21,2h1v1h-1z M22,2h1v1h-1z M23,2h1v1h-1z M24,2h1v1h-1z M26,2h1v1h-1z M28,2h1v1h-1z M29,2h1v1h-1z M30,2h1v1h-1z M32,2h1v1h-1z M0,3h1v1h-1z M2,3h1v1h-1z M3,3h1v1h-1z M4,3h1v1h-1z M6,3h1v1h-1z M8,3h1v1h-1z M9,3h1v1h-1z M10,3h1v1h-1z M12,3h1v1h-1z M15,3h1v1h-1z M16,3h1v1h-1z M18,3h1v1h-1z M20,3h1v1h-1z M21,3h1v1h-1z M23,3h1v1h-1z M24,3h1v1h-1z M26,3h1v1h-1z M28,3h1v1h-1z M29,3h1v1h-1z M30,3h1v1h-1z M32,3h1v1h-1z M0,4h1v1h-1z M2,4h1v1h-1z M3,4h1v1h-1z M4,4h1v1h-1z M6,4h1v1h-1z M11,4h1v1h-1z M12,4h1v1h-1z M15,4h1v1h-1z M16,4h1v1h-1z M20,4h1v1h-1z M21,4h1v1h-1z M22,4h1v1h-1z M23,4h1v1h-1z M26,4h1v1h-1z M28,4h1v1h-1z M29,4h1v1h-1z M30,4h1v1h-1z M32,4h1v1h-1z M0,5h1v1h-1z M6,5h1v1h-1z M10,5h1v1h-1z M12,5h1v1h-1z M13,5h1v1h-1z M14,5h1v1h-1z M15,5h1v1h-1z M16,5h1v1h-1z M18,5h1v1h-1z M20,5h1v1h-1z M21,5h1v1h-1z M22,5h1v1h-1z M24,5h1v1h-1z M26,5h1v1h-1z M32,5h1v1h-1z M0,6h1v1h-1z M1,6h1v1h-1z M2,6h1v1h-1z M3,6h1v1h-1z M4,6h1v1h-1z M5,6h1v1h-1z M6,6h1v1h-1z M8,6h1v1h-1z M10,6h1v1h-1z M12,6h1v1h-1z M14,6h1v1h-1z M16,6h1v1h-1z M18,6h1v1h-1z M20,6h1v1h-1z M22,6h1v1h-1z M24,6h1v1h-1z M26,6h1v1h-1z M27,6h1v1h-1z M28,6h1v1h-1z M29,6h1v1h-1z M30,6h1v1h-1z M31,6h1v1h-1z M32,6h1v1h-1z M9,7h1v1h-1z M11,7h1v1h-1z M13,7h1v1h-1z M14,7h1v1h-1z M17,7h1v1h-1z M22,7h1v1h-1z M23,7h1v1h-1z M3,8h1v1h-1z M4,8h1v1h-1z M6,8h1v1h-1z M7,8h1v1h-1z M9,8h1v1h-1z M10,8h1v1h-1z M11,8h1v1h-1z M14,8h1v1h-1z M16,8h1v1h-1z M17,8h1v1h-1z M20,8h1v1h-1z M23,8h1v1h-1z M29,8h1v1h-1z M30,8h1v1h-1z M2,9h1v1h-1z M3,9h1v1h-1z M4,9h1v1h-1z M5,9h1v1h-1z M8,9h1v1h-1z M11,9h1v1h-1z M13,9h1v1h-1z M15,9h1v1h-1z M17,9h1v1h-1z M22,9h1v1h-1z M23,9h1v1h-1z M25,9h1v1h-1z M27,9h1v1h-1z M28,9h1v1h-1z M30,9h1v1h-1z M31,9h1v1h-1z M0,10h1v1h-1z M1,10h1v1h-1z M4,10h1v1h-1z M6,10h1v1h-1z M8,10h1v1h-1z M9,10h1v1h-1z M11,10h1v1h-1z M15,10h1v1h-1z M16,10h1v1h-1z M20,10h1v1h-1z M21,10h1v1h-1z M23,10h1v1h-1z M25,10h1v1h-1z M27,10h1v1h-1z M30,10h1v1h-1z M31,10h1v1h-1z M32,10h1v1h-1z M0,11h1v1h-1z M2,11h1v1h-1z M3,11h1v1h-1z M4,11h1v1h-1z M7,11h1v1h-1z M8,11h1v1h-1z M11,11h1v1h-1z M12,11h1v1h-1z M13,11h1v1h-1z M15,11h1v1h-1z M17,11h1v1h-1z M18,11h1v1h-1z M19,11h1v1h-1z M20,11h1v1h-1z M26,11h1v1h-1z M27,11h1v1h-1z M28,11h1v1h-1z M30,11h1v1h-1z M31,11h1v1h-1z M0,12h1v1h-1z M1,12h1v1h-1z M2,12h1v1h-1z M3,12h1v1h-1z M4,12h1v1h-1z M6,12h1v1h-1z M7,12h1v1h-1z M10,12h1v1h-1z M19,12h1v1h-1z M21,12h1v1h-1z M22,12h1v1h-1z M26,12h1v1h-1z M27,12h1v1h-1z M29,12h1v1h-1z M32,12h1v1h-1z M2,13h1v1h-1z M3,13h1v1h-1z M5,13h1v1h-1z M8,13h1v1h-1z M10,13h1v1h-1z M11,13h1v1h-1z M12,13h1v1h-1z M15,13h1v1h-1z M18,13h1v1h-1z M19,13h1v1h-1z M20,13h1v1h-1z M21,13h1v1h-1z M22,13h1v1h-1z M23,13h1v1h-1z M25,13h1v1h-1z M27,13h1v1h-1z M29,13h1v1h-1z M30,13h1v1h-1z M31,13h1v1h-1z M0,14h1v1h-1z M2,14h1v1h-1z M3,14h1v1h-1z M4,14h1v1h-1z M5,14h1v1h-1z M6,14h1v1h-1z M7,14h1v1h-1z M8,14h1v1h-1z M10,14h1v1h-1z M11,14h1v1h-1z M12,14h1v1h-1z M14,14h1v1h-1z M18,14h1v1h-1z M20,14h1v1h-1z M25,14h1v1h-1z M26,14h1v1h-1z M27,14h1v1h-1z M28,14h1v1h-1z M29,14h1v1h-1z M30,14h1v1h-1z M0,15h1v1h-1z M1,15h1v1h-1z M2,15h1v1h-1z M7,15h1v1h-1z M12,15h1v1h-1z M13,15h1v1h-1z M17,15h1v1h-1z M19,15h1v1h-1z M20,15h1v1h-1z M24,15h1v1h-1z M25,15h1v1h-1z M26,15h1v1h-1z M29,15h1v1h-1z M30,15h1v1h-1z M31,15h1v1h-1z M0,16h1v1h-1z M1,16h1v1h-1z M5,16h1v1h-1z M6,16h1v1h-1z M7,16h1v1h-1z M8,16h1v1h-1z M11,16h1v1h-1z M12,16h1v1h-1z M14,16h1v1h-1z M17,16h1v1h-1z M20,16h1v1h-1z M25,16h1v1h-1z M26,16h1v1h-1z M27,16h1v1h-1z M28,16h1v1h-1z M29,16h1v1h-1z M31,16h1v1h-1z M2,17h1v1h-1z M9,17h1v1h-1z M10,17h1v1h-1z M11,17h1v1h-1z M12,17h1v1h-1z M14,17h1v1h-1z M15,17h1v1h-1z M19,17h1v1h-1z M20,17h1v1h-1z M22,17h1v1h-1z M24,17h1v1h-1z M26,17h1v1h-1z M27,17h1v1h-1z M28,17h1v1h-1z M29,17h1v1h-1z M32,17h1v1h-1z M1,18h1v1h-1z M3,18h1v1h-1z M4,18h1v1h-1z M6,18h1v1h-1z M7,18h1v1h-1z M9,18h1v1h-1z M10,18h1v1h-1z M12,18h1v1h-1z M14,18h1v1h-1z M15,18h1v1h-1z M17,18h1v1h-1z M18,18h1v1h-1z M19,18h1v1h-1z M21,18h1v1h-1z M22,18h1v1h-1z M23,18h1v1h-1z M25,18h1v1h-1z M27,18h1v1h-1z M29,18h1v1h-1z M30,18h1v1h-1z M32,18h1v1h-1z M0,19h1v1h-1z M1,19h1v1h-1z M4,19h1v1h-1z M8,19h1v1h-1z M9,19h1v1h-1z M10,19h1v1h-1z M11,19h1v1h-1z M12,19h1v1h-1z M13,19h1v1h-1z M14,19h1v1h-1z M17,19h1v1h-1z M23,19h1v1h-1z M24,19h1v1h-1z M26,19h1v1h-1z M27,19h1v1h-1z M28,19h1v1h-1z M29,19h1v1h-1z M30,19h1v1h-1z M31,19h1v1h-1z M4,20h1v1h-1z M6,20h1v1h-1z M7,20h1v1h-1z M14,20h1v1h-1z M15,20h1v1h-1z M16,20h1v1h-1z M20,20h1v1h-1z M22,20h1v1h-1z M24,20h1v1h-1z M27,20h1v1h-1z M29,20h1v1h-1z M0,21h1v1h-1z M4,21h1v1h-1z M5,21h1v1h-1z M8,21h1v1h-1z M9,21h1v1h-1z M11,21h1v1h-1z M12,21h1v1h-1z M14,21h1v1h-1z M15,21h1v1h-1z M16,21h1v1h-1z M19,21h1v1h-1z M20,21h1v1h-1z M22,21h1v1h-1z M24,21h1v1h-1z M25,21h1v1h-1z M28,21h1v1h-1z M30,21h1v1h-1z M0,22h1v1h-1z M3,22h1v1h-1z M6,22h1v1h-1z M7,22h1v1h-1z M9,22h1v1h-1z M10,22h1v1h-1z M11,22h1v1h-1z M12,22h1v1h-1z M13,22h1v1h-1z M14,22h1v1h-1z M16,22h1v1h-1z M18,22h1v1h-1z M19,22h1v1h-1z M20,22h1v1h-1z M21,22h1v1h-1z M23,22h1v1h-1z M24,22h1v1h-1z M26,22h1v1h-1z M27,22h1v1h-1z M29,22h1v1h-1z M31,22h1v1h-1z M32,22h1v1h-1z M0,23h1v1h-1z M9,23h1v1h-1z M11,23h1v1h-1z M12,23h1v1h-1z M14,23h1v1h-1z M16,23h1v1h-1z M17,23h1v1h-1z M18,23h1v1h-1z M19,23h1v1h-1z M23,23h1v1h-1z M28,23h1v1h-1z M30,23h1v1h-1z M32,23h1v1h-1z M0,24h1v1h-1z M1,24h1v1h-1z M2,24h1v1h-1z M4,24h1v1h-1z M5,24h1v1h-1z M6,24h1v1h-1z M7,24h1v1h-1z M8,24h1v1h-1z M11,24h1v1h-1z M13,24h1v1h-1z M16,24h1v1h-1z M19,24h1v1h-1z M23,24h1v1h-1z M24,24h1v1h-1z M25,24h1v1h-1z M26,24h1v1h-1z M27,24h1v1h-1z M28,24h1v1h-1z M8,25h1v1h-1z M9,25h1v1h-1z M10,25h1v1h-1z M11,25h1v1h-1z M12,25h1v1h-1z M13,25h1v1h-1z M15,25h1v1h-1z M17,25h1v1h-1z M18,25h1v1h-1z M19,25h1v1h-1z M20,25h1v1h-1z M21,25h1v1h-1z M24,25h1v1h-1z M28,25h1v1h-1z M30,25h1v1h-1z M31,25h1v1h-1z M0,26h1v1h-1z M1,26h1v1h-1z M2,26h1v1h-1z M3,26h1v1h-1z M4,26h1v1h-1z M5,26h1v1h-1z M6,26h1v1h-1z M8,26h1v1h-1z M9,26h1v1h-1z M10,26h1v1h-1z M11,26h1v1h-1z M12,26h1v1h-1z M13,26h1v1h-1z M14,26h1v1h-1z M15,26h1v1h-1z M16,26h1v1h-1z M17,26h1v1h-1z M19,26h1v1h-1z M20,26h1v1h-1z M23,26h1v1h-1z M24,26h1v1h-1z M26,26h1v1h-1z M28,26h1v1h-1z M29,26h1v1h-1z M0,27h1v1h-1z M6,27h1v1h-1z M10,27h1v1h-1z M11,27h1v1h-1z M13,27h1v1h-1z M15,27h1v1h-1z M16,27h1v1h-1z M21,27h1v1h-1z M22,27h1v1h-1z M24,27h1v1h-1z M28,27h1v1h-1z M30,27h1v1h-1z M31,27h1v1h-1z M0,28h1v1h-1z M2,28h1v1h-1z M3,28h1v1h-1z M4,28h1v1h-1z M6,28h1v1h-1z M8,28h1v1h-1z M9,28h1v1h-1z M10,28h1v1h-1z M12,28h1v1h-1z M16,28h1v1h-1z M18,28h1v1h-1z M19,28h1v1h-1z M21,28h1v1h-1z M22,28h1v1h-1z M23,28h1v1h-1z M24,28h1v1h-1z M25,28h1v1h-1z M26,28h1v1h-1z M27,28h1v1h-1z M28,28h1v1h-1z M29,28h1v1h-1z M31,28h1v1h-1z M0,29h1v1h-1z M2,29h1v1h-1z M3,29h1v1h-1z M4,29h1v1h-1z M6,29h1v1h-1z M8,29h1v1h-1z M9,29h1v1h-1z M13,29h1v1h-1z M14,29h1v1h-1z M15,29h1v1h-1z M16,29h1v1h-1z M17,29h1v1h-1z M19,29h1v1h-1z M20,29h1v1h-1z M21,29h1v1h-1z M22,29h1v1h-1z M23,29h1v1h-1z M25,29h1v1h-1z M27,29h1v1h-1z M30,29h1v1h-1z M31,29h1v1h-1z M0,30h1v1h-1z M2,30h1v1h-1z M3,30h1v1h-1z M4,30h1v1h-1z M6,30h1v1h-1z M11,30h1v1h-1z M12,30h1v1h-1z M13,30h1v1h-1z M16,30h1v1h-1z M18,30h1v1h-1z M20,30h1v1h-1z M21,30h1v1h-1z M22,30h1v1h-1z M28,30h1v1h-1z M30,30h1v1h-1z M31,30h1v1h-1z M32,30h1v1h-1z M0,31h1v1h-1z M6,31h1v1h-1z M11,31h1v1h-1z M12,31h1v1h-1z M15,31h1v1h-1z M16,31h1v1h-1z M17,31h1v1h-1z M18,31h1v1h-1z M19,31h1v1h-1z M20,31h1v1h-1z M21,31h1v1h-1z M22,31h1v1h-1z M29,31h1v1h-1z M30,31h1v1h-1z M31,31h1v1h-1z M32,31h1v1h-1z M0,32h1v1h-1z M1,32h1v1h-1z M2,32h1v1h-1z M3,32h1v1h-1z M4,32h1v1h-1z M5,32h1v1h-1z M6,32h1v1h-1z M11,32h1v1h-1z M12,32h1v1h-1z M13,32h1v1h-1z M14,32h1v1h-1z M16,32h1v1h-1z M17,32h1v1h-1z M19,32h1v1h-1z M20,32h1v1h-1z M22,32h1v1h-1z M23,32h1v1h-1z M24,32h1v1h-1z M25,32h1v1h-1z M26,32h1v1h-1z M28,32h1v1h-1z M29,32h1v1h-1z" fill="#1e1b4b"/>
+      </svg>
+      <span>Scan to Open</span>
+    </div>
+    <div class="portal-info">
+      <h2>Official SafeExit Portal &amp; Web App</h2>
+      <div class="url-group">
+        <span class="url-pill"><strong>Portal Link:</strong> <code>erp.nitp.ac.in/safeexit</code></span>
+        <span class="url-pill"><strong>Warden Direct:</strong> <code>erp.nitp.ac.in/safeexit/login/warden</code></span>
+      </div>
+      <p class="pwa-note">
+        <strong>PWA Installation:</strong> SafeExit is an installable <em>Progressive Web App</em>. Wardens do not need to download an APK or search app stores. Install directly to your phone/PC home screen for native app speed and push alerts.
+      </p>
+    </div>
+    <div class="badge-pwa">
+      PWA App<br/>Android &bull; iOS<br/>PC / Mac
+    </div>
+  </div>
+
+  <!-- Main 2-Column Content -->
+  <div class="columns">
+    <!-- LEFT COLUMN: Install & Sign-in Setup -->
+    <div>
+      <!-- Section 1: Installation -->
+      <section>
+        <div class="sec-header">
+          <h3>1. Download &amp; Install the App</h3>
+          <span class="tag">One-Time</span>
+        </div>
+        <div class="inside">
+          <div class="sub-block">
+            <div class="sub-title">Android Phones (Google Chrome)</div>
+            <ol>
+              <li>Open <strong>erp.nitp.ac.in/safeexit</strong> in <strong>Chrome</strong> (not WhatsApp/in-app).</li>
+              <li>Tap the bottom banner <strong>Install SafeExit</strong>.</li>
+              <li>Or tap Chrome menu (<strong>&vellip;</strong>) &rarr; tap <strong>Install app</strong> / <strong>Add to Home screen</strong>.</li>
+              <li>Confirm <strong>Install</strong>. Launch SafeExit from your home screen icon.</li>
+            </ol>
+          </div>
+
+          <div class="sub-block">
+            <div class="sub-title">iPhone / iPad (Apple Safari)</div>
+            <ol>
+              <li>Open <strong>erp.nitp.ac.in/safeexit</strong> in <strong>Safari</strong>.</li>
+              <li>Tap the <strong>Share</strong> icon (square with upward arrow).</li>
+              <li>Scroll down and select <strong>Add to Home Screen</strong>.</li>
+              <li>Tap <strong>Add</strong> in the top-right. Open SafeExit like any iOS app.</li>
+            </ol>
+          </div>
+
+          <div class="sub-block">
+            <div class="sub-title">Laptops &amp; PCs (Chrome / MS Edge)</div>
+            <ol>
+              <li>Open the portal link in Chrome or Edge.</li>
+              <li>Click the <strong>Install</strong> icon in the address bar (right corner).</li>
+              <li>Click <strong>Install</strong> to add SafeExit as a desktop application.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: Sign-in & Authentication -->
+      <section>
+        <div class="sec-header">
+          <h3>2. Sign-In &amp; Authentication</h3>
+          <span class="tag">Security</span>
+        </div>
+        <div class="inside">
+          <ol>
+            <li>Launch the installed app, or open <strong>/login/warden</strong>.</li>
+            <li>Tap <strong>Sign in with Google</strong>.</li>
+            <li>Select your official Institute email (<strong>@nitp.ac.in</strong>).</li>
+            <li><strong>Zero Password Hassle:</strong> No passwords, IDs, or PINs to remember or risk sharing. Access is strictly tied to verified college credentials.</li>
+            <li><strong>Auto-Hostel Assignment:</strong> The system automatically binds you to your designated hostel (Aryabhatta, Brahmaputra, Kosi, Ganga, Bagmati).</li>
+          </ol>
+          <div class="callout warn">
+            <strong>Access Note:</strong> Only accounts pre-approved by the Chief Warden / Admin can log in. If you see <em>"Not registered as warden"</em>, contact the hostel administrator.
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 3: Crucial Profile Setup -->
+      <section>
+        <div class="sec-header">
+          <h3>3. First-Time Setup Checklist</h3>
+          <span class="tag">Required</span>
+        </div>
+        <div class="inside">
+          <ul style="padding-left: 4.5mm;">
+            <li><strong>Upload / Draw Digital Signature:</strong> Go to <em>Profile</em> or <em>Leave Desk</em> &rarr; draw or upload your signature once. Your signature is permanently stamped on approved leave gate passes.</li>
+            <li><strong>Enable Push Notifications:</strong> Tap <strong>"Enable"</strong> when prompted. Allows immediate sound and notification alerts for new leave requests &amp; emergencies even when the app is closed.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!-- RIGHT COLUMN: Daily Operations & Workflows -->
+    <div>
+      <section>
+        <div class="sec-header">
+          <h3>4. Daily Operational Workflow &amp; Responsibilities</h3>
+          <span class="tag">Daily Desk</span>
+        </div>
+        <div class="inside">
+          <!-- Step flow for Leave Desk -->
+          <div class="step-flow">
+            <div class="step-item">
+              <h4>Review Leave Applications (Leave Desk)</h4>
+              <p>
+                <strong>Girls' Hostels:</strong> Every leave request arrives concurrently on the Warden, Asst. Warden, and Caretaker queues. <em>The first officer to act decides.</em> Verify student face photo, roll number, leave duration, reason, destination, and parent contact.
+              </p>
+              <p style="margin-top: 1mm;">
+                <strong>Boys' Hostels:</strong> Leave requests are auto-approved per institute policy. Wardens hold full authority to review, audit, or <strong>Revoke</strong> approval at any point.
+              </p>
+            </div>
+
+            <div class="step-item">
+              <h4>Approve or Reject with 1 Tap</h4>
+              <p>
+                Tap <strong>Approve</strong> &mdash; your stored digital signature is cryptographically affixed to the pass, and the student's gate exit QR code is generated instantly. If rejecting, provide a clear brief reason.
+              </p>
+            </div>
+
+            <div class="step-item">
+              <h4>Local Daily Outings (Curfew Rules)</h4>
+              <p>
+                Routine daily outings do <em>not</em> require manual warden approval. Students scan out and in at the main gate scanner. Outings are automatically tracked against evening curfew hours.
+              </p>
+            </div>
+          </div>
+
+          <!-- Feature Cards Grid -->
+          <div class="ops-grid" style="margin-top: 2.2mm;">
+            <div class="op-card">
+              <h4><span class="dot rose"></span> Emergency SOS Alerts</h4>
+              <p>
+                High-priority visual &amp; audio siren for any student in distress. Displays student identity, room number, exact timestamp, and 1-tap phone dials to student &amp; parent.
+              </p>
+            </div>
+
+            <div class="op-card">
+              <h4><span class="dot amber"></span> Overdue Tracking</h4>
+              <p>
+                Instantly lists students who missed their gate curfew or leave return deadline. One-tap direct call to student and guardian for prompt follow-up.
+              </p>
+            </div>
+
+            <div class="op-card">
+              <h4><span class="dot purple"></span> Student Delay Notices</h4>
+              <p>
+                Review advance late-arrival submissions filed by students prior to curfew deadline explaining transit delays with supporting details.
+              </p>
+            </div>
+
+            <div class="op-card">
+              <h4><span class="dot teal"></span> Live Movement Logs</h4>
+              <p>
+                24/7 searchable real-time audit trail of all student gate entries and exits scoped exclusively to your assigned hostel.
+              </p>
+            </div>
+          </div>
+
+          <div class="callout danger" style="margin-top: 2.2mm;">
+            <strong>Hostel Safety Rule:</strong> Treat all Active SOS alerts and Overdue flags as immediate priority. Coordinate with gate security and the hostel caretaker for rapid physical checks.
+          </div>
+        </div>
+      </section>
+
+      <!-- Security & FAQ Box -->
+      <section>
+        <div class="sec-header">
+          <h3>5. Quick Troubleshooting &amp; Guidelines</h3>
+          <span class="tag">Support</span>
+        </div>
+        <div class="inside">
+          <ul style="padding-left: 4.5mm;">
+            <li><strong>Multiple Wardens:</strong> Decisions sync live across all wardens and caretakers of your hostel. Once decided, the entry clears from other officers' queues.</li>
+            <li><strong>Offline / Slow Network:</strong> The PWA caches offline data and will automatically synchronize pending actions when network connectivity resumes.</li>
+            <li><strong>Signature Changes:</strong> To update your stored signature, visit the <em>Profile</em> tab and tap <em>Edit Signature</em>.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div>
+      <strong>NITP-SafeExit Hostel Administration</strong> &bull; Developed for NIT Patna Hostels. For account provisioning, email support: <strong>admin@nitp.ac.in</strong> or contact the Chief Warden Office.
+    </div>
+    <div class="pill-badge">NIT Patna SafeExit &bull; Warden SOP</div>
+  </footer>
+</main>
+</body>
+</html>

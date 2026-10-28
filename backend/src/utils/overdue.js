@@ -15,12 +15,20 @@ const getAwayStudentIds = async () => {
 
   const overdueIds = new Set();
   const onLeaveIds = new Set();
+  const leaveReturnDates = new Map();
   for (const o of outings) if (isReturnLate(o.inTime)) overdueIds.add(String(o.studentId));
-  for (const l of leaves) onLeaveIds.add(String(l.studentId));
+  for (const l of leaves) {
+    const sid = String(l.studentId);
+    onLeaveIds.add(sid);
+    if (l.returnDate) leaveReturnDates.set(sid, l.returnDate);
+  }
   // Only reachable through bad data (one live outing and one live leave): a late outing is
   // what the guard has to act on.
-  for (const id of overdueIds) onLeaveIds.delete(id);
-  return { overdueIds, onLeaveIds };
+  for (const id of overdueIds) {
+    onLeaveIds.delete(id);
+    leaveReturnDates.delete(id);
+  }
+  return { overdueIds, onLeaveIds, leaveReturnDates };
 };
 
 const getOverdueStudentIds = async () => (await getAwayStudentIds()).overdueIds;

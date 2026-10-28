@@ -165,7 +165,7 @@ const getUsers = async (req, res) => {
     }
 
     // Needed both to filter and to overlay, so it is read once, before the query.
-    const { overdueIds, onLeaveIds } = await getAwayStudentIds();
+    const { overdueIds, onLeaveIds, leaveReturnDates } = await getAwayStudentIds();
     const overdueList = [...overdueIds];
 
     // Same buckets as getStudentCounts, so a filtered roster lists exactly the students
@@ -248,6 +248,9 @@ const getUsers = async (req, res) => {
       if (OUTSIDE_STATUSES.includes(u.campusStatus)) {
         const id = String(u.id);
         u.campusStatus = overdueIds.has(id) ? 'Overdue' : onLeaveIds.has(id) ? 'OnLeave' : 'Outside';
+        if (u.campusStatus === 'OnLeave') {
+          u.expectedReturnDate = leaveReturnDates ? leaveReturnDates.get(id) || null : null;
+        }
       }
       if (req.user.role === 'Guard') {
         if (u.campusStatus === 'OnLeave') {
