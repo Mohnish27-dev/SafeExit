@@ -6,8 +6,6 @@ import { Shield, Headphones, ShieldCheck, GraduationCap, UserCog, UserCheck, Cro
 import Image from "next/image";
 import Link from "next/link";
 import caretakerIllustration from "../../../public/images/login/caretaker.png";
-import { getToken } from "@/app/lib/auth";
-import { getStoredUser } from "@/app/lib/userProfile";
 import { GOOGLE_LOGIN_KEYS } from "@/app/lib/wardenGoogleLogin";
 import TeamCreditLink from "@/app/components/TeamCreditLink";
 import { BASE_PATH } from "@/app/lib/basePath";
@@ -29,15 +27,6 @@ const ROLE_LOGIN_PATH = {
   warden: "/login/warden",
   "chief-warden": "/login/chief-warden",
   security: "/login/security",
-};
-
-const ROLE_DASHBOARD = {
-  student: "/dashboard/student",
-  caretaker: "/dashboard/caretaker",
-  warden: "/dashboard/warden",
-  "chief-warden": "/dashboard/chief-warden",
-  security: "/dashboard/security",
-  admin: "/dashboard/admin",
 };
 
 // The versioned filename prevents Next/Image from serving the previously cached single-student artwork.
@@ -244,14 +233,9 @@ export default function LoginRoleSelect() {
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- hydrate role/session state from browser storage once on mount */
-    // Active session? Go straight to the dashboard
-    const token = getToken();
-    if (token) {
-      const user = getStoredUser();
-      const dest = ROLE_DASHBOARD[user?.role] || "/dashboard/student";
-      setPageState("redirect");
-      router.replace(dest);
-      return;
+    // Always require fresh authentication when visiting login
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("safeexit_token");
     }
 
     const found = Object.entries(ROLE_PIN_KEYS)

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import en from "./translations/en";
 import hi from "./translations/hi";
+import { getTranslatedHostelName } from "./hostels";
 
 const translations = { en, hi };
 
@@ -28,6 +29,12 @@ export function LanguageProvider({ children }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = locale;
+    }
+  }, [locale]);
+
   const setLocale = useCallback((lang) => {
     setLocaleState(lang);
     try {
@@ -43,7 +50,6 @@ export function LanguageProvider({ children }) {
     </LanguageContext.Provider>
   );
 }
-
 
 export function useTranslation(namespace) {
   const { locale, setLocale } = useContext(LanguageContext);
@@ -63,9 +69,14 @@ export function useTranslation(namespace) {
 
       if (!params) return str;
       // Unknown placeholders are left as-is — a visible `{name}` beats silently dropping it.
-      return str.replace(/\{(\w+)\}/g, (match, slot) =>
-        slot in params ? params[slot] : match
-      );
+      return str.replace(/\{(\w+)\}/g, (match, slot) => {
+        if (!(slot in params)) return match;
+        const val = params[slot];
+        if (slot === "hostel" && locale === "hi") {
+          return getTranslatedHostelName(val, "hi");
+        }
+        return val;
+      });
     },
     [locale, namespace]
   );

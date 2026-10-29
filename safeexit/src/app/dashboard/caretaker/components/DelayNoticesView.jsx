@@ -15,6 +15,7 @@ import { apiFetch } from "@/app/lib/api";
 import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { getInitials } from "@/app/lib/userProfile";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
+import { getTranslatedHostelName } from "@/app/lib/hostels";
 import EmergencyContactsPanel from "@/app/components/EmergencyContactsPanel";
 
 // DelayNotice reason enum → translation key.
@@ -32,7 +33,7 @@ const FILTER_KEYS = ["Pending", "Acknowledged", "All"];
 // Every delay notice from students in scope — including those who filed *before*
 // their return time passed, who by definition never appear on the overdue list.
 export default function DelayNoticesView({ onCountChange }) {
-  const { t } = useTranslation("caretaker");
+  const { t, locale } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
 
@@ -261,7 +262,7 @@ export default function DelayNoticesView({ onCountChange }) {
                     </div>
                     <span className="flex min-w-0 items-start gap-1.5 wrap-break-word text-sm text-slate-600">
                       <DoorOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                      {student.hostelName || "—"} {student.roomNumber ? `· Room ${student.roomNumber}` : ""}
+                      {getTranslatedHostelName(student.hostelName, locale) || "—"} {student.roomNumber ? `· ${locale === "hi" ? "कमरा" : "Room"} ${student.roomNumber}` : ""}
                     </span>
                     {student.phoneNumber && (
                       <a

@@ -16,6 +16,7 @@ import { apiFetch } from "@/app/lib/api";
 import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { getInitials } from "@/app/lib/userProfile";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
+import { getTranslatedHostelName } from "@/app/lib/hostels";
 import EmergencyContactsPanel from "@/app/components/EmergencyContactsPanel";
 
 // DelayNotice reason enum → translation key.
@@ -39,7 +40,7 @@ const overdueDuration = (inTime, now) => {
 };
 
 export default function OverdueStudentsView({ onCountChange }) {
-  const { t } = useTranslation("caretaker");
+  const { t, locale } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
 
@@ -216,7 +217,7 @@ export default function OverdueStudentsView({ onCountChange }) {
                   </div>
                   <span className="flex min-w-0 items-start gap-1.5 break-words text-sm text-slate-600">
                     <DoorOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    {student.hostelName || "—"} {student.roomNumber ? `· Room ${student.roomNumber}` : ""}
+                    {getTranslatedHostelName(student.hostelName, locale) || "—"} {student.roomNumber ? `· ${locale === "hi" ? "कमरा" : "Room"} ${student.roomNumber}` : ""}
                   </span>
                   {student.phoneNumber && (
                     <a href={`tel:${student.phoneNumber}`} className="flex min-w-0 max-w-full items-start gap-1.5 text-sm font-semibold text-indigo-600 hover:underline">

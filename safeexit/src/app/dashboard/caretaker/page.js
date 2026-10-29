@@ -9,17 +9,23 @@ import {
   Home,
   MessageSquare,
   User,
+  Users,
   X,
   AlertCircle,
   AlertTriangle,
   ArrowRight,
   ShieldAlert,
+  ShieldCheck,
   Siren,
   Sparkles,
   Wifi,
   Armchair,
   ScrollText,
   AlarmClock,
+  PlaneTakeoff,
+  RefreshCw,
+  CheckCircle2,
+  Compass,
 } from "lucide-react";
 import ProfileView from "./components/ProfileView";
 import MovementLogsView from "./components/MovementLogsView";
@@ -27,9 +33,12 @@ import SOSAlertsView from "./components/SOSAlertsView";
 import OverdueStudentsView from "./components/OverdueStudentsView";
 import DelayNoticesView from "./components/DelayNoticesView";
 import DelayNoticeToast from "./components/DelayNoticeToast";
+import HostelOnLeaveRoster from "./components/HostelOnLeaveRoster";
+import HostelActiveOutingsRoster from "./components/HostelActiveOutingsRoster";
+import HostelStudentsDirectory from "./components/HostelStudentsDirectory";
 import StaffLeaveDesk from "@/app/components/staff/StaffLeaveDesk";
 import { useLeaveDesk } from "@/app/lib/leaveDesk";
-import { genderForHostel } from "@/app/lib/hostels";
+import { genderForHostel, getTranslatedHostelName, formatStaffDisplayName } from "@/app/lib/hostels";
 import { apiFetch } from "@/app/lib/api";
 import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
@@ -58,40 +67,173 @@ const initials = (name = "") =>
 // managedGender maps to the hostel the caretaker oversees.
 const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
 
-// Module scope so these aren't recreated every render.
-const handleTilePointerMove = (e) => {
-  const el = e.currentTarget;
-  const rect = el.getBoundingClientRect();
-  const px = (e.clientX - rect.left) / rect.width;
-  const py = (e.clientY - rect.top) / rect.height;
-  el.style.setProperty("--mx", `${px * 100}%`);
-  el.style.setProperty("--my", `${py * 100}%`);
-  el.style.setProperty("--ry", `${(px - 0.5) * 9}deg`);
-  el.style.setProperty("--rx", `${(0.5 - py) * 9}deg`);
-};
 
-const handleTilePointerLeave = (e) => {
-  e.currentTarget.style.setProperty("--rx", "0deg");
-  e.currentTarget.style.setProperty("--ry", "0deg");
-};
-
-function CaretakerStat({ label, value, fill, glow }) {
+function CaretakerStatCard({
+  label,
+  value,
+  sublabel,
+  icon: Icon,
+  accentColor = "emerald",
+  badgeText,
+  badgeVariant = "neutral",
+  actionHint,
+  isActiveTab = false,
+  activeIndicatorText = "Active ↓",
+  onClick,
+}) {
   const [ref, animated] = useCountUp(value);
+
+  const THEMES = {
+    emerald: {
+      border: "border-emerald-200/90 hover:border-emerald-400/90",
+      activeRing: "ring-2 ring-emerald-500 shadow-lg shadow-emerald-500/15",
+      topBar: "from-emerald-500 via-teal-400 to-emerald-600",
+      iconBg: "from-emerald-600 to-teal-500 text-white shadow-emerald-600/25",
+      numberText: "text-emerald-700",
+      sublabelDot: "bg-emerald-500",
+      cardBg: "from-white to-emerald-50/30",
+    },
+    violet: {
+      border: "border-violet-200/90 hover:border-violet-400/90",
+      activeRing: "ring-2 ring-violet-500 shadow-lg shadow-violet-500/15",
+      topBar: "from-violet-600 via-purple-400 to-fuchsia-500",
+      iconBg: "from-violet-600 to-fuchsia-600 text-white shadow-violet-600/25",
+      numberText: "text-violet-700",
+      sublabelDot: "bg-violet-500",
+      cardBg: "from-white to-violet-50/30",
+    },
+    sky: {
+      border: "border-sky-200/90 hover:border-sky-400/90",
+      activeRing: "ring-2 ring-sky-500 shadow-lg shadow-sky-500/15",
+      topBar: "from-sky-500 via-cyan-400 to-blue-500",
+      iconBg: "from-sky-600 to-cyan-500 text-white shadow-sky-600/25",
+      numberText: "text-sky-700",
+      sublabelDot: "bg-sky-500",
+      cardBg: "from-white to-sky-50/30",
+    },
+    rose: {
+      border: "border-rose-200/90 hover:border-rose-400/90",
+      activeRing: "ring-2 ring-rose-500 shadow-lg shadow-rose-500/15",
+      topBar: "from-rose-500 via-red-400 to-rose-600",
+      iconBg: "from-rose-600 to-red-500 text-white shadow-rose-600/25",
+      numberText: "text-rose-700",
+      sublabelDot: "bg-rose-500",
+      cardBg: "from-white to-rose-50/30",
+    },
+    indigo: {
+      border: "border-indigo-200/90 hover:border-indigo-400/90",
+      activeRing: "ring-2 ring-indigo-500 shadow-lg shadow-indigo-500/15",
+      topBar: "from-indigo-600 via-blue-400 to-indigo-500",
+      iconBg: "from-indigo-600 to-blue-500 text-white shadow-indigo-600/25",
+      numberText: "text-indigo-700",
+      sublabelDot: "bg-indigo-500",
+      cardBg: "from-white to-indigo-50/30",
+    },
+    amber: {
+      border: "border-amber-200/90 hover:border-amber-400/90",
+      activeRing: "ring-2 ring-amber-500 shadow-lg shadow-amber-500/15",
+      topBar: "from-amber-500 via-orange-400 to-red-500",
+      iconBg: "from-amber-500 to-orange-600 text-white shadow-amber-600/25",
+      numberText: "text-amber-700",
+      sublabelDot: "bg-amber-500",
+      cardBg: "from-white to-amber-50/30",
+    },
+  };
+
+  const theme = THEMES[accentColor] || THEMES.emerald;
+
+  const BADGE_STYLES = {
+    success: "bg-emerald-50 text-emerald-800 border-emerald-200/90 font-bold",
+    alert: "bg-rose-100 text-rose-800 border-rose-300 font-extrabold animate-pulse",
+    purple: "bg-violet-50 text-violet-800 border-violet-200/90 font-bold",
+    sky: "bg-sky-50 text-sky-800 border-sky-200/90 font-bold",
+    neutral: "bg-slate-100 text-slate-700 border-slate-200 font-bold",
+  };
+
   return (
-    <div ref={ref} className="sd-stat px-4 py-7 text-center" style={{ "--stat-glow": glow }}>
-      <p className="sd-micro">{label}</p>
-      <p
-        className="mt-2 text-5xl font-bold italic tracking-tight text-transparent bg-clip-text"
-        style={{ backgroundImage: fill }}
-      >
-        {Math.round(animated)}
-      </p>
+    <div
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl p-4 sm:p-4.5 transition-all duration-300 border shadow-sm hover:shadow-xl bg-gradient-to-b ${theme.cardBg} ${theme.border} ${
+        isActiveTab ? `${theme.activeRing} shadow-md` : ""
+      } ${onClick ? "cursor-pointer hover:-translate-y-1 active:scale-[0.98]" : ""}`}
+    >
+      {/* Top ambient color accent line */}
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${theme.topBar}`} />
+
+      {/* Top Header: Label + Modern Icon Badge */}
+      <div>
+        <div className="flex items-start justify-between gap-2 pt-0.5">
+          <div className="min-w-0 pr-1">
+            <h4 className="text-xs sm:text-sm font-bold text-slate-800 leading-snug line-clamp-1">
+              {label}
+            </h4>
+            {isActiveTab && (
+              <span className="inline-block mt-0.5 text-[10px] font-extrabold text-indigo-600">
+                {activeIndicatorText}
+              </span>
+            )}
+          </div>
+          {Icon && (
+            <div
+              className={`flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-md ring-1 ring-white/80 transition-transform duration-300 group-hover:scale-110 ${theme.iconBg}`}
+            >
+              <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+            </div>
+          )}
+        </div>
+
+        {/* Big Number & Contextual Badge */}
+        <div className="mt-3 flex items-baseline justify-between gap-2 flex-wrap">
+          <p
+            ref={ref}
+            className={`text-3xl sm:text-4xl font-black tracking-tight ${theme.numberText}`}
+          >
+            {Number.isFinite(animated) ? Math.round(animated) : (Number(value) || 0)}
+          </p>
+
+          {badgeText && (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] sm:text-[11px] border shadow-2xs ${
+                BADGE_STYLES[badgeVariant] || BADGE_STYLES.neutral
+              }`}
+            >
+              {badgeVariant === "alert" && (
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-600 animate-ping" />
+              )}
+              {badgeText}
+            </span>
+          )}
+        </div>
+
+        {/* High-visibility Context Sublabel */}
+        {sublabel && (
+          <div className="mt-2.5 flex items-center gap-1.5 min-w-0">
+            <span className={`h-2 w-2 rounded-full shrink-0 ${theme.sublabelDot}`} />
+            <p className="text-[11px] sm:text-xs font-semibold text-slate-600 leading-tight truncate">
+              {sublabel}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Action Hint */}
+      {actionHint && (
+        <div className="mt-3.5 pt-2.5 border-t border-slate-100/90 flex items-center justify-between text-[11px] sm:text-xs font-bold text-slate-500 group-hover:text-slate-900 transition-colors">
+          <span className="truncate pr-1">{actionHint}</span>
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 group-hover:bg-indigo-600 group-hover:text-white transition-all text-xs font-black shadow-2xs group-hover:translate-x-0.5">
+            →
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function CaretakerDashboardPage() {
-  const { t } = useTranslation("caretaker");
+  const { t, locale } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
   const router = useRouter();
@@ -145,10 +287,36 @@ export default function CaretakerDashboardPage() {
   // Students still out past their outing return time; kept live for the badge.
   const [overdueCount, setOverdueCount] = useState(0);
 
-  // Students who told us they'll be late. Tracked separately from overdueCount
-  // because a student can file *before* their deadline passes — they aren't
-  // overdue yet, so the overdue list would never surface them.
+  // Students who told us they'll be late.
   const [delayCount, setDelayCount] = useState(0);
+
+  // Comprehensive hostel occupancy stats
+  const [hostelStats, setHostelStats] = useState({
+    outNow: 0,
+    total: 0,
+    inside: 0,
+    outside: 0,
+    onLeave: 0,
+    overdue: 0,
+    hostel: "",
+  });
+
+  // Active on-leave students roster for this caretaker's hostel
+  const [onLeaveStudents, setOnLeaveStudents] = useState([]);
+  const [loadingOnLeave, setLoadingOnLeave] = useState(false);
+
+  // Active outings roster for this caretaker's hostel
+  const [activeOutings, setActiveOutings] = useState([]);
+  const [loadingOutings, setLoadingOutings] = useState(false);
+
+  // All registered students for this caretaker's hostel
+  const [hostelStudents, setHostelStudents] = useState([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+
+
+  // Active home section tab: "on-leave" or "pending-leave"
+  const [homeWorkdeskTab, setHomeWorkdeskTab] = useState("on-leave");
+  const [directoryFilter, setDirectoryFilter] = useState("all");
 
   const loadDelayCount = useCallback(async () => {
     try {
@@ -160,7 +328,6 @@ export default function CaretakerDashboardPage() {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch from the API, a client-only external source.
     loadDelayCount();
     const interval = setInterval(loadDelayCount, 30000);
     return () => clearInterval(interval);
@@ -173,18 +340,71 @@ export default function CaretakerDashboardPage() {
     });
   }, [loadDelayCount]);
 
-  // Numeric occupancy only — the API never sends student identities to this card.
-  const [studentsOut, setStudentsOut] = useState(0);
+  // Scope resolution: caretaker access is bound directly to their assigned hostel via login.
+  const managedGender = user?.managedGender;
+  const managedHostel = user?.managedHostel;
+  const activeHostel = managedHostel || HOSTEL_LABEL[managedGender] || "Kadambini";
+  const displayHostelName = getTranslatedHostelName(activeHostel, locale);
+  const effectiveDisplayName = (user && (user.name || user.displayName)) || `${activeHostel} Caretaker`;
+  const displayUserName = formatStaffDisplayName(effectiveDisplayName, locale);
+  const isConfigured = Boolean(managedHostel || managedGender);
 
-  const loadLiveStats = useCallback(async () => {
+  const loadLiveStats = useCallback(async (targetHostel = activeHostel) => {
     try {
-      const data = await apiFetch("/caretaker/stats");
-      const count = Number(data?.outNow);
-      setStudentsOut(Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0);
+      const q = targetHostel ? `?detailed=true&hostel=${encodeURIComponent(targetHostel)}` : "?detailed=true";
+      const data = await apiFetch(`/caretaker/stats${q}`);
+      setHostelStats({
+        outNow: Number(data?.outNow) || 0,
+        total: Number(data?.total) || 0,
+        inside: Number(data?.inside) || 0,
+        outside: Number(data?.outside) || 0,
+        onLeave: Number(data?.onLeave) || 0,
+        overdue: Number(data?.overdue) || 0,
+        hostel: data?.hostel || targetHostel || "",
+      });
     } catch {
       /* best-effort */
     }
-  }, []);
+  }, [activeHostel]);
+
+  const loadOnLeaveStudents = useCallback(async (targetHostel = activeHostel) => {
+    setLoadingOnLeave(true);
+    try {
+      const q = targetHostel ? `?hostel=${encodeURIComponent(targetHostel)}` : "";
+      const data = await apiFetch(`/caretaker/on-leave${q}`);
+      setOnLeaveStudents(Array.isArray(data) ? data : []);
+    } catch {
+      /* best-effort */
+    } finally {
+      setLoadingOnLeave(false);
+    }
+  }, [activeHostel]);
+
+  const loadHostelStudents = useCallback(async (targetHostel = activeHostel) => {
+    setLoadingStudents(true);
+    try {
+      const q = targetHostel ? `?hostel=${encodeURIComponent(targetHostel)}` : "";
+      const data = await apiFetch(`/caretaker/students${q}`);
+      setHostelStudents(Array.isArray(data) ? data : []);
+    } catch {
+      /* best-effort */
+    } finally {
+      setLoadingStudents(false);
+    }
+  }, [activeHostel]);
+
+  const loadActiveOutings = useCallback(async (targetHostel = activeHostel) => {
+    setLoadingOutings(true);
+    try {
+      const q = targetHostel ? `?hostel=${encodeURIComponent(targetHostel)}` : "";
+      const data = await apiFetch(`/caretaker/active-outings${q}`);
+      setActiveOutings(Array.isArray(data) ? data : []);
+    } catch {
+      /* best-effort */
+    } finally {
+      setLoadingOutings(false);
+    }
+  }, [activeHostel]);
 
   const loadSosCount = useCallback(async () => {
     try {
@@ -218,9 +438,17 @@ export default function CaretakerDashboardPage() {
 
   useEffect(() => {
     loadLiveStats();
-    const interval = setInterval(loadLiveStats, 30000);
+    loadOnLeaveStudents();
+    loadActiveOutings();
+    loadHostelStudents();
+    const interval = setInterval(() => {
+      loadLiveStats();
+      loadOnLeaveStudents();
+      loadActiveOutings();
+      loadHostelStudents();
+    }, 20000);
     return () => clearInterval(interval);
-  }, [loadLiveStats]);
+  }, [loadLiveStats, loadOnLeaveStudents, loadActiveOutings, loadHostelStudents]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -229,16 +457,30 @@ export default function CaretakerDashboardPage() {
     });
   }, [loadSosCount]);
 
-  // Outings need no approval — the gate scan creates them — so the outing channel only
-  // moves the overdue badge and the "Out Now" counter.
+  // Outing scan or return scan immediately moves the caretaker's counters and live on-leave roster.
   useEffect(() => {
     return subscribeToStaffEvents({
       "outing:changed": () => {
         loadOverdueCount();
         loadLiveStats();
+        loadOnLeaveStudents();
+        loadActiveOutings();
+        loadHostelStudents();
+      },
+      "leave:created": () => {
+        loadLiveStats();
+        loadOnLeaveStudents();
+      },
+      "leave:decided": () => {
+        loadLiveStats();
+        loadOnLeaveStudents();
+      },
+      "leave:updated": () => {
+        loadLiveStats();
+        loadOnLeaveStudents();
       },
     });
-  }, [loadOverdueCount, loadLiveStats]);
+  }, [loadOverdueCount, loadLiveStats, loadOnLeaveStudents]);
 
   const [view, setView] = useState("home");
 
@@ -246,7 +488,7 @@ export default function CaretakerDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["sos", "overdue", "delays", "leave", "profile"].includes(target)) {
+    if (target && ["sos", "overdue", "delays", "leave", "on-leave", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -254,28 +496,15 @@ export default function CaretakerDashboardPage() {
 
   const displayName = (user && (user.name || user.displayName)) || t("chiefCaretaker");
 
-  // Unset scope means no students; show the "not configured" banner.
-  const managedGender = user?.managedGender;
-  const managedHostel = user?.managedHostel;
-  // Prefer the specific hostel name; fall back to the generic label for legacy caretakers.
-  const hostelLabel = managedHostel || HOSTEL_LABEL[managedGender];
-  const isConfigured = Boolean(managedHostel || managedGender);
-
-  // Single source of truth for both nav bars. They used to be hand-written twice, which
-  // is how the phone bar drifted to four tabs while the desktop one carried seven —
-  // Delay Notices, Movement Logs and Profile were simply unreachable on a phone. Both
-  // bars now map this list; `short` is the phone label, since the full ones need three
-  // lines in a ~50px column. Badge colour differs for delays (amber, informational)
-  // versus leave/SOS (rose, needs action).
   const navTabs = [
     { key: "home", icon: Home, label: tc("home"), short: t("navHome") },
     {
-      key: "delays",
-      icon: Clock,
-      label: t("delayNotices"),
-      short: t("navDelays"),
-      count: delayCount,
-      countClass: "bg-amber-500",
+      key: "on-leave",
+      icon: PlaneTakeoff,
+      label: t("tabActiveLeaves"),
+      short: t("tabOnLeaveMobile"),
+      count: onLeaveStudents.length,
+      countClass: "bg-violet-600",
     },
     {
       key: "leave",
@@ -284,6 +513,14 @@ export default function CaretakerDashboardPage() {
       short: t("navLeave"),
       count: leavePending.length,
       countClass: "bg-rose-500",
+    },
+    {
+      key: "delays",
+      icon: Clock,
+      label: t("delayNotices"),
+      short: t("navDelays"),
+      count: delayCount,
+      countClass: "bg-amber-500",
     },
     {
       key: "sos",
@@ -312,7 +549,6 @@ export default function CaretakerDashboardPage() {
     const perm = getNotificationPermission();
     setPushPermission(perm);
 
-    // Re-subscribe silently in case the subscription expired.
     if (perm === 'granted') {
       autoSubscribeIfGranted();
     }
@@ -332,21 +568,28 @@ export default function CaretakerDashboardPage() {
   if (!checked || !authorized) return <AuthLoading />;
 
   return (
-    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-28">
+    <main className="min-h-screen sd-canvas sd-grain text-slate-900 pb-36 sm:pb-40">
       <div className="relative overflow-hidden">
         <div className="sd-aura sd-aura--a" aria-hidden="true" />
         <div className="sd-aura sd-aura--b" aria-hidden="true" />
         <div className="sd-aura sd-aura--c" aria-hidden="true" />
 
         <div className="relative z-[1] mx-auto flex w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="sd-luxe-panel sd-glow-border sd-enter flex items-center justify-between gap-3 rounded-4xl px-4 py-3.5 shadow-xl sm:gap-4 sm:px-5 sm:py-4">
-            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-              <div className="sd-luxe-badge sd-luxe-float flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg sm:h-14 sm:w-14">
-                <ShieldAlert className="h-6 w-6 sm:h-7 sm:w-7" />
+          {/* Header */}
+          <header className="sd-luxe-panel sd-glow-border sd-enter flex items-center justify-between gap-2.5 rounded-4xl px-3 py-2.5 shadow-xl sm:gap-4 sm:px-5 sm:py-4">
+            <div className="flex min-w-0 items-center gap-2.5 sm:gap-4">
+              <div className="sd-luxe-badge sd-luxe-float flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg sm:h-14 sm:w-14">
+                <ShieldAlert className="h-5 w-5 sm:h-7 sm:w-7" />
               </div>
               <div className="min-w-0">
-                <p className="sd-eyebrow flex items-center gap-2"><Sparkles className="h-3.5 w-3.5 text-indigo-400" /> {t("hub")}</p>
-                <h1 className="sd-title sd-reveal sd-stagger-1 truncate"><span className="sd-gradient-text text-gradient-primary">{t("dashboardTitle")}</span></h1>
+                <p className="sd-eyebrow hidden xs:flex items-center gap-1.5 sm:gap-2">
+                  <Sparkles className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-indigo-400" /> {t("hub")}
+                </p>
+                <h1 className="sd-title sd-reveal sd-stagger-1 text-sm xs:text-base sm:text-xl lg:text-2xl font-black text-slate-900 leading-tight">
+                  <span className="sd-gradient-text text-gradient-primary">
+                    {t("dashboardTitle")}
+                  </span>
+                </h1>
                 <p className="sd-subtitle hidden sm:block">{t("dashboardSubtitle")}</p>
               </div>
             </div>
@@ -354,16 +597,23 @@ export default function CaretakerDashboardPage() {
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <LanguageSwitcher />
               <div className="sd-luxe-card sd-profile-chip sd-luxe-tilt hidden items-center gap-3 rounded-2xl px-4 py-3 min-w-55 lg:flex">
-                <div className="sd-profile-avatar bg-linear-to-br from-indigo-600 to-cyan-400 text-white flex h-12 w-12 items-center justify-center rounded-xl font-bold">{(user && ((user.name && user.name.split(' ').map(n=>n[0]).slice(0,2).join('')) || user.initials)) || 'WP'}</div>
+                <div className="sd-profile-avatar bg-linear-to-br from-indigo-600 to-cyan-400 text-white flex h-12 w-12 items-center justify-center rounded-xl font-bold">
+                  {(user && ((user.name && user.name.split(' ').map(n=>n[0]).slice(0,2).join('')) || user.initials)) || (activeHostel === 'Kautilya' ? 'KT' : `${activeHostel[0]}C`)}
+                </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold text-slate-900 text-base">{displayName}</p>
-                  {hostelLabel ? (
-                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-bold text-indigo-700">{hostelLabel}</span>
+                  <p className="font-bold text-slate-900 text-base">{displayUserName}</p>
+                  {displayHostelName ? (
+                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-bold text-indigo-700">
+                      {displayHostelName}
+                    </span>
                   ) : (
-                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">No hostel assigned</span>
+                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">
+                      No hostel assigned
+                    </span>
                   )}
                 </div>
               </div>
+
               {/* Compact avatar on small screens */}
               <button
                 type="button"
@@ -371,13 +621,13 @@ export default function CaretakerDashboardPage() {
                 className="sd-profile-avatar flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-indigo-600 to-cyan-400 text-sm font-bold text-white lg:hidden"
                 title={tc("profile")}
               >
-                {(user && ((user.name && user.name.split(' ').map(n=>n[0]).slice(0,2).join('')) || user.initials)) || 'WP'}
+                {(user && ((user.name && user.name.split(' ').map(n=>n[0]).slice(0,2).join('')) || user.initials)) || (activeHostel === 'Kautilya' ? 'KT' : `${activeHostel[0]}C`)}
               </button>
               <button
                 type="button"
                 onClick={handleLogout}
                 title={tc("logout")}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50 sm:h-12 sm:w-12"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white/80 text-rose-600 shadow-sm transition hover:bg-rose-50 sm:h-12 sm:w-12 cursor-pointer"
               >
                 <LogOut className="h-5 w-5" />
                 <span className="sr-only">{tc("logout")}</span>
@@ -406,13 +656,13 @@ export default function CaretakerDashboardPage() {
               <button
                 onClick={handleEnablePush}
                 disabled={pushEnabling}
-                className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700 active:scale-95 disabled:opacity-60"
+                className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-700 active:scale-95 disabled:opacity-60 cursor-pointer"
               >
                 {pushEnabling ? 'Enabling…' : 'Enable'}
               </button>
               <button
                 onClick={() => setPushBannerDismissed(true)}
-                className="shrink-0 rounded-xl p-2 text-indigo-400 transition hover:bg-indigo-100"
+                className="shrink-0 rounded-xl p-2 text-indigo-400 transition hover:bg-indigo-100 cursor-pointer"
                 title="Dismiss"
               >
                 <X className="h-4 w-4" />
@@ -429,7 +679,7 @@ export default function CaretakerDashboardPage() {
               </div>
               <button
                 onClick={() => setPushBannerDismissed(true)}
-                className="shrink-0 rounded-xl p-2 text-rose-400 transition hover:bg-rose-100"
+                className="shrink-0 rounded-xl p-2 text-rose-400 transition hover:bg-rose-100 cursor-pointer"
                 title="Dismiss"
               >
                 <X className="h-4 w-4" />
@@ -439,7 +689,7 @@ export default function CaretakerDashboardPage() {
 
           {view === 'home' && (
             <>
-              {/* Needs-attention strip; rendered only when something needs action */}
+              {/* Needs-attention strip */}
               {(() => {
                 const attention = [
                   sosCount > 0 && {
@@ -492,7 +742,7 @@ export default function CaretakerDashboardPage() {
                         <button
                           key={a.key}
                           onClick={a.onClick}
-                          className={`wd-attn ${a.className} flex items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left shadow-md transition hover:-translate-y-0.5 active:scale-95 sm:gap-3 sm:px-4 sm:py-3`}
+                          className={`wd-attn ${a.className} flex items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left shadow-md transition hover:-translate-y-0.5 active:scale-95 sm:gap-3 sm:px-4 sm:py-3 cursor-pointer`}
                         >
                           <span className="wd-attn__icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white sm:h-10 sm:w-10">
                             <a.icon className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
@@ -509,6 +759,7 @@ export default function CaretakerDashboardPage() {
                 );
               })()}
 
+              {/* Daily Pulse Banner */}
               <section
                 onPointerMove={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
@@ -518,209 +769,436 @@ export default function CaretakerDashboardPage() {
                 style={{ animationDelay: "0.12s" }}
                 className="sd-luxe-panel sd-glow-border sd-spot-host sd-enter mt-6 rounded-4xl p-5 sm:p-7 shadow-xl"
               >
-            <span className="sd-spotlight" aria-hidden="true" />
-            <div className="grid items-center gap-4 sm:gap-6 lg:grid-cols-[1.2fr_auto]">
-              <div className="flex flex-wrap items-center gap-3 sm:gap-5">
-                <div className="sd-luxe-float sd-orb-halo hidden h-20 w-20 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-white to-sky-50 text-slate-900 ring-8 ring-white/80 shadow-lg sm:flex" style={{ "--halo": "rgba(99,102,241,0.45)" }}>
-                  <Clock className="h-10 w-10 text-indigo-600" />
-                </div>
-                <div className="min-w-0">
-                  <p className="sd-kicker">{t("dailyPulse")}</p>
-                  <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">{t("greeting")} <span className="sd-name-live">Caretaker</span>.</h2>
-                  {/* Desktop-only overview text */}
-                  <p className="sd-body mt-2 hidden max-w-md sm:block">{t("overviewText")}</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-sm font-semibold text-slate-600 sm:grid sm:grid-cols-2 sm:gap-3 lg:grid-cols-1">
-                <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-2 rounded-full px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
-                  <CalendarDays className="h-4 w-4 text-indigo-500 sm:h-5 sm:w-5" />
-                  {formattedDate}
-                </span>
-                <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex flex-1 items-center gap-2 rounded-full px-3 py-2 sm:flex-none sm:gap-3 sm:px-4 sm:py-2.5">
-                  <Clock className="h-4 w-4 text-sky-500 sm:h-5 sm:w-5" />
-                  {formattedTime}
-                  <span className="sd-luxe-chip ml-auto rounded-full px-3 py-1 text-xs font-bold">{tc("live")}</span>
-                </span>
-              </div>
-            </div>
-              </section>
-
-              <section className="sd-luxe-panel sd-enter mt-6 rounded-4xl p-5 sm:p-7 shadow-xl" style={{ animationDelay: "0.2s" }}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="sd-kicker">{t("quickActions")}</p>
-                <h2 className="sd-title sd-title-sm mt-2">{t("respondFaster")}</h2>
-              </div>
-            </div>
-            {/* Phones: two-up compact launchers. From lg all four tiles sit side by side —
-                the same equal-tile row the student dashboard uses. */}
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
-              {(() => {
-                const safetyAction = {
-                  title: t("safetyAlerts"),
-                  desc: t("safetyAlertsDesc"),
-                  icon: Siren,
-                  badgeBg: "linear-gradient(145deg, #9f1239 0%, #f43f5e 100%)",
-                  tint: "linear-gradient(160deg, rgba(244,63,94,0.14) 0%, rgba(251,113,133,0.08) 100%)",
-                  glow: "rgba(244,63,94,0.45)",
-                  border: "rgba(251,113,133,0.5)",
-                  badge: sosCount,
-                  onClick: () => setView('sos'),
-                };
-                const leaveAction = {
-                  title: t("leaveApplications"),
-                  desc: t("leaveApplicationsDesc"),
-                  icon: CalendarDays,
-                  badgeBg: "linear-gradient(145deg, #6d28d9 0%, #d946ef 100%)",
-                  tint: "linear-gradient(160deg, rgba(139,92,246,0.14) 0%, rgba(217,70,239,0.08) 100%)",
-                  glow: "rgba(139,92,246,0.45)",
-                  border: "rgba(196,132,252,0.5)",
-                  badge: leavePending.length,
-                  onClick: () => setView('leave'),
-                };
-                const logsAction = {
-                  title: t("movementLogs"),
-                  desc: t("movementLogsDesc"),
-                  icon: ScrollText,
-                  badgeBg: "linear-gradient(145deg, #4338ca 0%, #38bdf8 100%)",
-                  tint: "linear-gradient(160deg, rgba(67,56,202,0.14) 0%, rgba(56,189,248,0.08) 100%)",
-                  glow: "rgba(67,56,202,0.45)",
-                  border: "rgba(129,140,248,0.5)",
-                  onClick: () => setView('logs'),
-                };
-                const overdueAction = {
-                  title: t("overdueTitle"),
-                  desc: t("overdueDesc"),
-                  icon: AlarmClock,
-                  badgeBg: "linear-gradient(145deg, #9f1239 0%, #fb7185 100%)",
-                  tint: "linear-gradient(160deg, rgba(244,63,94,0.14) 0%, rgba(251,113,133,0.08) 100%)",
-                  glow: "rgba(244,63,94,0.45)",
-                  border: "rgba(251,113,133,0.5)",
-                  badge: overdueCount,
-                  onClick: () => setView('overdue'),
-                };
-                // Outings need no approval, so every caretaker leads with Leave.
-                return [leaveAction, safetyAction, overdueAction, logsAction];
-              })().map((a, idx) => {
-                const badgeStyle = { background: a.badgeBg, boxShadow: `0 14px 26px -12px ${a.glow}` };
-                const countBubble = a.badge ? (
-                  <span className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white animate-pulse">{a.badge}</span>
-                ) : null;
-                return (
-                <button
-                  key={idx}
-                  onClick={a.onClick}
-                  onPointerMove={handleTilePointerMove}
-                  onPointerLeave={handleTilePointerLeave}
-                  style={{
-                    animationDelay: `${0.08 + idx * 0.08}s`,
-                    "--tint": a.tint,
-                    "--glow": a.glow,
-                    "--tile-border": a.border,
-                  }}
-                  className="sd-tile sd-qa sd-luxe-rise group block h-full text-left"
-                >
-                  {/* One shape at every size — badge top-left, copy pinned to the bottom by
-                      mt-auto: a compact two-up card on phones, a row of equal tiles at lg.
-                      Same structure as the student dashboard's quick actions. The sm:
-                      reserves keep the wide tiles' titles and copy on a shared baseline. */}
-                  <div className="sd-tile__inner flex h-full flex-col items-start p-3.5 sm:min-h-52 sm:p-5">
-                    <span className="sd-tile__glare" aria-hidden="true" />
-                    <span className="sd-act sd-lift-lg relative shrink-0 shadow-lg" style={badgeStyle}>
-                      <a.icon className="h-6 w-6" />
-                      {countBubble}
-                    </span>
-                    <div className="sd-lift-md mt-auto w-full min-w-0 pt-4 sm:pt-6">
-                      <span className="sd-act-rule mb-2 hidden sm:mb-3 sm:block" aria-hidden="true" />
-                      {/* No `block` alongside the clamps — line-clamp supplies display:-webkit-box
-                          and `block` would override it, dropping the clamp entirely. */}
-                      <span className="sd-card-title line-clamp-2 leading-snug sm:min-h-11">
-                        {a.title}
-                      </span>
-                      <span className="sd-body sd-act-desc mt-1 line-clamp-3 sm:mt-1.5 sm:min-h-21">
-                        {a.desc}
-                      </span>
+                <span className="sd-spotlight" aria-hidden="true" />
+                <div className="grid items-center gap-4 sm:gap-6 lg:grid-cols-[1.2fr_auto]">
+                  <div className="flex flex-wrap items-center gap-3 sm:gap-5">
+                    <div className="sd-luxe-float sd-orb-halo hidden h-20 w-20 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-white to-sky-50 text-slate-900 ring-8 ring-white/80 shadow-lg sm:flex" style={{ "--halo": "rgba(99,102,241,0.45)" }}>
+                      <Clock className="h-10 w-10 text-indigo-600" />
                     </div>
-                  </div>
-                </button>
-                );
-              })}
-            </div>
-              </section>
-
-              <section className="mt-6">
-            <div className="sd-luxe-panel sd-luxe-rise sd-stagger-4 rounded-4xl p-5 sm:p-7 shadow-xl">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="sd-eyebrow">{t("leaveApplications")}</p>
-                  <h2 className="sd-title sd-title-sm">{t("pendingLeaveApprovals")}</h2>
-                </div>
-                <span className="sd-luxe-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-violet-800 bg-violet-50 border border-violet-200">
-                  <CalendarDays className="h-4 w-4" /> {leavePending.length}
-                </span>
-              </div>
-              <p className="sd-micro mt-1 text-slate-500">{t("leaveOnlyNote")}</p>
-              <div className="mt-6 space-y-3">
-                {leaveDesk.loading ? (
-                  <p className="text-sm text-slate-500">{t("loadingLeave")}</p>
-                ) : leaveDesk.error ? (
-                  <p className="text-sm font-semibold text-rose-600">{leaveDesk.error}</p>
-                ) : leavePending.length === 0 ? (
-                  <div className="flex flex-col items-center gap-2 py-8 text-slate-500">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-                      <CalendarDays className="h-6 w-6 text-slate-400" />
-                    </div>
-                    <p className="font-semibold text-slate-700">{t("noPendingLeave")}</p>
-                    <p className="text-sm text-slate-500">{t("noLeaveYet")}</p>
-                  </div>
-                ) : (
-                  leavePending.map((req, i) => (
-                  <div key={req.id} className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex flex-col gap-3 rounded-2xl px-4 py-3.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between" style={{ animationDelay: `${0.12 + i * 0.06}s` }}>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-fuchsia-400 flex items-center justify-center text-white font-bold">{req.initials}</div>
-                      <div className="min-w-0">
-                        <p className="sd-card-title text-slate-900 text-base">
-                          {req.name}
-                          {req.isEmergency && (
-                            <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-white">
-                              <Siren className="h-3 w-3" /> {t("emergency")}
-                            </span>
-                          )}
-                        </p>
-                        <p className="sd-micro mt-0.5">{req.room}{req.roll ? <> • <span className="font-mono">{req.roll}</span></> : null}</p>
-                        <p className="sd-micro mt-0.5 text-slate-500">{t("destination")} {req.destination}</p>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="sd-kicker">{t("dailyPulse")}</p>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-bold text-violet-700">
+                          <Sparkles className="h-3 w-3 text-violet-600" />
+                          {displayHostelName} {t("greetingName")}
+                        </span>
                       </div>
+                      <h2 className="sd-title sd-title-md sd-reveal sd-stagger-2 mt-1 sm:mt-2">
+                        {t("greeting")} <span className="sd-name-live">{displayHostelName} {t("greetingName")}</span>
+                      </h2>
+                      <p className="sd-body mt-2 hidden max-w-lg sm:block">
+                        {t("pulseBannerDesc", { hostel: displayHostelName })}
+                      </p>
                     </div>
+                  </div>
+                  <div className="flex items-center gap-2 sm:gap-3 flex-nowrap overflow-x-auto no-scrollbar py-0.5 text-xs sm:text-sm font-semibold text-slate-600">
+                    <span suppressHydrationWarning className="sd-luxe-pill inline-flex items-center gap-1.5 sm:gap-2.5 rounded-full px-3 py-1.5 sm:px-3.5 sm:py-2 shrink-0 whitespace-nowrap">
+                      <CalendarDays className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-500 shrink-0" />
+                      <span>{formattedDate}</span>
+                    </span>
+                    <span suppressHydrationWarning className="sd-luxe-pill sd-live-pulse inline-flex items-center gap-1.5 sm:gap-2.5 rounded-full px-3 py-1.5 sm:px-3.5 sm:py-2 shrink-0 whitespace-nowrap">
+                      <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-sky-500 shrink-0" />
+                      <span>{formattedTime}</span>
+                      <span className="sd-luxe-chip rounded-full px-2 py-0.5 text-[9.5px] sm:text-xs font-bold">{tc("live")}</span>
+                    </span>
+                  </div>
+                </div>
+              </section>
 
-                    <button onClick={() => setView('leave')} className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-sm text-white font-bold shadow hover:-translate-y-0.5 transition-transform sm:px-4 sm:py-2">
-                      <ArrowRight className="h-4 w-4 shrink-0" /> {t("reviewInLeave")}
+              {/* Hostel Movement & Occupancy Pulse Grid (6 Stat Cards with Safety Alerts) */}
+              <section className="mt-6 sd-enter" style={{ animationDelay: "0.16s" }}>
+                {/* Header with live sync radar, quick breakdown and refresh */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 px-1">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200/80 shadow-2xs">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                        </span>
+                        {t("liveHostelPulse")}
+                      </span>
+                      <span className="text-xs font-bold text-slate-300">•</span>
+                      <span className="text-xs font-bold text-slate-600">
+                        {t("insideSummary", { inside: hostelStats.inside })} · {t("awaySummary", { away: (Number(hostelStats.outside) || 0) + onLeaveStudents.length })}
+                        {sosCount > 0 && (
+                          <span className="text-rose-600 font-extrabold ml-1.5 animate-pulse">
+                            · {t("activeSosSummary", { count: sosCount })}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-1.5">
+                      {displayHostelName} {t("movementStatus")}
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        loadLiveStats();
+                        loadOnLeaveStudents();
+                        loadActiveOutings();
+                        loadHostelStudents();
+                        loadSosCount();
+                        loadOverdueCount();
+                      }}
+                      title={tc("refresh")}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-white/95 backdrop-blur-md px-3.5 py-1.5 text-xs font-bold text-slate-700 border border-slate-200/90 shadow-xs hover:bg-slate-50 hover:text-slate-900 active:scale-95 transition cursor-pointer"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
+                      <span>{tc("refresh")}</span>
+                    </button>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-white/95 backdrop-blur-md px-3.5 py-1.5 text-xs font-bold text-slate-800 border border-slate-200/90 shadow-xs">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                      </span>
+                      {t("gateSynced")}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-3.5 xl:gap-4">
+                  {/* 1. Inside Hostel */}
+                  <CaretakerStatCard
+                    accentColor="emerald"
+                    label={t("insideHostel")}
+                    value={hostelStats.inside}
+                    sublabel={t("inRooms", { hostel: displayHostelName })}
+                    icon={Home}
+                    badgeText={hostelStats.total > 0 ? t("occupancyPct", { percent: Math.round(((hostelStats.inside || 0) / hostelStats.total) * 100) }) : t("safeInside")}
+                    badgeVariant="success"
+                    actionHint={t("actionResidents")}
+                    isActiveTab={homeWorkdeskTab === "directory" && directoryFilter === "inside"}
+                    activeIndicatorText={t("activeIndicator")}
+                    onClick={() => {
+                      setDirectoryFilter("inside");
+                      setHomeWorkdeskTab("directory");
+                      const el = document.getElementById("hostel-workdesk");
+                      if (el) el.scrollIntoView({ behavior: "smooth" });
+                    }}
+                  />
+
+                  {/* 2. On Approved Leave */}
+                  <CaretakerStatCard
+                    accentColor="violet"
+                    label={t("onLeave")}
+                    value={onLeaveStudents.length}
+                    sublabel={onLeaveStudents.length > 0 ? t("scannedOutLeave") : t("noStudentsOnLeave")}
+                    icon={PlaneTakeoff}
+                    badgeText={onLeaveStudents.length > 0 ? t("countAway", { count: onLeaveStudents.length }) : t("noneAway")}
+                    badgeVariant={onLeaveStudents.length > 0 ? "purple" : "neutral"}
+                    actionHint={t("actionLeaveRoster")}
+                    isActiveTab={homeWorkdeskTab === "on-leave"}
+                    activeIndicatorText={t("activeIndicator")}
+                    onClick={() => {
+                      setHomeWorkdeskTab("on-leave");
+                      const el = document.getElementById("hostel-workdesk");
+                      if (el) el.scrollIntoView({ behavior: "smooth" });
+                    }}
+                  />
+
+                  {/* 3. On Day Pass / Outing */}
+                  <CaretakerStatCard
+                    accentColor="sky"
+                    label={t("onOuting")}
+                    value={hostelStats.outside}
+                    sublabel={activeOutings.length > 0 ? t("regularOutingPass") : t("noOutingsNow")}
+                    icon={Compass}
+                    badgeText={activeOutings.length > 0 ? t("countOutside", { count: activeOutings.length }) : t("noneOut")}
+                    badgeVariant={activeOutings.length > 0 ? "sky" : "neutral"}
+                    actionHint={t("actionTrackOutings")}
+                    isActiveTab={homeWorkdeskTab === "outings"}
+                    activeIndicatorText={t("activeIndicator")}
+                    onClick={() => {
+                      setHomeWorkdeskTab("outings");
+                      const el = document.getElementById("hostel-workdesk");
+                      if (el) el.scrollIntoView({ behavior: "smooth" });
+                    }}
+                  />
+
+                  {/* 4. Overdue */}
+                  <CaretakerStatCard
+                    accentColor="rose"
+                    label={t("overdueTitle")}
+                    value={hostelStats.overdue}
+                    sublabel={hostelStats.overdue > 0 ? t("curfewMissedSublabel") : t("allOnTimeSublabel")}
+                    icon={AlarmClock}
+                    badgeText={hostelStats.overdue > 0 ? t("curfewMissed") : t("allOnTime")}
+                    badgeVariant={hostelStats.overdue > 0 ? "alert" : "success"}
+                    actionHint={t("actionOverdueView")}
+                    isActiveTab={view === 'overdue'}
+                    activeIndicatorText={t("activeIndicator")}
+                    onClick={() => setView('overdue')}
+                  />
+
+                  {/* 5. Total Hostel Capacity */}
+                  <CaretakerStatCard
+                    accentColor="indigo"
+                    label={t("totalStudents")}
+                    value={hostelStats.total}
+                    sublabel={t("hostelRegistered", { hostel: displayHostelName })}
+                    icon={Users}
+                    badgeText={t("hostelRoll")}
+                    badgeVariant="neutral"
+                    actionHint={t("actionFullRoster")}
+                    isActiveTab={homeWorkdeskTab === "directory" && directoryFilter === "all"}
+                    activeIndicatorText={t("activeIndicator")}
+                    onClick={() => {
+                      setDirectoryFilter("all");
+                      setHomeWorkdeskTab("directory");
+                      const el = document.getElementById("hostel-workdesk");
+                      if (el) el.scrollIntoView({ behavior: "smooth" });
+                    }}
+                  />
+
+                  {/* 6. Safety Alerts (SOS) */}
+                  <CaretakerStatCard
+                    accentColor={sosCount > 0 ? "rose" : "amber"}
+                    label={t("safetyAlerts")}
+                    value={sosCount}
+                    sublabel={sosCount > 0 ? t("sosEmergencyActive") : t("sosQuietStatus")}
+                    icon={Siren}
+                    badgeText={sosCount > 0 ? t("activeSosBadge", { count: sosCount }) : t("allSafe")}
+                    badgeVariant={sosCount > 0 ? "alert" : "success"}
+                    actionHint={t("actionSosDesk")}
+                    isActiveTab={view === 'sos'}
+                    activeIndicatorText={t("activeIndicator")}
+                    onClick={() => setView('sos')}
+                  />
+                </div>
+              </section>
+
+              {/* Main Interactive Workdesk Section (Active Leave Roster & Pending Approvals) */}
+              <section id="hostel-workdesk" className="mt-8 space-y-6 sd-enter" style={{ animationDelay: "0.24s" }}>
+                {/* Switcher Tab header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 bg-white/95 backdrop-blur-md p-2 sm:p-2.5 rounded-2xl border border-slate-200/80 shadow-xs">
+                  {/* Symmetrical 2x2 grid on mobile, inline flex row on tablet & desktop */}
+                  <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:w-auto">
+                    {/* Tab 1: On Leave */}
+                    <button
+                      type="button"
+                      onClick={() => setHomeWorkdeskTab("on-leave")}
+                      className={`flex items-center justify-between sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                        homeWorkdeskTab === "on-leave"
+                          ? "bg-violet-600 text-white shadow-md shadow-violet-500/25 border border-violet-600 scale-[1.01]"
+                          : "bg-slate-50/90 text-slate-700 border border-slate-200/80 hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                        <PlaneTakeoff className="h-4 w-4 shrink-0" />
+                        <span className="truncate">
+                          <span className="sm:hidden">{t("tabOnLeaveMobile")}</span>
+                          <span className="hidden sm:inline">{t("tabCurrentlyOnLeave")}</span>
+                        </span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
+                        homeWorkdeskTab === "on-leave" ? "bg-white/20 text-white" : "bg-violet-100 text-violet-700"
+                      }`}>
+                        {onLeaveStudents.length}
+                      </span>
+                    </button>
+
+                    {/* Tab 2: Outings */}
+                    <button
+                      type="button"
+                      onClick={() => setHomeWorkdeskTab("outings")}
+                      className={`flex items-center justify-between sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                        homeWorkdeskTab === "outings"
+                          ? "bg-sky-600 text-white shadow-md shadow-sky-500/25 border border-sky-600 scale-[1.01]"
+                          : "bg-slate-50/90 text-slate-700 border border-slate-200/80 hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                        <Compass className="h-4 w-4 shrink-0" />
+                        <span className="truncate">
+                          <span className="sm:hidden">{t("tabOnOutingMobile")}</span>
+                          <span className="hidden sm:inline">{t("tabOutsideOnOuting")}</span>
+                        </span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
+                        homeWorkdeskTab === "outings" ? "bg-white/20 text-white" : "bg-sky-100 text-sky-700"
+                      }`}>
+                        {activeOutings.length}
+                      </span>
+                    </button>
+
+                    {/* Tab 3: All Residents */}
+                    <button
+                      type="button"
+                      onClick={() => setHomeWorkdeskTab("directory")}
+                      className={`flex items-center justify-between sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                        homeWorkdeskTab === "directory"
+                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25 border border-indigo-600 scale-[1.01]"
+                          : "bg-slate-50/90 text-slate-700 border border-slate-200/80 hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                        <Users className="h-4 w-4 shrink-0" />
+                        <span className="truncate">
+                          <span className="sm:hidden">{t("tabResidentsMobile")}</span>
+                          <span className="hidden sm:inline">{t("tabAllResidents")}</span>
+                        </span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
+                        homeWorkdeskTab === "directory" ? "bg-white/20 text-white" : "bg-indigo-100 text-indigo-700"
+                      }`}>
+                        {hostelStudents.length}
+                      </span>
+                    </button>
+
+                    {/* Tab 4: Pending Approvals */}
+                    <button
+                      type="button"
+                      onClick={() => setHomeWorkdeskTab("pending-leave")}
+                      className={`flex items-center justify-between sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                        homeWorkdeskTab === "pending-leave"
+                          ? "bg-rose-600 text-white shadow-md shadow-rose-500/25 border border-rose-600 scale-[1.01]"
+                          : "bg-slate-50/90 text-slate-700 border border-slate-200/80 hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                        <CalendarDays className="h-4 w-4 shrink-0" />
+                        <span className="truncate">
+                          <span className="sm:hidden">{t("tabApprovalsMobile")}</span>
+                          <span className="hidden sm:inline">{t("tabPendingApprovals")}</span>
+                        </span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
+                        homeWorkdeskTab === "pending-leave" ? "bg-white/20 text-white" : "bg-rose-100 text-rose-700"
+                      }`}>
+                        {leavePending.length}
+                      </span>
                     </button>
                   </div>
-                  ))
-                )}
-              </div>
-            </div>
-              </section>
-              <section className="mt-6 grid gap-6 lg:grid-cols-[0.7fr_1.3fr]">
-            <div className="sd-luxe-panel sd-enter rounded-4xl p-5 sm:p-6 shadow-xl" style={{ animationDelay: "0.3s" }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="sd-kicker">{t("activity")}</p>
-                  <h2 className="sd-title sd-title-sm mt-2">{t("liveStats")}</h2>
+
+                  <p className="hidden md:block text-xs font-semibold text-slate-400 pr-2">
+                    {homeWorkdeskTab === "on-leave"
+                      ? t("workdeskHintOnLeave")
+                      : homeWorkdeskTab === "outings"
+                      ? t("workdeskHintOutings")
+                      : homeWorkdeskTab === "directory"
+                      ? t("workdeskHintDirectory")
+                      : t("workdeskHintPending")}
+                  </p>
                 </div>
-                <span className="sd-tag">{tc("autoSync")}</span>
-              </div>
-              <div className="mt-5">
-                <CaretakerStat
-                  label={t("outNow")}
-                  value={studentsOut}
-                  fill="linear-gradient(90deg, #f59e0b, #fb923c)"
-                  glow="rgba(245,158,11,0.45)"
-                />
-              </div>
-            </div>
+
+                {/* Tab 1: Currently On Leave Live Roster */}
+                {homeWorkdeskTab === "on-leave" && (
+                  <HostelOnLeaveRoster
+                    leaves={onLeaveStudents}
+                    loading={loadingOnLeave}
+                    onRefresh={() => loadOnLeaveStudents(activeHostel)}
+                    hostelName={displayHostelName}
+                  />
+                )}
+
+                {/* Tab 2: Active Outings Live Roster */}
+                {homeWorkdeskTab === "outings" && (
+                  <HostelActiveOutingsRoster
+                    outings={activeOutings}
+                    loading={loadingOutings}
+                    onRefresh={() => loadActiveOutings(activeHostel)}
+                    hostelName={displayHostelName}
+                  />
+                )}
+
+                {/* Tab 3: All Residents Directory */}
+                {homeWorkdeskTab === "directory" && (
+                  <HostelStudentsDirectory
+                    students={hostelStudents}
+                    loading={loadingStudents}
+                    onRefresh={() => loadHostelStudents(activeHostel)}
+                    hostelName={displayHostelName}
+                    initialFilter={directoryFilter}
+                  />
+                )}
+
+                {/* Tab 4: Pending Leave Approvals */}
+                {homeWorkdeskTab === "pending-leave" && (
+                  <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-5 sm:p-7 shadow-xl border border-white/80 bg-white/90">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="sd-eyebrow">{t("leaveApplications")}</p>
+                        <h2 className="sd-title sd-title-sm">{t("pendingLeaveApprovals")}</h2>
+                      </div>
+                      <span className="sd-luxe-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-violet-800 bg-violet-50 border border-violet-200">
+                        <CalendarDays className="h-4 w-4" /> {leavePending.length}
+                      </span>
+                    </div>
+                    <p className="sd-micro mt-1 text-slate-500">{t("leaveOnlyNote")}</p>
+                    <div className="mt-6 space-y-3">
+                      {leaveDesk.loading ? (
+                        <p className="text-sm text-slate-500">{t("loadingLeave")}</p>
+                      ) : leaveDesk.error ? (
+                        <p className="text-sm font-semibold text-rose-600">{leaveDesk.error}</p>
+                      ) : leavePending.length === 0 ? (
+                        <div className="flex flex-col items-center gap-2 py-8 text-slate-500">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+                            <CalendarDays className="h-6 w-6 text-slate-400" />
+                          </div>
+                          <p className="font-semibold text-slate-700">{t("noPendingLeave")}</p>
+                          <p className="text-sm text-slate-500">{t("noLeaveYet")}</p>
+                        </div>
+                      ) : (
+                        leavePending.map((req, i) => (
+                          <div
+                            key={req.id}
+                            className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex flex-col gap-3 rounded-2xl px-4 py-3.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+                            style={{ animationDelay: `${0.12 + i * 0.06}s` }}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-fuchsia-400 flex items-center justify-center text-white font-bold">
+                                {req.initials}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="sd-card-title text-slate-900 text-base">
+                                  {req.name}
+                                  {req.isEmergency && (
+                                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-white">
+                                      <Siren className="h-3 w-3" /> {t("emergency")}
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="sd-micro mt-0.5">
+                                  {req.room}
+                                  {req.roll ? (
+                                    <> • <span className="font-mono">{req.roll}</span></>
+                                  ) : null}
+                                </p>
+                                <p className="sd-micro mt-0.5 text-slate-500">
+                                  {t("destination")} {req.destination}
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => setView('leave')}
+                              className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-sm text-white font-bold shadow hover:-translate-y-0.5 transition-transform sm:px-4 sm:py-2 cursor-pointer"
+                            >
+                              <ArrowRight className="h-4 w-4 shrink-0" /> {t("reviewInLeave")}
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </section>
             </>
+          )}
+
+          {view === 'on-leave' && (
+            <div className="mt-4">
+              <HostelOnLeaveRoster
+                leaves={onLeaveStudents}
+                loading={loadingOnLeave}
+                onRefresh={loadOnLeaveStudents}
+                hostelName={displayHostelName}
+              />
+            </div>
           )}
 
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}
@@ -729,7 +1207,7 @@ export default function CaretakerDashboardPage() {
           {view === 'profile' && (
             <ProfileView
               user={user}
-              displayName={displayName}
+              displayName={displayUserName}
               onLogout={handleLogout}
               onSignatureSaved={(signature) => setUser((u) => ({ ...(u || {}), signature }))}
             />
@@ -737,7 +1215,7 @@ export default function CaretakerDashboardPage() {
           {view === 'leave' && (
             <StaffLeaveDesk
               desk={leaveDesk}
-              scope={genderForHostel(user?.managedHostel) || user?.managedGender}
+              scope={genderForHostel(activeHostel) || user?.managedGender}
               mySignature={user?.signature || null}
               onSignatureSaved={(signature) => setUser((u) => ({ ...(u || {}), signature }))}
             />
@@ -745,16 +1223,16 @@ export default function CaretakerDashboardPage() {
 
           {view === 'logs' && <MovementLogsView />}
 
-          {/* Desktop bar — one column per tab in `navTabs`, so no empty track. */}
+          {/* Desktop Navigation bar */}
           <nav
-            className="sd-luxe-panel sd-luxe-rise mt-6 hidden gap-1 rounded-4xl p-2 backdrop-blur sm:p-3 md:grid"
+            className="sd-luxe-panel sd-luxe-rise mt-8 hidden gap-1 rounded-4xl p-2 backdrop-blur sm:p-3 md:grid shadow-xl"
             style={{ gridTemplateColumns: `repeat(${navTabs.length}, minmax(0, 1fr))` }}
           >
             {navTabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setView(tab.key)}
-                className={`sd-navx ${view === tab.key ? "sd-navx--active" : ""}`}
+                className={`sd-navx ${view === tab.key ? "sd-navx--active" : ""} cursor-pointer`}
               >
                 <span className="sd-navx__icon relative">
                   <tab.icon className="h-5 w-5" />
@@ -773,20 +1251,16 @@ export default function CaretakerDashboardPage() {
         </div>
       </div>
 
-      {/* Mobile bar — the same tabs as the desktop one, from the same `navTabs` list, so
-          Delay Notices, Movement Logs and Profile are reachable on a phone too. Seven
-          columns (six for the boys' set) is tight, hence the short labels and the
-          sd-navx--dense sizing; the badge sits inside the icon so it can't be clipped by
-          the column edge. */}
+      {/* Mobile Bottom Navigation bar */}
       <nav
-        className="sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid gap-0 rounded-[1.75rem] p-1.5 md:hidden"
+        className="sd-mobile-bottom-nav sd-luxe-panel sd-glow-border fixed inset-x-2 bottom-3 z-50 grid gap-0 rounded-[1.75rem] p-1.5 md:hidden shadow-2xl backdrop-blur-lg bg-white/95"
         style={{ gridTemplateColumns: `repeat(${navTabs.length}, minmax(0, 1fr))` }}
       >
         {navTabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setView(tab.key)}
-            className={`sd-navx sd-navx--dense ${view === tab.key ? "sd-navx--active" : ""}`}
+            className={`sd-navx sd-navx--dense ${view === tab.key ? "sd-navx--active" : ""} cursor-pointer`}
           >
             <span className="sd-navx__icon relative">
               <tab.icon className="h-5 w-5" />
@@ -803,7 +1277,7 @@ export default function CaretakerDashboardPage() {
         ))}
       </nav>
 
-      {/* Live "student is running late" popup — refetches on the /delay stream. */}
+      {/* Live "student is running late" popup */}
       <DelayNoticeToast onView={() => setView("delays")} />
     </main>
   );

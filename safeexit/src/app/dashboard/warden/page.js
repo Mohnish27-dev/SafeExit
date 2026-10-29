@@ -347,7 +347,7 @@ export default function WardenDashboardPage() {
                     </div>
                     <div className="min-w-0">
                       <p className="sd-kicker">Daily pulse</p>
-                      <h2 className="sd-title sd-title-md mt-1 sm:mt-2">Welcome, <span className="sd-name-live">Warden</span>.</h2>
+                      <h2 className="sd-title sd-title-md mt-1 sm:mt-2">Welcome, <span className="sd-name-live">Warden</span></h2>
                       <p className="sd-body mt-2 hidden max-w-md sm:block">Girls&apos; leave applications reach you, the caretaker and the chief warden together — whoever acts first decides. Boys&apos; leave is auto-approved and you can revoke it. Outings need no approval — the gate logs them.</p>
                     </div>
                   </div>

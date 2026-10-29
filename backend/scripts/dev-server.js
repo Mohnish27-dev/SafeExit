@@ -56,6 +56,48 @@ async function start() {
     console.log('[dev] PostgreSQL is running on port 5432.');
   }
 
+  // Ensure database schema exists
+  try {
+    const { Client } = require('pg');
+    require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+    const client = new Client({
+      connectionString: process.env.DATABASE_URL || 'postgres://safeexit:safeexit_dev@127.0.0.1:5432/safeexit'
+    });
+    await client.connect();
+    const tableRes = await client.query("SELECT to_regclass('public.users') AS exists");
+    if (!tableRes.rows[0].exists) {
+      console.log('[dev] Initializing database schema...');
+      const { splitStatements, DDL_DIR } = require('./applySchema');
+      const filesToApply = [
+        '001_schema.sql',
+        '002_post_etl_constraints.sql',
+        '003_validate_constraints.sql',
+        '005_profile_window.sql',
+        '006_leave_parent_phone.sql',
+        '007_leave_workflow.sql',
+        '008_day_scholar.sql'
+      ];
+      for (const file of filesToApply) {
+        const full = path.join(DDL_DIR, file);
+        const sql = fs.readFileSync(full, 'utf8');
+        const stmts = splitStatements(sql);
+        for (const stmt of stmts) {
+          try {
+            await client.query(stmt);
+          } catch (err) {
+            if (!['42710', '42P07', '42701'].includes(err.code)) {
+              console.warn(`[dev] Schema warning in ${file}:`, err.message);
+            }
+          }
+        }
+      }
+      console.log('[dev] Database schema initialized successfully.');
+    }
+    await client.end();
+  } catch (err) {
+    console.warn('[dev] Schema check warning:', err.message);
+  }
+
   const nodemonBin = path.resolve(
     __dirname,
     '..',

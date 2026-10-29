@@ -72,6 +72,16 @@ const formatClock = (value) => {
 
 // A leave is a day, not a time: its departure is the whole leave date and its return date is
 // only the student's expectation, so both are shown as dates.
+const overdueDuration = (inTime, nowMs) => {
+  if (!inTime) return "";
+  const due = new Date(inTime).getTime();
+  if (Number.isNaN(due)) return "";
+  const mins = Math.max(0, Math.floor(((nowMs || Date.now()) - due) / 60000));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
 const formatDay = (value) => {
   if (!value) return "N/A";
   const d = new Date(value);
@@ -182,6 +192,7 @@ export default function SecurityDashboardPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [scans, setScans] = useState([]);
   const [counts, setCounts] = useState({ inside: 0, outside: 0, onLeave: 0, overdue: 0 });
+  const [overdueList, setOverdueList] = useState([]);
   const [logging, setLogging] = useState(false);
   const [logError, setLogError] = useState("");
   // Brief post-commit confirmation, so a guard watching a wall monitor sees that the
@@ -216,9 +227,10 @@ export default function SecurityDashboardPage() {
   // roster endpoint became paginated.
   const loadScans = useCallback(async () => {
     try {
-      const [logs, tally] = await Promise.all([
+      const [logs, tally, overdueRows] = await Promise.all([
         apiFetch("/scan?limit=100"),
         apiFetch("/admin/students/counts"),
+        apiFetch("/outing/overdue").catch(() => []),
       ]);
       setScans(logs);
       setCounts({
@@ -227,6 +239,8 @@ export default function SecurityDashboardPage() {
         onLeave: tally.onLeave || 0,
         overdue: tally.overdue || 0,
       });
+      setOverdueList(Array.isArray(overdueRows) ? overdueRows : []);
+
     } catch {
       /* guard may briefly be unauthenticated; ignore and retry on next tick */
     }
@@ -314,6 +328,7 @@ export default function SecurityDashboardPage() {
           purpose,
         }),
       });
+
       if (!detached) {
         setScanResult(null);
         setScanPreview(null);
@@ -646,6 +661,110 @@ export default function SecurityDashboardPage() {
               </div>
             </div>
           </section>
+
+          {/* Live Campus Gate Security Alert for Overdue Students */}
+          {(counts.overdue > 0 || overdueList.length > 0) && (
+            <section className="order-2 lg:order-0 sd-enter mt-4 rounded-3xl border-2 border-rose-400/80 bg-gradient-to-r from-rose-950/90 via-red-900/90 to-rose-950/90 p-4 sm:p-5 text-white shadow-2xl backdrop-blur-lg">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-rose-500/30">
+                <div className="flex items-center gap-3">
+                  <span className="relative flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-500/30 border border-rose-400 text-rose-300">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-2xl bg-rose-400 opacity-40" />
+                    <AlertTriangle className="relative h-6 w-6 text-rose-300" />
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-rose-300 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-400/30">
+                        Campus Safety Alert
+                      </span>
+                      <span className="h-2 w-2 rounded-full bg-rose-400 animate-ping" />
+                    </div>
+                    <h3 className="text-base sm:text-lg font-black tracking-tight text-white mt-0.5">
+                      {overdueList.length || counts.overdue} Student{(overdueList.length || counts.overdue) > 1 ? "s" : ""} Overdue Past Return Deadline
+                    </h3>
+                    <p className="text-xs text-rose-200/80">
+                      Immediate attention required. Coordinated safety protocol active for gate security.
+                    </p>
+                  </div>
+                </div>
+
+                <Link
+                  href="/dashboard/security/students?filter=overdue"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 transition shadow-md active:scale-95"
+                >
+                  <span>Open Overdue Directory</span>
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+
+              <div className="mt-3.5 grid gap-3 sm:grid-cols-2">
+                {overdueList.map((item) => {
+                  const student = item.student || {};
+                  const duration = overdueDuration(item.inTime, now?.getTime?.());
+                  const isGirl = item.hostelGuardCalls || student.gender === "Female";
+
+                  return (
+                    <div
+                      key={item._id || item.id}
+                      className="rounded-2xl border border-rose-500/40 bg-white/10 p-3.5 sm:p-4 backdrop-blur-md"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-sm sm:text-base text-white truncate">
+                              {student.name || "Student"}
+                            </h4>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-rose-500 text-white shadow-xs">
+                              <Clock3 className="h-3 w-3" />
+                              Overdue {duration ? `by ${duration}` : ""}
+                            </span>
+                          </div>
+                          <p className="text-xs text-rose-200 mt-0.5 font-medium">
+                            Roll: <span className="font-mono font-bold text-white">{student.studentId || "—"}</span>
+                            {student.hostelName && <> • Hostel: <span className="font-bold text-white">{student.hostelName}</span></>}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-2.5 rounded-xl bg-black/25 p-2 text-xs border border-white/5 space-y-1">
+                        <div className="flex items-center justify-between gap-2 text-rose-200">
+                          <span>Left: <strong className="text-white">{formatClock(item.outTime)}</strong></span>
+                          <span>Due: <strong className="text-rose-300">{formatClock(item.inTime)}</strong></span>
+                        </div>
+                        <p className="text-rose-100/90 truncate">
+                          Destination: {item.destination || "Campus Outing"} {item.purpose ? `(${item.purpose})` : ""}
+                        </p>
+                      </div>
+
+                      <div className="mt-3 pt-2 border-t border-rose-500/20 text-xs">
+                        {isGirl ? (
+                          <div className="flex items-center justify-between gap-2 text-amber-200 font-semibold bg-amber-500/15 px-2.5 py-1.5 rounded-lg border border-amber-500/30">
+                            <span className="text-[11px] leading-tight">
+                              {student.hostelName || "Girls"} Hostel: Inform female hostel guard or caretaker
+                            </span>
+                            <span className="shrink-0 text-[10px] uppercase font-black px-2 py-0.5 rounded bg-amber-400 text-slate-900">
+                              Hostel Guard Calls
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2 text-rose-200">
+                            <span>Student Phone: <strong className="text-white font-mono">{student.phoneNumber || "N/A"}</strong></span>
+                            {student.phoneNumber && (
+                              <a
+                                href={`tel:${student.phoneNumber}`}
+                                className="px-2.5 py-1 rounded-lg bg-rose-500 text-white font-bold text-xs hover:bg-rose-400 transition"
+                              >
+                                Call Student
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           <section className="order-3 lg:order-0 mt-4 grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-stretch">
             <div className="sd-luxe-panel sd-enter min-w-0 rounded-4xl p-4 sm:p-6 flex flex-col" style={{ animationDelay: "0.2s" }}>

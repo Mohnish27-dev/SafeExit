@@ -54,6 +54,9 @@ export default function CaretakerLoginPage() {
 	const [quickLabel, setQuickLabel] = useState("");
 
 	useEffect(() => {
+		if (typeof window !== "undefined") {
+			sessionStorage.removeItem("safeexit_token");
+		}
 		const profileRaw = localStorage.getItem("safeexit_caretaker_profile");
 		if (profileRaw && quick.hasQuickPin()) {
 			try {

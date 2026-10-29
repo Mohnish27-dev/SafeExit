@@ -64,9 +64,10 @@ test('every DDL file parses into complete statements', () => {
 });
 
 test('the schema creates every table applySchema.js verifies', () => {
+  const allSchemaSql = schemaSql + '\r\n' + read(STEPS['profile-window']);
   for (const table of EXPECTED_TABLES) {
     assert.match(
-      schemaSql,
+      allSchemaSql,
       new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`),
       `${table} is in EXPECTED_TABLES but nothing creates it`
     );
