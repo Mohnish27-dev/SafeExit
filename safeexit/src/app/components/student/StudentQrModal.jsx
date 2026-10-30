@@ -166,7 +166,7 @@ function StudentQrModalBody({
     try {
       const svg = qrBoxRef.current?.querySelector("svg");
       if (!svg) return;
-      const svgData = new XMLSerializer().serializeToString(svg);
+
       const canvas = document.createElement("canvas");
       const scale = 2;
       const qrSize = 300;
@@ -177,22 +177,28 @@ function StudentQrModalBody({
       const ctx = canvas.getContext("2d");
       ctx.scale(scale, scale);
 
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, width, height);
+      // Render the complete pass card onto canvas
+      const renderCard = (drawQrContent) => {
+        // Pure white background for entire pass card
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
 
-      // A thick coloured band with the QR's name, so the two saved images are told apart
-      // at a glance in the gallery and at the gate.
-      ctx.fillStyle = kind.accent;
-      ctx.fillRect(0, 0, width, 34);
-      ctx.font = "bold 16px sans-serif";
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
-      ctx.fillText(kind.tab.toUpperCase(), width / 2, 23);
+        // Header band with purpose name
+        ctx.fillStyle = kind.accent;
+        ctx.fillRect(0, 0, width, 34);
+        ctx.font = "bold 16px sans-serif";
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.fillText(kind.tab.toUpperCase(), width / 2, 23);
 
-      const img = new window.Image();
-      img.onload = () => {
-        ctx.drawImage(img, 40, 50, qrSize, qrSize);
+        // White quiet-zone backing for the QR code
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(40, 50, qrSize, qrSize);
 
+        // Draw QR modules (either direct vector Path2D or rendered image)
+        drawQrContent();
+
+        // Pass details
         ctx.font = "bold 18px sans-serif";
         ctx.fillStyle = "#0f172a";
         ctx.textAlign = "center";
@@ -215,6 +221,47 @@ function StudentQrModalBody({
         a.href = canvas.toDataURL("image/png");
         a.click();
       };
+
+      // 1. Direct Path2D rendering: immune to all browser dark-mode / force-dark filters
+      const paths = svg.querySelectorAll("path");
+      const fgPathEl = Array.from(paths).find((p) => {
+        const fill = (p.getAttribute("fill") || "").toLowerCase();
+        return fill && fill !== "#ffffff" && fill !== "white";
+      }) || paths[1];
+      const fgD = fgPathEl?.getAttribute("d");
+      const vbParts = (svg.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
+      const viewBoxSize = (vbParts.length === 4 && vbParts[2] > 0) ? vbParts[2] : 25;
+
+      if (fgD && typeof window.Path2D !== "undefined") {
+        renderCard(() => {
+          ctx.save();
+          ctx.translate(40, 50);
+          ctx.scale(qrSize / viewBoxSize, qrSize / viewBoxSize);
+          ctx.fillStyle = "#000000";
+          ctx.fill(new Path2D(fgD));
+          ctx.restore();
+        });
+        return;
+      }
+
+      // 2. Fallback for older browsers: clean SVG clone with explicit styles
+      const clone = svg.cloneNode(true);
+      clone.setAttribute("style", "background:#ffffff; color-scheme:only light;");
+      clone.querySelectorAll("path").forEach((p) => {
+        const fill = (p.getAttribute("fill") || "").toLowerCase();
+        if (fill && fill !== "#ffffff" && fill !== "white") {
+          p.setAttribute("fill", "#000000");
+        } else {
+          p.setAttribute("fill", "#ffffff");
+        }
+      });
+      const svgData = new XMLSerializer().serializeToString(clone);
+      const img = new window.Image();
+      img.onload = () => {
+        renderCard(() => {
+          ctx.drawImage(img, 40, 50, qrSize, qrSize);
+        });
+      };
       img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
     } catch (err) {
       console.error("Error downloading QR pass:", err);
@@ -234,7 +281,7 @@ function StudentQrModalBody({
       }}
       className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in text-slate-800"
     >
-      <div className="relative my-auto w-full max-w-sm overflow-hidden bg-white rounded-3xl p-6 text-center shadow-2xl border border-slate-100 animate-scale-in">
+      <div className="relative my-auto w-full max-w-sm overflow-hidden bg-white rounded-3xl p-6 text-center shadow-2xl border border-slate-100 animate-scale-in" style={{ colorScheme: "only light" }}>
         <button
           type="button"
           onClick={onClose}
@@ -276,8 +323,8 @@ function StudentQrModalBody({
           <p className="text-xs text-slate-500 mt-1 leading-normal max-w-xs mx-auto">{kind.blurb}</p>
 
           <div className={`relative mt-5 p-5 rounded-3xl bg-gradient-to-br border border-slate-100 shadow-inner flex justify-center items-center ${kind.frame}`}>
-            <div ref={qrBoxRef} className="p-4 bg-white rounded-2xl shadow-md border border-slate-100/60 relative overflow-hidden">
-              <QRCode value={qrValue} size={190} />
+            <div ref={qrBoxRef} className="sd-qr-safe p-4 bg-white rounded-2xl shadow-md border border-slate-100/60 relative overflow-hidden" style={{ colorScheme: "only light", backgroundColor: "#ffffff" }}>
+              <QRCode value={qrValue} size={190} bgColor="#FFFFFF" fgColor="#000000" style={{ colorScheme: "only light" }} />
               <div className={`absolute left-0 right-0 h-0.5 animate-scan ${kind.scanLine}`} style={{ top: "50%" }} />
             </div>
           </div>
