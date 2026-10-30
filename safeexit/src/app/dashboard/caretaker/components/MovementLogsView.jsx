@@ -43,9 +43,12 @@ export default function MovementLogsView() {
     } finally {
       setLoading(false);
     }
-  }, [direction]);
+  }, [direction, t]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const initial = setTimeout(load, 0);
+    return () => clearTimeout(initial);
+  }, [load]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();

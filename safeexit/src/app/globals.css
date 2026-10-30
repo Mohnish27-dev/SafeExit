@@ -565,8 +565,23 @@ body {
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.3em;
-  color: #94a3b8;
+  letter-spacing: 0.15em;
+  color: #64748b;
+}
+
+/* Ensure proper glyph and matra connection in Devanagari / Hindi script */
+html[lang="hi"],
+html[lang="hi"] *,
+:lang(hi) {
+  letter-spacing: normal !important;
+  text-transform: none;
+}
+
+:lang(hi) .sd-eyebrow,
+html[lang="hi"] .sd-eyebrow,
+[lang="hi"] .sd-eyebrow {
+  letter-spacing: normal !important;
+  text-transform: none !important;
 }
 
 .sd-body {

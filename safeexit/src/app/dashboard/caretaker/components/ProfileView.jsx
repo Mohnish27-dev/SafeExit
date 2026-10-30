@@ -2,13 +2,14 @@
 
 import { Building2, LogOut, Mail, Phone, ShieldCheck } from "lucide-react";
 import { useTranslation } from "@/app/lib/i18n";
+import { getTranslatedHostelName } from "@/app/lib/hostels";
 import SignatureCard from "@/app/components/SignatureCard";
 
 const getInitials = (name = "") =>
   name.split(" ").map((part) => part[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "W";
 
 export default function ProfileView({ user, displayName, onLogout, onSignatureSaved }) {
-  const { t } = useTranslation("caretaker");
+  const { t, locale } = useTranslation("caretaker");
   const { t: tc } = useTranslation("common");
   const profileName = displayName || t("chiefCaretaker");
   const role = user?.roleLabel || user?.role || t("chiefCaretaker");
@@ -43,6 +44,17 @@ export default function ProfileView({ user, displayName, onLogout, onSignatureSa
           <div className="sd-row" style={{ "--accent": "#2dd4bf" }}>
             <span className="sd-row__accent" aria-hidden="true" />
             <div className="flex items-center gap-3"><Building2 className="h-4 w-4 text-slate-400" /><span className="sd-card-title text-[0.88rem]">{t("caretakerId")} {caretakerId}</span></div>
+          </div>
+        )}
+        {user?.managedHostel && (
+          <div className="sd-row" style={{ "--accent": "#8b5cf6" }}>
+            <span className="sd-row__accent" aria-hidden="true" />
+            <div className="flex items-center gap-3">
+              <Building2 className="h-4 w-4 text-slate-400" />
+              <span className="sd-card-title text-[0.88rem]">
+                {locale === "hi" ? "आवंटित छात्रावास" : "Assigned Hostel"}: {getTranslatedHostelName(user.managedHostel, locale)}
+              </span>
+            </div>
           </div>
         )}
         <SignatureCard signature={user?.signature} onSaved={onSignatureSaved} />

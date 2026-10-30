@@ -7,10 +7,13 @@ const { isReturnLate } = require('./outingRules');
 // student holding a leave still 'Out' is on leave however long it runs: never overdue, and
 // never phoned by the gate. The two sets are disjoint, so the dashboard tiles never count a
 // student twice. Returns Sets of student id strings.
-const getAwayStudentIds = async () => {
+const getAwayStudentIds = async (studentWhere) => {
+  const include = studentWhere
+    ? [{ association: 'student', where: studentWhere, attributes: [], required: true }]
+    : undefined;
   const [outings, leaves] = await Promise.all([
-    OutingRequest.findAll({ where: { status: 'Out' }, attributes: ['studentId', 'inTime'], raw: true }),
-    LeaveApplication.findAll({ where: { status: 'Out' }, attributes: ['studentId', 'returnDate'], raw: true }),
+    OutingRequest.findAll({ where: { status: 'Out' }, attributes: ['studentId', 'inTime'], raw: true, ...(include ? { include } : {}) }),
+    LeaveApplication.findAll({ where: { status: 'Out' }, attributes: ['studentId', 'returnDate'], raw: true, ...(include ? { include } : {}) }),
   ]);
 
   const overdueIds = new Set();

@@ -29,6 +29,7 @@ process.env.PG_SCHEMA = SCHEMA;
 const { maintenanceMode } = require('../src/middlewares/maintenanceMode');
 const { protect } = require('../src/middlewares/authMiddleware');
 const { sequelize, User } = require('../src/models');
+const { ensureProfileWindowSchema } = require('../src/utils/profileWindow');
 const { ensureResidencySchema } = require('../src/utils/residencySchema');
 
 // ---------------------------------------------------------------------------
@@ -177,6 +178,7 @@ test('setup: a user carrying a legacy_id, as every migrated row does', async (t)
   const ddl = fs.readFileSync(path.join(DDL_DIR, STEPS.schema), 'utf8');
   for (const stmt of splitStatements(ddl)) await sequelize.query(stmt);
   // What server.js adds at boot: the User model selects users.residency (008).
+  await ensureProfileWindowSchema(sequelize);
   await ensureResidencySchema(sequelize);
 
   subject = await User.create({

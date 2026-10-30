@@ -18,6 +18,7 @@ import {
 import { apiFetch } from "@/app/lib/api";
 import { subscribeToStaffEvents } from "@/app/lib/staffEvents";
 import { useTranslation, useDateLocale } from "@/app/lib/i18n";
+import { getTranslatedHostelName } from "@/app/lib/hostels";
 import EmergencyContactsPanel from "@/app/components/EmergencyContactsPanel";
 
 const getInitials = (name = "") =>
@@ -46,7 +47,7 @@ const STATUS_META = {
 const FILTER_KEYS = ["Active", "Acknowledged", "Resolved", "All"];
 
 export default function SOSAlertsView({ onCountChange, readOnly = false }) {
-  const { t } = useTranslation("sos");
+  const { t, locale } = useTranslation("sos");
   const dateLocale = useDateLocale();
 
   const formatTime = (iso) =>
@@ -244,7 +245,7 @@ export default function SOSAlertsView({ onCountChange, readOnly = false }) {
                   </div>
                   <span className="flex min-w-0 items-start gap-1.5 break-words text-sm text-slate-600">
                     <DoorOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    {student.hostelName || "—"} {student.roomNumber ? `· Room ${student.roomNumber}` : ""}
+                    {getTranslatedHostelName(student.hostelName, locale) || "—"} {student.roomNumber ? `· ${locale === "hi" ? "कमरा" : "Room"} ${student.roomNumber}` : ""}
                   </span>
                   {a.location && (
                     <span className="flex min-w-0 items-start gap-1.5 break-words text-sm text-slate-600">

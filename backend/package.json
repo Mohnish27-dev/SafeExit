@@ -8,6 +8,8 @@
     "dev": "node scripts/dev-server.js",
     "dev:nodemon": "nodemon src/server.js",
     "seed:admins": "node scripts/seedAdmins.js",
+    "seed:staff": "node scripts/seedStaff.js",
+    "seed:students": "node scripts/seedStudents.js",
     "seed:wardens": "node scripts/seedWardens.js",
     "lint": "eslint src/**/*.js",
     "test": "node --test",

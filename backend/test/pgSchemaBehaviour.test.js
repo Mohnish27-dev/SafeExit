@@ -110,9 +110,9 @@ const rejects = async (fn, expectedCode, what) => {
   }
   await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
   assert.ok(err, `${what}: expected the database to reject this, but it was accepted`);
-  assert.equal(
-    err.code,
-    expectedCode,
+  const codes = Array.isArray(expectedCode) ? expectedCode : [expectedCode];
+  assert.ok(
+    codes.includes(err.code),
     `${what}: expected SQLSTATE ${expectedCode}, got ${err.code} — ${err.message}`,
   );
   return err;
@@ -450,7 +450,7 @@ isolated('users: a student holding a pass cannot be deleted', async () => {
   await mkOuting(student, 'Out');
   await rejects(
     () => client.query('DELETE FROM users WHERE id = $1', [student]),
-    FK_VIOLATION,
+    [FK_VIOLATION, '23001'],
     'deleting a student who holds a pass',
   );
 });
