@@ -571,6 +571,66 @@ const removeStaff = async (req, res) => {
   }
 };
 
+// PATCH /api/admin/staff/:id/details — private (Admin)
+// Updates editable profile fields: name, phone number, and email (for Google-sign-in roles).
+// Does NOT touch loginId, PIN, hostel scope, or role — those have their own endpoints.
+const updateStaff = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user || !['Caretaker', 'Warden', 'ChiefWarden', 'Guard'].includes(user.role)) {
+      return res.status(404).json({ message: 'Staff member not found.' });
+    }
+
+    const { name, phoneNumber, email } = req.body;
+
+    if (name !== undefined) {
+      const trimmed = String(name || '').trim();
+      if (!trimmed) return res.status(400).json({ message: 'Name cannot be empty.' });
+      user.name = trimmed;
+    }
+
+    if (phoneNumber !== undefined) {
+      user.phoneNumber = String(phoneNumber || '').trim() || null;
+    }
+
+    // Email is the loginId for Google-sign-in roles (Warden, ChiefWarden).
+    // Updating it changes who can sign in, so validate it's a college address.
+    if (email !== undefined) {
+      if (!GOOGLE_SIGNIN_ROLES.includes(user.role)) {
+        return res.status(400).json({
+          message: 'Email is not editable for PIN-based accounts. Only name and phone can be changed.',
+        });
+      }
+      const normalised = normalizeEmail(email);
+      if (!isCollegeEmail(normalised)) {
+        return res.status(400).json({ message: 'Email must be a college address (@nitp.ac.in).' });
+      }
+      // Block if a different account already owns this email.
+      const clash = await User.findOne({
+        where: { email: normalised, id: { [Op.ne]: user.id } },
+      });
+      if (clash) {
+        return res.status(409).json({ message: `${normalised} is already registered to another account.` });
+      }
+      user.email = normalised;
+      user.loginId = normalised; // loginId is the email for Google accounts
+    }
+
+    await user.save();
+
+    res.json({
+      _id: user.id,
+      name: user.name,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      loginId: user.loginId,
+      role: user.role,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Owners set their photo/signature once and cannot change it (authController
 // updateUserProfile). These are the only way to change one: the admin clears it, and the
 // owner uploads a fresh one, which locks again. Clearing rather than uploading here keeps
@@ -866,6 +926,7 @@ module.exports = {
   resetStaffPin,
   updateStaffScope,
   removeStaff,
+  updateStaff,
   updateStudent,
   getProfileWindow,
   reopenProfileWindow,

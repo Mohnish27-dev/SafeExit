@@ -397,6 +397,9 @@ export default function StudentDashboardPage() {
   const [savingHostel, setSavingHostel] = useState(false);
   const [hostelError, setHostelError] = useState("");
 
+  // Caretaker / warden contact info for the student's hostel — shown on the passport card.
+  const [hostelContact, setHostelContact] = useState(null); // { caretaker, wardens }
+
   // Profile details editing: opens every 1 July (or when an admin reopens it for everyone),
   // and saving once locks it again. `profileUnlocked` is derived by the backend.
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
@@ -535,6 +538,22 @@ export default function StudentDashboardPage() {
     return () => {
       cancelled = true;
     };
+  }, [authorized]);
+
+  // Fetch caretaker + warden contact for the student's hostel.
+  // Runs after the profile sync so profile.hostelName is available to the card renderer.
+  useEffect(() => {
+    if (!authorized) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch("/auth/hostel-contact");
+        if (!cancelled) setHostelContact(data);
+      } catch {
+        /* best-effort: show nothing if this fails */
+      }
+    })();
+    return () => { cancelled = true; };
   }, [authorized]);
 
   useEffect(() => {
@@ -1572,6 +1591,23 @@ export default function StudentDashboardPage() {
                     <p className="sd-passport-value truncate">{profile.mobile || "—"}</p>
                   </div>
                 </div>
+
+                {/* Caretaker contact strip — only when phone is on record */}
+                {hostelContact?.caretaker?.phoneNumber && (
+                  <div className="mt-3 flex items-center gap-2 rounded-xl bg-white/8 px-3 py-2 sm:mt-4">
+                    <span className="text-[0.65rem] font-bold uppercase tracking-[0.18em] text-slate-400 shrink-0">Caretaker</span>
+                    <span className="mx-1.5 h-3 w-px bg-white/20 shrink-0" aria-hidden="true" />
+                    <span className="truncate text-[0.72rem] font-semibold text-slate-300">
+                      {hostelContact.caretaker.name}
+                    </span>
+                    <a
+                      href={`tel:${hostelContact.caretaker.phoneNumber}`}
+                      className="ml-auto shrink-0 rounded-lg bg-emerald-500/20 px-2.5 py-1 text-[0.7rem] font-bold text-emerald-300 hover:bg-emerald-500/30 transition-colors"
+                    >
+                      📞 {hostelContact.caretaker.phoneNumber}
+                    </a>
+                  </div>
+                )}
 
                 <div className="mt-5 flex flex-wrap gap-3 sm:mt-8">
                   <MagneticButton
