@@ -2834,13 +2834,14 @@ html[lang="hi"] .sd-eyebrow,
 .sd-seam-h::before { left: -1.75rem; }
 .sd-seam-h::after { left: calc(100% + 1.75rem); }
 
-/* QR stub */
+/* QR stub — always light so dark-mode browsers never wash out the code */
 .sd-stub-qr {
   position: relative;
   border-radius: 1.25rem;
-  background: #ffffff;
+  background: #ffffff !important;
   padding: 1rem;
   box-shadow: 0 22px 45px -28px rgba(2, 6, 23, 0.8), 0 0 0 1px rgba(148, 163, 184, 0.14);
+  color-scheme: only light;
 }
 
 .sd-stub-qr::after {
@@ -2858,6 +2859,40 @@ html[lang="hi"] .sd-eyebrow,
 @keyframes sd-stub-scan {
   0%, 100% { top: 14%; opacity: 0.35; }
   50% { top: 84%; opacity: 1; }
+}
+
+/* Dark-mode QR shield: QR codes must stay black-on-white regardless of
+   the browser or OS dark theme. color-scheme and forced-color-adjust stop
+   the browser / mobile OS from auto-inverting or desaturating the code. */
+.sd-qr-safe,
+.sd-stub-qr {
+  color-scheme: only light !important;
+  forced-color-adjust: none !important;
+  -webkit-filter: none !important;
+  filter: none !important;
+  background-color: #ffffff !important;
+  isolation: isolate;
+}
+
+.sd-qr-safe svg,
+.sd-stub-qr svg {
+  color-scheme: only light !important;
+  forced-color-adjust: none !important;
+  -webkit-filter: none !important;
+  filter: none !important;
+  background-color: #ffffff !important;
+}
+
+.sd-qr-safe svg path:not([fill="#FFFFFF"]):not([fill="#ffffff"]):not([fill="white"]),
+.sd-stub-qr svg path:not([fill="#FFFFFF"]):not([fill="#ffffff"]):not([fill="white"]) {
+  fill: #000000 !important;
+}
+
+.sd-qr-safe svg path[fill="#FFFFFF"],
+.sd-qr-safe svg path[fill="#ffffff"],
+.sd-stub-qr svg path[fill="#FFFFFF"],
+.sd-stub-qr svg path[fill="#ffffff"] {
+  fill: #ffffff !important;
 }
 
 /* CSS barcode */

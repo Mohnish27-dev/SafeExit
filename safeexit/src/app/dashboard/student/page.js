@@ -1644,8 +1644,9 @@ export default function StudentDashboardPage() {
                   onClick={() => openQr(QR_PURPOSE.OUTING)}
                   title="Enlarge QR pass"
                   className="sd-stub-qr sd-luxe-tilt cursor-pointer"
+                  style={{ colorScheme: "only light", backgroundColor: "#ffffff" }}
                 >
-                  <QRCode value={qrValue} size={148} className="h-[148px] w-[148px]" />
+                  <QRCode value={qrValue} size={148} bgColor="#FFFFFF" fgColor="#000000" className="h-[148px] w-[148px]" style={{ colorScheme: "only light" }} />
                 </button>
                 <div className="sd-barcode w-full max-w-[190px]" aria-hidden="true" />
                 <p className="font-mono text-[0.62rem] tracking-[0.35em] text-slate-400">

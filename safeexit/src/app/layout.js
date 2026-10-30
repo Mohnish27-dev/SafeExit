@@ -50,6 +50,7 @@ export default function RootLayout({ children }) {
       <head>
         <link rel="manifest" href={`${BASE_PATH}/manifest.json`} />
         <meta name="theme-color" content="#6366f1" />
+        <meta name="color-scheme" content="light dark" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <Script id="theme-init" strategy="beforeInteractive">
