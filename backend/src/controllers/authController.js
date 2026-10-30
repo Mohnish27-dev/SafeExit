@@ -734,6 +734,48 @@ const refreshSession = async (req, res) => {
   }
 };
 
+// GET /api/auth/hostel-contact — private (Student)
+//
+// Returns the name and phone number of the caretaker assigned to the requesting
+// student's hostel, plus the warden(s) of the same hostel. Used by the student
+// dashboard to show who to contact in an emergency or for hostel matters.
+const getHostelContact = async (req, res) => {
+  try {
+    const student = await User.findByPk(req.user._id, { attributes: ['role', 'hostelName'] });
+    if (!student || student.role === 'Admin') {
+      return res.status(403).json({ message: 'Not allowed.' });
+    }
+
+    const hostel = student.hostelName;
+    if (!hostel) {
+      return res.json({ caretaker: null, wardens: [] });
+    }
+
+    // Fetch caretaker and wardens for this hostel in parallel.
+    const [caretaker, wardens] = await Promise.all([
+      User.findOne({
+        where: { role: 'Caretaker', managedHostel: hostel },
+        attributes: ['id', 'name', 'phoneNumber'],
+      }),
+      User.findAll({
+        where: { role: 'Warden', managedHostel: hostel },
+        attributes: ['id', 'name', 'phoneNumber'],
+        order: [['name', 'ASC']],
+      }),
+    ]);
+
+    res.json({
+      hostel,
+      caretaker: caretaker
+        ? { name: caretaker.name, phoneNumber: caretaker.phoneNumber || null }
+        : null,
+      wardens: wardens.map((w) => ({ name: w.name, phoneNumber: w.phoneNumber || null })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   registerUser,
   authUser,
@@ -741,6 +783,7 @@ module.exports = {
   getGoogleConfig,
   getUserProfile,
   updateUserProfile,
+  getHostelContact,
   logoutUser,
   refreshSession,
 };

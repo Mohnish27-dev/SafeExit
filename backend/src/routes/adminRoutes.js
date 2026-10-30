@@ -14,6 +14,7 @@ const {
   resetStaffPin,
   updateStaffScope,
   removeStaff,
+  updateStaff,
   updateStudent,
   getProfileWindow,
   reopenProfileWindow,
@@ -51,6 +52,7 @@ router.post('/profile-window/close', protect, authorizeRoles('Admin'), closeProf
 router.post('/staff', protect, authorizeRoles('Admin'), createStaff);
 router.patch('/staff/:id/pin', protect, authorizeRoles('Admin'), resetStaffPin);
 router.patch('/staff/:id/scope', protect, authorizeRoles('Admin'), updateStaffScope);
+router.patch('/staff/:id/details', protect, authorizeRoles('Admin'), updateStaff);
 router.delete('/staff/:id', protect, authorizeRoles('Admin'), removeStaff);
 
 module.exports = router;

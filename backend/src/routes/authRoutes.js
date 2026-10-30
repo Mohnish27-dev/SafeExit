@@ -7,6 +7,7 @@ const {
   getGoogleConfig,
   getUserProfile,
   updateUserProfile,
+  getHostelContact,
   logoutUser,
   refreshSession,
 } =require('../controllers/authController');
@@ -46,6 +47,8 @@ router.post('/google', authLimiter, googleLogin);
 router.post('/logout', logoutUser);
 router.post('/refresh', protect, refreshSession);
 router.get('/profile', protect, getUserProfile);
+// Returns the caretaker's name + phone for the student's hostel (and wardens).
+router.get('/hostel-contact', protect, getHostelContact);
 // profileLimiter because this is the 2mb-body photo endpoint, per-user keyed.
 router.patch('/profile', protect, profileLimiter, updateUserProfile);
 
