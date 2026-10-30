@@ -3,6 +3,13 @@ const { User, LeaveApplication, OutingRequest } = require('../models');
 const { genderForHostel } = require('../config/hostels');
 const { ciEquals } = require('../utils/ciCompare');
 const { isReturnLate } = require('../utils/outingRules');
+const { getAwayStudentIds } = require('../utils/overdue');
+
+const hostelStudentWhere = (hostel, alias) => ({
+  role: 'Student',
+  residency: 'Hostel',
+  [Op.and]: [ciEquals(alias ? `${alias}.hostel_name` : 'hostel_name', hostel)],
+});
 
 // GET /api/caretaker/selectable — private (Student)
 // Lists the caretakers a student may route a request to: every assigned caretaker whose
@@ -46,8 +53,8 @@ const getSelectableCaretakers = async (req, res) => {
 // `{ outNow, total, inside, outside, onLeave, overdue, hostel }`.
 const getCaretakerStats = async (req, res) => {
   try {
-    const managedHostel = String(req.user?.managedHostel || req.query?.hostel || '').trim();
-    const isDetailed = Boolean(req.query?.detailed);
+    const managedHostel = String(req.user?.managedHostel || '').trim();
+    const isDetailed = req.query?.detailed === 'true';
 
     if (!managedHostel) {
       return res.json(
@@ -60,9 +67,8 @@ const getCaretakerStats = async (req, res) => {
     // Gate scans maintain campusStatus atomically, making it the live occupancy source.
     const outNow = await User.count({
       where: {
-        role: 'Student',
+        ...hostelStudentWhere(managedHostel),
         campusStatus: { [Op.in]: ['Outside', 'Overdue'] },
-        [Op.and]: [ciEquals('hostel_name', managedHostel)],
       },
     });
 
@@ -70,53 +76,26 @@ const getCaretakerStats = async (req, res) => {
       return res.json({ outNow });
     }
 
-    const [total, inside, onLeaveApps, outings] = await Promise.all([
+    const [total, inside, { onLeaveIds, overdueIds }] = await Promise.all([
       User.count({
         where: {
-          role: 'Student',
-          residency: 'Hostel',
-          [Op.and]: [ciEquals('hostel_name', managedHostel)],
+          ...hostelStudentWhere(managedHostel),
         },
       }),
       User.count({
         where: {
-          role: 'Student',
-          residency: 'Hostel',
+          ...hostelStudentWhere(managedHostel),
           campusStatus: 'Inside',
-          [Op.and]: [ciEquals('hostel_name', managedHostel)],
         },
       }),
-      LeaveApplication.findAll({
-        where: { status: 'Out' },
-        include: [
-          {
-            association: 'student',
-            where: { [Op.and]: [ciEquals('hostel_name', managedHostel)] },
-            attributes: ['id'],
-          },
-        ],
-        attributes: ['id', 'studentId'],
-        raw: true,
-      }),
-      OutingRequest.findAll({
-        where: { status: 'Out' },
-        include: [
-          {
-            association: 'student',
-            where: { [Op.and]: [ciEquals('hostel_name', managedHostel)] },
-            attributes: ['id'],
-          },
-        ],
-        attributes: ['id', 'studentId', 'inTime'],
-        raw: true,
+      getAwayStudentIds({
+        ...hostelStudentWhere(managedHostel, 'student'),
+        campusStatus: { [Op.in]: ['Outside', 'Overdue'] },
       }),
     ]);
 
-    const onLeave = onLeaveApps.length;
-    let overdue = 0;
-    for (const o of outings) {
-      if (isReturnLate(o.inTime)) overdue++;
-    }
+    const onLeave = onLeaveIds.size;
+    const overdue = overdueIds.size;
     const outside = Math.max(0, outNow - onLeave - overdue);
 
     res.json({
@@ -139,7 +118,7 @@ const getCaretakerStats = async (req, res) => {
 // from 'Out' -> 'Returned' and campusStatus -> 'Inside', removing them from this roster instantly.
 const getOnLeaveStudents = async (req, res) => {
   try {
-    const managedHostel = String(req.user?.managedHostel || req.query?.hostel || '').trim();
+    const managedHostel = String(req.user?.managedHostel || '').trim();
     if (!managedHostel) return res.json([]);
 
     const leaves = await LeaveApplication.findAll({
@@ -147,7 +126,10 @@ const getOnLeaveStudents = async (req, res) => {
       include: [
         {
           association: 'student',
-          where: { [Op.and]: [ciEquals('hostel_name', managedHostel)] },
+          where: {
+            ...hostelStudentWhere(managedHostel, 'student'),
+            campusStatus: { [Op.in]: ['Outside', 'Overdue'] },
+          },
           attributes: [
             'id',
             'name',
@@ -161,6 +143,9 @@ const getOnLeaveStudents = async (req, res) => {
           ],
         },
       ],
+      attributes: ['id', 'destination', 'reason', 'leaveDate', 'returnDate',
+        'expectedDepartureTime', 'parentPhone', 'isEmergency', 'status',
+        'decidedAt', 'decidedByRole', 'createdAt'],
       order: [['returnDate', 'ASC']],
     });
 
@@ -205,7 +190,7 @@ const getOnLeaveStudents = async (req, res) => {
 // Lists all students belonging to this caretaker's hostel who are currently out on an outing.
 const getActiveOutings = async (req, res) => {
   try {
-    const managedHostel = String(req.user?.managedHostel || req.query?.hostel || '').trim();
+    const managedHostel = String(req.user?.managedHostel || '').trim();
     if (!managedHostel) return res.json([]);
 
     const outings = await OutingRequest.findAll({
@@ -213,7 +198,10 @@ const getActiveOutings = async (req, res) => {
       include: [
         {
           association: 'student',
-          where: { [Op.and]: [ciEquals('hostel_name', managedHostel)] },
+          where: {
+            ...hostelStudentWhere(managedHostel, 'student'),
+            campusStatus: { [Op.in]: ['Outside', 'Overdue'] },
+          },
           attributes: [
             'id',
             'name',
@@ -227,6 +215,8 @@ const getActiveOutings = async (req, res) => {
           ],
         },
       ],
+      attributes: ['id', 'destination', 'purpose', 'outingType', 'outTime',
+        'actualOutTime', 'inTime', 'status', 'createdAt'],
       order: [['inTime', 'ASC']],
     });
 
@@ -251,7 +241,7 @@ const getActiveOutings = async (req, res) => {
       destination: o.destination || 'Campus Outing',
       purpose: o.purpose || 'Outing',
       outingType: o.outingType,
-      outTime: o.outTime || o.actualOutTime,
+      outTime: o.actualOutTime || o.outTime,
       inTime: o.inTime,
       isOverdue: isReturnLate(o.inTime),
       status: o.status,
@@ -268,17 +258,14 @@ const getActiveOutings = async (req, res) => {
 // Lists all students residing in this caretaker's hostel with their live campus status.
 const getHostelStudents = async (req, res) => {
   try {
-    const managedHostel = String(req.user?.managedHostel || req.query?.hostel || '').trim();
+    const managedHostel = String(req.user?.managedHostel || '').trim();
     if (!managedHostel) return res.json([]);
 
-    const { getAwayStudentIds } = require('../utils/overdue');
-    const { overdueIds, onLeaveIds } = await getAwayStudentIds();
+    const { overdueIds, onLeaveIds } = await getAwayStudentIds(hostelStudentWhere(managedHostel, 'student'));
 
     const students = await User.findAll({
       where: {
-        role: 'Student',
-        residency: 'Hostel',
-        [Op.and]: [ciEquals('hostel_name', managedHostel)],
+        ...hostelStudentWhere(managedHostel),
       },
       attributes: [
         'id',

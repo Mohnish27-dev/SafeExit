@@ -1,7 +1,6 @@
 const app = require('./app');
 const { connectPostgres, closePostgres, getSequelize } = require('./config/sequelize');
 const { ensureAdmins } = require('./utils/ensureAdmins');
-const { ensureStaff } = require('./utils/ensureStaff');
 const { ensureProfileWindowSchema } = require('./utils/profileWindow');
 const { ensureLeaveSchema } = require('./utils/leaveSchema');
 const { ensureResidencySchema } = require('./utils/residencySchema');
@@ -118,14 +117,8 @@ connectPostgres().then(async () => {
   } catch (err) {
     console.error('Admin seeding failed:', err.message);
   }
-  try {
-    const { created, updated } = await ensureStaff();
-    if (created || updated) {
-      console.log(`Staff ensured (created: ${created}, updated: ${updated}).`);
-    }
-  } catch (err) {
-    console.error('Staff seeding failed:', err.message);
-  }
+  // Caretakers and guards are provisioned by the admin. Starting the server must
+  // never create demo staff, reset their passwords, or change hostel assignments.
 
   // The one-active-pass guard used to need proving at boot: on MongoDB a partial unique
   // index with $in in its filter fails to build SILENTLY on servers below 6.0 and on

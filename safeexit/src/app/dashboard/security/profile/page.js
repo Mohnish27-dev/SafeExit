@@ -44,8 +44,10 @@ export default function SecurityProfilePage() {
   }, [t]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!authorized) return;
+    const initial = setTimeout(load, 0);
+    return () => clearTimeout(initial);
+  }, [authorized, load]);
 
   const handleLogout = async () => {
     setLoggingOut(true);

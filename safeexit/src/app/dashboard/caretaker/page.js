@@ -33,6 +33,7 @@ import SOSAlertsView from "./components/SOSAlertsView";
 import OverdueStudentsView from "./components/OverdueStudentsView";
 import DelayNoticesView from "./components/DelayNoticesView";
 import DelayNoticeToast from "./components/DelayNoticeToast";
+import HostelResidentsView from "./components/HostelResidentsView";
 import HostelOnLeaveRoster from "./components/HostelOnLeaveRoster";
 import HostelActiveOutingsRoster from "./components/HostelActiveOutingsRoster";
 import HostelStudentsDirectory from "./components/HostelStudentsDirectory";
@@ -63,10 +64,6 @@ const initials = (name = "") =>
     .slice(0, 2)
     .join("")
     .toUpperCase() || "?";
-
-// managedGender maps to the hostel the caretaker oversees.
-const HOSTEL_LABEL = { Male: "Boys' Hostel", Female: "Girls' Hostel" };
-
 
 function CaretakerStatCard({
   label,
@@ -247,20 +244,9 @@ export default function CaretakerDashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    try {
-      const raw = typeof window !== "undefined" && sessionStorage.getItem("safeexit:user");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setUser(parsed);
-      }
-    } catch (e) {
-      // ignore
-    }
-  }, []);
-
   // Refresh from server so managedHostel/managedGender are current even for older sessions.
   useEffect(() => {
+    if (!authorized) return;
     let cancelled = false;
     (async () => {
       try {
@@ -271,7 +257,7 @@ export default function CaretakerDashboardPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [authorized]);
 
   const formattedDate = now ? now.toLocaleDateString(dateLocale, { weekday: "short", day: "2-digit", month: "short" }) : tc("loading");
   const formattedTime = now ? now.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : tc("loading");
@@ -312,11 +298,19 @@ export default function CaretakerDashboardPage() {
   // All registered students for this caretaker's hostel
   const [hostelStudents, setHostelStudents] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [rosterErrors, setRosterErrors] = useState({});
 
 
-  // Active home section tab: "on-leave" or "pending-leave"
-  const [homeWorkdeskTab, setHomeWorkdeskTab] = useState("on-leave");
-  const [directoryFilter, setDirectoryFilter] = useState("all");
+  // Active filter for the dedicated Student Movement / Residents view
+  const [residentsFilter, setResidentsFilter] = useState("all");
+
+  const openResidentsView = (filterKey = "all") => {
+    setResidentsFilter(filterKey);
+    setView("residents");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
 
   const loadDelayCount = useCallback(async () => {
     try {
@@ -328,10 +322,11 @@ export default function CaretakerDashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadDelayCount();
+    if (!authorized) return;
+    const initial = setTimeout(loadDelayCount, 0);
     const interval = setInterval(loadDelayCount, 30000);
-    return () => clearInterval(interval);
-  }, [loadDelayCount]);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [authorized, loadDelayCount]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -341,18 +336,16 @@ export default function CaretakerDashboardPage() {
   }, [loadDelayCount]);
 
   // Scope resolution: caretaker access is bound directly to their assigned hostel via login.
-  const managedGender = user?.managedGender;
   const managedHostel = user?.managedHostel;
-  const activeHostel = managedHostel || HOSTEL_LABEL[managedGender] || "Kadambini";
+  const activeHostel = String(managedHostel || '').trim();
   const displayHostelName = getTranslatedHostelName(activeHostel, locale);
   const effectiveDisplayName = (user && (user.name || user.displayName)) || `${activeHostel} Caretaker`;
   const displayUserName = formatStaffDisplayName(effectiveDisplayName, locale);
-  const isConfigured = Boolean(managedHostel || managedGender);
+  const isConfigured = Boolean(activeHostel);
 
-  const loadLiveStats = useCallback(async (targetHostel = activeHostel) => {
+  const loadLiveStats = useCallback(async () => {
     try {
-      const q = targetHostel ? `?detailed=true&hostel=${encodeURIComponent(targetHostel)}` : "?detailed=true";
-      const data = await apiFetch(`/caretaker/stats${q}`);
+      const data = await apiFetch('/caretaker/stats?detailed=true');
       setHostelStats({
         outNow: Number(data?.outNow) || 0,
         total: Number(data?.total) || 0,
@@ -360,51 +353,52 @@ export default function CaretakerDashboardPage() {
         outside: Number(data?.outside) || 0,
         onLeave: Number(data?.onLeave) || 0,
         overdue: Number(data?.overdue) || 0,
-        hostel: data?.hostel || targetHostel || "",
+        hostel: data?.hostel || "",
       });
+      setRosterErrors((errors) => ({ ...errors, stats: false }));
     } catch {
-      /* best-effort */
+      setRosterErrors((errors) => ({ ...errors, stats: true }));
     }
-  }, [activeHostel]);
+  }, []);
 
-  const loadOnLeaveStudents = useCallback(async (targetHostel = activeHostel) => {
+  const loadOnLeaveStudents = useCallback(async () => {
     setLoadingOnLeave(true);
     try {
-      const q = targetHostel ? `?hostel=${encodeURIComponent(targetHostel)}` : "";
-      const data = await apiFetch(`/caretaker/on-leave${q}`);
+      const data = await apiFetch('/caretaker/on-leave');
       setOnLeaveStudents(Array.isArray(data) ? data : []);
+      setRosterErrors((errors) => ({ ...errors, leaves: false }));
     } catch {
-      /* best-effort */
+      setRosterErrors((errors) => ({ ...errors, leaves: true }));
     } finally {
       setLoadingOnLeave(false);
     }
-  }, [activeHostel]);
+  }, []);
 
-  const loadHostelStudents = useCallback(async (targetHostel = activeHostel) => {
+  const loadHostelStudents = useCallback(async () => {
     setLoadingStudents(true);
     try {
-      const q = targetHostel ? `?hostel=${encodeURIComponent(targetHostel)}` : "";
-      const data = await apiFetch(`/caretaker/students${q}`);
+      const data = await apiFetch('/caretaker/students');
       setHostelStudents(Array.isArray(data) ? data : []);
+      setRosterErrors((errors) => ({ ...errors, students: false }));
     } catch {
-      /* best-effort */
+      setRosterErrors((errors) => ({ ...errors, students: true }));
     } finally {
       setLoadingStudents(false);
     }
-  }, [activeHostel]);
+  }, []);
 
-  const loadActiveOutings = useCallback(async (targetHostel = activeHostel) => {
+  const loadActiveOutings = useCallback(async () => {
     setLoadingOutings(true);
     try {
-      const q = targetHostel ? `?hostel=${encodeURIComponent(targetHostel)}` : "";
-      const data = await apiFetch(`/caretaker/active-outings${q}`);
+      const data = await apiFetch('/caretaker/active-outings');
       setActiveOutings(Array.isArray(data) ? data : []);
+      setRosterErrors((errors) => ({ ...errors, outings: false }));
     } catch {
-      /* best-effort */
+      setRosterErrors((errors) => ({ ...errors, outings: true }));
     } finally {
       setLoadingOutings(false);
     }
-  }, [activeHostel]);
+  }, []);
 
   const loadSosCount = useCallback(async () => {
     try {
@@ -425,30 +419,31 @@ export default function CaretakerDashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadSosCount();
+    if (!authorized) return;
+    const initial = setTimeout(loadSosCount, 0);
     const interval = setInterval(loadSosCount, 30000);
-    return () => clearInterval(interval);
-  }, [loadSosCount]);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [authorized, loadSosCount]);
 
   useEffect(() => {
-    loadOverdueCount();
+    if (!authorized) return;
+    const initial = setTimeout(loadOverdueCount, 0);
     const interval = setInterval(loadOverdueCount, 30000);
-    return () => clearInterval(interval);
-  }, [loadOverdueCount]);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [authorized, loadOverdueCount]);
 
   useEffect(() => {
-    loadLiveStats();
-    loadOnLeaveStudents();
-    loadActiveOutings();
-    loadHostelStudents();
-    const interval = setInterval(() => {
+    if (!authorized) return;
+    const refresh = () => {
       loadLiveStats();
       loadOnLeaveStudents();
       loadActiveOutings();
       loadHostelStudents();
-    }, 20000);
-    return () => clearInterval(interval);
-  }, [loadLiveStats, loadOnLeaveStudents, loadActiveOutings, loadHostelStudents]);
+    };
+    const initial = setTimeout(refresh, 0);
+    const interval = setInterval(refresh, 20000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [authorized, activeHostel, loadLiveStats, loadOnLeaveStudents, loadActiveOutings, loadHostelStudents]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -480,18 +475,30 @@ export default function CaretakerDashboardPage() {
         loadOnLeaveStudents();
       },
     });
-  }, [loadOverdueCount, loadLiveStats, loadOnLeaveStudents]);
+  }, [loadOverdueCount, loadLiveStats, loadOnLeaveStudents, loadActiveOutings, loadHostelStudents]);
 
   const [view, setView] = useState("home");
 
-  // Push-notification deep link (?view=sos etc.); param consumed once and stripped.
+  // Push-notification & deep link (?view=sos, ?view=residents&filter=inside, etc.)
   useEffect(() => {
+    const initial = setTimeout(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
-    if (target && ["sos", "overdue", "delays", "leave", "on-leave", "profile"].includes(target)) {
-      setView(target);
+    const targetFilter = params.get("filter");
+    if (targetFilter && ["all", "inside", "outside", "onleave", "overdue"].includes(targetFilter)) {
+      setResidentsFilter(targetFilter);
+    }
+    if (target && ["sos", "overdue", "delays", "leave", "on-leave", "residents", "profile", "logs"].includes(target)) {
+      if (target === "on-leave") {
+        setResidentsFilter("onleave");
+        setView("residents");
+      } else {
+        setView(target);
+      }
       window.history.replaceState({}, "", window.location.pathname);
     }
+    }, 0);
+    return () => clearTimeout(initial);
   }, []);
 
   const displayName = (user && (user.name || user.displayName)) || t("chiefCaretaker");
@@ -499,12 +506,12 @@ export default function CaretakerDashboardPage() {
   const navTabs = [
     { key: "home", icon: Home, label: tc("home"), short: t("navHome") },
     {
-      key: "on-leave",
-      icon: PlaneTakeoff,
-      label: t("tabActiveLeaves"),
-      short: t("tabOnLeaveMobile"),
-      count: onLeaveStudents.length,
-      countClass: "bg-violet-600",
+      key: "residents",
+      icon: Users,
+      label: t("residentsDirectory") || "Residents",
+      short: t("tabResidentsMobile") || "Residents",
+      count: hostelStudents.length,
+      countClass: "bg-indigo-600",
     },
     {
       key: "leave",
@@ -512,22 +519,6 @@ export default function CaretakerDashboardPage() {
       label: t("leaveApplications"),
       short: t("navLeave"),
       count: leavePending.length,
-      countClass: "bg-rose-500",
-    },
-    {
-      key: "delays",
-      icon: Clock,
-      label: t("delayNotices"),
-      short: t("navDelays"),
-      count: delayCount,
-      countClass: "bg-amber-500",
-    },
-    {
-      key: "sos",
-      icon: Siren,
-      label: t("safetyAlerts"),
-      short: t("navAlerts"),
-      count: sosCount,
       countClass: "bg-rose-500",
     },
     { key: "logs", icon: ScrollText, label: t("movementLogs"), short: t("navLogs") },
@@ -542,16 +533,16 @@ export default function CaretakerDashboardPage() {
   const [pushEnabling, setPushEnabling] = useState(false);
 
   useEffect(() => {
-    if (!isPushSupported()) {
-      setPushPermission('unsupported');
-      return;
-    }
-    const perm = getNotificationPermission();
-    setPushPermission(perm);
-
-    if (perm === 'granted') {
-      autoSubscribeIfGranted();
-    }
+    const initial = setTimeout(() => {
+      if (!isPushSupported()) {
+        setPushPermission('unsupported');
+        return;
+      }
+      const perm = getNotificationPermission();
+      setPushPermission(perm);
+      if (perm === 'granted') autoSubscribeIfGranted();
+    }, 0);
+    return () => clearTimeout(initial);
   }, []);
 
   const handleEnablePush = async () => {
@@ -640,8 +631,14 @@ export default function CaretakerDashboardPage() {
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div>
                 <p className="font-bold">Your hostel isn&apos;t configured yet</p>
-                <p className="text-sm">Until an admin assigns you to a hostel, you won&apos;t see any student requests, leave applications, or alerts. Please contact the admin.</p>
+                <p className="text-sm">Ask an admin to assign your hostel so your student directory and live rosters can load.</p>
               </div>
+            </div>
+          )}
+
+          {Object.values(rosterErrors).some(Boolean) && (
+            <div role="alert" className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-800">
+              {t('liveDataUnavailable')}
             </div>
           )}
 
@@ -706,7 +703,7 @@ export default function CaretakerDashboardPage() {
                     count: overdueCount,
                     icon: AlarmClock,
                     className: 'wd-attn--sos',
-                    onClick: () => setView('overdue'),
+                    onClick: () => openResidentsView('overdue'),
                   },
                   delayCount > 0 && {
                     key: 'delays',
@@ -820,7 +817,7 @@ export default function CaretakerDashboardPage() {
                       </span>
                       <span className="text-xs font-bold text-slate-300">•</span>
                       <span className="text-xs font-bold text-slate-600">
-                        {t("insideSummary", { inside: hostelStats.inside })} · {t("awaySummary", { away: (Number(hostelStats.outside) || 0) + onLeaveStudents.length })}
+                        {t("insideSummary", { inside: hostelStats.inside })} · {t("awaySummary", { away: hostelStats.outNow })}
                         {sosCount > 0 && (
                           <span className="text-rose-600 font-extrabold ml-1.5 animate-pulse">
                             · {t("activeSosSummary", { count: sosCount })}
@@ -871,14 +868,9 @@ export default function CaretakerDashboardPage() {
                     badgeText={hostelStats.total > 0 ? t("occupancyPct", { percent: Math.round(((hostelStats.inside || 0) / hostelStats.total) * 100) }) : t("safeInside")}
                     badgeVariant="success"
                     actionHint={t("actionResidents")}
-                    isActiveTab={homeWorkdeskTab === "directory" && directoryFilter === "inside"}
+                    isActiveTab={view === "residents" && residentsFilter === "inside"}
                     activeIndicatorText={t("activeIndicator")}
-                    onClick={() => {
-                      setDirectoryFilter("inside");
-                      setHomeWorkdeskTab("directory");
-                      const el = document.getElementById("hostel-workdesk");
-                      if (el) el.scrollIntoView({ behavior: "smooth" });
-                    }}
+                    onClick={() => openResidentsView("inside")}
                   />
 
                   {/* 2. On Approved Leave */}
@@ -891,13 +883,9 @@ export default function CaretakerDashboardPage() {
                     badgeText={onLeaveStudents.length > 0 ? t("countAway", { count: onLeaveStudents.length }) : t("noneAway")}
                     badgeVariant={onLeaveStudents.length > 0 ? "purple" : "neutral"}
                     actionHint={t("actionLeaveRoster")}
-                    isActiveTab={homeWorkdeskTab === "on-leave"}
+                    isActiveTab={view === "residents" && residentsFilter === "onleave"}
                     activeIndicatorText={t("activeIndicator")}
-                    onClick={() => {
-                      setHomeWorkdeskTab("on-leave");
-                      const el = document.getElementById("hostel-workdesk");
-                      if (el) el.scrollIntoView({ behavior: "smooth" });
-                    }}
+                    onClick={() => openResidentsView("onleave")}
                   />
 
                   {/* 3. On Day Pass / Outing */}
@@ -905,18 +893,14 @@ export default function CaretakerDashboardPage() {
                     accentColor="sky"
                     label={t("onOuting")}
                     value={hostelStats.outside}
-                    sublabel={activeOutings.length > 0 ? t("regularOutingPass") : t("noOutingsNow")}
+                    sublabel={hostelStats.outside > 0 ? t("regularOutingPass") : t("noOutingsNow")}
                     icon={Compass}
-                    badgeText={activeOutings.length > 0 ? t("countOutside", { count: activeOutings.length }) : t("noneOut")}
-                    badgeVariant={activeOutings.length > 0 ? "sky" : "neutral"}
+                    badgeText={hostelStats.outside > 0 ? t("countOutside", { count: hostelStats.outside }) : t("noneOut")}
+                    badgeVariant={hostelStats.outside > 0 ? "sky" : "neutral"}
                     actionHint={t("actionTrackOutings")}
-                    isActiveTab={homeWorkdeskTab === "outings"}
+                    isActiveTab={view === "residents" && residentsFilter === "outside"}
                     activeIndicatorText={t("activeIndicator")}
-                    onClick={() => {
-                      setHomeWorkdeskTab("outings");
-                      const el = document.getElementById("hostel-workdesk");
-                      if (el) el.scrollIntoView({ behavior: "smooth" });
-                    }}
+                    onClick={() => openResidentsView("outside")}
                   />
 
                   {/* 4. Overdue */}
@@ -929,9 +913,9 @@ export default function CaretakerDashboardPage() {
                     badgeText={hostelStats.overdue > 0 ? t("curfewMissed") : t("allOnTime")}
                     badgeVariant={hostelStats.overdue > 0 ? "alert" : "success"}
                     actionHint={t("actionOverdueView")}
-                    isActiveTab={view === 'overdue'}
+                    isActiveTab={view === "residents" && residentsFilter === "overdue"}
                     activeIndicatorText={t("activeIndicator")}
-                    onClick={() => setView('overdue')}
+                    onClick={() => openResidentsView("overdue")}
                   />
 
                   {/* 5. Total Hostel Capacity */}
@@ -944,14 +928,9 @@ export default function CaretakerDashboardPage() {
                     badgeText={t("hostelRoll")}
                     badgeVariant="neutral"
                     actionHint={t("actionFullRoster")}
-                    isActiveTab={homeWorkdeskTab === "directory" && directoryFilter === "all"}
+                    isActiveTab={view === "residents" && residentsFilter === "all"}
                     activeIndicatorText={t("activeIndicator")}
-                    onClick={() => {
-                      setDirectoryFilter("all");
-                      setHomeWorkdeskTab("directory");
-                      const el = document.getElementById("hostel-workdesk");
-                      if (el) el.scrollIntoView({ behavior: "smooth" });
-                    }}
+                    onClick={() => openResidentsView("all")}
                   />
 
                   {/* 6. Safety Alerts (SOS) */}
@@ -970,235 +949,33 @@ export default function CaretakerDashboardPage() {
                   />
                 </div>
               </section>
-
-              {/* Main Interactive Workdesk Section (Active Leave Roster & Pending Approvals) */}
-              <section id="hostel-workdesk" className="mt-8 space-y-6 sd-enter" style={{ animationDelay: "0.24s" }}>
-                {/* Switcher Tab header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 bg-white/95 backdrop-blur-md p-2 sm:p-2.5 rounded-2xl border border-slate-200/80 shadow-xs">
-                  {/* Symmetrical 2x2 grid on mobile, inline flex row on tablet & desktop */}
-                  <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:w-auto">
-                    {/* Tab 1: On Leave */}
-                    <button
-                      type="button"
-                      onClick={() => setHomeWorkdeskTab("on-leave")}
-                      className={`flex items-center justify-between sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-                        homeWorkdeskTab === "on-leave"
-                          ? "bg-violet-600 text-white shadow-md shadow-violet-500/25 border border-violet-600 scale-[1.01]"
-                          : "bg-slate-50/90 text-slate-700 border border-slate-200/80 hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                        <PlaneTakeoff className="h-4 w-4 shrink-0" />
-                        <span className="truncate">
-                          <span className="sm:hidden">{t("tabOnLeaveMobile")}</span>
-                          <span className="hidden sm:inline">{t("tabCurrentlyOnLeave")}</span>
-                        </span>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
-                        homeWorkdeskTab === "on-leave" ? "bg-white/20 text-white" : "bg-violet-100 text-violet-700"
-                      }`}>
-                        {onLeaveStudents.length}
-                      </span>
-                    </button>
-
-                    {/* Tab 2: Outings */}
-                    <button
-                      type="button"
-                      onClick={() => setHomeWorkdeskTab("outings")}
-                      className={`flex items-center justify-between sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-                        homeWorkdeskTab === "outings"
-                          ? "bg-sky-600 text-white shadow-md shadow-sky-500/25 border border-sky-600 scale-[1.01]"
-                          : "bg-slate-50/90 text-slate-700 border border-slate-200/80 hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                        <Compass className="h-4 w-4 shrink-0" />
-                        <span className="truncate">
-                          <span className="sm:hidden">{t("tabOnOutingMobile")}</span>
-                          <span className="hidden sm:inline">{t("tabOutsideOnOuting")}</span>
-                        </span>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
-                        homeWorkdeskTab === "outings" ? "bg-white/20 text-white" : "bg-sky-100 text-sky-700"
-                      }`}>
-                        {activeOutings.length}
-                      </span>
-                    </button>
-
-                    {/* Tab 3: All Residents */}
-                    <button
-                      type="button"
-                      onClick={() => setHomeWorkdeskTab("directory")}
-                      className={`flex items-center justify-between sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-                        homeWorkdeskTab === "directory"
-                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25 border border-indigo-600 scale-[1.01]"
-                          : "bg-slate-50/90 text-slate-700 border border-slate-200/80 hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                        <Users className="h-4 w-4 shrink-0" />
-                        <span className="truncate">
-                          <span className="sm:hidden">{t("tabResidentsMobile")}</span>
-                          <span className="hidden sm:inline">{t("tabAllResidents")}</span>
-                        </span>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
-                        homeWorkdeskTab === "directory" ? "bg-white/20 text-white" : "bg-indigo-100 text-indigo-700"
-                      }`}>
-                        {hostelStudents.length}
-                      </span>
-                    </button>
-
-                    {/* Tab 4: Pending Approvals */}
-                    <button
-                      type="button"
-                      onClick={() => setHomeWorkdeskTab("pending-leave")}
-                      className={`flex items-center justify-between sm:justify-start gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-                        homeWorkdeskTab === "pending-leave"
-                          ? "bg-rose-600 text-white shadow-md shadow-rose-500/25 border border-rose-600 scale-[1.01]"
-                          : "bg-slate-50/90 text-slate-700 border border-slate-200/80 hover:bg-slate-100 hover:text-slate-900 shadow-2xs"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                        <CalendarDays className="h-4 w-4 shrink-0" />
-                        <span className="truncate">
-                          <span className="sm:hidden">{t("tabApprovalsMobile")}</span>
-                          <span className="hidden sm:inline">{t("tabPendingApprovals")}</span>
-                        </span>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
-                        homeWorkdeskTab === "pending-leave" ? "bg-white/20 text-white" : "bg-rose-100 text-rose-700"
-                      }`}>
-                        {leavePending.length}
-                      </span>
-                    </button>
-                  </div>
-
-                  <p className="hidden md:block text-xs font-semibold text-slate-400 pr-2">
-                    {homeWorkdeskTab === "on-leave"
-                      ? t("workdeskHintOnLeave")
-                      : homeWorkdeskTab === "outings"
-                      ? t("workdeskHintOutings")
-                      : homeWorkdeskTab === "directory"
-                      ? t("workdeskHintDirectory")
-                      : t("workdeskHintPending")}
-                  </p>
-                </div>
-
-                {/* Tab 1: Currently On Leave Live Roster */}
-                {homeWorkdeskTab === "on-leave" && (
-                  <HostelOnLeaveRoster
-                    leaves={onLeaveStudents}
-                    loading={loadingOnLeave}
-                    onRefresh={() => loadOnLeaveStudents(activeHostel)}
-                    hostelName={displayHostelName}
-                  />
-                )}
-
-                {/* Tab 2: Active Outings Live Roster */}
-                {homeWorkdeskTab === "outings" && (
-                  <HostelActiveOutingsRoster
-                    outings={activeOutings}
-                    loading={loadingOutings}
-                    onRefresh={() => loadActiveOutings(activeHostel)}
-                    hostelName={displayHostelName}
-                  />
-                )}
-
-                {/* Tab 3: All Residents Directory */}
-                {homeWorkdeskTab === "directory" && (
-                  <HostelStudentsDirectory
-                    students={hostelStudents}
-                    loading={loadingStudents}
-                    onRefresh={() => loadHostelStudents(activeHostel)}
-                    hostelName={displayHostelName}
-                    initialFilter={directoryFilter}
-                  />
-                )}
-
-                {/* Tab 4: Pending Leave Approvals */}
-                {homeWorkdeskTab === "pending-leave" && (
-                  <div className="sd-luxe-panel sd-luxe-rise rounded-4xl p-5 sm:p-7 shadow-xl border border-white/80 bg-white/90">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="sd-eyebrow">{t("leaveApplications")}</p>
-                        <h2 className="sd-title sd-title-sm">{t("pendingLeaveApprovals")}</h2>
-                      </div>
-                      <span className="sd-luxe-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-violet-800 bg-violet-50 border border-violet-200">
-                        <CalendarDays className="h-4 w-4" /> {leavePending.length}
-                      </span>
-                    </div>
-                    <p className="sd-micro mt-1 text-slate-500">{t("leaveOnlyNote")}</p>
-                    <div className="mt-6 space-y-3">
-                      {leaveDesk.loading ? (
-                        <p className="text-sm text-slate-500">{t("loadingLeave")}</p>
-                      ) : leaveDesk.error ? (
-                        <p className="text-sm font-semibold text-rose-600">{leaveDesk.error}</p>
-                      ) : leavePending.length === 0 ? (
-                        <div className="flex flex-col items-center gap-2 py-8 text-slate-500">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-                            <CalendarDays className="h-6 w-6 text-slate-400" />
-                          </div>
-                          <p className="font-semibold text-slate-700">{t("noPendingLeave")}</p>
-                          <p className="text-sm text-slate-500">{t("noLeaveYet")}</p>
-                        </div>
-                      ) : (
-                        leavePending.map((req, i) => (
-                          <div
-                            key={req.id}
-                            className="sd-luxe-card sd-luxe-rise sd-luxe-tilt flex flex-col gap-3 rounded-2xl px-4 py-3.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
-                            style={{ animationDelay: `${0.12 + i * 0.06}s` }}
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-10 w-10 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-fuchsia-400 flex items-center justify-center text-white font-bold">
-                                {req.initials}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="sd-card-title text-slate-900 text-base">
-                                  {req.name}
-                                  {req.isEmergency && (
-                                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-white">
-                                      <Siren className="h-3 w-3" /> {t("emergency")}
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="sd-micro mt-0.5">
-                                  {req.room}
-                                  {req.roll ? (
-                                    <> • <span className="font-mono">{req.roll}</span></>
-                                  ) : null}
-                                </p>
-                                <p className="sd-micro mt-0.5 text-slate-500">
-                                  {t("destination")} {req.destination}
-                                </p>
-                              </div>
-                            </div>
-
-                            <button
-                              onClick={() => setView('leave')}
-                              className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 bg-linear-to-r from-violet-700 via-violet-600 to-fuchsia-500 text-sm text-white font-bold shadow hover:-translate-y-0.5 transition-transform sm:px-4 sm:py-2 cursor-pointer"
-                            >
-                              <ArrowRight className="h-4 w-4 shrink-0" /> {t("reviewInLeave")}
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-              </section>
             </>
           )}
 
-          {view === 'on-leave' && (
-            <div className="mt-4">
-              <HostelOnLeaveRoster
-                leaves={onLeaveStudents}
-                loading={loadingOnLeave}
-                onRefresh={loadOnLeaveStudents}
-                hostelName={displayHostelName}
-              />
-            </div>
+          {(view === 'residents' || view === 'on-leave') && (
+            <HostelResidentsView
+              students={hostelStudents}
+              loadingStudents={loadingStudents}
+              onLeaveStudents={onLeaveStudents}
+              loadingOnLeave={loadingOnLeave}
+              activeOutings={activeOutings}
+              loadingOutings={loadingOutings}
+              onRefresh={() => {
+                loadLiveStats();
+                loadHostelStudents();
+                loadOnLeaveStudents();
+                loadActiveOutings();
+                loadOverdueCount();
+                loadSosCount();
+              }}
+              hostelName={displayHostelName}
+              activeFilter={view === 'on-leave' ? 'onleave' : residentsFilter}
+              onFilterChange={(f) => {
+                setResidentsFilter(f);
+                if (view === 'on-leave') setView('residents');
+              }}
+              onBack={() => setView('home')}
+            />
           )}
 
           {view === 'sos' && <SOSAlertsView onCountChange={setSosCount} />}

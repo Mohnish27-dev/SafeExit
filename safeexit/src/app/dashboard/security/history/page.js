@@ -49,8 +49,10 @@ export default function SecurityHistoryPage() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!authorized) return;
+    const initial = setTimeout(load, 0);
+    return () => clearTimeout(initial);
+  }, [authorized, load]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();

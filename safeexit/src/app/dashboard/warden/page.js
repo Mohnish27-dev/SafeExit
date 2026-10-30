@@ -61,16 +61,20 @@ export default function WardenDashboardPage() {
   }, []);
 
   useEffect(() => {
+    const initial = setTimeout(() => {
     try {
       const raw = typeof window !== "undefined" && sessionStorage.getItem("safeexit:user");
       if (raw) setUser(JSON.parse(raw));
     } catch {
       /* ignore */
     }
+    }, 0);
+    return () => clearTimeout(initial);
   }, []);
 
   // Refresh from server so managedHostel is current even for older sessions.
   useEffect(() => {
+    if (!authorized) return;
     let cancelled = false;
     (async () => {
       try {
@@ -81,16 +85,19 @@ export default function WardenDashboardPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [authorized]);
 
   // Deep link from push notifications (?view=leave etc.); consumed once.
   useEffect(() => {
+    const initial = setTimeout(() => {
     const params = new URLSearchParams(window.location.search);
     const target = params.get("view");
     if (target && ["leave", "sos", "overdue", "delays", "logs", "profile"].includes(target)) {
       setView(target);
       window.history.replaceState({}, "", window.location.pathname);
     }
+    }, 0);
+    return () => clearTimeout(initial);
   }, []);
 
   // Outings need no approval (the gate scan creates them). Girls' leave reaches the
@@ -132,12 +139,17 @@ export default function WardenDashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (!authorized) return;
+    const initial = setTimeout(() => {
     loadSosCount();
     loadOverdueCount();
     loadDelayCount();
-  }, [loadSosCount, loadOverdueCount, loadDelayCount]);
+    }, 0);
+    return () => clearTimeout(initial);
+  }, [authorized, loadSosCount, loadOverdueCount, loadDelayCount]);
 
   useEffect(() => {
+    const initial = setTimeout(() => {
     return subscribeToStaffEvents({
       "delay:created": loadDelayCount,
       "delay:updated": loadDelayCount,
@@ -177,6 +189,8 @@ export default function WardenDashboardPage() {
     const perm = getNotificationPermission();
     setPushPermission(perm);
     if (perm === "granted") autoSubscribeIfGranted();
+    }, 0);
+    return () => clearTimeout(initial);
   }, []);
 
   const handleEnablePush = async () => {

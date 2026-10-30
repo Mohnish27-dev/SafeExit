@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import {
   Users,
   Search,
@@ -34,12 +34,10 @@ export default function HostelStudentsDirectory({
   const { t, locale } = useTranslation("caretaker");
   const displayHostel = getTranslatedHostelName(hostelName, locale);
   const { t: tc } = useTranslation("common");
-  const [filter, setFilter] = useState(initialFilter || "all");
+  const [filterState, setFilterState] = useState({ initialFilter, filter: initialFilter || 'all' });
+  const filter = filterState.initialFilter === initialFilter ? filterState.filter : initialFilter || 'all';
+  const setFilter = (filter) => setFilterState({ initialFilter, filter });
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    if (initialFilter) setFilter(initialFilter);
-  }, [initialFilter]);
 
   const statusLabels = {
     Inside: t("insideHostel") || "Inside Hostel",
@@ -69,12 +67,13 @@ export default function HostelStudentsDirectory({
       if (filter === "overdue" && st !== "Overdue") return false;
 
       if (!search.trim()) return true;
-      const q = search.toLowerCase();
+      const q = search.trim().toLowerCase();
       return (
         (s.name || "").toLowerCase().includes(q) ||
         (s.studentId || "").toLowerCase().includes(q) ||
         (s.roomNumber || "").toLowerCase().includes(q) ||
-        (s.department || "").toLowerCase().includes(q)
+        (s.department || "").toLowerCase().includes(q) ||
+        (s.year || "").toLowerCase().includes(q)
       );
     });
   }, [students, filter, search]);

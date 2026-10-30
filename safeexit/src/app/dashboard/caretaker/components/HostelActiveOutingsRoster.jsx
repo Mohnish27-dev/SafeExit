@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Clock,
   Compass,
@@ -29,6 +29,13 @@ export default function HostelActiveOutingsRoster({
   const { t: tc } = useTranslation("common");
   const dateLocale = useDateLocale();
   const [search, setSearch] = useState("");
+  const [now, setNow] = useState(null);
+  useEffect(() => {
+    const update = () => setNow(Date.now());
+    const initial = setTimeout(update, 0);
+    const interval = setInterval(update, 30000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, []);
 
   const filteredOutings = outings.filter((item) => {
     if (!search.trim()) return true;
@@ -55,9 +62,9 @@ export default function HostelActiveOutingsRoster({
   };
 
   const getPunctualityMeta = (inTimeStr) => {
-    if (!inTimeStr) return null;
+    if (!inTimeStr || now === null) return null;
     const due = new Date(inTimeStr).getTime();
-    const now = Date.now();
+    if (!Number.isFinite(due)) return null;
     const diffMins = Math.round((due - now) / 60000);
 
     if (diffMins < 0) {

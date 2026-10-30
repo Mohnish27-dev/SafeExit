@@ -19,6 +19,7 @@ export function LanguageProvider({ children }) {
   const [locale, setLocaleState] = useState("en");
 
   useEffect(() => {
+    const initial = setTimeout(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored === "hi" || stored === "en") {
@@ -27,6 +28,8 @@ export function LanguageProvider({ children }) {
     } catch {
       // localStorage unavailable (SSR, incognito, etc.)
     }
+    }, 0);
+    return () => clearTimeout(initial);
   }, []);
 
   useEffect(() => {

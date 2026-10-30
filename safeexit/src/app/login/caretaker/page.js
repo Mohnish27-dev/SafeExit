@@ -53,6 +53,7 @@ export default function CaretakerLoginPage() {
 	const [showLoginPin, setShowLoginPin] = useState(false);
 	const [quickLabel, setQuickLabel] = useState("");
 
+	/* eslint-disable react-hooks/set-state-in-effect -- Initialize the login flow from browser storage after hydration. */
 	useEffect(() => {
 		if (typeof window !== "undefined") {
 			sessionStorage.removeItem("safeexit_token");
@@ -70,6 +71,7 @@ export default function CaretakerLoginPage() {
 			setAppState("ONBOARDING");
 		}
 	}, []);
+	/* eslint-enable react-hooks/set-state-in-effect */
 
 	const handleInputChange = (e) => {
 		const { name, value } = e.target;
@@ -117,6 +119,9 @@ export default function CaretakerLoginPage() {
 			role: "caretaker",
 			roleLabel: "Caretaker",
 			id: profile.caretakerId,
+			managedHostel: profile.managedHostel || null,
+			managedGender: profile.managedGender || null,
+			hasSignature: Boolean(profile.hasSignature),
 			// Staff are identified by ID, not email
 		});
 	};
@@ -136,6 +141,9 @@ export default function CaretakerLoginPage() {
 			const profile = {
 				caretakerId: formData.caretakerId,
 				fullName: data.name,
+				managedHostel: data.managedHostel,
+				managedGender: data.managedGender,
+				hasSignature: data.hasSignature,
 			};
 			localStorage.setItem(
 				"safeexit_caretaker_profile",
@@ -207,7 +215,13 @@ export default function CaretakerLoginPage() {
 			const data = await loginCaretakerAccount(loginId, secret);
 			sessionStorage.setItem("safeexit_token", data.token);
 
-			persistCaretakerSession(storedProfile);
+			const profile = {
+				...storedProfile, fullName: data.name,
+				managedHostel: data.managedHostel, managedGender: data.managedGender,
+				hasSignature: data.hasSignature,
+			};
+			localStorage.setItem('safeexit_caretaker_profile', JSON.stringify(profile));
+			persistCaretakerSession(profile);
 			router.push("/dashboard/caretaker");
 		} catch (err) {
 			setErrorMsg(err?.message || "Login failed.");
