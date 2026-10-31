@@ -14,7 +14,7 @@ const { authorizeRoles } = require('../middlewares/roleMiddleware');
 router.get('/selectable', protect, authorizeRoles('Student'), getSelectableCaretakers);
 
 // Live counters for the caretaker dashboard's stats card, scoped to their hostel.
-router.get('/stats', protect, authorizeRoles('Caretaker'), getCaretakerStats);
+router.get('/stats', protect, authorizeRoles('Caretaker', 'Warden'), getCaretakerStats);
 
 // List of students from the caretaker's hostel currently out on leave.
 router.get('/on-leave', protect, authorizeRoles('Caretaker'), getOnLeaveStudents);
