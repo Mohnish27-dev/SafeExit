@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquareText,
+  PlaneTakeoff,
   RefreshCw,
   ShieldCheck,
   Siren,
@@ -67,9 +68,10 @@ function HostelCard({ hostel }) {
         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-700">{hostel.students.total} students</span>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+      <div className="mt-4 grid grid-cols-4 gap-2 text-center">
         <div className="rounded-2xl bg-emerald-50 px-2 py-3"><p className="text-lg font-black text-emerald-700">{hostel.students.inside}</p><p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600">Inside</p></div>
-        <div className="rounded-2xl bg-amber-50 px-2 py-3"><p className="text-lg font-black text-amber-700">{hostel.students.outside}</p><p className="text-[10px] font-bold uppercase tracking-wide text-amber-600">Outside</p></div>
+        <div className="rounded-2xl bg-sky-50 px-2 py-3"><p className="text-lg font-black text-sky-700">{hostel.students.outside}</p><p className="text-[10px] font-bold uppercase tracking-wide text-sky-600">Outing</p></div>
+        <div className="rounded-2xl bg-violet-50 px-2 py-3"><p className="text-lg font-black text-violet-700">{hostel.students.onLeave ?? 0}</p><p className="text-[10px] font-bold uppercase tracking-wide text-violet-600">Leave</p></div>
         <div className="rounded-2xl bg-rose-50 px-2 py-3"><p className="text-lg font-black text-rose-700">{hostel.students.overdue}</p><p className="text-[10px] font-bold uppercase tracking-wide text-rose-600">Overdue</p></div>
       </div>
 
@@ -177,10 +179,11 @@ export default function ChiefWardenDashboardPage() {
   const students = overview?.students || {};
   const stats = [
     { icon: UserCheck, label: "Inside", value: students.inside ?? "—", note: "Students currently inside campus", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-    { icon: UserRound, label: "Outside", value: students.outside ?? "—", note: "Students out on an outing or leave", tone: "border-amber-200 bg-amber-50 text-amber-700" },
+    { icon: UserRound, label: "On Outing", value: students.outside ?? "—", note: "Students out on active day passes", tone: "border-sky-200 bg-sky-50 text-sky-700" },
+    { icon: PlaneTakeoff, label: "On Leave", value: students.onLeave ?? "—", note: "Students away on approved leave", tone: "border-violet-200 bg-violet-50 text-violet-700" },
     { icon: Clock3, label: "Overdue", value: students.overdue ?? "—", note: "Students past their return time", tone: "border-rose-200 bg-rose-50 text-rose-700" },
     { icon: Siren, label: "Active SOS", value: overview?.activeSOS ?? "—", note: "Across boys' and girls' hostels", tone: "border-rose-200 bg-rose-50 text-rose-700" },
-    { icon: FileText, label: "Pending Leave", value: overview?.leaves?.pending ?? "—", note: `Girls awaiting a decision · ${overview?.leaves?.autoApproved ?? 0} boys' leave approved`, tone: "border-violet-200 bg-violet-50 text-violet-700" },
+    { icon: FileText, label: "Pending Leave", value: overview?.leaves?.pending ?? "—", note: `Girls awaiting a decision · ${overview?.leaves?.autoApproved ?? 0} boys' leave approved`, tone: "border-amber-200 bg-amber-50 text-amber-700" },
     { icon: Building2, label: "All Students", value: students.total ?? "—", note: `${overview?.hostels?.length ?? 0} campus hostels`, tone: "border-slate-200 bg-slate-50 text-slate-700" },
   ];
 

@@ -43,6 +43,7 @@ import MovementLogsView from "../caretaker/components/MovementLogsView";
 import OverdueStudentsView from "../caretaker/components/OverdueStudentsView";
 import DelayNoticesView from "../caretaker/components/DelayNoticesView";
 import DelayNoticeToast from "../caretaker/components/DelayNoticeToast";
+import HostelOccupancyStats from "./components/HostelOccupancyStats";
 
 const initials = (name = "") =>
   name.split(" ").map((n) => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
@@ -110,6 +111,26 @@ export default function WardenDashboardPage() {
   // Students who reported they'll be late. Separate from overdueCount because a
   // student can file *before* their deadline passes — they aren't overdue yet.
   const [delayCount, setDelayCount] = useState(0);
+  const [hostelStats, setHostelStats] = useState({
+    outNow: 0,
+    total: 0,
+    inside: 0,
+    outside: 0,
+    onLeave: 0,
+    overdue: 0,
+    hostel: "",
+  });
+
+  const loadHostelStats = useCallback(async () => {
+    try {
+      const data = await apiFetch("/warden/stats?detailed=true");
+      if (data && typeof data === "object") {
+        setHostelStats(data);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }, []);
 
   const loadSosCount = useCallback(async () => {
     try {
@@ -144,12 +165,12 @@ export default function WardenDashboardPage() {
     loadSosCount();
     loadOverdueCount();
     loadDelayCount();
+    loadHostelStats();
     }, 0);
     return () => clearTimeout(initial);
-  }, [authorized, loadSosCount, loadOverdueCount, loadDelayCount]);
+  }, [authorized, loadSosCount, loadOverdueCount, loadDelayCount, loadHostelStats]);
 
   useEffect(() => {
-    const initial = setTimeout(() => {
     return subscribeToStaffEvents({
       "delay:created": loadDelayCount,
       "delay:updated": loadDelayCount,
@@ -159,9 +180,10 @@ export default function WardenDashboardPage() {
   // SSE: refresh the affected queues + history when the backend broadcasts a change.
   useEffect(() => {
     return subscribeToStaffEvents({
-      "outing:changed": () => { loadOverdueCount(); },
+      "outing:changed": () => { loadOverdueCount(); loadHostelStats(); },
+      "scan:processed": loadHostelStats,
     });
-  }, [loadOverdueCount]);
+  }, [loadOverdueCount, loadHostelStats]);
 
   useEffect(() => {
     return subscribeToStaffEvents({
@@ -172,9 +194,9 @@ export default function WardenDashboardPage() {
 
   // Poll as a safety net in case an SSE connection is silently dropped.
   useEffect(() => {
-    const id = setInterval(() => { loadSosCount(); loadOverdueCount(); }, 30000);
+    const id = setInterval(() => { loadSosCount(); loadOverdueCount(); loadHostelStats(); }, 25000);
     return () => clearInterval(id);
-  }, [loadSosCount, loadOverdueCount]);
+  }, [loadSosCount, loadOverdueCount, loadHostelStats]);
 
   // Hydrated by the /auth/profile refresh this dashboard already runs on mount.
   const mySignature = user?.signature || null;
@@ -189,8 +211,6 @@ export default function WardenDashboardPage() {
     const perm = getNotificationPermission();
     setPushPermission(perm);
     if (perm === "granted") autoSubscribeIfGranted();
-    }, 0);
-    return () => clearTimeout(initial);
   }, []);
 
   const handleEnablePush = async () => {
@@ -376,6 +396,13 @@ export default function WardenDashboardPage() {
                   </div>
                 </div>
               </section>
+
+              {/* Live hostel occupancy: inside, on leave, on outing, overdue, total */}
+              <HostelOccupancyStats
+                stats={hostelStats}
+                hostelName={managedHostel || "Hostel"}
+                onSelectView={setView}
+              />
 
               {/* Three tiles: one row from lg, and the last one widens to close the
                   odd slot on tablets instead of leaving a gap. */}

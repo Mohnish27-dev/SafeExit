@@ -1,13 +1,13 @@
 const { Op } = require('sequelize');
 const { User, OutingRequest, LeaveApplication, SOSAlert } = require('../models');
 const { HOSTELS } = require('../config/hostels');
-const { getOverdueStudentIds } = require('../utils/overdue');
+const { getAwayStudentIds } = require('../utils/overdue');
 const { campusDayStart } = require('../utils/outingRules');
 
 const makeHostelSummary = (hostel) => ({
   name: hostel.name,
   gender: hostel.gender,
-  students: { total: 0, inside: 0, outside: 0, overdue: 0 },
+  students: { total: 0, inside: 0, outside: 0, onLeave: 0, overdue: 0 },
   activeSOS: 0,
   outings: { pending: 0, forwarded: 0 },
   // pending: girls' applications awaiting anyone's decision. autoApproved: boys' leave,
@@ -32,7 +32,7 @@ const getOverview = async (req, res) => {
       forwardedOutings,
       pendingLeaves,
       autoApprovedLeaves,
-      overdueIds,
+      { overdueIds, onLeaveIds },
     ] = await Promise.all([
       User.findAll({ where: { role: 'Student' }, attributes: ['id', 'hostelName', 'campusStatus', 'residency'], raw: true }),
       User.findAll({
@@ -49,7 +49,7 @@ const getOverview = async (req, res) => {
       // 'Forwarded' only survives on rows from the old caretaker-forwards-to-warden flow.
       LeaveApplication.findAll({ where: { status: { [Op.in]: ['Pending', 'Forwarded'] }, leaveDate: { [Op.gte]: campusDayStart(now) } }, attributes: ['studentId'], raw: true }),
       LeaveApplication.findAll({ where: { status: 'Approved', decidedByRole: 'System', leaveDate: { [Op.gte]: campusDayStart(now) } }, attributes: ['studentId'], raw: true }),
-      getOverdueStudentIds(),
+      getAwayStudentIds(),
     ]);
 
     const hostels = HOSTELS.map(makeHostelSummary);
@@ -58,7 +58,7 @@ const getOverview = async (req, res) => {
 
     // Day scholars are counted apart: their campusStatus is never written by the gate, so
     // they would otherwise all read as inside.
-    const studentsSummary = { total: 0, inside: 0, outside: 0, overdue: 0, dayScholars: 0 };
+    const studentsSummary = { total: 0, inside: 0, outside: 0, onLeave: 0, overdue: 0, dayScholars: 0 };
     for (const student of students) {
       if (student.residency === 'DayScholar') {
         studentsSummary.dayScholars += 1;
@@ -71,8 +71,11 @@ const getOverview = async (req, res) => {
         hostelForStudent.set(String(student.id), hostel);
       }
 
-      const isOverdue = overdueIds.has(String(student.id)) || student.campusStatus === 'Overdue';
-      const state = isOverdue ? 'overdue' : student.campusStatus === 'Outside' ? 'outside' : 'inside';
+      const sid = String(student.id);
+      const isOverdue = overdueIds.has(sid) || student.campusStatus === 'Overdue';
+      const isOnLeave = !isOverdue && onLeaveIds.has(sid);
+      const isOutside = !isOverdue && !isOnLeave && student.campusStatus === 'Outside';
+      const state = isOverdue ? 'overdue' : isOnLeave ? 'onLeave' : isOutside ? 'outside' : 'inside';
       studentsSummary[state] += 1;
       if (hostel) hostel.students[state] += 1;
     }
