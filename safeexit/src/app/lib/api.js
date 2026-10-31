@@ -11,7 +11,7 @@ export const getApiBase = () => {
 			const apiPort = port === "3000" ? "5000" : port;
 			return `${protocol}//${hostname}:${apiPort}/api`;
 		}
-		return "/safeexit/api";
+		return "/api";
 	}
 	return "http://localhost:5000/api";
 };
