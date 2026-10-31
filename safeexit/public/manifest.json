@@ -1,24 +1,24 @@
 {
-  "id": "/safeexit/login",
+  "id": "/login",
   "name": "NITP-SafeExit",
   "short_name": "NITP-SafeExit",
   "description": "Privacy-First Smart Hostel Access — secure digital outing system for students and caretakers.",
-  "start_url": "/safeexit/login",
-  "scope": "/safeexit/",
+  "start_url": "/login",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0f172a",
   "theme_color": "#6366f1",
   "screenshots": [
     {
-      "src": "/safeexit/images/screenshot-mobile.png",
+      "src": "/images/screenshot-mobile.png",
       "sizes": "884x1502",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "NITP-SafeExit on mobile — student safety and privacy portal"
     },
     {
-      "src": "/safeexit/images/screenshot-wide.png",
+      "src": "/images/screenshot-wide.png",
       "sizes": "1920x838",
       "type": "image/png",
       "form_factor": "wide",
@@ -27,25 +27,25 @@
   ],
   "icons": [
     {
-      "src": "/safeexit/images/nit-patna-icon-192.png",
+      "src": "/images/nit-patna-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/safeexit/images/nit-patna-icon-512.png",
+      "src": "/images/nit-patna-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/safeexit/images/nit-patna-icon-192-maskable.png",
+      "src": "/images/nit-patna-icon-192-maskable.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/safeexit/images/nit-patna-icon-512-maskable.png",
+      "src": "/images/nit-patna-icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

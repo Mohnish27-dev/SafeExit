@@ -5,7 +5,7 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-	basePath: "/safeexit",
+	basePath: "",
 	// The ERP host redirects `/safeexit` -> `/safeexit/`; Next's own normalization
 	// redirects the slash back off. Serve both spellings instead of ping-ponging.
 	skipTrailingSlashRedirect: true,
@@ -18,12 +18,7 @@ const nextConfig = {
 	},
 	async redirects() {
 		return [
-			{
-				source: "/",
-				destination: "/safeexit",
-				basePath: false,
-				permanent: false,
-			},
+			
 		];
 	},
 	async rewrites() {

@@ -5,7 +5,7 @@
 // static imports, but NOT onto anything we write by hand: metadata icon URLs,
 // raw <link> hrefs, URLs inside a <Script>, or the `url` query parameter the
 // image loader hands to the optimizer. Those all go through here.
-export const BASE_PATH = "/safeexit";
+export const BASE_PATH = "";
 
 // Prefix a root-relative app URL with the base path, idempotently. Anything
 // already carrying the prefix (webpack static imports, URLs we built earlier)
