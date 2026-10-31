@@ -404,12 +404,15 @@ test("on leave, a guard gets a boy's number, hostel and room, and only a girl's 
   assert.equal(byId['boy-leave'].phoneNumber, '9000000011');
   assert.equal(byId['boy-leave'].hostelName, 'Kautilya');
   assert.equal(byId['boy-leave'].roomNumber, 'B-12');
+  assert.ok(byId['boy-leave'].expectedReturnDate, 'boy on leave has expectedReturnDate');
   assert.equal(byId['girl-leave'].campusStatus, 'OnLeave');
   assert.equal(byId['girl-leave'].hostelName, 'Sarojini');
+  assert.ok(byId['girl-leave'].expectedReturnDate, 'girl on leave has expectedReturnDate');
   assert.equal('phoneNumber' in byId['girl-leave'], false);
   assert.equal('roomNumber' in byId['girl-leave'], false);
   // Off leave, hostel and room stay hidden as before.
   assert.equal('hostelName' in byId['boy-out'], false);
   assert.equal('roomNumber' in byId['boy-out'], false);
+  assert.equal('expectedReturnDate' in byId['boy-out'], false);
   for (const u of res.body) assert.equal('gender' in u, false);
 });

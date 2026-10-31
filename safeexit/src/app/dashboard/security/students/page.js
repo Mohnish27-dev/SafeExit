@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  CalendarDays,
   Clock3,
   Loader2,
   Phone,
@@ -34,6 +35,19 @@ const pillStatus = (s) => (s.residency === "DayScholar" ? "DayScholar" : s.campu
 // ?filter= value -> the server's campusStatus bucket (same buckets as the dashboard tiles).
 const FILTER_STATUS = { inside: "Inside", outside: "Outside", onleave: "OnLeave", overdue: "Overdue" };
 const PAGE_SIZE = 200;
+
+// A leave's return is a date, not a time (the leave QR works all day on the return date).
+const formatExpectedReturn = (value, locale) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(locale || "en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+};
 
 // 3D tilt for roster tiles; module scope so handlers aren't recreated per render.
 const handleTilePointerMove = (e) => {
@@ -317,7 +331,7 @@ function SecurityStudentsContent() {
                       {s.campusStatus === "Overdue" && (
                         <OverdueContact row={overdueContacts.get(s._id)} t={t} />
                       )}
-                      {s.campusStatus === "OnLeave" && <LeaveContact student={s} t={t} />}
+                      {s.campusStatus === "OnLeave" && <LeaveContact student={s} t={t} dateLocale={dateLocale} />}
                       {/* Sent only for boys on an outing, never for anyone on leave; plain text, the gate PC cannot dial. */}
                       {s.campusStatus === "Outside" && s.phoneNumber && (
                         <p className="sd-lift-md mt-3 flex items-center gap-2 text-slate-700">
@@ -404,13 +418,15 @@ function OverdueContact({ row, t }) {
 }
 
 // A student on leave, laid out like the overdue card but in leave purple. A leave is never
-// overdue. The backend sends a boy's number, hostel and room, and for a girl only her hostel,
-// so this renders whatever arrived and needs no gender check of its own.
-function LeaveContact({ student, t }) {
+// overdue. The backend sends a boy's number, hostel and room, their expected return date,
+// and for a girl only her hostel and expected return date, so this renders whatever arrived
+// and needs no gender check of its own.
+function LeaveContact({ student, t, dateLocale }) {
   const place = [student.hostelName, student.roomNumber && `${t("room")} ${student.roomNumber}`]
     .filter(Boolean)
     .join(" · ");
-  if (!student.phoneNumber && !place) return null;
+  const formattedReturnDate = formatExpectedReturn(student.expectedReturnDate, dateLocale);
+  if (!student.phoneNumber && !place && !formattedReturnDate) return null;
 
   return (
     <div className="sd-lift-md mt-4 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3">
@@ -430,6 +446,17 @@ function LeaveContact({ student, t }) {
           {!student.phoneNumber && <span className="font-bold">{t("hostel")}: </span>}
           {place}
         </p>
+      )}
+      {formattedReturnDate && (
+        <div
+          className={`flex items-center gap-1.5 text-xs text-purple-800 ${
+            student.phoneNumber || place ? "mt-2.5 border-t border-purple-200/70 pt-2" : ""
+          }`}
+        >
+          <CalendarDays className="h-3.5 w-3.5 shrink-0 text-purple-600" aria-hidden="true" />
+          <span className="font-semibold text-purple-700">{t("expectedReturn")}:</span>
+          <span className="font-bold text-purple-950 font-mono tracking-tight">{formattedReturnDate}</span>
+        </div>
       )}
     </div>
   );
