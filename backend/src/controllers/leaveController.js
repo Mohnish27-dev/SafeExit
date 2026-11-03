@@ -12,7 +12,7 @@ const {
   TICKET_MIME_TYPES,
 } = require('../utils/leaveSchema');
 const { parseDataUrl } = require('../models/_shared');
-const { isDayScholar } = require('../config/hostels');
+const { isDayScholar, isGirlStudent } = require('../config/hostels');
 const { estimatedRowCount } = require('../utils/rowCount');
 const {
   notifyCaretakers,
@@ -183,7 +183,7 @@ const createLeaveApplication = async (req, res) => {
     if (!DEPARTURE_TIME_RE.test(expectedDepartureTime)) {
       return res.status(400).json({ message: 'Enter the time you expect to leave on the leave date.' });
     }
-    if (expectedDepartureTime > LATEST_DEPARTURE_TIME) {
+    if (isGirlStudent(req.user) && expectedDepartureTime > LATEST_DEPARTURE_TIME) {
       return res.status(400).json({ message: 'The expected departure time must be 5:30 PM or earlier.' });
     }
     const { ticket, error: ticketError } = readTicket(req.body.ticket);
