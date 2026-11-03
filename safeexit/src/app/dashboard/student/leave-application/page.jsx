@@ -286,7 +286,7 @@ export default function LeaveApplicationPage() {
     }
     if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(form.expectedDepartureTime)) {
       nextErrors.expectedDepartureTime = "Enter the time you expect to leave";
-    } else if (form.expectedDepartureTime > LATEST_DEPARTURE_TIME) {
+    } else if (isFemale && form.expectedDepartureTime > LATEST_DEPARTURE_TIME) {
       nextErrors.expectedDepartureTime = "Choose a time of 5:30 PM or earlier";
     }
     if (!form.returnDate) {
@@ -815,7 +815,7 @@ export default function LeaveApplicationPage() {
                 </label>
                 <input
                   type="time"
-                  max={LATEST_DEPARTURE_TIME}
+                  max={isFemale ? LATEST_DEPARTURE_TIME : undefined}
                   value={form.expectedDepartureTime}
                   onChange={set("expectedDepartureTime")}
                   className={`sf-input ${errors.expectedDepartureTime ? "sf-input--error" : ""}`}

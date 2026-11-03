@@ -143,17 +143,27 @@ test('the expected departure time is required, as HH:MM', async (t) => {
   assert.equal(created.length, 0);
 });
 
-test('the expected departure time is at most 5:30 PM', async (t) => {
+test('the expected departure time is at most 5:30 PM for girls', async (t) => {
   const created = stubCreatePath(t);
   for (const expectedDepartureTime of ['17:31', '18:00', '23:59']) {
     const res = responseRecorder();
-    await createLeaveApplication(leaveRequest({ expectedDepartureTime }), res);
+    await createLeaveApplication(leaveRequest({ gender: 'Female', expectedDepartureTime }), res);
     assert.equal(res.statusCode, 400, `accepted ${expectedDepartureTime}`);
     assert.match(res.body.message, /5:30 PM or earlier/);
   }
   for (const expectedDepartureTime of ['00:00', '06:00', '17:30']) {
     const res = responseRecorder();
-    await createLeaveApplication(leaveRequest({ expectedDepartureTime }), res);
+    await createLeaveApplication(leaveRequest({ gender: 'Female', expectedDepartureTime }), res);
+    assert.equal(res.statusCode, 201, `refused ${expectedDepartureTime}: ${JSON.stringify(res.body)}`);
+  }
+  assert.equal(created.length, 3);
+});
+
+test('boys may specify an expected departure time after 5:30 PM', async (t) => {
+  const created = stubCreatePath(t);
+  for (const expectedDepartureTime of ['17:31', '19:23', '23:59']) {
+    const res = responseRecorder();
+    await createLeaveApplication(leaveRequest({ gender: 'Male', expectedDepartureTime }), res);
     assert.equal(res.statusCode, 201, `refused ${expectedDepartureTime}: ${JSON.stringify(res.body)}`);
   }
   assert.equal(created.length, 3);
