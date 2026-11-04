@@ -10,7 +10,8 @@
     "build": "node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "watch-prod": "nodemon --watch pages --watch app --watch components --ext js,ts,jsx,tsx --exec \"npm run build && npm run start\""
   },
   "dependencies": {
     "@yudiel/react-qr-scanner": "^2.6.0",
@@ -26,6 +27,7 @@
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "nodemon": "^3.1.14",
     "tailwindcss": "^4"
   }
 }
